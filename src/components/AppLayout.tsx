@@ -36,6 +36,9 @@ const routeLabels: Record<string, string> = {
   "/configuracoes/localidades": "Localidades",
   "/configuracoes/operadores": "Operadores",
   "/configuracoes/parametros": "Parâmetros",
+  "/configuracoes/integracoes": "Integrações",
+  "/admin": "Administração",
+  "/admin/usuarios": "Usuários",
 };
 
 function AppBreadcrumb() {
