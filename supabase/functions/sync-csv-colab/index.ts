@@ -81,13 +81,55 @@ function findHeaderMatch(headers: string[], target: string): string | null {
   return null;
 }
 
+function splitCsvLine(line: string, delimiter: string): string[] {
+  const fields: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (i + 1 < line.length && line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        current += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === delimiter) {
+        fields.push(current.trim());
+        current = "";
+      } else {
+        current += ch;
+      }
+    }
+  }
+  fields.push(current.trim());
+  return fields;
+}
+
+function detectDelimiter(headerLine: string): string {
+  const semicolons = (headerLine.match(/;/g) || []).length;
+  const commas = (headerLine.match(/,/g) || []).length;
+  return semicolons > commas ? ";" : ",";
+}
+
 function parseCsv(text: string): CsvRow[] {
   // Strip BOM if present
   const clean = text.replace(/^\uFEFF/, "");
   const lines = clean.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) throw new Error("CSV vazio ou sem dados");
 
-  const rawHeaders = lines[0].split(";").map((h) => h.trim().replace(/^"|"$/g, ""));
+  const delimiter = detectDelimiter(lines[0]);
+  console.log(`Detected delimiter: "${delimiter}" (line has ${lines[0].length} chars)`);
+
+  const rawHeaders = splitCsvLine(lines[0], delimiter);
+  console.log(`Headers (${rawHeaders.length}): ${rawHeaders.slice(0, 10).join(", ")}`);
 
   // Build a mapping from required name -> actual header name
   const headerMap: Record<string, string> = {};
@@ -112,11 +154,10 @@ function parseCsv(text: string): CsvRow[] {
 
   const rows: CsvRow[] = [];
   for (let i = 1; i < lines.length; i++) {
-    const values = lines[i].split(";").map((v) => v.trim().replace(/^"|"$/g, ""));
-    if (values.length < rawHeaders.length) continue;
+    const values = splitCsvLine(lines[i], delimiter);
+    if (values.length < rawHeaders.length * 0.5) continue; // skip badly broken lines
     const row: Record<string, string> = {};
     rawHeaders.forEach((h, idx) => {
-      // Store under both original and standard name
       row[h] = values[idx] || "";
       if (reverseMap[h]) {
         row[reverseMap[h]] = values[idx] || "";
@@ -125,6 +166,7 @@ function parseCsv(text: string): CsvRow[] {
     if (!(row["employID"] || "").trim()) continue;
     rows.push(row as unknown as CsvRow);
   }
+  console.log(`Parsed ${rows.length} rows from ${lines.length - 1} data lines`);
   return rows;
 }
 
