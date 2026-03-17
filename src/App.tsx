@@ -9,12 +9,20 @@ import ColaboradoresPage from "./pages/colaboradores/ColaboradoresPage";
 import ColaboradorDetalhePage from "./pages/colaboradores/ColaboradorDetalhePage";
 import TerceirosPage from "./pages/terceiros/TerceirosPage";
 import TerceiroDetalhePage from "./pages/terceiros/TerceiroDetalhePage";
+import EventosJMLPage from "./pages/eventos-jml/EventosJMLPage";
+import EventoJMLDetalhePage from "./pages/eventos-jml/EventoJMLDetalhePage";
 import AplicacoesPage from "./pages/aplicacoes/AplicacoesPage";
 import PerfisAcessoPage from "./pages/perfis-acesso/PerfisAcessoPage";
 import PerfilAcessoDetalhePage from "./pages/perfis-acesso/PerfilAcessoDetalhePage";
+import ExcecoesPage from "./pages/excecoes/ExcecoesPage";
+import RevisoesPage from "./pages/revisoes/RevisoesPage";
+import RevisaoDetalhePage from "./pages/revisoes/RevisaoDetalhePage";
 import RegrasPage from "./pages/regras/RegrasPage";
 import RegraEditorPage from "./pages/regras/RegraEditorPage";
 import MatrizPage from "./pages/matriz/MatrizPage";
+import LicencasPage from "./pages/licencas/LicencasPage";
+import AuditoriaPage from "./pages/auditoria/AuditoriaPage";
+import AlertasPage from "./pages/alertas/AlertasPage";
 import ConfiguracoesLayout from "./pages/configuracoes/ConfiguracoesLayout";
 import CargosPage from "./pages/configuracoes/CargosPage";
 import AreasPage from "./pages/configuracoes/AreasPage";
@@ -40,24 +48,24 @@ const App = () => (
             <Route path="/colaboradores/:id" element={<ColaboradorDetalhePage />} />
             <Route path="/terceiros" element={<TerceirosPage />} />
             <Route path="/terceiros/:id" element={<TerceiroDetalhePage />} />
-            <Route path="/eventos-jml" element={<PlaceholderPage title="Eventos JML" description="Central de processamento e monitoramento JML" />} />
-            <Route path="/eventos-jml/:id" element={<PlaceholderPage title="Detalhe do Evento" />} />
+            <Route path="/eventos-jml" element={<EventosJMLPage />} />
+            <Route path="/eventos-jml/:id" element={<EventoJMLDetalhePage />} />
             <Route path="/aplicacoes" element={<AplicacoesPage />} />
             <Route path="/aplicacoes/:id" element={<PlaceholderPage title="Detalhe da Aplicação" />} />
             <Route path="/perfis-acesso" element={<PerfisAcessoPage />} />
             <Route path="/perfis-acesso/:id" element={<PerfilAcessoDetalhePage />} />
-            <Route path="/excecoes" element={<PlaceholderPage title="Exceções de Acesso" description="Concessões fora da regra com justificativa e aprovação" />} />
+            <Route path="/excecoes" element={<ExcecoesPage />} />
             <Route path="/excecoes/:id" element={<PlaceholderPage title="Detalhe da Exceção" />} />
-            <Route path="/revisoes" element={<PlaceholderPage title="Revisões de Acesso" description="Campanhas periódicas de recertificação" />} />
-            <Route path="/revisoes/:id" element={<PlaceholderPage title="Detalhe da Revisão" />} />
+            <Route path="/revisoes" element={<RevisoesPage />} />
+            <Route path="/revisoes/:id" element={<RevisaoDetalhePage />} />
             <Route path="/regras" element={<RegrasPage />} />
             <Route path="/regras/nova" element={<RegraEditorPage />} />
             <Route path="/regras/:id/editar" element={<RegraEditorPage />} />
             <Route path="/matriz" element={<MatrizPage />} />
-            <Route path="/licencas" element={<PlaceholderPage title="Licenças" description="Inventário, atribuição e revogação de licenças" />} />
+            <Route path="/licencas" element={<LicencasPage />} />
             <Route path="/licencas/:id" element={<PlaceholderPage title="Detalhe da Licença" />} />
-            <Route path="/auditoria" element={<PlaceholderPage title="Auditoria" description="Logs completos com evidências e relatórios" />} />
-            <Route path="/alertas" element={<PlaceholderPage title="Alertas" description="Central de notificações operacionais" />} />
+            <Route path="/auditoria" element={<AuditoriaPage />} />
+            <Route path="/alertas" element={<AlertasPage />} />
             <Route path="/configuracoes" element={<ConfiguracoesLayout />}>
               <Route index element={<Navigate to="/configuracoes/cargos" replace />} />
               <Route path="cargos" element={<CargosPage />} />
