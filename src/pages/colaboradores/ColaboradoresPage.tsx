@@ -123,6 +123,16 @@ export default function ColaboradoresPage() {
                       <td className="p-4 text-muted-foreground">{c.cargo}</td>
                       <td className="p-4 text-muted-foreground">{c.area}</td>
                       <td className="p-4">
+                        <Badge variant="outline" className={
+                          c.origem === "csv" ? "bg-primary/10 text-primary border-primary/30" :
+                          c.origem === "entra_id" ? "bg-info/10 text-info border-info/30" :
+                          c.origem === "obsoleto" ? "bg-muted text-muted-foreground" :
+                          "bg-muted text-muted-foreground"
+                        }>
+                          {c.origem}
+                        </Badge>
+                      </td>
+                      <td className="p-4">
                         <Badge variant="outline" className={statusConfig[c.status]?.class || ""}>
                           {statusConfig[c.status]?.label || c.status}
                         </Badge>
