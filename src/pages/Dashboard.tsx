@@ -6,7 +6,7 @@ import {
   PieChart, Pie, Cell, Legend,
 } from "recharts";
 import { Link } from "react-router-dom";
-import { useColaboradores, useTerceiros, useEventosJML, useAlertas } from "@/hooks/useOrigoData";
+import { useColaboradores, useTerceiros, useEventosJML, useAlertas, useColabQuarentena } from "@/hooks/useOrigoData";
 
 const accessStatusData = [
   { name: "Ativos", value: 842, color: "hsl(142, 71%, 45%)" },
