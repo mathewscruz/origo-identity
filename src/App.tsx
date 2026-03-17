@@ -5,6 +5,10 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import AppLayout from "./components/AppLayout";
 import Dashboard from "./pages/Dashboard";
+import ColaboradoresPage from "./pages/colaboradores/ColaboradoresPage";
+import ColaboradorDetalhePage from "./pages/colaboradores/ColaboradorDetalhePage";
+import TerceirosPage from "./pages/terceiros/TerceirosPage";
+import TerceiroDetalhePage from "./pages/terceiros/TerceiroDetalhePage";
 import AplicacoesPage from "./pages/aplicacoes/AplicacoesPage";
 import PerfisAcessoPage from "./pages/perfis-acesso/PerfisAcessoPage";
 import PerfilAcessoDetalhePage from "./pages/perfis-acesso/PerfilAcessoDetalhePage";
@@ -32,10 +36,10 @@ const App = () => (
         <Routes>
           <Route element={<AppLayout />}>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/colaboradores" element={<PlaceholderPage title="Colaboradores" description="Gestão de funcionários internos" />} />
-            <Route path="/colaboradores/:id" element={<PlaceholderPage title="Detalhe do Colaborador" />} />
-            <Route path="/terceiros" element={<PlaceholderPage title="Terceiros" description="Ciclo de vida de terceiros com controle de contrato" />} />
-            <Route path="/terceiros/:id" element={<PlaceholderPage title="Detalhe do Terceiro" />} />
+            <Route path="/colaboradores" element={<ColaboradoresPage />} />
+            <Route path="/colaboradores/:id" element={<ColaboradorDetalhePage />} />
+            <Route path="/terceiros" element={<TerceirosPage />} />
+            <Route path="/terceiros/:id" element={<TerceiroDetalhePage />} />
             <Route path="/eventos-jml" element={<PlaceholderPage title="Eventos JML" description="Central de processamento e monitoramento JML" />} />
             <Route path="/eventos-jml/:id" element={<PlaceholderPage title="Detalhe do Evento" />} />
             <Route path="/aplicacoes" element={<AplicacoesPage />} />
