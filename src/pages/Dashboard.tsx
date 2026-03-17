@@ -60,7 +60,7 @@ export default function Dashboard() {
 
   const kpis = [
     { title: "Pessoas Ativas", value: pessoasAtivas.toString(), change: `${(colaboradores ?? []).length} total`, icon: Users, changeType: "positive" as const },
-    { title: "Terceiros Vencendo 30d", value: terceirosVencendo.toString(), icon: UserCheck, changeType: "warning" as const, change: `${(terceiros ?? []).length} total` },
+    { title: "Quarentena Pendente", value: quarentenaPendente.toString(), icon: AlertTriangle, changeType: quarentenaPendente > 0 ? "warning" as const : "positive" as const, change: "ausentes do CSV" },
     { title: "Eventos JML Pendentes", value: eventosPendentes.toString(), icon: GitPullRequest, changeType: "neutral" as const, change: `${(eventos ?? []).length} total` },
     { title: "Alertas Não Lidos", value: naoLidos.toString(), icon: Upload, changeType: naoLidos > 0 ? "warning" as const : "positive" as const, change: `${(alertas ?? []).length} total` },
   ];
