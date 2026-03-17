@@ -211,7 +211,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         nome: row.displayName, email: row.mail || null, matricula: row.employID.trim(),
         cpf: row.Cadastro_Pessoa_Fisica || null,
         empresa_id: empresaCache.get((row.company || "").toLowerCase()) || null,
-        cargo_id: cargoCache.get(((row.title || row.description || "").trim()).toLowerCase()) || null,
+        cargo_id: cargoCache.get(((row.description || row.title || "").trim()).toLowerCase()) || null,
         area_id: areaCache.get((row.departmentNumber || "").toLowerCase()) || null,
         localidade_id: localCache.get((row.Base_Local || "").toLowerCase()) || null,
         status: STATUS_MAP[(row.status || "ativo").toLowerCase()] || "ativo",
