@@ -44,6 +44,7 @@ export default function Dashboard() {
   const { data: terceiros } = useTerceiros();
   const { data: eventos } = useEventosJML();
   const { data: alertas } = useAlertas();
+  const { data: quarentena } = useColabQuarentena();
 
   const pessoasAtivas = (colaboradores ?? []).filter((c) => c.status === "ativo").length;
   const terceirosVencendo = (terceiros ?? []).filter((t) => {
@@ -53,6 +54,7 @@ export default function Dashboard() {
   }).length;
   const eventosPendentes = (eventos ?? []).filter((e) => ["pendente", "executando", "quarentena"].includes(e.status)).length;
   const naoLidos = (alertas ?? []).filter((a) => !a.lido).length;
+  const quarentenaPendente = (quarentena ?? []).length;
 
   const recentEvents = (eventos ?? []).slice(0, 5);
 
