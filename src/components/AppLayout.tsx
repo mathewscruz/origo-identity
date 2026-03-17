@@ -36,6 +36,9 @@ const routeLabels: Record<string, string> = {
   "/configuracoes/localidades": "Localidades",
   "/configuracoes/operadores": "Operadores",
   "/configuracoes/parametros": "Parâmetros",
+  "/configuracoes/integracoes": "Integrações",
+  "/admin": "Administração",
+  "/admin/usuarios": "Usuários",
 };
 
 function AppBreadcrumb() {
@@ -107,7 +110,7 @@ export default function AppLayout() {
             </div>
           </header>
           <main className="flex-1 overflow-auto p-6">
-            <div className="mx-auto max-w-7xl">
+            <div>
               <Outlet />
             </div>
           </main>
