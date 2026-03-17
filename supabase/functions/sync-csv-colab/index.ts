@@ -326,7 +326,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
     let created = 0;
     const joinerEvents: any[] = [];
-    const newColabChunks = chunk(newRows, 200);
+    const newColabChunks = chunk(newRows, 500);
 
     for (let ci = 0; ci < newColabChunks.length; ci++) {
       const batch = newColabChunks[ci];
