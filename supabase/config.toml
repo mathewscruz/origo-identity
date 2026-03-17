@@ -2,3 +2,6 @@ project_id = "jobopjhhxgcfanlhzlkc"
 
 [functions.sync-entra-id]
 verify_jwt = false
+
+[functions.sync-csv-colab]
+verify_jwt = false
