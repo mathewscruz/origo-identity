@@ -58,15 +58,51 @@ const STATUS_MAP: Record<string, string> = {
   inativo: "inativo",
 };
 
+function normalizeHeader(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[_\s]+/g, " ")
+    .trim();
+}
+
+function findHeaderMatch(headers: string[], target: string): string | null {
+  const normTarget = normalizeHeader(target);
+  // Exact match first
+  const exact = headers.find((h) => h === target);
+  if (exact) return exact;
+  // Normalized match
+  const norm = headers.find((h) => normalizeHeader(h) === normTarget);
+  if (norm) return norm;
+  // Contains match
+  const contains = headers.find((h) => normalizeHeader(h).includes(normTarget));
+  if (contains) return contains;
+  return null;
+}
+
 function parseCsv(text: string): CsvRow[] {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  // Strip BOM if present
+  const clean = text.replace(/^\uFEFF/, "");
+  const lines = clean.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) throw new Error("CSV vazio ou sem dados");
 
-  const headers = lines[0].split(";").map((h) => h.trim().replace(/^"|"$/g, ""));
+  const rawHeaders = lines[0].split(";").map((h) => h.trim().replace(/^"|"$/g, ""));
 
-  const missing = REQUIRED_HEADERS.filter((h) => !headers.includes(h));
+  // Build a mapping from required name -> actual header name
+  const headerMap: Record<string, string> = {};
+  const missing: string[] = [];
+  for (const req of REQUIRED_HEADERS) {
+    const match = findHeaderMatch(rawHeaders, req);
+    if (match) {
+      headerMap[req] = match;
+    } else {
+      missing.push(req);
+    }
+  }
+
   if (missing.length > 0)
-    throw new Error(`Colunas obrigatórias ausentes: ${missing.join(", ")}`);
+    throw new Error(`Colunas obrigatórias ausentes: ${missing.join(", ")}. Headers encontrados: ${rawHeaders.slice(0, 10).join(", ")}`);
 
   const rows: CsvRow[] = [];
   for (let i = 1; i < lines.length; i++) {
