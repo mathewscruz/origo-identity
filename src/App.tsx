@@ -75,6 +75,7 @@ const App = () => (
               <Route path="localidades" element={<LocalidadesPage />} />
               <Route path="operadores" element={<OperadoresPage />} />
               <Route path="parametros" element={<ParametrosPage />} />
+              <Route path="integracoes" element={<IntegracoesPage />} />
             </Route>
           </Route>
           <Route path="*" element={<NotFound />} />
