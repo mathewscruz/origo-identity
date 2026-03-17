@@ -76,107 +76,142 @@ interface GraphApp {
   signInAudience: string | null;
 }
 
+function sseEvent(data: Record<string, unknown>): string {
+  return `data: ${JSON.stringify(data)}\n\n`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
-  try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: Record<string, unknown>) => {
+        controller.enqueue(encoder.encode(sseEvent(data)));
+      };
 
-    const token = await getAccessToken();
+      try {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+        const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    // ── Sync Users ──
-    const usersUrl = `${GRAPH_BASE}/users?$select=id,displayName,mail,employeeId,jobTitle,department,accountEnabled&$top=999`;
-    const users = await fetchAllPages<GraphUser>(usersUrl, token);
+        send({ phase: "auth", message: "Autenticando no Entra ID..." });
+        const token = await getAccessToken();
 
-    let usersCreated = 0;
-    let usersUpdated = 0;
+        // ── Fetch Users ──
+        send({ phase: "fetch_users", message: "Buscando usuários do Entra ID..." });
+        const usersUrl = `${GRAPH_BASE}/users?$select=id,displayName,mail,employeeId,jobTitle,department,accountEnabled&$top=999`;
+        const users = await fetchAllPages<GraphUser>(usersUrl, token);
+        send({ phase: "fetch_users_done", totalUsers: users.length, message: `${users.length} usuários encontrados` });
 
-    for (const user of users) {
-      const status = user.accountEnabled ? "ativo" : "inativo";
+        // ── Fetch Apps ──
+        send({ phase: "fetch_apps", message: "Buscando aplicações do Entra ID..." });
+        const appsUrl = `${GRAPH_BASE}/applications?$select=id,displayName,signInAudience&$top=999`;
+        const apps = await fetchAllPages<GraphApp>(appsUrl, token);
+        send({ phase: "fetch_apps_done", totalApps: apps.length, message: `${apps.length} aplicações encontradas` });
 
-      const { data: existing } = await supabase
-        .from("colaboradores")
-        .select("id")
-        .eq("entra_id", user.id)
-        .maybeSingle();
+        // ── Sync Users ──
+        let usersCreated = 0;
+        let usersUpdated = 0;
 
-      if (existing) {
-        await supabase
-          .from("colaboradores")
-          .update({
-            nome: user.displayName,
-            email: user.mail,
-            matricula: user.employeeId,
-            status,
-            origem: "entra_id",
-          })
-          .eq("entra_id", user.id);
-        usersUpdated++;
-      } else {
-        await supabase.from("colaboradores").insert({
-          entra_id: user.id,
-          nome: user.displayName,
-          email: user.mail,
-          matricula: user.employeeId,
-          status,
-          origem: "entra_id",
+        for (let i = 0; i < users.length; i++) {
+          const user = users[i];
+          const status = user.accountEnabled ? "ativo" : "inativo";
+
+          const { data: existing } = await supabase
+            .from("colaboradores")
+            .select("id")
+            .eq("entra_id", user.id)
+            .maybeSingle();
+
+          if (existing) {
+            await supabase
+              .from("colaboradores")
+              .update({ nome: user.displayName, email: user.mail, matricula: user.employeeId, status, origem: "entra_id" })
+              .eq("entra_id", user.id);
+            usersUpdated++;
+          } else {
+            await supabase.from("colaboradores").insert({
+              entra_id: user.id, nome: user.displayName, email: user.mail, matricula: user.employeeId, status, origem: "entra_id",
+            });
+            usersCreated++;
+          }
+
+          // Send progress every 5 users or on last
+          if ((i + 1) % 5 === 0 || i === users.length - 1) {
+            send({
+              phase: "sync_users",
+              current: i + 1,
+              total: users.length,
+              percent: Math.round(((i + 1) / users.length) * 100),
+              created: usersCreated,
+              updated: usersUpdated,
+            });
+          }
+        }
+
+        // ── Sync Apps ──
+        let appsCreated = 0;
+        let appsUpdated = 0;
+
+        for (let i = 0; i < apps.length; i++) {
+          const app = apps[i];
+
+          const { data: existing } = await supabase
+            .from("aplicacoes")
+            .select("id")
+            .eq("entra_id", app.id)
+            .maybeSingle();
+
+          if (existing) {
+            await supabase
+              .from("aplicacoes")
+              .update({ nome: app.displayName, tipo_auth: app.signInAudience || null })
+              .eq("entra_id", app.id);
+            appsUpdated++;
+          } else {
+            await supabase.from("aplicacoes").insert({
+              entra_id: app.id, nome: app.displayName, tipo_auth: app.signInAudience || null, criticidade: "media",
+            });
+            appsCreated++;
+          }
+
+          if ((i + 1) % 5 === 0 || i === apps.length - 1) {
+            send({
+              phase: "sync_apps",
+              current: i + 1,
+              total: apps.length,
+              percent: Math.round(((i + 1) / apps.length) * 100),
+              created: appsCreated,
+              updated: appsUpdated,
+            });
+          }
+        }
+
+        send({
+          phase: "done",
+          success: true,
+          users: { total: users.length, created: usersCreated, updated: usersUpdated },
+          apps: { total: apps.length, created: appsCreated, updated: appsUpdated },
         });
-        usersCreated++;
+      } catch (error: unknown) {
+        console.error("sync-entra-id error:", error);
+        const message = error instanceof Error ? error.message : "Unknown error";
+        send({ phase: "error", success: false, error: message });
+      } finally {
+        controller.close();
       }
-    }
+    },
+  });
 
-    // ── Sync Applications ──
-    const appsUrl = `${GRAPH_BASE}/applications?$select=id,displayName,signInAudience&$top=999`;
-    const apps = await fetchAllPages<GraphApp>(appsUrl, token);
-
-    let appsCreated = 0;
-    let appsUpdated = 0;
-
-    for (const app of apps) {
-      const { data: existing } = await supabase
-        .from("aplicacoes")
-        .select("id")
-        .eq("entra_id", app.id)
-        .maybeSingle();
-
-      if (existing) {
-        await supabase
-          .from("aplicacoes")
-          .update({
-            nome: app.displayName,
-            tipo_auth: app.signInAudience || null,
-          })
-          .eq("entra_id", app.id);
-        appsUpdated++;
-      } else {
-        await supabase.from("aplicacoes").insert({
-          entra_id: app.id,
-          nome: app.displayName,
-          tipo_auth: app.signInAudience || null,
-          criticidade: "media",
-        });
-        appsCreated++;
-      }
-    }
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        users: { total: users.length, created: usersCreated, updated: usersUpdated },
-        apps: { total: apps.length, created: appsCreated, updated: appsUpdated },
-      }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  } catch (error: unknown) {
-    console.error("sync-entra-id error:", error);
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return new Response(
-      JSON.stringify({ success: false, error: message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  }
+  return new Response(stream, {
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+    },
+  });
 });
