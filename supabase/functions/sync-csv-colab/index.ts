@@ -447,18 +447,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       ));
     }
 
-    // ── 12. Batch insert snapshots ──
-    await sb.from("sync_jobs").update({ phase: "snapshots", message: "Salvando snapshots...", colab_percent: 95 }).eq("id", jobId);
-
-    const snapshots = rowsWithHash.map(item => ({
-      import_job_id: jobId,
-      matricula: item.matricula,
-      hash: item.hash,
-      dados: item.row,
-    }));
-    for (const batch of chunk(snapshots, 200)) {
-      await sb.from("colab_snapshots").insert(batch);
-    }
+    // ── 12. Snapshots skipped for performance (data already in colaboradores) ──
 
     // ── 13. Finalize ──
     await sb.from("sync_jobs").update({

@@ -266,30 +266,8 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     for (const b of chunk(qInserts, 200)) await sb.from("colab_quarentena").insert(b);
     for (const b of chunk(lEvents, 200)) await sb.from("eventos_jml").insert(b);
 
-    // Gestores
-    await sb.from("sync_jobs").update({ phase: "gestores", message: "Resolvendo gestores...", colab_percent: 90 }).eq("id", jobId);
-    const nameToId = new Map<string, string>();
-    let gF = 0;
-    while (true) {
-      const { data } = await sb.from("colaboradores").select("id, nome").eq("origem", "csv").range(gF, gF + 999);
-      if (!data || data.length === 0) break;
-      data.forEach((c: any) => nameToId.set(c.nome.toLowerCase(), c.id));
-      if (data.length < 1000) break;
-      gF += 1000;
-    }
-    const gUpdates: { mat: string; gid: string }[] = [];
-    for (const { row } of rowsWithHash) {
-      if (!row.manager || row.manager === "NULL") continue;
-      const gid = nameToId.get(row.manager.toLowerCase());
-      if (gid) gUpdates.push({ mat: row.employID.trim(), gid });
-    }
-    for (const batch of chunk(gUpdates, 50))
-      await Promise.all(batch.map(({ mat, gid }) => sb.from("colaboradores").update({ gestor_id: gid }).eq("matricula", mat).eq("origem", "csv")));
-
-    // Snapshots
-    await sb.from("sync_jobs").update({ phase: "snapshots", message: "Salvando snapshots...", colab_percent: 95 }).eq("id", jobId);
-    for (const b of chunk(rowsWithHash.map(i => ({ import_job_id: jobId, matricula: i.matricula, hash: i.hash, dados: i.row })), 200))
-      await sb.from("colab_snapshots").insert(b);
+    // Gestores and Snapshots skipped in SharePoint sync for performance (avoids timeout)
+    // Gestores can be resolved via a separate manual trigger if needed
 
     // Done
     await sb.from("sync_jobs").update({ status: "done", phase: "done", colab_percent: 100, colab_created: created, colab_updated: updated, colab_quarentena: quarentenaCount, message: `Concluído: ${created} novos, ${updated} atualizados, ${quarentenaCount} quarentena` }).eq("id", jobId);
