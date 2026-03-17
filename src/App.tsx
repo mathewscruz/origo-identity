@@ -3,6 +3,8 @@ import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AuthProvider } from "@/contexts/AuthContext";
+import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "./components/AppLayout";
 import Dashboard from "./pages/Dashboard";
 import ColaboradoresPage from "./pages/colaboradores/ColaboradoresPage";
@@ -31,6 +33,9 @@ import LocalidadesPage from "./pages/configuracoes/LocalidadesPage";
 import OperadoresPage from "./pages/configuracoes/OperadoresPage";
 import ParametrosPage from "./pages/configuracoes/ParametrosPage";
 import IntegracoesPage from "./pages/configuracoes/IntegracoesPage";
+import UsuariosPage from "./pages/admin/UsuariosPage";
+import LoginPage from "./pages/auth/LoginPage";
+import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import NotFound from "./pages/NotFound";
 
@@ -41,46 +46,51 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route element={<AppLayout />}>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/colaboradores" element={<ColaboradoresPage />} />
-            <Route path="/colaboradores/:id" element={<ColaboradorDetalhePage />} />
-            <Route path="/terceiros" element={<TerceirosPage />} />
-            <Route path="/terceiros/:id" element={<TerceiroDetalhePage />} />
-            <Route path="/eventos-jml" element={<EventosJMLPage />} />
-            <Route path="/eventos-jml/:id" element={<EventoJMLDetalhePage />} />
-            <Route path="/aplicacoes" element={<AplicacoesPage />} />
-            <Route path="/aplicacoes/:id" element={<PlaceholderPage title="Detalhe da Aplicação" />} />
-            <Route path="/perfis-acesso" element={<PerfisAcessoPage />} />
-            <Route path="/perfis-acesso/:id" element={<PerfilAcessoDetalhePage />} />
-            <Route path="/excecoes" element={<ExcecoesPage />} />
-            <Route path="/excecoes/:id" element={<PlaceholderPage title="Detalhe da Exceção" />} />
-            <Route path="/revisoes" element={<RevisoesPage />} />
-            <Route path="/revisoes/:id" element={<RevisaoDetalhePage />} />
-            <Route path="/regras" element={<RegrasPage />} />
-            <Route path="/regras/nova" element={<RegraEditorPage />} />
-            <Route path="/regras/:id/editar" element={<RegraEditorPage />} />
-            <Route path="/matriz" element={<MatrizPage />} />
-            <Route path="/licencas" element={<LicencasPage />} />
-            <Route path="/licencas/:id" element={<PlaceholderPage title="Detalhe da Licença" />} />
-            <Route path="/auditoria" element={<AuditoriaPage />} />
-            <Route path="/alertas" element={<AlertasPage />} />
-            <Route path="/configuracoes" element={<ConfiguracoesLayout />}>
-              <Route index element={<Navigate to="/configuracoes/cargos" replace />} />
-              <Route path="cargos" element={<CargosPage />} />
-              <Route path="areas" element={<AreasPage />} />
-              <Route path="empresas" element={<EmpresasPage />} />
-              <Route path="localidades" element={<LocalidadesPage />} />
-              <Route path="operadores" element={<OperadoresPage />} />
-              <Route path="parametros" element={<ParametrosPage />} />
-              <Route path="integracoes" element={<IntegracoesPage />} />
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/colaboradores" element={<ColaboradoresPage />} />
+              <Route path="/colaboradores/:id" element={<ColaboradorDetalhePage />} />
+              <Route path="/terceiros" element={<TerceirosPage />} />
+              <Route path="/terceiros/:id" element={<TerceiroDetalhePage />} />
+              <Route path="/eventos-jml" element={<EventosJMLPage />} />
+              <Route path="/eventos-jml/:id" element={<EventoJMLDetalhePage />} />
+              <Route path="/aplicacoes" element={<AplicacoesPage />} />
+              <Route path="/aplicacoes/:id" element={<PlaceholderPage title="Detalhe da Aplicação" />} />
+              <Route path="/perfis-acesso" element={<PerfisAcessoPage />} />
+              <Route path="/perfis-acesso/:id" element={<PerfilAcessoDetalhePage />} />
+              <Route path="/excecoes" element={<ExcecoesPage />} />
+              <Route path="/excecoes/:id" element={<PlaceholderPage title="Detalhe da Exceção" />} />
+              <Route path="/revisoes" element={<RevisoesPage />} />
+              <Route path="/revisoes/:id" element={<RevisaoDetalhePage />} />
+              <Route path="/regras" element={<RegrasPage />} />
+              <Route path="/regras/nova" element={<RegraEditorPage />} />
+              <Route path="/regras/:id/editar" element={<RegraEditorPage />} />
+              <Route path="/matriz" element={<MatrizPage />} />
+              <Route path="/licencas" element={<LicencasPage />} />
+              <Route path="/licencas/:id" element={<PlaceholderPage title="Detalhe da Licença" />} />
+              <Route path="/auditoria" element={<AuditoriaPage />} />
+              <Route path="/alertas" element={<AlertasPage />} />
+              <Route path="/admin/usuarios" element={<UsuariosPage />} />
+              <Route path="/configuracoes" element={<ConfiguracoesLayout />}>
+                <Route index element={<Navigate to="/configuracoes/cargos" replace />} />
+                <Route path="cargos" element={<CargosPage />} />
+                <Route path="areas" element={<AreasPage />} />
+                <Route path="empresas" element={<EmpresasPage />} />
+                <Route path="localidades" element={<LocalidadesPage />} />
+                <Route path="operadores" element={<OperadoresPage />} />
+                <Route path="parametros" element={<ParametrosPage />} />
+                <Route path="integracoes" element={<IntegracoesPage />} />
+              </Route>
             </Route>
-          </Route>
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );
