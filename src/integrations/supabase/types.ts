@@ -1014,6 +1014,60 @@ export type Database = {
         }
         Relationships: []
       }
+      sync_jobs: {
+        Row: {
+          apps_created: number | null
+          apps_percent: number | null
+          apps_total: number | null
+          apps_updated: number | null
+          created_at: string | null
+          error: string | null
+          id: string
+          message: string | null
+          phase: string | null
+          status: string
+          updated_at: string | null
+          users_created: number | null
+          users_percent: number | null
+          users_total: number | null
+          users_updated: number | null
+        }
+        Insert: {
+          apps_created?: number | null
+          apps_percent?: number | null
+          apps_total?: number | null
+          apps_updated?: number | null
+          created_at?: string | null
+          error?: string | null
+          id?: string
+          message?: string | null
+          phase?: string | null
+          status?: string
+          updated_at?: string | null
+          users_created?: number | null
+          users_percent?: number | null
+          users_total?: number | null
+          users_updated?: number | null
+        }
+        Update: {
+          apps_created?: number | null
+          apps_percent?: number | null
+          apps_total?: number | null
+          apps_updated?: number | null
+          created_at?: string | null
+          error?: string | null
+          id?: string
+          message?: string | null
+          phase?: string | null
+          status?: string
+          updated_at?: string | null
+          users_created?: number | null
+          users_percent?: number | null
+          users_total?: number | null
+          users_updated?: number | null
+        }
+        Relationships: []
+      }
       terceiros: {
         Row: {
           ativo: boolean

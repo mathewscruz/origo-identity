@@ -89,28 +89,50 @@ Deno.serve(async (req) => {
   const stream = new ReadableStream({
     async start(controller) {
       const send = (data: Record<string, unknown>) => {
-        controller.enqueue(encoder.encode(sseEvent(data)));
+        try { controller.enqueue(encoder.encode(sseEvent(data))); } catch { /* stream closed */ }
+      };
+
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+      // Create a sync job record
+      let jobId: string | null = null;
+      try {
+        const { data: job } = await supabase
+          .from("sync_jobs")
+          .insert({ status: "running", phase: "auth", message: "Autenticando no Entra ID..." })
+          .select("id")
+          .single();
+        jobId = job?.id ?? null;
+      } catch { /* table may not exist yet */ }
+
+      const updateJob = async (updates: Record<string, unknown>) => {
+        if (!jobId) return;
+        try {
+          await supabase.from("sync_jobs").update({ ...updates, updated_at: new Date().toISOString() }).eq("id", jobId);
+        } catch { /* ignore */ }
       };
 
       try {
-        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-        const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-        const supabase = createClient(supabaseUrl, serviceRoleKey);
-
         send({ phase: "auth", message: "Autenticando no Entra ID..." });
         const token = await getAccessToken();
 
         // ── Fetch Users ──
         send({ phase: "fetch_users", message: "Buscando usuários do Entra ID..." });
+        await updateJob({ phase: "fetch_users", message: "Buscando usuários do Entra ID..." });
         const usersUrl = `${GRAPH_BASE}/users?$select=id,displayName,mail,employeeId,jobTitle,department,accountEnabled&$top=999`;
         const users = await fetchAllPages<GraphUser>(usersUrl, token);
         send({ phase: "fetch_users_done", totalUsers: users.length, message: `${users.length} usuários encontrados` });
+        await updateJob({ phase: "fetch_users_done", message: `${users.length} usuários encontrados`, users_total: users.length });
 
         // ── Fetch Apps ──
         send({ phase: "fetch_apps", message: "Buscando aplicações do Entra ID..." });
+        await updateJob({ phase: "fetch_apps", message: "Buscando aplicações do Entra ID..." });
         const appsUrl = `${GRAPH_BASE}/applications?$select=id,displayName,signInAudience&$top=999`;
         const apps = await fetchAllPages<GraphApp>(appsUrl, token);
         send({ phase: "fetch_apps_done", totalApps: apps.length, message: `${apps.length} aplicações encontradas` });
+        await updateJob({ phase: "fetch_apps_done", message: `${apps.length} aplicações encontradas`, apps_total: apps.length });
 
         // ── Sync Users ──
         let usersCreated = 0;
@@ -139,15 +161,22 @@ Deno.serve(async (req) => {
             usersCreated++;
           }
 
-          // Send progress every 5 users or on last
-          if ((i + 1) % 5 === 0 || i === users.length - 1) {
+          if ((i + 1) % 10 === 0 || i === users.length - 1) {
+            const percent = Math.round(((i + 1) / users.length) * 100);
             send({
               phase: "sync_users",
               current: i + 1,
               total: users.length,
-              percent: Math.round(((i + 1) / users.length) * 100),
+              percent,
               created: usersCreated,
               updated: usersUpdated,
+            });
+            await updateJob({
+              phase: "sync_users",
+              message: `Sincronizando usuários: ${i + 1}/${users.length}`,
+              users_percent: percent,
+              users_created: usersCreated,
+              users_updated: usersUpdated,
             });
           }
         }
@@ -178,14 +207,22 @@ Deno.serve(async (req) => {
             appsCreated++;
           }
 
-          if ((i + 1) % 5 === 0 || i === apps.length - 1) {
+          if ((i + 1) % 10 === 0 || i === apps.length - 1) {
+            const percent = Math.round(((i + 1) / apps.length) * 100);
             send({
               phase: "sync_apps",
               current: i + 1,
               total: apps.length,
-              percent: Math.round(((i + 1) / apps.length) * 100),
+              percent,
               created: appsCreated,
               updated: appsUpdated,
+            });
+            await updateJob({
+              phase: "sync_apps",
+              message: `Sincronizando aplicações: ${i + 1}/${apps.length}`,
+              apps_percent: percent,
+              apps_created: appsCreated,
+              apps_updated: appsUpdated,
             });
           }
         }
@@ -196,10 +233,22 @@ Deno.serve(async (req) => {
           users: { total: users.length, created: usersCreated, updated: usersUpdated },
           apps: { total: apps.length, created: appsCreated, updated: appsUpdated },
         });
+        await updateJob({
+          status: "done",
+          phase: "done",
+          message: "Sincronização concluída!",
+          users_percent: 100,
+          apps_percent: 100,
+          users_created: usersCreated,
+          users_updated: usersUpdated,
+          apps_created: appsCreated,
+          apps_updated: appsUpdated,
+        });
       } catch (error: unknown) {
         console.error("sync-entra-id error:", error);
         const message = error instanceof Error ? error.message : "Unknown error";
         send({ phase: "error", success: false, error: message });
+        await updateJob({ status: "error", phase: "error", error: message, message: `Erro: ${message}` });
       } finally {
         controller.close();
       }

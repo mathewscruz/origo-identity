@@ -3,11 +3,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Download, Search, Eye } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuditoria } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
+import TablePagination, { usePagination } from "@/components/TablePagination";
 
 const entidadeColors: Record<string, string> = {
   pessoa: "bg-info/15 text-info border-info/30",
@@ -20,7 +20,13 @@ const entidadeColors: Record<string, string> = {
 export default function AuditoriaPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [selected, setSelected] = useState<any>(null);
+  const [busca, setBusca] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const { data: auditoria, isLoading } = useAuditoria();
+
+  const list = (auditoria ?? []).filter((a: any) => !busca || a.acao.toLowerCase().includes(busca.toLowerCase()) || (a.resumo || "").toLowerCase().includes(busca.toLowerCase()));
+  const { paginatedItems, safePage } = usePagination(list, page, pageSize);
 
   return (
     <div className="space-y-6">
@@ -37,7 +43,7 @@ export default function AuditoriaPage() {
       <div className="flex flex-wrap gap-2">
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Buscar..." className="pl-9" />
+          <Input placeholder="Buscar..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
         </div>
       </div>
 
@@ -51,7 +57,7 @@ export default function AuditoriaPage() {
             <th className="p-4 font-medium">Resumo</th><th className="p-4 font-medium">IP</th>
             <th className="p-4 font-medium"></th>
           </tr></thead><tbody>
-            {auditoria?.map((a) => (
+            {paginatedItems.map((a: any) => (
               <tr key={a.id} className="border-b last:border-0 hover:bg-muted/50">
                 <td className="p-4 text-xs text-muted-foreground font-mono">{new Date(a.timestamp).toLocaleString("pt-BR")}</td>
                 <td className="p-4 text-muted-foreground">{a.operador || "—"}</td>
@@ -69,6 +75,7 @@ export default function AuditoriaPage() {
           </tbody></table>
         )}
       </CardContent></Card>
+      <TablePagination totalItems={list.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="max-w-lg">

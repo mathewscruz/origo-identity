@@ -7,6 +7,7 @@ import { Search, AlertTriangle } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useEventosJML } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
+import TablePagination, { usePagination } from "@/components/TablePagination";
 
 const tipoColors: Record<string, string> = {
   joiner: "bg-success text-success-foreground",
@@ -34,11 +35,14 @@ const tabFilters: Record<TabKey, (e: { status: string }) => boolean> = {
 export default function EventosJMLPage() {
   const [tab, setTab] = useState<TabKey>("pendentes");
   const [busca, setBusca] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const { data: eventos, isLoading } = useEventosJML();
 
-  const list = eventos ?? [];
+  const list = (eventos ?? []) as any[];
   const quarentenaCount = list.filter(tabFilters.quarentena).length;
   const filtered = list.filter(tabFilters[tab]).filter((e) => !busca || (e.colaborador_nome || "").toLowerCase().includes(busca.toLowerCase()));
+  const { paginatedItems, safePage } = usePagination(filtered, page, pageSize);
 
   return (
     <div className="space-y-6">
@@ -56,7 +60,7 @@ export default function EventosJMLPage() {
         </Card>
       )}
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
+      <Tabs value={tab} onValueChange={(v) => { setTab(v as TabKey); setPage(1); }}>
         <div className="flex items-center justify-between">
           <TabsList>
             <TabsTrigger value="pendentes">Pendentes ({list.filter(tabFilters.pendentes).length})</TabsTrigger>
@@ -67,7 +71,7 @@ export default function EventosJMLPage() {
           </TabsList>
           <div className="relative max-w-xs">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input placeholder="Buscar pessoa..." className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
+            <Input placeholder="Buscar pessoa..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
           </div>
         </div>
 
@@ -84,7 +88,7 @@ export default function EventosJMLPage() {
                     <th className="p-4 font-medium">Data</th>
                   </tr></thead>
                   <tbody>
-                    {filtered.map((ev) => (
+                    {paginatedItems.map((ev: any) => (
                       <tr key={ev.id} className="border-b last:border-0 hover:bg-muted/50">
                         <td className="p-4"><Badge className={`${tipoColors[ev.tipo]} text-[10px] uppercase`}>{ev.tipo.charAt(0)}</Badge></td>
                         <td className="p-4"><Link to={`/eventos-jml/${ev.id}`} className="font-medium text-primary hover:underline">{ev.colaborador_nome || "Desconhecido"}</Link></td>
@@ -93,11 +97,12 @@ export default function EventosJMLPage() {
                         <td className="p-4 text-muted-foreground text-xs">{new Date(ev.created_at).toLocaleDateString("pt-BR")}</td>
                       </tr>
                     ))}
-                    {filtered.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-muted-foreground">Nenhum evento.</td></tr>}
+                    {paginatedItems.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-muted-foreground">Nenhum evento.</td></tr>}
                   </tbody>
                 </table>
               )}
             </CardContent></Card>
+            <TablePagination totalItems={filtered.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
           </TabsContent>
         ))}
       </Tabs>

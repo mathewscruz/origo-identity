@@ -1,11 +1,13 @@
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Shield, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { Link } from "react-router-dom";
 import { usePerfisAcesso } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
+import TablePagination, { usePagination } from "@/components/TablePagination";
 
 const sensibilidadeConfig: Record<string, { label: string; class: string }> = {
   baixa: { label: "Normal", class: "bg-muted text-muted-foreground" },
@@ -16,6 +18,12 @@ const sensibilidadeConfig: Record<string, { label: string; class: string }> = {
 
 export default function PerfisAcessoPage() {
   const { data: perfis, isLoading } = usePerfisAcesso();
+  const [busca, setBusca] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  const list = (perfis ?? []).filter((p: any) => !busca || p.nome.toLowerCase().includes(busca.toLowerCase()));
+  const { paginatedItems, safePage } = usePagination(list, page, pageSize);
 
   return (
     <div className="space-y-6">
@@ -30,7 +38,7 @@ export default function PerfisAcessoPage() {
       <div className="flex gap-2">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Buscar perfis..." className="pl-9" />
+          <Input placeholder="Buscar perfis..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
         </div>
       </div>
 
@@ -51,12 +59,12 @@ export default function PerfisAcessoPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {perfis?.map((p) => {
+                  {paginatedItems.map((p: any) => {
                     const sens = sensibilidadeConfig[p.sensibilidade] || { label: p.sensibilidade, class: "" };
                     return (
                       <tr key={p.id} className="border-b last:border-0 hover:bg-muted/50">
                         <td className="p-4"><Link to={`/perfis-acesso/${p.id}`} className="font-medium text-primary hover:underline">{p.nome}</Link></td>
-                        <td className="p-4 text-muted-foreground">{(p.aplicacoes as any)?.nome || "—"}</td>
+                        <td className="p-4 text-muted-foreground">{p.aplicacoes?.nome || "—"}</td>
                         <td className="p-4"><Badge variant="outline" className={sens.class}>{sens.label}</Badge></td>
                         <td className="p-4"><Badge variant="outline">{p.tipo}</Badge></td>
                         <td className="p-4"><Badge variant={p.ativo ? "default" : "secondary"}>{p.ativo ? "Ativo" : "Inativo"}</Badge></td>
@@ -69,6 +77,7 @@ export default function PerfisAcessoPage() {
           )}
         </CardContent>
       </Card>
+      <TablePagination totalItems={list.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
     </div>
   );
 }

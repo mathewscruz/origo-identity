@@ -9,6 +9,7 @@ import { useAlertas } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
+import TablePagination, { usePagination } from "@/components/TablePagination";
 
 const severidadeColors: Record<string, string> = {
   info: "bg-info/15 text-info border-info/30",
@@ -20,10 +21,13 @@ export default function AlertasPage() {
   const { data: alertas, isLoading } = useAlertas();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"nao_lidos" | "todos">("nao_lidos");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
-  const list = alertas ?? [];
+  const list = (alertas ?? []) as any[];
   const naoLidos = list.filter((a) => !a.lido);
   const filtered = tab === "nao_lidos" ? naoLidos : list;
+  const { paginatedItems, safePage } = usePagination(filtered, page, pageSize);
 
   const marcarLido = async (id: string) => {
     await supabase.from("alertas").update({ lido: true }).eq("id", id);
@@ -52,7 +56,7 @@ export default function AlertasPage() {
         )}
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as "nao_lidos" | "todos")}>
+      <Tabs value={tab} onValueChange={(v) => { setTab(v as "nao_lidos" | "todos"); setPage(1); }}>
         <TabsList>
           <TabsTrigger value="nao_lidos">Não lidos ({naoLidos.length})</TabsTrigger>
           <TabsTrigger value="todos">Todos ({list.length})</TabsTrigger>
@@ -68,7 +72,7 @@ export default function AlertasPage() {
                   <th className="p-4 font-medium">Mensagem</th><th className="p-4 font-medium">Data</th>
                   <th className="p-4 font-medium">Ações</th>
                 </tr></thead><tbody>
-                  {filtered.map((a) => (
+                  {paginatedItems.map((a: any) => (
                     <tr key={a.id} className={`border-b last:border-0 ${!a.lido ? "bg-primary/5" : "hover:bg-muted/50"}`}>
                       <td className="p-4"><Badge variant="outline" className={severidadeColors[a.severidade]}>{a.severidade}</Badge></td>
                       <td className="p-4 font-medium">{!a.lido && <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-primary" />}{a.titulo}</td>
@@ -88,10 +92,11 @@ export default function AlertasPage() {
                       </td>
                     </tr>
                   ))}
-                  {filtered.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-muted-foreground">Nenhum alerta.</td></tr>}
+                  {paginatedItems.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-muted-foreground">Nenhum alerta.</td></tr>}
                 </tbody></table>
               )}
             </CardContent></Card>
+            <TablePagination totalItems={filtered.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
           </TabsContent>
         ))}
       </Tabs>

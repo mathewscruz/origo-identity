@@ -8,6 +8,7 @@ import { Search, Upload } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useColaboradores } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
+import TablePagination, { usePagination } from "@/components/TablePagination";
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
@@ -22,16 +23,18 @@ export default function ColaboradoresPage() {
   const [statusFilter, setStatusFilter] = useState("todos");
   const [cargoFilter, setCargoFilter] = useState("todos");
   const [areaFilter, setAreaFilter] = useState("todos");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const { data: colaboradores, isLoading } = useColaboradores();
 
-  const mapped = (colaboradores ?? []).map((c) => ({
+  const mapped = (colaboradores ?? []).map((c: any) => ({
     id: c.id,
     nome: c.nome,
     email: c.email || "",
     cpf: c.cpf ? `***${c.cpf.slice(-6)}` : "—",
-    cargo: (c.cargos as any)?.nome || "—",
-    area: (c.areas as any)?.nome || "—",
+    cargo: c.cargos?.nome || "—",
+    area: c.areas?.nome || "—",
     status: c.status,
   }));
 
@@ -42,6 +45,8 @@ export default function ColaboradoresPage() {
     if (cargoFilter !== "todos" && c.cargo !== cargoFilter) return false;
     return true;
   });
+
+  const { paginatedItems, safePage } = usePagination(filtered, page, pageSize);
 
   const areas = [...new Set(mapped.map((c) => c.area).filter((a) => a !== "—"))];
   const cargos = [...new Set(mapped.map((c) => c.cargo).filter((c) => c !== "—"))];
@@ -59,9 +64,9 @@ export default function ColaboradoresPage() {
       <div className="flex flex-wrap gap-2">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Buscar nome ou email..." className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
+          <Input placeholder="Buscar nome ou email..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
           <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="todos">Todos status</SelectItem>
@@ -72,14 +77,14 @@ export default function ColaboradoresPage() {
             <SelectItem value="desligado">Desligado</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={areaFilter} onValueChange={setAreaFilter}>
+        <Select value={areaFilter} onValueChange={(v) => { setAreaFilter(v); setPage(1); }}>
           <SelectTrigger className="w-[180px]"><SelectValue placeholder="Área" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="todos">Todas áreas</SelectItem>
             {areas.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={cargoFilter} onValueChange={setCargoFilter}>
+        <Select value={cargoFilter} onValueChange={(v) => { setCargoFilter(v); setPage(1); }}>
           <SelectTrigger className="w-[200px]"><SelectValue placeholder="Cargo" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="todos">Todos cargos</SelectItem>
@@ -106,7 +111,7 @@ export default function ColaboradoresPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((c) => (
+                  {paginatedItems.map((c) => (
                     <tr key={c.id} className="border-b last:border-0 hover:bg-muted/50">
                       <td className="p-4">
                         <Link to={`/colaboradores/${c.id}`} className="font-medium text-primary hover:underline">{c.nome}</Link>
@@ -122,7 +127,7 @@ export default function ColaboradoresPage() {
                       </td>
                     </tr>
                   ))}
-                  {filtered.length === 0 && (
+                  {paginatedItems.length === 0 && (
                     <tr><td colSpan={6} className="p-8 text-center text-muted-foreground">Nenhum colaborador encontrado.</td></tr>
                   )}
                 </tbody>
@@ -131,7 +136,13 @@ export default function ColaboradoresPage() {
           )}
         </CardContent>
       </Card>
-      <div className="text-sm text-muted-foreground">{filtered.length} de {mapped.length} colaboradores</div>
+      <TablePagination
+        totalItems={filtered.length}
+        pageSize={pageSize}
+        currentPage={safePage}
+        onPageChange={setPage}
+        onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
+      />
     </div>
   );
 }

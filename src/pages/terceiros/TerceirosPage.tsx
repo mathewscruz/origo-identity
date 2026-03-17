@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useTerceiros } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
+import TablePagination, { usePagination } from "@/components/TablePagination";
 
 const criticidadeConfig: Record<string, { label: string; class: string }> = {
   baixa: { label: "Baixa", class: "bg-muted text-muted-foreground" },
@@ -37,11 +38,14 @@ function fimContratoDisplay(dataFim: string | null) {
 export default function TerceirosPage() {
   const [busca, setBusca] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const { data: terceiros, isLoading } = useTerceiros();
 
   const list = terceiros ?? [];
-  const vencendo7d = list.filter((t) => { const d = diasRestantes(t.contrato_fim); return d >= 0 && d <= 7; }).length;
-  const filtered = list.filter((t) => !busca || t.nome.toLowerCase().includes(busca.toLowerCase()));
+  const vencendo7d = list.filter((t: any) => { const d = diasRestantes(t.contrato_fim); return d >= 0 && d <= 7; }).length;
+  const filtered = list.filter((t: any) => !busca || t.nome.toLowerCase().includes(busca.toLowerCase()));
+  const { paginatedItems, safePage } = usePagination(filtered, page, pageSize);
 
   return (
     <div className="space-y-6">
@@ -64,7 +68,7 @@ export default function TerceirosPage() {
 
       <div className="relative flex-1 min-w-[200px] max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input placeholder="Buscar terceiros..." className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
+        <Input placeholder="Buscar terceiros..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
       </div>
 
       <Card>
@@ -85,7 +89,7 @@ export default function TerceirosPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((t) => (
+                  {paginatedItems.map((t: any) => (
                     <tr key={t.id} className="border-b last:border-0 hover:bg-muted/50">
                       <td className="p-4"><Link to={`/terceiros/${t.id}`} className="font-medium text-primary hover:underline">{t.nome}</Link></td>
                       <td className="p-4 text-muted-foreground">{t.empresa_terceira || "—"}</td>
@@ -107,6 +111,7 @@ export default function TerceirosPage() {
           )}
         </CardContent>
       </Card>
+      <TablePagination totalItems={filtered.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
 
       <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
         <SheetContent className="w-[480px] sm:max-w-[480px] overflow-y-auto">
