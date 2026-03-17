@@ -5,26 +5,20 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
   RefreshCw, CheckCircle, AlertCircle, Cloud, Users, AppWindow,
-  FileUp, Trash2, AlertTriangle, FileSpreadsheet,
+  FileUp, Trash2, AlertTriangle, FileSpreadsheet, Clock, Calendar,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSyncJobs, useSyncJobsCsv } from "@/hooks/useOrigoData";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
 export default function IntegracoesPage() {
   const [syncing, setSyncing] = useState(false);
   const [csvSyncing, setCsvSyncing] = useState(false);
+  const [spSyncing, setSpSyncing] = useState(false);
   const [cleaning, setCleaning] = useState(false);
   const { toast } = useToast();
   const { data: entraJob, refetch: refetchEntra } = useSyncJobs();
@@ -32,13 +26,11 @@ export default function IntegracoesPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (entraJob?.status === "running") setSyncing(true);
-    else setSyncing(false);
+    setSyncing(entraJob?.status === "running");
   }, [entraJob?.status]);
 
   useEffect(() => {
-    if (csvJob?.status === "running") setCsvSyncing(true);
-    else setCsvSyncing(false);
+    setCsvSyncing(csvJob?.status === "running");
   }, [csvJob?.status]);
 
   // ── Entra ID Sync ──
@@ -74,7 +66,6 @@ export default function IntegracoesPage() {
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-csv-colab`;
       const formData = new FormData();
       formData.append("file", file);
-      
       fetch(url, {
         method: "POST",
         headers: {
@@ -99,53 +90,68 @@ export default function IntegracoesPage() {
     }
   }, [toast, refetchCsv]);
 
+  // ── SharePoint Auto-Sync ──
+  const handleSharePointSync = useCallback(async () => {
+    setSpSyncing(true);
+    try {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-sharepoint-csv`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          "Content-Type": "application/json",
+        },
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        toast({ title: "Erro SharePoint", description: body.error || `HTTP ${res.status}`, variant: "destructive" });
+      } else {
+        toast({ title: "Sincronização iniciada", description: `Arquivo: ${body.file}` });
+        setTimeout(() => refetchCsv(), 2000);
+      }
+    } catch (err: unknown) {
+      toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
+    }
+    setSpSyncing(false);
+  }, [toast, refetchCsv]);
+
   // ── Limpar Base Manual ──
   const handleCleanBase = useCallback(async () => {
     setCleaning(true);
     try {
-      // Get operadores emails to protect
       const { data: operadores } = await supabase.from("operadores").select("email");
       const protectedEmails = new Set((operadores || []).map((o: any) => o.email?.toLowerCase()));
-
-      // Get colaboradores with manual/entra_id origem
       const { data: toClean } = await supabase
         .from("colaboradores")
         .select("id, email, origem")
         .in("origem", ["manual", "entra_id"]);
-
       const safeToClean = (toClean || []).filter(
         (c: any) => !c.email || !protectedEmails.has(c.email.toLowerCase())
       );
-
       if (safeToClean.length === 0) {
         toast({ title: "Nada a limpar", description: "Não há colaboradores manuais para desativar." });
         setCleaning(false);
         return;
       }
-
       const ids = safeToClean.map((c: any) => c.id);
       const { error } = await supabase
         .from("colaboradores")
         .update({ status: "inativo", origem: "obsoleto" } as any)
         .in("id", ids);
-
       if (error) throw error;
-
-      // Auditoria
       await supabase.from("auditoria").insert({
         entidade: "colaboradores",
         acao: "limpar_base_manual",
         resumo: `${ids.length} colaborador(es) marcados como obsoletos`,
         detalhes: { ids, count: ids.length },
       });
-
       await supabase.from("alertas").insert({
         tipo: "limpeza_base",
         titulo: `Base manual limpa: ${ids.length} registros`,
         mensagem: `${ids.length} colaborador(es) de origem manual/entra_id foram marcados como inativos/obsoletos.`,
         severidade: "info",
       });
-
       toast({ title: "Base limpa", description: `${ids.length} colaborador(es) marcados como inativos/obsoletos.` });
     } catch (err: unknown) {
       toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
@@ -158,16 +164,47 @@ export default function IntegracoesPage() {
 
   return (
     <div className="space-y-4">
-      {/* ── CSV Colaboradores (principal) ── */}
+      {/* ── SharePoint Auto-Sync (destaque) ── */}
+      <Card className="border-primary/30 bg-primary/5">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <Cloud className="h-5 w-5 text-primary" />
+            <div>
+              <CardTitle className="text-base">Sincronização Automática — SharePoint</CardTitle>
+              <CardDescription>Rotina diária às 06:00 UTC busca o CSV mais recente na pasta RH_COLAB</CardDescription>
+            </div>
+            <Badge className="ml-auto bg-primary/10 text-primary border-primary/30" variant="outline">
+              <Clock className="mr-1 h-3 w-3" /> Diário
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="text-sm text-muted-foreground space-y-1">
+            <p><strong>Site:</strong> origoenergia.sharepoint.com/sites/dataanalytics</p>
+            <p><strong>Pasta:</strong> Shared Documents / RH_COLAB</p>
+            <p><strong>Prefixo:</strong> <code className="text-xs bg-muted px-1 rounded">base_colab_</code></p>
+            <p><strong>Frequência:</strong> Todos os dias às 06:00 UTC (03:00 BRT)</p>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={handleSharePointSync} disabled={spSyncing}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${spSyncing ? "animate-spin" : ""}`} />
+              {spSyncing ? "Buscando no SharePoint..." : "Executar Agora"}
+            </Button>
+          </div>
+          {showCsvProgress && <CsvProgressPanel job={csvJob} />}
+        </CardContent>
+      </Card>
+
+      {/* ── CSV Manual Upload ── */}
       <Card className="border-primary/20">
         <CardHeader>
           <div className="flex items-center gap-3">
             <FileSpreadsheet className="h-5 w-5 text-primary" />
             <div>
-              <CardTitle className="text-base">Importação CSV — Colaboradores</CardTitle>
-              <CardDescription>Fonte principal: CSV diário (SharePoint / upload manual)</CardDescription>
+              <CardTitle className="text-base">Importação CSV — Upload Manual</CardTitle>
+              <CardDescription>Fallback: envie um CSV manualmente caso a rotina automática falhe</CardDescription>
             </div>
-            <Badge className="ml-auto bg-primary/10 text-primary border-primary/30" variant="outline">Principal</Badge>
+            <Badge className="ml-auto" variant="outline">Fallback</Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -175,7 +212,6 @@ export default function IntegracoesPage() {
             Importa colaboradores a partir de arquivo CSV com prefixo <code className="text-xs bg-muted px-1 rounded">base_colab_</code>.
             Detecta automaticamente Joiners, Movers e Leavers (quarentena). Chave: matrícula (employID).
           </p>
-
           <div className="flex gap-2">
             <input
               ref={fileInputRef}
@@ -188,19 +224,11 @@ export default function IntegracoesPage() {
                 e.target.value = "";
               }}
             />
-            <Button onClick={() => fileInputRef.current?.click()} disabled={csvSyncing}>
+            <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={csvSyncing}>
               <FileUp className={`mr-2 h-4 w-4 ${csvSyncing ? "animate-spin" : ""}`} />
               {csvSyncing ? "Importando..." : "Importar CSV"}
             </Button>
-            <Button variant="outline" disabled title="Requer configuração SharePoint (em breve)">
-              <Cloud className="mr-2 h-4 w-4" />
-              Buscar do SharePoint
-            </Button>
           </div>
-
-          {showCsvProgress && (
-            <CsvProgressPanel job={csvJob} />
-          )}
         </CardContent>
       </Card>
 
@@ -208,11 +236,12 @@ export default function IntegracoesPage() {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-3">
-            <Cloud className="h-5 w-5 text-primary" />
+            <Cloud className="h-5 w-5 text-muted-foreground" />
             <div>
               <CardTitle className="text-base">Microsoft Entra ID</CardTitle>
               <CardDescription>Sincronize aplicações do Azure AD</CardDescription>
             </div>
+            <Badge className="ml-auto text-muted-foreground" variant="outline">Aplicações</Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -223,36 +252,7 @@ export default function IntegracoesPage() {
             <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
             {syncing ? "Sincronizando..." : "Sincronizar Agora"}
           </Button>
-
-          {showEntraProgress && (
-            <div className="rounded-md border p-4 space-y-4">
-              <div className="flex items-center gap-2">
-                {entraJob.status === "error" ? (
-                  <AlertCircle className="h-4 w-4 text-destructive" />
-                ) : entraJob.status === "done" ? (
-                  <CheckCircle className="h-4 w-4 text-success" />
-                ) : (
-                  <RefreshCw className="h-4 w-4 animate-spin text-primary" />
-                )}
-                <span className="font-medium text-sm">{entraJob.message || "Iniciando..."}</span>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2"><Users className="h-4 w-4 text-muted-foreground" /><span className="font-medium">Usuários</span></div>
-                  <span className="text-muted-foreground">{entraJob.users_percent || 0}%</span>
-                </div>
-                <Progress value={entraJob.users_percent || 0} className="h-2" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2"><AppWindow className="h-4 w-4 text-muted-foreground" /><span className="font-medium">Aplicações</span></div>
-                  <span className="text-muted-foreground">{entraJob.apps_percent || 0}%</span>
-                </div>
-                <Progress value={entraJob.apps_percent || 0} className="h-2" />
-              </div>
-              {entraJob.status === "error" && entraJob.error && <p className="text-sm text-destructive">{entraJob.error}</p>}
-            </div>
-          )}
+          {showEntraProgress && <EntraProgressPanel job={entraJob} />}
         </CardContent>
       </Card>
 
@@ -305,49 +305,55 @@ export default function IntegracoesPage() {
 function CsvProgressPanel({ job }: { job: any }) {
   const isDone = job.status === "done";
   const isError = job.status === "error";
-
   return (
     <div className="rounded-md border p-4 space-y-4">
       <div className="flex items-center gap-2">
-        {isError ? (
-          <AlertCircle className="h-4 w-4 text-destructive" />
-        ) : isDone ? (
-          <CheckCircle className="h-4 w-4 text-success" />
-        ) : (
-          <RefreshCw className="h-4 w-4 animate-spin text-primary" />
-        )}
+        {isError ? <AlertCircle className="h-4 w-4 text-destructive" /> : isDone ? <CheckCircle className="h-4 w-4 text-success" /> : <RefreshCw className="h-4 w-4 animate-spin text-primary" />}
         <span className="font-medium text-sm">{job.message || "Iniciando..."}</span>
       </div>
-
       <div className="space-y-2">
         <div className="flex items-center justify-between text-sm">
-          <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium">Colaboradores</span>
-          </div>
+          <div className="flex items-center gap-2"><Users className="h-4 w-4 text-muted-foreground" /><span className="font-medium">Colaboradores</span></div>
           <span className="text-muted-foreground">{job.colab_percent || 0}%</span>
         </div>
         <Progress value={job.colab_percent || 0} className="h-2" />
         {(job.colab_total ?? 0) > 0 && (
           <div className="flex gap-2 text-xs flex-wrap">
-            <Badge variant="outline" className="bg-success/15 text-success border-success/30">
-              {job.colab_created || 0} novos
-            </Badge>
-            <Badge variant="outline">
-              {job.colab_updated || 0} atualizados
-            </Badge>
-            {(job.colab_quarentena ?? 0) > 0 && (
-              <Badge variant="outline" className="bg-warning/15 text-warning border-warning/30">
-                {job.colab_quarentena} quarentena
-              </Badge>
-            )}
+            <Badge variant="outline" className="bg-success/15 text-success border-success/30">{job.colab_created || 0} novos</Badge>
+            <Badge variant="outline">{job.colab_updated || 0} atualizados</Badge>
+            {(job.colab_quarentena ?? 0) > 0 && <Badge variant="outline" className="bg-warning/15 text-warning border-warning/30">{job.colab_quarentena} quarentena</Badge>}
             <span className="text-muted-foreground">{job.colab_total} total</span>
           </div>
         )}
       </div>
-
       {isError && job.error && <p className="text-sm text-destructive">{job.error}</p>}
       {job.filename && <p className="text-xs text-muted-foreground">Arquivo: {job.filename}</p>}
+    </div>
+  );
+}
+
+function EntraProgressPanel({ job }: { job: any }) {
+  return (
+    <div className="rounded-md border p-4 space-y-4">
+      <div className="flex items-center gap-2">
+        {job.status === "error" ? <AlertCircle className="h-4 w-4 text-destructive" /> : job.status === "done" ? <CheckCircle className="h-4 w-4 text-success" /> : <RefreshCw className="h-4 w-4 animate-spin text-primary" />}
+        <span className="font-medium text-sm">{job.message || "Iniciando..."}</span>
+      </div>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between text-sm">
+          <div className="flex items-center gap-2"><Users className="h-4 w-4 text-muted-foreground" /><span className="font-medium">Usuários</span></div>
+          <span className="text-muted-foreground">{job.users_percent || 0}%</span>
+        </div>
+        <Progress value={job.users_percent || 0} className="h-2" />
+      </div>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between text-sm">
+          <div className="flex items-center gap-2"><AppWindow className="h-4 w-4 text-muted-foreground" /><span className="font-medium">Aplicações</span></div>
+          <span className="text-muted-foreground">{job.apps_percent || 0}%</span>
+        </div>
+        <Progress value={job.apps_percent || 0} className="h-2" />
+      </div>
+      {job.status === "error" && job.error && <p className="text-sm text-destructive">{job.error}</p>}
     </div>
   );
 }
