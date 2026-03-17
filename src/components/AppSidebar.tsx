@@ -1,0 +1,159 @@
+import {
+  LayoutDashboard,
+  Users,
+  UserCheck,
+  GitPullRequest,
+  AppWindow,
+  Shield,
+  AlertTriangle,
+  ClipboardCheck,
+  Cog,
+  Grid3X3,
+  Key,
+  FileText,
+  Bell,
+  Settings,
+} from "lucide-react";
+import { NavLink } from "@/components/NavLink";
+import { useLocation } from "react-router-dom";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarFooter,
+  SidebarSeparator,
+  useSidebar,
+} from "@/components/ui/sidebar";
+
+const sidebarGroups = [
+  {
+    label: "Operação",
+    items: [
+      { title: "Dashboard", url: "/", icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: "Identidades",
+    items: [
+      { title: "Colaboradores", url: "/colaboradores", icon: Users },
+      { title: "Terceiros", url: "/terceiros", icon: UserCheck },
+      { title: "Eventos JML", url: "/eventos-jml", icon: GitPullRequest },
+    ],
+  },
+  {
+    label: "Governança",
+    items: [
+      { title: "Aplicações", url: "/aplicacoes", icon: AppWindow },
+      { title: "Perfis de Acesso", url: "/perfis-acesso", icon: Shield },
+      { title: "Exceções", url: "/excecoes", icon: AlertTriangle },
+      { title: "Revisões", url: "/revisoes", icon: ClipboardCheck },
+    ],
+  },
+  {
+    label: "Controle",
+    items: [
+      { title: "Motor de Regras", url: "/regras", icon: Cog },
+      { title: "Matriz", url: "/matriz", icon: Grid3X3 },
+      { title: "Licenças", url: "/licencas", icon: Key },
+    ],
+  },
+  {
+    label: "Auditoria",
+    items: [
+      { title: "Auditoria", url: "/auditoria", icon: FileText },
+      { title: "Alertas", url: "/alertas", icon: Bell },
+    ],
+  },
+  {
+    label: "Sistema",
+    items: [
+      { title: "Configurações", url: "/configuracoes", icon: Settings },
+    ],
+  },
+];
+
+export function AppSidebar() {
+  const { state } = useSidebar();
+  const collapsed = state === "collapsed";
+  const location = useLocation();
+
+  const isActive = (url: string) => {
+    if (url === "/") return location.pathname === "/";
+    return location.pathname.startsWith(url);
+  };
+
+  return (
+    <Sidebar collapsible="icon">
+      <SidebarHeader className="p-4">
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
+            <span className="text-sm font-bold text-sidebar-primary-foreground">Ó</span>
+          </div>
+          {!collapsed && (
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold text-sidebar-primary-foreground">
+                Órigo
+              </span>
+              <span className="text-[10px] text-sidebar-foreground/60">Identity</span>
+            </div>
+          )}
+        </div>
+      </SidebarHeader>
+
+      <SidebarSeparator />
+
+      <SidebarContent>
+        {sidebarGroups.map((group) => (
+          <SidebarGroup key={group.label}>
+            <SidebarGroupLabel className="text-sidebar-foreground/50 text-[10px] uppercase tracking-wider font-semibold">
+              {group.label}
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {group.items.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isActive(item.url)}
+                      tooltip={item.title}
+                    >
+                      <NavLink
+                        to={item.url}
+                        end={item.url === "/"}
+                        className="hover:bg-sidebar-accent/50"
+                        activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                      >
+                        <item.icon className="h-4 w-4" />
+                        {!collapsed && <span>{item.title}</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
+      </SidebarContent>
+
+      <SidebarFooter className="p-3">
+        {!collapsed && (
+          <div className="flex items-center gap-2 rounded-lg bg-sidebar-accent/50 p-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar-primary text-xs font-semibold text-sidebar-primary-foreground">
+              SA
+            </div>
+            <div className="flex flex-col text-xs">
+              <span className="font-medium text-sidebar-accent-foreground">Super Admin</span>
+              <span className="text-sidebar-foreground/50">admin@origo.com</span>
+            </div>
+          </div>
+        )}
+      </SidebarFooter>
+    </Sidebar>
+  );
+}
