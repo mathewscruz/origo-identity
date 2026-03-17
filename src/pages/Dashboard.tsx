@@ -1,12 +1,12 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Users, UserCheck, GitPullRequest, Upload } from "lucide-react";
+import { Users, UserCheck, GitPullRequest, Upload, AlertTriangle } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from "recharts";
 import { Link } from "react-router-dom";
-import { useColaboradores, useTerceiros, useEventosJML, useAlertas } from "@/hooks/useOrigoData";
+import { useColaboradores, useTerceiros, useEventosJML, useAlertas, useColabQuarentena } from "@/hooks/useOrigoData";
 
 const accessStatusData = [
   { name: "Ativos", value: 842, color: "hsl(142, 71%, 45%)" },
@@ -44,6 +44,7 @@ export default function Dashboard() {
   const { data: terceiros } = useTerceiros();
   const { data: eventos } = useEventosJML();
   const { data: alertas } = useAlertas();
+  const { data: quarentena } = useColabQuarentena();
 
   const pessoasAtivas = (colaboradores ?? []).filter((c) => c.status === "ativo").length;
   const terceirosVencendo = (terceiros ?? []).filter((t) => {
@@ -53,12 +54,13 @@ export default function Dashboard() {
   }).length;
   const eventosPendentes = (eventos ?? []).filter((e) => ["pendente", "executando", "quarentena"].includes(e.status)).length;
   const naoLidos = (alertas ?? []).filter((a) => !a.lido).length;
+  const quarentenaPendente = (quarentena ?? []).length;
 
   const recentEvents = (eventos ?? []).slice(0, 5);
 
   const kpis = [
     { title: "Pessoas Ativas", value: pessoasAtivas.toString(), change: `${(colaboradores ?? []).length} total`, icon: Users, changeType: "positive" as const },
-    { title: "Terceiros Vencendo 30d", value: terceirosVencendo.toString(), icon: UserCheck, changeType: "warning" as const, change: `${(terceiros ?? []).length} total` },
+    { title: "Quarentena Pendente", value: quarentenaPendente.toString(), icon: AlertTriangle, changeType: quarentenaPendente > 0 ? "warning" as const : "positive" as const, change: "ausentes do CSV" },
     { title: "Eventos JML Pendentes", value: eventosPendentes.toString(), icon: GitPullRequest, changeType: "neutral" as const, change: `${(eventos ?? []).length} total` },
     { title: "Alertas Não Lidos", value: naoLidos.toString(), icon: Upload, changeType: naoLidos > 0 ? "warning" as const : "positive" as const, change: `${(alertas ?? []).length} total` },
   ];
