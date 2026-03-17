@@ -25,10 +25,16 @@ const REQUIRED_HEADERS = [
 const STATUS_MAP: Record<string, string> = {
   ativo: "ativo",
   demitido: "desligado",
+  desligado: "desligado",
   afastado: "afastado",
   "férias": "ferias",
   ferias: "ferias",
   inativo: "inativo",
+  suspenso: "afastado",
+  licenca: "afastado",
+  "licença": "afastado",
+  aposentado: "desligado",
+  transferido: "ativo",
 };
 
 function normalizeHeader(name: string): string {
