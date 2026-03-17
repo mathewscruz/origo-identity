@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.sync-csv-colab]
 verify_jwt = false
+
+[functions.sync-sharepoint-csv]
+verify_jwt = false
