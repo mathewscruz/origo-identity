@@ -107,12 +107,12 @@ function parseCsv(text: string): CsvRow[] {
   const rows: CsvRow[] = [];
   for (let i = 1; i < lines.length; i++) {
     const values = lines[i].split(";").map((v) => v.trim().replace(/^"|"$/g, ""));
-    if (values.length < headers.length) continue;
+    if (values.length < rawHeaders.length) continue;
     const row: Record<string, string> = {};
-    headers.forEach((h, idx) => {
+    rawHeaders.forEach((h, idx) => {
       row[h] = values[idx] || "";
     });
-    if (!row.employID) continue;
+    if (!row[headerMap["employID"] || "employID"]) continue;
     rows.push(row as unknown as CsvRow);
   }
   return rows;
