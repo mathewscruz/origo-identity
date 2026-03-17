@@ -335,16 +335,16 @@ export function useSyncJobs() {
   return useQuery({
     queryKey: ["sync_jobs"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("sync_jobs")
         .select("*")
-        .eq("tipo" as any, "entra_id")
+        .eq("tipo", "entra_id")
         .order("created_at", { ascending: false })
         .limit(1);
       if (error) throw error;
       return data?.[0] ?? null;
     },
-    refetchInterval: (query) => {
+    refetchInterval: (query: any) => {
       const job = query.state.data;
       if (job && job.status === "running") return 2000;
       return false;
