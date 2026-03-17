@@ -204,6 +204,89 @@ export type Database = {
           },
         ]
       }
+      colab_quarentena: {
+        Row: {
+          colaborador_id: string
+          created_at: string
+          decidido_em: string | null
+          decidido_por: string | null
+          id: string
+          import_job_id: string
+          motivo: string
+          status: string
+        }
+        Insert: {
+          colaborador_id: string
+          created_at?: string
+          decidido_em?: string | null
+          decidido_por?: string | null
+          id?: string
+          import_job_id: string
+          motivo?: string
+          status?: string
+        }
+        Update: {
+          colaborador_id?: string
+          created_at?: string
+          decidido_em?: string | null
+          decidido_por?: string | null
+          id?: string
+          import_job_id?: string
+          motivo?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "colab_quarentena_colaborador_id_fkey"
+            columns: ["colaborador_id"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "colab_quarentena_import_job_id_fkey"
+            columns: ["import_job_id"]
+            isOneToOne: false
+            referencedRelation: "sync_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      colab_snapshots: {
+        Row: {
+          created_at: string
+          dados: Json
+          hash: string
+          id: string
+          import_job_id: string
+          matricula: string
+        }
+        Insert: {
+          created_at?: string
+          dados: Json
+          hash: string
+          id?: string
+          import_job_id: string
+          matricula: string
+        }
+        Update: {
+          created_at?: string
+          dados?: Json
+          hash?: string
+          id?: string
+          import_job_id?: string
+          matricula?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "colab_snapshots_import_job_id_fkey"
+            columns: ["import_job_id"]
+            isOneToOne: false
+            referencedRelation: "sync_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       colaboradores: {
         Row: {
           area_id: string | null
@@ -217,11 +300,13 @@ export type Database = {
           entra_id: string | null
           gestor_id: string | null
           id: string
+          import_hash: string | null
           localidade_id: string | null
           matricula: string | null
           nome: string
           origem: string | null
           status: Database["public"]["Enums"]["status_colaborador"]
+          ultima_importacao_id: string | null
           updated_at: string
         }
         Insert: {
@@ -236,11 +321,13 @@ export type Database = {
           entra_id?: string | null
           gestor_id?: string | null
           id?: string
+          import_hash?: string | null
           localidade_id?: string | null
           matricula?: string | null
           nome: string
           origem?: string | null
           status?: Database["public"]["Enums"]["status_colaborador"]
+          ultima_importacao_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -255,11 +342,13 @@ export type Database = {
           entra_id?: string | null
           gestor_id?: string | null
           id?: string
+          import_hash?: string | null
           localidade_id?: string | null
           matricula?: string | null
           nome?: string
           origem?: string | null
           status?: Database["public"]["Enums"]["status_colaborador"]
+          ultima_importacao_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -1020,12 +1109,20 @@ export type Database = {
           apps_percent: number | null
           apps_total: number | null
           apps_updated: number | null
+          colab_created: number | null
+          colab_inativos: number | null
+          colab_percent: number | null
+          colab_quarentena: number | null
+          colab_total: number | null
+          colab_updated: number | null
           created_at: string | null
           error: string | null
+          filename: string | null
           id: string
           message: string | null
           phase: string | null
           status: string
+          tipo: string
           updated_at: string | null
           users_created: number | null
           users_percent: number | null
@@ -1037,12 +1134,20 @@ export type Database = {
           apps_percent?: number | null
           apps_total?: number | null
           apps_updated?: number | null
+          colab_created?: number | null
+          colab_inativos?: number | null
+          colab_percent?: number | null
+          colab_quarentena?: number | null
+          colab_total?: number | null
+          colab_updated?: number | null
           created_at?: string | null
           error?: string | null
+          filename?: string | null
           id?: string
           message?: string | null
           phase?: string | null
           status?: string
+          tipo?: string
           updated_at?: string | null
           users_created?: number | null
           users_percent?: number | null
@@ -1054,12 +1159,20 @@ export type Database = {
           apps_percent?: number | null
           apps_total?: number | null
           apps_updated?: number | null
+          colab_created?: number | null
+          colab_inativos?: number | null
+          colab_percent?: number | null
+          colab_quarentena?: number | null
+          colab_total?: number | null
+          colab_updated?: number | null
           created_at?: string | null
           error?: string | null
+          filename?: string | null
           id?: string
           message?: string | null
           phase?: string | null
           status?: string
+          tipo?: string
           updated_at?: string | null
           users_created?: number | null
           users_percent?: number | null
