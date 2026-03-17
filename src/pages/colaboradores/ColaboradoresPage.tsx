@@ -108,6 +108,7 @@ export default function ColaboradoresPage() {
                     <th className="p-4 font-medium">CPF</th>
                     <th className="p-4 font-medium">Cargo</th>
                     <th className="p-4 font-medium">Área</th>
+                    <th className="p-4 font-medium">Origem</th>
                     <th className="p-4 font-medium">Status</th>
                   </tr>
                 </thead>
