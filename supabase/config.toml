@@ -1,1 +1,4 @@
 project_id = "jobopjhhxgcfanlhzlkc"
+
+[functions.sync-entra-id]
+verify_jwt = false

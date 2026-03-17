@@ -30,6 +30,7 @@ import EmpresasPage from "./pages/configuracoes/EmpresasPage";
 import LocalidadesPage from "./pages/configuracoes/LocalidadesPage";
 import OperadoresPage from "./pages/configuracoes/OperadoresPage";
 import ParametrosPage from "./pages/configuracoes/ParametrosPage";
+import IntegracoesPage from "./pages/configuracoes/IntegracoesPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import NotFound from "./pages/NotFound";
 
@@ -74,6 +75,7 @@ const App = () => (
               <Route path="localidades" element={<LocalidadesPage />} />
               <Route path="operadores" element={<OperadoresPage />} />
               <Route path="parametros" element={<ParametrosPage />} />
+              <Route path="integracoes" element={<IntegracoesPage />} />
             </Route>
           </Route>
           <Route path="*" element={<NotFound />} />
