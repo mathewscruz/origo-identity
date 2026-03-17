@@ -73,11 +73,14 @@ export default function LoginPage() {
               {loading ? "Aguarde..." : forgotMode ? "Enviar Link" : "Entrar"}
             </Button>
           </form>
-          <div className="mt-4 text-center text-sm">
+          <div className="mt-4 space-y-2 text-center text-sm">
             {forgotMode ? (
               <button onClick={() => setForgotMode(false)} className="text-primary hover:underline">Voltar ao login</button>
             ) : (
-              <button onClick={() => setForgotMode(true)} className="text-muted-foreground hover:text-primary">Esqueceu a senha?</button>
+              <>
+                <button onClick={() => setForgotMode(true)} className="text-muted-foreground hover:text-primary block mx-auto">Esqueceu a senha?</button>
+                <button onClick={() => setSignupMode(true)} className="text-primary hover:underline block mx-auto">Criar conta</button>
+              </>
             )}
           </div>
         </CardContent>
