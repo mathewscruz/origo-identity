@@ -248,7 +248,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     for (const row of allRows) {
       const company = row.company?.trim();
       if (company && company !== "NULL" && !empresaCache.has(company.toLowerCase())) missingEmpresas.add(company);
-      const cargo = (row.title || row.description || "").trim();
+      const cargo = (row.description || row.title || "").trim();
       if (cargo && cargo !== "NULL" && !cargoCache.has(cargo.toLowerCase())) missingCargos.add(cargo);
       const area = row.departmentNumber?.trim();
       if (area && area !== "NULL" && !areaCache.has(area.toLowerCase())) missingAreas.add(area);
