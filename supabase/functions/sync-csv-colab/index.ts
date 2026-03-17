@@ -25,10 +25,16 @@ const REQUIRED_HEADERS = [
 const STATUS_MAP: Record<string, string> = {
   ativo: "ativo",
   demitido: "desligado",
+  desligado: "desligado",
   afastado: "afastado",
   "férias": "ferias",
   ferias: "ferias",
   inativo: "inativo",
+  suspenso: "afastado",
+  licenca: "afastado",
+  "licença": "afastado",
+  aposentado: "desligado",
+  transferido: "ativo",
 };
 
 function normalizeHeader(name: string): string {
@@ -116,9 +122,9 @@ function parseCsv(text: string): CsvRow[] {
 
 function hashFields(row: CsvRow): string {
   return [
-    row.displayName, row.mail, row.company, row.title, row.departmentNumber,
-    row.status, row.Data_Admissao, row.Data_Rescisao, row.Base_Local,
-    row.manager, row.Cadastro_Pessoa_Fisica,
+    row.displayName, row.mail, row.company, row.title, row.description,
+    row.departmentNumber, row.status, row.Data_Admissao, row.Data_Rescisao,
+    row.Base_Local, row.manager, row.Cadastro_Pessoa_Fisica,
   ].join("|");
 }
 
@@ -242,7 +248,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     for (const row of allRows) {
       const company = row.company?.trim();
       if (company && company !== "NULL" && !empresaCache.has(company.toLowerCase())) missingEmpresas.add(company);
-      const cargo = (row.title || row.description || "").trim();
+      const cargo = (row.description || row.title || "").trim();
       if (cargo && cargo !== "NULL" && !cargoCache.has(cargo.toLowerCase())) missingCargos.add(cargo);
       const area = row.departmentNumber?.trim();
       if (area && area !== "NULL" && !areaCache.has(area.toLowerCase())) missingAreas.add(area);
@@ -303,7 +309,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         matricula: row.employID.trim(),
         cpf: row.Cadastro_Pessoa_Fisica || null,
         empresa_id: empresaCache.get((row.company || "").toLowerCase()) || null,
-        cargo_id: cargoCache.get(((row.title || row.description || "").trim()).toLowerCase()) || null,
+        cargo_id: cargoCache.get(((row.description || row.title || "").trim()).toLowerCase()) || null,
         area_id: areaCache.get((row.departmentNumber || "").toLowerCase()) || null,
         localidade_id: localCache.get((row.Base_Local || "").toLowerCase()) || null,
         status: statusMapped,
@@ -320,7 +326,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
     let created = 0;
     const joinerEvents: any[] = [];
-    const newColabChunks = chunk(newRows, 200);
+    const newColabChunks = chunk(newRows, 500);
 
     for (let ci = 0; ci < newColabChunks.length; ci++) {
       const batch = newColabChunks[ci];
@@ -441,18 +447,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       ));
     }
 
-    // ── 12. Batch insert snapshots ──
-    await sb.from("sync_jobs").update({ phase: "snapshots", message: "Salvando snapshots...", colab_percent: 95 }).eq("id", jobId);
-
-    const snapshots = rowsWithHash.map(item => ({
-      import_job_id: jobId,
-      matricula: item.matricula,
-      hash: item.hash,
-      dados: item.row,
-    }));
-    for (const batch of chunk(snapshots, 200)) {
-      await sb.from("colab_snapshots").insert(batch);
-    }
+    // ── 12. Snapshots skipped for performance (data already in colaboradores) ──
 
     // ── 13. Finalize ──
     await sb.from("sync_jobs").update({

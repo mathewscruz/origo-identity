@@ -12,7 +12,9 @@ interface CsvRow { [key: string]: string; }
 const REQUIRED_HEADERS = ["displayName","employID","mail","company","title","status","Data_Admissao","Cadastro_Pessoa_Fisica","Base_Local"];
 
 const STATUS_MAP: Record<string, string> = {
-  ativo: "ativo", demitido: "desligado", afastado: "afastado", "férias": "ferias", ferias: "ferias", inativo: "inativo",
+  ativo: "ativo", demitido: "desligado", desligado: "desligado", afastado: "afastado",
+  "férias": "ferias", ferias: "ferias", inativo: "inativo", suspenso: "afastado",
+  licenca: "afastado", "licença": "afastado", aposentado: "desligado", transferido: "ativo",
 };
 
 function normalizeHeader(name: string): string {
@@ -80,7 +82,7 @@ function parseCsv(text: string): CsvRow[] {
 }
 
 function hashFields(row: CsvRow): string {
-  return [row.displayName, row.mail, row.company, row.title, row.departmentNumber, row.status, row.Data_Admissao, row.Data_Rescisao, row.Base_Local, row.manager, row.Cadastro_Pessoa_Fisica].join("|");
+  return [row.displayName, row.mail, row.company, row.title, row.description, row.departmentNumber, row.status, row.Data_Admissao, row.Data_Rescisao, row.Base_Local, row.manager, row.Cadastro_Pessoa_Fisica].join("|");
 }
 
 async function sha256(text: string): Promise<string> {
@@ -171,7 +173,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     for (const row of allRows) {
       const company = row.company?.trim();
       if (company && company !== "NULL" && !empresaCache.has(company.toLowerCase())) missingEmpresas.add(company);
-      const cargo = (row.title || row.description || "").trim();
+      const cargo = (row.description || row.title || "").trim();
       if (cargo && cargo !== "NULL" && !cargoCache.has(cargo.toLowerCase())) missingCargos.add(cargo);
       const area = row.departmentNumber?.trim();
       if (area && area !== "NULL" && !areaCache.has(area.toLowerCase())) missingAreas.add(area);
@@ -209,7 +211,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         nome: row.displayName, email: row.mail || null, matricula: row.employID.trim(),
         cpf: row.Cadastro_Pessoa_Fisica || null,
         empresa_id: empresaCache.get((row.company || "").toLowerCase()) || null,
-        cargo_id: cargoCache.get(((row.title || row.description || "").trim()).toLowerCase()) || null,
+        cargo_id: cargoCache.get(((row.description || row.title || "").trim()).toLowerCase()) || null,
         area_id: areaCache.get((row.departmentNumber || "").toLowerCase()) || null,
         localidade_id: localCache.get((row.Base_Local || "").toLowerCase()) || null,
         status: STATUS_MAP[(row.status || "ativo").toLowerCase()] || "ativo",
@@ -222,7 +224,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     await sb.from("sync_jobs").update({ phase: "inserting", message: `Inserindo ${newRows.length} novos...`, colab_percent: 30 }).eq("id", jobId);
     let created = 0;
     const joinerEvents: any[] = [];
-    for (const batch of chunk(newRows, 200)) {
+    for (const batch of chunk(newRows, 500)) {
       const { data: inserted } = await sb.from("colaboradores").insert(batch.map(i => buildColabData(i.row, i.hash))).select("id, nome, matricula");
       if (inserted) {
         created += inserted.length;
@@ -264,30 +266,8 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     for (const b of chunk(qInserts, 200)) await sb.from("colab_quarentena").insert(b);
     for (const b of chunk(lEvents, 200)) await sb.from("eventos_jml").insert(b);
 
-    // Gestores
-    await sb.from("sync_jobs").update({ phase: "gestores", message: "Resolvendo gestores...", colab_percent: 90 }).eq("id", jobId);
-    const nameToId = new Map<string, string>();
-    let gF = 0;
-    while (true) {
-      const { data } = await sb.from("colaboradores").select("id, nome").eq("origem", "csv").range(gF, gF + 999);
-      if (!data || data.length === 0) break;
-      data.forEach((c: any) => nameToId.set(c.nome.toLowerCase(), c.id));
-      if (data.length < 1000) break;
-      gF += 1000;
-    }
-    const gUpdates: { mat: string; gid: string }[] = [];
-    for (const { row } of rowsWithHash) {
-      if (!row.manager || row.manager === "NULL") continue;
-      const gid = nameToId.get(row.manager.toLowerCase());
-      if (gid) gUpdates.push({ mat: row.employID.trim(), gid });
-    }
-    for (const batch of chunk(gUpdates, 50))
-      await Promise.all(batch.map(({ mat, gid }) => sb.from("colaboradores").update({ gestor_id: gid }).eq("matricula", mat).eq("origem", "csv")));
-
-    // Snapshots
-    await sb.from("sync_jobs").update({ phase: "snapshots", message: "Salvando snapshots...", colab_percent: 95 }).eq("id", jobId);
-    for (const b of chunk(rowsWithHash.map(i => ({ import_job_id: jobId, matricula: i.matricula, hash: i.hash, dados: i.row })), 200))
-      await sb.from("colab_snapshots").insert(b);
+    // Gestores and Snapshots skipped in SharePoint sync for performance (avoids timeout)
+    // Gestores can be resolved via a separate manual trigger if needed
 
     // Done
     await sb.from("sync_jobs").update({ status: "done", phase: "done", colab_percent: 100, colab_created: created, colab_updated: updated, colab_quarentena: quarentenaCount, message: `Concluído: ${created} novos, ${updated} atualizados, ${quarentenaCount} quarentena` }).eq("id", jobId);
