@@ -2,24 +2,25 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 // Helper to fetch all rows beyond the 1000-row default limit
-async function fetchAll<T>(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchAll(
   table: string,
   select: string,
   orderCol: string,
   ascending = true
-): Promise<T[]> {
+): Promise<any[]> {
   const PAGE = 1000;
-  const all: T[] = [];
+  const all: any[] = [];
   let from = 0;
   while (true) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from(table)
       .select(select)
       .order(orderCol, { ascending })
       .range(from, from + PAGE - 1);
     if (error) throw error;
     if (!data || data.length === 0) break;
-    all.push(...(data as T[]));
+    all.push(...data);
     if (data.length < PAGE) break;
     from += PAGE;
   }
