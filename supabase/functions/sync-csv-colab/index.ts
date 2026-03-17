@@ -104,15 +104,25 @@ function parseCsv(text: string): CsvRow[] {
   if (missing.length > 0)
     throw new Error(`Colunas obrigatórias ausentes: ${missing.join(", ")}. Headers encontrados: ${rawHeaders.slice(0, 10).join(", ")}`);
 
+  // Build reverse map: actual CSV header -> standard name
+  const reverseMap: Record<string, string> = {};
+  for (const [stdName, actualName] of Object.entries(headerMap)) {
+    reverseMap[actualName] = stdName;
+  }
+
   const rows: CsvRow[] = [];
   for (let i = 1; i < lines.length; i++) {
     const values = lines[i].split(";").map((v) => v.trim().replace(/^"|"$/g, ""));
     if (values.length < rawHeaders.length) continue;
     const row: Record<string, string> = {};
     rawHeaders.forEach((h, idx) => {
+      // Store under both original and standard name
       row[h] = values[idx] || "";
+      if (reverseMap[h]) {
+        row[reverseMap[h]] = values[idx] || "";
+      }
     });
-    if (!row[headerMap["employID"] || "employID"]) continue;
+    if (!(row["employID"] || "").trim()) continue;
     rows.push(row as unknown as CsvRow);
   }
   return rows;
