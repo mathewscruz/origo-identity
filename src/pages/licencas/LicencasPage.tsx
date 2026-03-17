@@ -1,17 +1,21 @@
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Plus, AlertTriangle } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
-import { Link } from "react-router-dom";
 import { useLicencas } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
+import TablePagination, { usePagination } from "@/components/TablePagination";
 
 export default function LicencasPage() {
   const { data: licencas, isLoading } = useLicencas();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
-  const list = licencas ?? [];
+  const list = (licencas ?? []) as any[];
   const criticos = list.filter((l) => l.total > 0 && Math.round((l.em_uso / l.total) * 100) >= 90).length;
+  const { paginatedItems, safePage } = usePagination(list, page, pageSize);
 
   return (
     <div className="space-y-6">
@@ -40,13 +44,13 @@ export default function LicencasPage() {
             <th className="p-4 font-medium min-w-[180px]">Disponibilidade</th><th className="p-4 font-medium">Tipo</th>
             <th className="p-4 font-medium">Renovação</th>
           </tr></thead><tbody>
-            {list.map((l) => {
+            {paginatedItems.map((l: any) => {
               const pct = l.total > 0 ? Math.round((l.em_uso / l.total) * 100) : 0;
               const disp = l.total - l.em_uso;
               return (
                 <tr key={l.id} className="border-b last:border-0 hover:bg-muted/50">
                   <td className="p-4 font-medium text-primary">{l.nome}</td>
-                  <td className="p-4 text-muted-foreground">{(l.aplicacoes as any)?.nome || "—"}</td>
+                  <td className="p-4 text-muted-foreground">{l.aplicacoes?.nome || "—"}</td>
                   <td className="p-4 text-muted-foreground">{l.total}</td>
                   <td className="p-4 text-muted-foreground">{l.em_uso}</td>
                   <td className="p-4">
@@ -63,6 +67,7 @@ export default function LicencasPage() {
           </tbody></table>
         )}
       </CardContent></Card>
+      <TablePagination totalItems={list.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
     </div>
   );
 }

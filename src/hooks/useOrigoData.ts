@@ -1,15 +1,36 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
+// Helper to fetch all rows beyond the 1000-row default limit
+async function fetchAll<T>(
+  table: string,
+  select: string,
+  orderCol: string,
+  ascending = true
+): Promise<T[]> {
+  const PAGE = 1000;
+  const all: T[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(select)
+      .order(orderCol, { ascending })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all.push(...(data as T[]));
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  return all;
+}
+
 // ── Empresas ──
 export function useEmpresas() {
   return useQuery({
     queryKey: ["empresas"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("empresas").select("*").order("nome");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchAll("empresas", "*", "nome"),
   });
 }
 
@@ -17,11 +38,7 @@ export function useEmpresas() {
 export function useLocalidades() {
   return useQuery({
     queryKey: ["localidades"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("localidades").select("*, empresas(nome)").order("nome");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchAll("localidades", "*, empresas(nome)", "nome"),
   });
 }
 
@@ -29,11 +46,7 @@ export function useLocalidades() {
 export function useAreas() {
   return useQuery({
     queryKey: ["areas"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("areas").select("*, empresas(nome)").order("nome");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchAll("areas", "*, empresas(nome)", "nome"),
   });
 }
 
@@ -41,11 +54,7 @@ export function useAreas() {
 export function useCargos() {
   return useQuery({
     queryKey: ["cargos"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("cargos").select("*, areas(nome)").order("nome");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchAll("cargos", "*, areas(nome)", "nome"),
   });
 }
 
@@ -53,11 +62,7 @@ export function useCargos() {
 export function useOperadores() {
   return useQuery({
     queryKey: ["operadores"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("operadores").select("*").order("nome");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchAll("operadores", "*", "nome"),
   });
 }
 
@@ -65,11 +70,7 @@ export function useOperadores() {
 export function useParametros() {
   return useQuery({
     queryKey: ["parametros"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("parametros").select("*").order("chave");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchAll("parametros", "*", "chave"),
   });
 }
 
@@ -77,14 +78,12 @@ export function useParametros() {
 export function useColaboradores() {
   return useQuery({
     queryKey: ["colaboradores"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("colaboradores")
-        .select("*, cargos(nome), areas(nome), empresas(nome), localidades(nome)")
-        .order("nome");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () =>
+      fetchAll(
+        "colaboradores",
+        "*, cargos(nome), areas(nome), empresas(nome), localidades(nome)",
+        "nome"
+      ),
   });
 }
 
@@ -108,11 +107,7 @@ export function useColaborador(id: string | undefined) {
 export function useTerceiros() {
   return useQuery({
     queryKey: ["terceiros"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("terceiros").select("*").order("nome");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchAll("terceiros", "*", "nome"),
   });
 }
 
@@ -132,11 +127,7 @@ export function useTerceiro(id: string | undefined) {
 export function useAplicacoes() {
   return useQuery({
     queryKey: ["aplicacoes"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("aplicacoes").select("*").order("nome");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchAll("aplicacoes", "*", "nome"),
   });
 }
 
@@ -144,11 +135,7 @@ export function useAplicacoes() {
 export function usePerfisAcesso() {
   return useQuery({
     queryKey: ["perfis_acesso"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("perfis_acesso").select("*, aplicacoes(nome)").order("nome");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchAll("perfis_acesso", "*, aplicacoes(nome)", "nome"),
   });
 }
 
@@ -194,11 +181,7 @@ export function usePerfilAtribuicoes(perfilId?: string, colaboradorId?: string) 
 export function useRegras() {
   return useQuery({
     queryKey: ["regras"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("regras").select("*").order("prioridade");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchAll("regras", "*", "prioridade"),
   });
 }
 
@@ -242,11 +225,7 @@ export function useRegraResultados(regraId: string | undefined) {
 export function useEventosJML() {
   return useQuery({
     queryKey: ["eventos_jml"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("eventos_jml").select("*").order("created_at", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchAll("eventos_jml", "*", "created_at", false),
   });
 }
 
@@ -290,11 +269,7 @@ export function useEventoJMLAprovacoes(eventoId: string | undefined) {
 export function useExcecoes() {
   return useQuery({
     queryKey: ["excecoes"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("excecoes").select("*, perfis_acesso(nome)").order("created_at", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchAll("excecoes", "*, perfis_acesso(nome)", "created_at", false),
   });
 }
 
@@ -302,11 +277,7 @@ export function useExcecoes() {
 export function useRevisoes() {
   return useQuery({
     queryKey: ["revisoes"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("revisoes").select("*").order("created_at", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchAll("revisoes", "*", "created_at", false),
   });
 }
 
@@ -338,11 +309,7 @@ export function useRevisaoItens(revisaoId: string | undefined) {
 export function useLicencas() {
   return useQuery({
     queryKey: ["licencas"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("licencas").select("*, aplicacoes(nome)").order("nome");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchAll("licencas", "*, aplicacoes(nome)", "nome"),
   });
 }
 
@@ -350,11 +317,7 @@ export function useLicencas() {
 export function useAuditoria() {
   return useQuery({
     queryKey: ["auditoria"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("auditoria").select("*").order("timestamp", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchAll("auditoria", "*", "timestamp", false),
   });
 }
 
@@ -362,10 +325,27 @@ export function useAuditoria() {
 export function useAlertas() {
   return useQuery({
     queryKey: ["alertas"],
+    queryFn: () => fetchAll("alertas", "*", "data", false),
+  });
+}
+
+// ── Sync Jobs ──
+export function useSyncJobs() {
+  return useQuery({
+    queryKey: ["sync_jobs"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("alertas").select("*").order("data", { ascending: false });
+      const { data, error } = await supabase
+        .from("sync_jobs")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(1);
       if (error) throw error;
-      return data;
+      return data?.[0] ?? null;
+    },
+    refetchInterval: (query) => {
+      const job = query.state.data;
+      if (job && job.status === "running") return 2000;
+      return false;
     },
   });
 }

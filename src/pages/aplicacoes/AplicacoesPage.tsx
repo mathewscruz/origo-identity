@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -5,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Plus, Search, CheckCircle } from "lucide-react";
 import { useAplicacoes } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
+import TablePagination, { usePagination } from "@/components/TablePagination";
 
 const criticidadeColors: Record<string, string> = {
   baixa: "bg-muted text-muted-foreground",
@@ -15,6 +17,12 @@ const criticidadeColors: Record<string, string> = {
 
 export default function AplicacoesPage() {
   const { data: apps, isLoading } = useAplicacoes();
+  const [busca, setBusca] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  const list = (apps ?? []).filter((a: any) => !busca || a.nome.toLowerCase().includes(busca.toLowerCase()));
+  const { paginatedItems, safePage } = usePagination(list, page, pageSize);
 
   return (
     <div className="space-y-6">
@@ -29,7 +37,7 @@ export default function AplicacoesPage() {
       <div className="flex gap-2">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Buscar aplicações..." className="pl-9" />
+          <Input placeholder="Buscar aplicações..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
         </div>
       </div>
 
@@ -51,7 +59,7 @@ export default function AplicacoesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {apps?.map((app) => (
+                  {paginatedItems.map((app: any) => (
                     <tr key={app.id} className="border-b last:border-0 hover:bg-muted/50 cursor-pointer">
                       <td className="p-4 font-medium text-primary">{app.nome}</td>
                       <td className="p-4"><Badge variant="outline" className={criticidadeColors[app.criticidade]}>{app.criticidade}</Badge></td>
@@ -75,6 +83,7 @@ export default function AplicacoesPage() {
           )}
         </CardContent>
       </Card>
+      <TablePagination totalItems={list.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
     </div>
   );
 }

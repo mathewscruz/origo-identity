@@ -8,9 +8,9 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFo
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useExcecoes } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
+import TablePagination, { usePagination } from "@/components/TablePagination";
 
 const statusColors: Record<string, string> = {
   pendente: "bg-warning/15 text-warning border-warning/30",
@@ -31,10 +31,13 @@ const tabFilter: Record<TabKey, (e: { status: string }) => boolean> = {
 export default function ExcecoesPage() {
   const [tab, setTab] = useState<TabKey>("pendentes");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const { data: excecoes, isLoading } = useExcecoes();
 
-  const list = excecoes ?? [];
+  const list = (excecoes ?? []) as any[];
   const filtered = list.filter(tabFilter[tab]);
+  const { paginatedItems, safePage } = usePagination(filtered, page, pageSize);
 
   return (
     <div className="space-y-6">
@@ -46,7 +49,7 @@ export default function ExcecoesPage() {
         <Button onClick={() => setDrawerOpen(true)}><Plus className="mr-1 h-4 w-4" />Nova Exceção</Button>
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
+      <Tabs value={tab} onValueChange={(v) => { setTab(v as TabKey); setPage(1); }}>
         <TabsList>
           <TabsTrigger value="pendentes">Pendentes ({list.filter(tabFilter.pendentes).length})</TabsTrigger>
           <TabsTrigger value="aprovadas">Aprovadas ({list.filter(tabFilter.aprovadas).length})</TabsTrigger>
@@ -66,11 +69,11 @@ export default function ExcecoesPage() {
                   <th className="p-4 font-medium">Status</th><th className="p-4 font-medium">Validade</th>
                   {tab === "pendentes" && <th className="p-4 font-medium">Ações</th>}
                 </tr></thead><tbody>
-                  {filtered.map((ex) => (
+                  {paginatedItems.map((ex: any) => (
                     <tr key={ex.id} className="border-b last:border-0 hover:bg-muted/50">
                       <td className="p-4 font-medium">{ex.solicitante}</td>
                       <td className="p-4 text-primary">{ex.colaborador_nome || "—"}</td>
-                      <td className="p-4 text-muted-foreground">{ex.perfil_solicitado || (ex.perfis_acesso as any)?.nome || "—"}</td>
+                      <td className="p-4 text-muted-foreground">{ex.perfil_solicitado || ex.perfis_acesso?.nome || "—"}</td>
                       <td className="p-4 text-muted-foreground text-xs max-w-[200px] truncate">{ex.justificativa}</td>
                       <td className="p-4"><Badge variant="outline" className={statusColors[ex.status]}>{ex.status}</Badge></td>
                       <td className="p-4 text-muted-foreground text-xs">{ex.validade ? new Date(ex.validade).toLocaleDateString("pt-BR") : "—"}</td>
@@ -82,10 +85,11 @@ export default function ExcecoesPage() {
                       )}
                     </tr>
                   ))}
-                  {filtered.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">Nenhuma exceção.</td></tr>}
+                  {paginatedItems.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">Nenhuma exceção.</td></tr>}
                 </tbody></table>
               )}
             </CardContent></Card>
+            <TablePagination totalItems={filtered.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
           </TabsContent>
         ))}
       </Tabs>
