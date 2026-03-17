@@ -1,32 +1,26 @@
 import { useParams, Link } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Check, X } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
-
-const mock = {
-  id: "1", nome: "Revisão SAP Q1 2026", tipo: "por_aplicacao", status: "em_andamento",
-  total: 28, decididos: 18, dataInicio: "01/03/2026", dataLimite: "31/03/2026", criadaPor: "João IAM",
-};
-
-const mockItens = [
-  { id: "1", pessoa: "Carlos Souza", app: "SAP ERP", acesso: "Consultor SAP", decisao: "manter", decidido: "Maria Owner", data: "05/03/2026" },
-  { id: "2", pessoa: "Fernanda Lima", app: "SAP ERP", acesso: "Analista Financeiro", decisao: "manter", decidido: "Maria Owner", data: "05/03/2026" },
-  { id: "3", pessoa: "Roberto Almeida", app: "SAP ERP", acesso: "Admin SAP", decisao: "revogar", decidido: "João IAM", data: "08/03/2026" },
-  { id: "4", pessoa: "Ana Silva", app: "SAP ERP", acesso: "Leitura SAP", decisao: "pendente", decidido: null, data: null },
-  { id: "5", pessoa: "Pedro Costa", app: "SAP ERP", acesso: "Dev SAP ABAP", decisao: "pendente", decidido: null, data: null },
-];
+import { useRevisao, useRevisaoItens } from "@/hooks/useOrigoData";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const decisaoColors: Record<string, string> = {
   manter: "bg-success/15 text-success border-success/30",
   revogar: "bg-destructive/15 text-destructive border-destructive/30",
-  pendente: "bg-muted text-muted-foreground",
 };
 
 export default function RevisaoDetalhePage() {
   const { id } = useParams();
-  const progress = (mock.decididos / mock.total) * 100;
+  const { data: revisao, isLoading } = useRevisao(id);
+  const { data: itens } = useRevisaoItens(id);
+
+  if (isLoading) return <div className="space-y-4 p-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}</div>;
+  if (!revisao) return <div className="p-8 text-center text-muted-foreground">Revisão não encontrada.</div>;
+
+  const progress = revisao.total_itens > 0 ? (revisao.itens_revisados / revisao.total_itens) * 100 : 0;
 
   return (
     <div className="space-y-6">
@@ -34,16 +28,16 @@ export default function RevisaoDetalhePage() {
         <Button variant="ghost" size="icon" asChild><Link to="/revisoes"><ArrowLeft className="h-4 w-4" /></Link></Button>
         <div className="flex-1">
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight">{mock.nome}</h1>
-            <Badge variant="outline" className="bg-info/15 text-info border-info/30">Em andamento</Badge>
+            <h1 className="text-2xl font-semibold tracking-tight">{revisao.nome}</h1>
+            <Badge variant="outline" className="bg-info/15 text-info border-info/30">{revisao.status.replace(/_/g, " ")}</Badge>
           </div>
-          <p className="text-sm text-muted-foreground">Criada por {mock.criadaPor} · {mock.dataInicio} → {mock.dataLimite}</p>
+          <p className="text-sm text-muted-foreground">Responsável: {revisao.responsavel} · {revisao.data_inicio ? new Date(revisao.data_inicio).toLocaleDateString("pt-BR") : ""} → {revisao.data_fim ? new Date(revisao.data_fim).toLocaleDateString("pt-BR") : ""}</p>
         </div>
       </div>
 
       <Card><CardContent className="pt-6">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium">Progresso: {mock.decididos} de {mock.total} itens</span>
+          <span className="text-sm font-medium">Progresso: {revisao.itens_revisados} de {revisao.total_itens} itens</span>
           <span className="text-sm text-muted-foreground">{Math.round(progress)}%</span>
         </div>
         <Progress value={progress} className="h-3" />
@@ -51,20 +45,23 @@ export default function RevisaoDetalhePage() {
 
       <Card><CardContent className="p-0">
         <table className="w-full text-sm"><thead><tr className="border-b text-left text-muted-foreground">
-          <th className="p-4 font-medium">Pessoa</th><th className="p-4 font-medium">Aplicação</th>
-          <th className="p-4 font-medium">Acesso Atual</th><th className="p-4 font-medium">Decisão</th>
-          <th className="p-4 font-medium">Decidido por</th><th className="p-4 font-medium">Data</th>
+          <th className="p-4 font-medium">Pessoa</th><th className="p-4 font-medium">Perfil</th>
+          <th className="p-4 font-medium">Decisão</th><th className="p-4 font-medium">Justificativa</th>
           <th className="p-4 font-medium">Ações</th>
         </tr></thead><tbody>
-          {mockItens.map((it) => (
+          {(itens ?? []).map((it) => (
             <tr key={it.id} className="border-b last:border-0">
-              <td className="p-4 font-medium text-primary">{it.pessoa}</td>
-              <td className="p-4 text-muted-foreground">{it.app}</td>
-              <td className="p-4 text-muted-foreground">{it.acesso}</td>
-              <td className="p-4"><Badge variant="outline" className={decisaoColors[it.decisao]}>{it.decisao}</Badge></td>
-              <td className="p-4 text-muted-foreground">{it.decidido || "—"}</td>
-              <td className="p-4 text-muted-foreground text-xs">{it.data || "—"}</td>
-              <td className="p-4">{it.decisao === "pendente" && (
+              <td className="p-4 font-medium text-primary">{it.colaborador_nome || "—"}</td>
+              <td className="p-4 text-muted-foreground">{it.perfil_nome || "—"}</td>
+              <td className="p-4">
+                {it.decisao ? (
+                  <Badge variant="outline" className={decisaoColors[it.decisao] || "bg-muted text-muted-foreground"}>{it.decisao}</Badge>
+                ) : (
+                  <Badge variant="outline" className="bg-muted text-muted-foreground">pendente</Badge>
+                )}
+              </td>
+              <td className="p-4 text-muted-foreground text-xs">{it.justificativa || "—"}</td>
+              <td className="p-4">{!it.decisao && (
                 <div className="flex gap-1">
                   <Button variant="ghost" size="icon" className="h-7 w-7 text-success" title="Manter"><Check className="h-3 w-3" /></Button>
                   <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" title="Revogar"><X className="h-3 w-3" /></Button>

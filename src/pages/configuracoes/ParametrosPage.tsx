@@ -3,8 +3,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { useParametros } from "@/hooks/useOrigoData";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function ParametrosPage() {
+  const { data: parametros, isLoading } = useParametros();
+
+  const getParam = (chave: string) => parametros?.find((p) => p.chave === chave)?.valor ?? "";
+
+  if (isLoading) return <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-32 w-full" />)}</div>;
+
   return (
     <div className="space-y-4">
       <Card>
@@ -13,19 +21,9 @@ export default function ParametrosPage() {
           <CardDescription>Dias de antecedência para alertas de vencimento de contrato</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label>Alerta 1 (dias)</Label>
-              <Input type="number" defaultValue={30} />
-            </div>
-            <div className="space-y-2">
-              <Label>Alerta 2 (dias)</Label>
-              <Input type="number" defaultValue={15} />
-            </div>
-            <div className="space-y-2">
-              <Label>Alerta 3 (dias)</Label>
-              <Input type="number" defaultValue={7} />
-            </div>
+          <div className="space-y-2">
+            <Label>Dias antes do vencimento</Label>
+            <Input type="number" defaultValue={getParam("dias_alerta_contrato") || "30"} className="w-32" />
           </div>
         </CardContent>
       </Card>
@@ -38,29 +36,21 @@ export default function ParametrosPage() {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label>Máximo de tentativas (retry)</Label>
-            <Input type="number" defaultValue={3} className="w-32" />
+            <Input type="number" defaultValue={getParam("max_tentativas_jml") || "3"} className="w-32" />
           </div>
           <div className="flex items-center justify-between">
             <div>
-              <Label>Modo quarentena para ausências</Label>
-              <p className="text-xs text-muted-foreground">
-                Registros ausentes na importação entram em quarentena antes de serem tratados como leaver
-              </p>
+              <Label>Dupla aprovação para leavers</Label>
+              <p className="text-xs text-muted-foreground">Exigir dupla aprovação para eventos de desligamento</p>
             </div>
-            <Switch defaultChecked />
+            <Switch defaultChecked={getParam("aprovacao_dupla_leaver") === "true"} />
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Auditoria</CardTitle>
-          <CardDescription>Retenção de logs</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>Dias de retenção</Label>
-            <Input type="number" defaultValue={365} className="w-32" />
+          <div className="flex items-center justify-between">
+            <div>
+              <Label>Importação automática</Label>
+              <p className="text-xs text-muted-foreground">Importação automática do 2Easy</p>
+            </div>
+            <Switch defaultChecked={getParam("importacao_automatica") === "true"} />
           </div>
         </CardContent>
       </Card>
