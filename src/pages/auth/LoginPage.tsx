@@ -71,8 +71,8 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary">
-            <span className="text-lg font-bold text-primary-foreground">Ó</span>
+          <div className="mx-auto mb-4">
+            <img src={logoImg} alt="Access & Identity" className="h-12 w-12 rounded-lg" />
           </div>
           <CardTitle>{titles[mode]}</CardTitle>
           <CardDescription>{descs[mode]}</CardDescription>
