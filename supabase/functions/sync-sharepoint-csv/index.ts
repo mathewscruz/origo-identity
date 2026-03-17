@@ -224,7 +224,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     await sb.from("sync_jobs").update({ phase: "inserting", message: `Inserindo ${newRows.length} novos...`, colab_percent: 30 }).eq("id", jobId);
     let created = 0;
     const joinerEvents: any[] = [];
-    for (const batch of chunk(newRows, 200)) {
+    for (const batch of chunk(newRows, 500)) {
       const { data: inserted } = await sb.from("colaboradores").insert(batch.map(i => buildColabData(i.row, i.hash))).select("id, nome, matricula");
       if (inserted) {
         created += inserted.length;
