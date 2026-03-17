@@ -36,6 +36,7 @@ export default function ColaboradoresPage() {
     cargo: c.cargos?.nome || "—",
     area: c.areas?.nome || "—",
     status: c.status,
+    origem: c.origem || "manual",
   }));
 
   const filtered = mapped.filter((c) => {
