@@ -6,6 +6,11 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import AppLayout from "./components/AppLayout";
 import Dashboard from "./pages/Dashboard";
 import AplicacoesPage from "./pages/aplicacoes/AplicacoesPage";
+import PerfisAcessoPage from "./pages/perfis-acesso/PerfisAcessoPage";
+import PerfilAcessoDetalhePage from "./pages/perfis-acesso/PerfilAcessoDetalhePage";
+import RegrasPage from "./pages/regras/RegrasPage";
+import RegraEditorPage from "./pages/regras/RegraEditorPage";
+import MatrizPage from "./pages/matriz/MatrizPage";
 import ConfiguracoesLayout from "./pages/configuracoes/ConfiguracoesLayout";
 import CargosPage from "./pages/configuracoes/CargosPage";
 import AreasPage from "./pages/configuracoes/AreasPage";
@@ -35,16 +40,16 @@ const App = () => (
             <Route path="/eventos-jml/:id" element={<PlaceholderPage title="Detalhe do Evento" />} />
             <Route path="/aplicacoes" element={<AplicacoesPage />} />
             <Route path="/aplicacoes/:id" element={<PlaceholderPage title="Detalhe da Aplicação" />} />
-            <Route path="/perfis-acesso" element={<PlaceholderPage title="Perfis de Acesso" description="Conjuntos nomeados de acessos" />} />
-            <Route path="/perfis-acesso/:id" element={<PlaceholderPage title="Detalhe do Perfil" />} />
+            <Route path="/perfis-acesso" element={<PerfisAcessoPage />} />
+            <Route path="/perfis-acesso/:id" element={<PerfilAcessoDetalhePage />} />
             <Route path="/excecoes" element={<PlaceholderPage title="Exceções de Acesso" description="Concessões fora da regra com justificativa e aprovação" />} />
             <Route path="/excecoes/:id" element={<PlaceholderPage title="Detalhe da Exceção" />} />
             <Route path="/revisoes" element={<PlaceholderPage title="Revisões de Acesso" description="Campanhas periódicas de recertificação" />} />
             <Route path="/revisoes/:id" element={<PlaceholderPage title="Detalhe da Revisão" />} />
-            <Route path="/regras" element={<PlaceholderPage title="Motor de Regras" description="Regras multi-critério com prioridade, conflito e simulação" />} />
-            <Route path="/regras/nova" element={<PlaceholderPage title="Nova Regra" />} />
-            <Route path="/regras/:id/editar" element={<PlaceholderPage title="Editar Regra" />} />
-            <Route path="/matriz" element={<PlaceholderPage title="Matriz Cargo × Acesso" description="Visualização consolidada derivada do motor de regras" />} />
+            <Route path="/regras" element={<RegrasPage />} />
+            <Route path="/regras/nova" element={<RegraEditorPage />} />
+            <Route path="/regras/:id/editar" element={<RegraEditorPage />} />
+            <Route path="/matriz" element={<MatrizPage />} />
             <Route path="/licencas" element={<PlaceholderPage title="Licenças" description="Inventário, atribuição e revogação de licenças" />} />
             <Route path="/licencas/:id" element={<PlaceholderPage title="Detalhe da Licença" />} />
             <Route path="/auditoria" element={<PlaceholderPage title="Auditoria" description="Logs completos com evidências e relatórios" />} />
