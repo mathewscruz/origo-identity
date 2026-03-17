@@ -82,7 +82,7 @@ function parseCsv(text: string): CsvRow[] {
 }
 
 function hashFields(row: CsvRow): string {
-  return [row.displayName, row.mail, row.company, row.title, row.departmentNumber, row.status, row.Data_Admissao, row.Data_Rescisao, row.Base_Local, row.manager, row.Cadastro_Pessoa_Fisica].join("|");
+  return [row.displayName, row.mail, row.company, row.title, row.description, row.departmentNumber, row.status, row.Data_Admissao, row.Data_Rescisao, row.Base_Local, row.manager, row.Cadastro_Pessoa_Fisica].join("|");
 }
 
 async function sha256(text: string): Promise<string> {
