@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
+import logoImg from "@/assets/logo.png";
 
 const sidebarGroups = [
   { label: "Operação", items: [{ title: "Dashboard", url: "/", icon: LayoutDashboard }] },
