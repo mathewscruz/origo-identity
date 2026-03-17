@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
+import logoImg from "@/assets/logo.png";
 
 const sidebarGroups = [
   { label: "Operação", items: [{ title: "Dashboard", url: "/", icon: LayoutDashboard }] },
@@ -53,8 +54,8 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary"><span className="text-sm font-bold text-sidebar-primary-foreground">Ó</span></div>
-          {!collapsed && <div className="flex flex-col"><span className="text-sm font-semibold text-sidebar-primary-foreground">Órigo</span><span className="text-[10px] text-sidebar-foreground/60">Identity</span></div>}
+          <img src={logoImg} alt="Access & Identity" className="h-8 w-8 rounded-lg" />
+          {!collapsed && <div className="flex flex-col"><span className="text-sm font-semibold text-sidebar-primary-foreground">Access & Identity</span><span className="text-[10px] text-sidebar-foreground/60">Sistema</span></div>}
         </div>
       </SidebarHeader>
       <SidebarSeparator />
