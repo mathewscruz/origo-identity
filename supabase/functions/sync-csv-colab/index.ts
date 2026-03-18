@@ -182,7 +182,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     await sb.from("sync_jobs").update({ message: `Parsed ${totalRows} registros. Processando...`, phase: "hashing", colab_total: totalRows }).eq("id", jobId);
 
     // ── 3. Compute hashes for all rows ──
-    const rowsWithHash: { row: CsvRow; matricula: string; hash: string }[] = [];
+    let rowsWithHash: { row: CsvRow; matricula: string; hash: string }[] = [];
     let syntheticMatCount = 0;
     for (const row of rows) {
       const matricula = row.employID.trim();
@@ -191,6 +191,21 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       const hash = await sha256(hashFields(row));
       rowsWithHash.push({ row, matricula, hash });
     }
+
+    // ── 3b. Deduplicate matriculas — append _DUP_N for repeated employIDs ──
+    const matCount = new Map<string, number>();
+    let dupCount = 0;
+    for (const item of rowsWithHash) {
+      const count = (matCount.get(item.matricula) || 0) + 1;
+      matCount.set(item.matricula, count);
+      if (count > 1) {
+        dupCount++;
+        item.matricula = `${item.matricula}_DUP_${count}`;
+        item.row.employID = item.matricula;
+        item.hash = await sha256(hashFields(item.row));
+      }
+    }
+    if (dupCount > 0) console.log(`${dupCount} duplicate matriculas suffixed with _DUP_N`);
 
     // ── 4. Load existing colaboradores (all CSV-origin) ──
     // Handle >1000 rows by paginating
