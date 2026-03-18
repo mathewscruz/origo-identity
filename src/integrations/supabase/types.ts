@@ -452,6 +452,57 @@ export type Database = {
         }
         Relationships: []
       }
+      entra_grupos: {
+        Row: {
+          descricao: string | null
+          entra_id: string
+          id: string
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          descricao?: string | null
+          entra_id: string
+          id?: string
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          descricao?: string | null
+          entra_id?: string
+          id?: string
+          nome?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      entra_licencas: {
+        Row: {
+          em_uso: number
+          id: string
+          nome: string
+          sku_id: string
+          total: number
+          updated_at: string
+        }
+        Insert: {
+          em_uso?: number
+          id?: string
+          nome: string
+          sku_id: string
+          total?: number
+          updated_at?: string
+        }
+        Update: {
+          em_uso?: number
+          id?: string
+          nome?: string
+          sku_id?: string
+          total?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       evento_jml_acoes: {
         Row: {
           aplicacao: string | null
@@ -908,6 +959,72 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "perfil_composicao_perfil_id_fkey"
+            columns: ["perfil_id"]
+            isOneToOne: false
+            referencedRelation: "perfis_acesso"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      perfil_grupos: {
+        Row: {
+          grupo_id: string
+          id: string
+          perfil_id: string
+        }
+        Insert: {
+          grupo_id: string
+          id?: string
+          perfil_id: string
+        }
+        Update: {
+          grupo_id?: string
+          id?: string
+          perfil_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "perfil_grupos_grupo_id_fkey"
+            columns: ["grupo_id"]
+            isOneToOne: false
+            referencedRelation: "entra_grupos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "perfil_grupos_perfil_id_fkey"
+            columns: ["perfil_id"]
+            isOneToOne: false
+            referencedRelation: "perfis_acesso"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      perfil_licencas: {
+        Row: {
+          id: string
+          licenca_id: string
+          perfil_id: string
+        }
+        Insert: {
+          id?: string
+          licenca_id: string
+          perfil_id: string
+        }
+        Update: {
+          id?: string
+          licenca_id?: string
+          perfil_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "perfil_licencas_licenca_id_fkey"
+            columns: ["licenca_id"]
+            isOneToOne: false
+            referencedRelation: "entra_licencas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "perfil_licencas_perfil_id_fkey"
             columns: ["perfil_id"]
             isOneToOne: false
             referencedRelation: "perfis_acesso"
