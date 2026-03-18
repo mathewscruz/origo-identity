@@ -132,6 +132,8 @@ Deno.serve(async (req) => {
     let groupsAdded = 0;
 
     if (perfilIds.length > 0) {
+      // Wait for Entra ID to fully propagate the new user before assigning licenses
+      await new Promise((r) => setTimeout(r, 3000));
       // 5. Get licenses linked to these profiles
       const { data: perfilLicencas } = await supabase
         .from("perfil_licencas")
