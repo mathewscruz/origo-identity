@@ -192,20 +192,15 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       rowsWithHash.push({ row, matricula, hash });
     }
 
-    // ── 3b. Deduplicate matriculas — append _DUP_N for repeated employIDs ──
-    const matCount = new Map<string, number>();
+    // ── 3b. Deduplicate matriculas — keep LAST occurrence (most recent data) ──
+    const dedupMap = new Map<string, typeof rowsWithHash[0]>();
     let dupCount = 0;
     for (const item of rowsWithHash) {
-      const count = (matCount.get(item.matricula) || 0) + 1;
-      matCount.set(item.matricula, count);
-      if (count > 1) {
-        dupCount++;
-        item.matricula = `${item.matricula}_DUP_${count}`;
-        item.row.employID = item.matricula;
-        item.hash = await sha256(hashFields(item.row));
-      }
+      if (dedupMap.has(item.matricula)) dupCount++;
+      dedupMap.set(item.matricula, item); // overwrites previous, keeping last
     }
-    if (dupCount > 0) console.log(`${dupCount} duplicate matriculas suffixed with _DUP_N`);
+    rowsWithHash = Array.from(dedupMap.values());
+    if (dupCount > 0) console.log(`${dupCount} duplicate matriculas consolidated (kept last occurrence)`);
 
     // ── 4. Load existing colaboradores (all CSV-origin) ──
     // Handle >1000 rows by paginating
@@ -422,87 +417,63 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       await sb.from("eventos_jml").insert(batch);
     }
 
-    // ── 10. Detect LEAVERS (quarentena) ──
-    await sb.from("sync_jobs").update({ phase: "quarentena", message: "Verificando ausências...", colab_percent: 80 }).eq("id", jobId);
+    // ── 10. DELETE colaboradores ausentes do CSV ──
+    await sb.from("sync_jobs").update({ phase: "removendo", message: "Removendo ausentes do CSV...", colab_percent: 80 }).eq("id", jobId);
 
-    let quarentenaCount = 0;
-    const quarentenaInserts: any[] = [];
+    let deletedCount = 0;
     const leaverEvents: any[] = [];
+    const idsToDelete: string[] = [];
 
     for (const [matricula, existing] of existingMap.entries()) {
-      if (!csvMatriculas.has(matricula) && existing.status !== "desligado" && existing.status !== "inativo") {
-        quarentenaCount++;
-        quarentenaInserts.push({ colaborador_id: existing.id, import_job_id: jobId, motivo: "ausente_no_csv" });
+      if (!csvMatriculas.has(matricula)) {
+        idsToDelete.push(existing.id);
         leaverEvents.push({
           tipo: "leaver",
           colaborador_id: existing.id,
           colaborador_nome: existing.nome,
-          status: "quarentena",
+          status: "executado",
           origem: "importacao_csv",
-          dados_antes: { nome: existing.nome, email: existing.email, status: existing.status },
+          dados_antes: { nome: existing.nome, email: existing.email, status: existing.status, matricula },
         });
       }
     }
 
-    for (const batch of chunk(quarentenaInserts, 200)) await sb.from("colab_quarentena").insert(batch);
+    // Insert leaver events before deleting
     for (const batch of chunk(leaverEvents, 200)) await sb.from("eventos_jml").insert(batch);
 
-    // ── 11. Resolve gestores by name ──
-    await sb.from("sync_jobs").update({ phase: "gestores", message: "Resolvendo gestores...", colab_percent: 90 }).eq("id", jobId);
-
-    // Build name→id map
-    const nameToId = new Map<string, string>();
-    let gFrom = 0;
-    while (true) {
-      const { data } = await sb.from("colaboradores").select("id, nome").eq("origem", "csv").range(gFrom, gFrom + 999);
-      if (!data || data.length === 0) break;
-      data.forEach((c: any) => nameToId.set(c.nome.toLowerCase(), c.id));
-      if (data.length < 1000) break;
-      gFrom += 1000;
+    // Delete in batches
+    for (const batch of chunk(idsToDelete, 100)) {
+      const { error } = await sb.from("colaboradores").delete().in("id", batch);
+      if (!error) deletedCount += batch.length;
+      else console.error("Delete batch error:", error.message);
     }
+    console.log(`Deleted ${deletedCount} colaboradores absent from CSV`);
 
-    // Batch update gestores (parallel in chunks)
-    const gestorUpdates: { matricula: string; gestorId: string }[] = [];
-    for (const { row } of rowsWithHash) {
-      if (!row.manager || row.manager === "NULL") continue;
-      const gestorId = nameToId.get(row.manager.toLowerCase());
-      if (gestorId) gestorUpdates.push({ matricula: row.employID.trim(), gestorId });
+    if (deletedCount > 0) {
+      await sb.from("alertas").insert({
+        tipo: "remocao_csv",
+        titulo: `${deletedCount} colaborador(es) removido(s)`,
+        mensagem: `Importação CSV removeu ${deletedCount} colaborador(es) ausentes do arquivo.`,
+        severidade: "info", ref_tipo: "sync_job", ref_id: jobId,
+      });
     }
-
-    const gestorChunks = chunk(gestorUpdates, 50);
-    for (const batch of gestorChunks) {
-      await Promise.all(batch.map(({ matricula, gestorId }) =>
-        sb.from("colaboradores").update({ gestor_id: gestorId }).eq("matricula", matricula).eq("origem", "csv")
-      ));
-    }
-
-    // ── 12. Snapshots skipped for performance (data already in colaboradores) ──
 
     // ── 13. Finalize ──
     const syntheticMsg = syntheticMatCount > 0 ? `, ${syntheticMatCount} sem matrícula original` : "";
-    const dupMsg = dupCount > 0 ? `, ${dupCount} duplicatas no CSV` : "";
+    const dupMsg = dupCount > 0 ? `, ${dupCount} duplicatas consolidadas` : "";
     await sb.from("sync_jobs").update({
       status: "done", phase: "done", colab_percent: 100,
-      colab_created: created, colab_updated: updated, colab_quarentena: quarentenaCount,
-      message: `Concluído: ${created} novos, ${updated} atualizados, ${quarentenaCount} em quarentena${syntheticMsg}${dupMsg}`,
+      colab_created: created, colab_updated: updated, colab_quarentena: deletedCount,
+      message: `Concluído: ${created} novos, ${updated} atualizados, ${deletedCount} removidos${syntheticMsg}${dupMsg}`,
     }).eq("id", jobId);
 
     await sb.from("auditoria").insert({
       entidade: "importacao_csv", acao: "importar",
-      resumo: `CSV importado: ${totalRows} linhas, ${created} novos, ${updated} atualizados, ${quarentenaCount} quarentena`,
-      detalhes: { filename, totalRows, created, updated, quarentenaCount, jobId },
+      resumo: `CSV importado: ${totalRows} linhas, ${created} novos, ${updated} atualizados, ${deletedCount} removidos`,
+      detalhes: { filename, totalRows, created, updated, deleted: deletedCount, jobId },
     });
 
-    if (quarentenaCount > 0) {
-      await sb.from("alertas").insert({
-        tipo: "quarentena_csv",
-        titulo: `${quarentenaCount} colaborador(es) em quarentena`,
-        mensagem: `Importação CSV detectou ${quarentenaCount} colaborador(es) ausentes do arquivo.`,
-        severidade: "aviso", ref_tipo: "sync_job", ref_id: jobId,
-      });
-    }
-
-    return { success: true, jobId, created, updated, quarentena: quarentenaCount, total: totalRows };
+    return { success: true, jobId, created, updated, deleted: deletedCount, total: totalRows };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro desconhecido";
     console.error("Processing error:", msg);
