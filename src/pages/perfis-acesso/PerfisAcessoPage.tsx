@@ -39,6 +39,7 @@ export default function PerfisAcessoPage() {
   const { data: entraLicencas } = useEntraLicencas();
   const { data: entraGrupos } = useEntraGrupos();
   const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState("");
   const [busca, setBusca] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -138,12 +139,12 @@ export default function PerfisAcessoPage() {
         <div className="flex gap-2">
           <Button
             variant="outline"
-            size="icon"
+            size={syncing ? "default" : "icon"}
             disabled={syncing}
             title="Sincronizar Entra ID (apps, licenças, grupos)"
             onClick={async () => {
               setSyncing(true);
-              toast({ title: "Sincronizando Entra ID...", description: "Buscando aplicações, licenças e grupos." });
+              setSyncMessage("Iniciando...");
               try {
                 const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
                 const res = await fetch(`https://${projectId}.supabase.co/functions/v1/sync-entra-id`, {
@@ -161,7 +162,10 @@ export default function PerfisAcessoPage() {
                     for (const line of lines) {
                       try {
                         const evt = JSON.parse(line.replace("data: ", ""));
-                        if (evt.phase === "done") toast({ title: "Sincronização concluída!", description: `${evt.apps?.total ?? 0} apps, ${evt.licencas ?? 0} licenças, ${evt.grupos ?? 0} grupos` });
+                        if (evt.message) setSyncMessage(evt.message);
+                        if (evt.phase === "done") {
+                          toast({ title: "Sincronização concluída!", description: `${evt.apps?.total ?? 0} apps, ${evt.licencas ?? 0} licenças, ${evt.grupos ?? 0} grupos` });
+                        }
                         if (evt.phase === "error") toast({ title: "Erro na sincronização", description: evt.error, variant: "destructive" });
                       } catch { /* skip */ }
                     }
@@ -175,9 +179,11 @@ export default function PerfisAcessoPage() {
                 toast({ title: "Erro", description: err.message, variant: "destructive" });
               }
               setSyncing(false);
+              setSyncMessage("");
             }}
           >
             <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+            {syncing && <span className="text-xs">{syncMessage}</span>}
           </Button>
           <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Perfil</Button>
         </div>
