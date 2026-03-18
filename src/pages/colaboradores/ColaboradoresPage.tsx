@@ -218,7 +218,18 @@ export default function ColaboradoresPage() {
         }
       }
 
-      // 3. Generate JML events
+      // 3. Provision user in Entra ID for new collaborators
+      if (!editingId && form.status === "ativo" && form.email) {
+        toast({ title: "Provisionando usuário no Entra ID..." });
+        const provResult = await provisionEntraUser(colaboradorId);
+        if (provResult.success) {
+          toast({ title: "Usuário criado no Entra ID", description: `${provResult.licenses_assigned} licença(s), ${provResult.groups_added} grupo(s) atribuído(s).` });
+        } else {
+          toast({ title: "Aviso: Entra ID", description: provResult.error, variant: "destructive" });
+        }
+      }
+
+      // 4. Generate JML events
       if (!editingId) {
         // New collaborator = joiner
         await createEventoJML({

@@ -160,6 +160,30 @@ export default function ColaboradorActivityPopover({ colaboradorId, colaboradorN
             ))}
           </div>
         )}
+
+        {!loading && auditoriaItems.length > 0 && (
+          <div className="p-3 border-t space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Entra ID</p>
+            {auditoriaItems.map((item) => {
+              const isError = item.acao.startsWith("erro_");
+              return (
+                <div key={item.id} className="flex items-start gap-2 text-sm">
+                  {isError ? (
+                    <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
+                  ) : (
+                    <Cloud className="h-4 w-4 mt-0.5 shrink-0 text-info" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs leading-snug">{item.resumo || item.acao}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {format(new Date(item.timestamp), "dd MMM yyyy HH:mm", { locale: ptBR })}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );
