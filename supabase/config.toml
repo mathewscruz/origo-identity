@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.sync-sharepoint-csv]
 verify_jwt = false
+
+[functions.execute-rules]
+verify_jwt = false
