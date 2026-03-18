@@ -1,11 +1,18 @@
+import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Pencil, XCircle } from "lucide-react";
-import { useColaborador, usePerfilAtribuicoes, useEventosJML } from "@/hooks/useOrigoData";
+import { ArrowLeft, Pencil, XCircle, Plus } from "lucide-react";
+import { useColaborador, usePerfilAtribuicoes, useEventosJML, usePerfisAcesso } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
@@ -32,8 +39,41 @@ export default function ColaboradorDetalhePage() {
   const { data: pessoa, isLoading } = useColaborador(id);
   const { data: atribuicoes } = usePerfilAtribuicoes(undefined, id);
   const { data: allEventos } = useEventosJML();
+  const { data: perfisDisponiveis } = usePerfisAcesso();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const [atribuirOpen, setAtribuirOpen] = useState(false);
+  const [selectedPerfilId, setSelectedPerfilId] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const eventos = (allEventos ?? []).filter((e) => e.colaborador_id === id);
+
+  async function handleAtribuir() {
+    if (!selectedPerfilId || !id) return;
+    setSaving(true);
+    const { error } = await supabase.from("perfil_atribuicoes").insert({
+      perfil_id: selectedPerfilId,
+      colaborador_id: id,
+      origem: "manual",
+    });
+    setSaving(false);
+    if (error) { toast({ title: "Erro ao atribuir", description: error.message, variant: "destructive" }); return; }
+    toast({ title: "Perfil atribuído com sucesso" });
+    queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
+    setAtribuirOpen(false);
+    setSelectedPerfilId("");
+  }
+
+  async function handleRevogar(atribuicaoId: string) {
+    const { error } = await supabase.from("perfil_atribuicoes").update({
+      ativo: false,
+      data_revogacao: new Date().toISOString(),
+    }).eq("id", atribuicaoId);
+    if (error) { toast({ title: "Erro ao revogar", description: error.message, variant: "destructive" }); return; }
+    toast({ title: "Acesso revogado" });
+    queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
+  }
 
   if (isLoading) return <div className="space-y-4 p-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}</div>;
   if (!pessoa) return <div className="p-8 text-center text-muted-foreground">Colaborador não encontrado.</div>;
@@ -44,6 +84,13 @@ export default function ColaboradorDetalhePage() {
   const localidade = (pessoa.localidades as any)?.nome || "—";
   const gestor = (pessoa.gestor as any)?.nome || "—";
   const sc = statusConfig[pessoa.status] || { label: pessoa.status, class: "" };
+
+  // Get apps for each atribuicao from perfil_aplicacoes via the perfis_acesso nested data
+  const getPerfilApps = (a: any) => {
+    const apps = (a.perfis_acesso as any)?.perfil_aplicacoes;
+    if (!apps || !Array.isArray(apps)) return [];
+    return apps.map((pa: any) => pa.aplicacoes?.nome).filter(Boolean);
+  };
 
   return (
     <div className="space-y-6">
@@ -96,36 +143,50 @@ export default function ColaboradorDetalhePage() {
         </TabsContent>
 
         <TabsContent value="acessos" className="mt-4">
+          <div className="flex justify-end mb-3">
+            <Button size="sm" onClick={() => setAtribuirOpen(true)}>
+              <Plus className="mr-1 h-3.5 w-3.5" /> Atribuir Perfil
+            </Button>
+          </div>
           <Card>
             <CardContent className="p-0">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">
-                    <th className="p-4 font-medium">Aplicação</th>
                     <th className="p-4 font-medium">Perfil</th>
+                    <th className="p-4 font-medium">Aplicações</th>
                     <th className="p-4 font-medium">Origem</th>
                     <th className="p-4 font-medium">Desde</th>
                     <th className="p-4 font-medium">Ação</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(atribuicoes ?? []).map((a) => (
-                    <tr key={a.id} className="border-b last:border-0">
-                      <td className="p-4 font-medium">{(a.perfis_acesso as any)?.aplicacoes?.nome || "—"}</td>
-                      <td className="p-4 text-muted-foreground">{(a.perfis_acesso as any)?.nome || "—"}</td>
-                      <td className="p-4">
-                        <Badge variant="outline" className={origemColors[a.origem || "manual"]}>
-                          {a.origem === "regra" ? "Regra" : a.origem === "excecao" ? "Exceção" : "Manual"}
-                        </Badge>
-                      </td>
-                      <td className="p-4 text-muted-foreground">{new Date(a.data_concessao).toLocaleDateString("pt-BR")}</td>
-                      <td className="p-4">
-                        <Button variant="ghost" size="sm" className="h-7 text-destructive hover:text-destructive">
-                          <XCircle className="mr-1 h-3 w-3" /> Revogar
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
+                  {(atribuicoes ?? []).map((a) => {
+                    const apps = getPerfilApps(a);
+                    return (
+                      <tr key={a.id} className="border-b last:border-0">
+                        <td className="p-4 font-medium">{(a.perfis_acesso as any)?.nome || "—"}</td>
+                        <td className="p-4">
+                          <div className="flex flex-wrap gap-1">
+                            {apps.length > 0 ? apps.map((name: string) => (
+                              <Badge key={name} variant="outline" className="text-xs">{name}</Badge>
+                            )) : <span className="text-muted-foreground">—</span>}
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <Badge variant="outline" className={origemColors[a.origem || "manual"]}>
+                            {a.origem === "regra" ? "Regra" : a.origem === "excecao" ? "Exceção" : "Manual"}
+                          </Badge>
+                        </td>
+                        <td className="p-4 text-muted-foreground">{new Date(a.data_concessao).toLocaleDateString("pt-BR")}</td>
+                        <td className="p-4">
+                          <Button variant="ghost" size="sm" className="h-7 text-destructive hover:text-destructive" onClick={() => handleRevogar(a.id)}>
+                            <XCircle className="mr-1 h-3 w-3" /> Revogar
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {(!atribuicoes || atribuicoes.length === 0) && (
                     <tr><td colSpan={5} className="p-8 text-center text-muted-foreground">Nenhum acesso ativo.</td></tr>
                   )}
@@ -167,6 +228,35 @@ export default function ColaboradorDetalhePage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Dialog Atribuir Perfil */}
+      <Dialog open={atribuirOpen} onOpenChange={setAtribuirOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Atribuir Perfil de Acesso</DialogTitle>
+          </DialogHeader>
+          <div>
+            <Label>Perfil de Acesso</Label>
+            <Select value={selectedPerfilId} onValueChange={setSelectedPerfilId}>
+              <SelectTrigger><SelectValue placeholder="Selecione um perfil" /></SelectTrigger>
+              <SelectContent>
+                {(perfisDisponiveis ?? []).filter((p: any) => p.ativo).map((p: any) => {
+                  const apps = (p.perfil_aplicacoes || []).map((pa: any) => pa.aplicacoes?.nome).filter(Boolean);
+                  return (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.nome} {apps.length > 0 ? `(${apps.join(", ")})` : ""}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAtribuirOpen(false)}>Cancelar</Button>
+            <Button onClick={handleAtribuir} disabled={saving || !selectedPerfilId}>{saving ? "Salvando..." : "Atribuir"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

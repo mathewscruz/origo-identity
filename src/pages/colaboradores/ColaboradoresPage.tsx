@@ -3,12 +3,18 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Upload } from "lucide-react";
+import { Search, Upload, Plus, Pencil, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useColaboradores } from "@/hooks/useOrigoData";
+import { useColaboradores, useEmpresas, useAreas, useCargos, useLocalidades } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
 import TablePagination, { usePagination } from "@/components/TablePagination";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
@@ -16,6 +22,32 @@ const statusConfig: Record<string, { label: string; class: string }> = {
   ferias: { label: "Férias", class: "bg-info/15 text-info border-info/30" },
   afastado: { label: "Afastado", class: "bg-warning/15 text-warning border-warning/30" },
   desligado: { label: "Desligado", class: "bg-destructive/15 text-destructive border-destructive/30" },
+};
+
+const statusOptions = [
+  { value: "ativo", label: "Ativo" },
+  { value: "inativo", label: "Inativo" },
+  { value: "ferias", label: "Férias" },
+  { value: "afastado", label: "Afastado" },
+  { value: "desligado", label: "Desligado" },
+];
+
+interface ColabForm {
+  nome: string;
+  email: string;
+  cpf: string;
+  matricula: string;
+  status: string;
+  empresa_id: string;
+  area_id: string;
+  cargo_id: string;
+  localidade_id: string;
+  data_admissao: string;
+}
+
+const emptyForm: ColabForm = {
+  nome: "", email: "", cpf: "", matricula: "", status: "ativo",
+  empresa_id: "", area_id: "", cargo_id: "", localidade_id: "", data_admissao: "",
 };
 
 export default function ColaboradoresPage() {
@@ -26,15 +58,34 @@ export default function ColaboradoresPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<ColabForm>(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
   const { data: colaboradores, isLoading } = useColaboradores();
+  const { data: empresas } = useEmpresas();
+  const { data: areas } = useAreas();
+  const { data: cargos } = useCargos();
+  const { data: localidades } = useLocalidades();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const mapped = (colaboradores ?? []).map((c: any) => ({
     id: c.id,
     nome: c.nome,
     email: c.email || "",
     cpf: c.cpf ? `***${c.cpf.slice(-6)}` : "—",
+    cpf_raw: c.cpf || "",
     cargo: c.cargos?.nome || "—",
+    cargo_id: c.cargo_id || "",
     area: c.areas?.nome || "—",
+    area_id: c.area_id || "",
+    empresa_id: c.empresa_id || "",
+    localidade_id: c.localidade_id || "",
+    matricula: c.matricula || "",
+    data_admissao: c.data_admissao || "",
     status: c.status,
     origem: c.origem || "manual",
   }));
@@ -48,18 +99,74 @@ export default function ColaboradoresPage() {
   });
 
   const { paginatedItems, safePage } = usePagination(filtered, page, pageSize);
+  const areasList = [...new Set(mapped.map((c) => c.area).filter((a) => a !== "—"))];
+  const cargosList = [...new Set(mapped.map((c) => c.cargo).filter((c) => c !== "—"))];
 
-  const areas = [...new Set(mapped.map((c) => c.area).filter((a) => a !== "—"))];
-  const cargos = [...new Set(mapped.map((c) => c.cargo).filter((c) => c !== "—"))];
+  function openNew() {
+    setEditingId(null);
+    setForm(emptyForm);
+    setDialogOpen(true);
+  }
+
+  function openEdit(c: typeof mapped[0]) {
+    setEditingId(c.id);
+    setForm({
+      nome: c.nome, email: c.email, cpf: c.cpf_raw, matricula: c.matricula,
+      status: c.status, empresa_id: c.empresa_id, area_id: c.area_id,
+      cargo_id: c.cargo_id, localidade_id: c.localidade_id, data_admissao: c.data_admissao,
+    });
+    setDialogOpen(true);
+  }
+
+  async function handleSave() {
+    if (!form.nome.trim()) { toast({ title: "Nome é obrigatório", variant: "destructive" }); return; }
+    setSaving(true);
+    const payload: any = {
+      nome: form.nome.trim(),
+      email: form.email.trim() || null,
+      cpf: form.cpf.trim() || null,
+      matricula: form.matricula.trim() || null,
+      status: form.status as any,
+      empresa_id: form.empresa_id || null,
+      area_id: form.area_id || null,
+      cargo_id: form.cargo_id || null,
+      localidade_id: form.localidade_id || null,
+      data_admissao: form.data_admissao || null,
+      origem: "manual",
+    };
+    let error;
+    if (editingId) {
+      ({ error } = await supabase.from("colaboradores").update(payload).eq("id", editingId));
+    } else {
+      ({ error } = await supabase.from("colaboradores").insert(payload));
+    }
+    setSaving(false);
+    if (error) { toast({ title: "Erro ao salvar", description: error.message, variant: "destructive" }); return; }
+    toast({ title: editingId ? "Colaborador atualizado" : "Colaborador criado" });
+    queryClient.invalidateQueries({ queryKey: ["colaboradores"] });
+    setDialogOpen(false);
+  }
+
+  async function handleDelete() {
+    if (!deleteId) return;
+    const { error } = await supabase.from("colaboradores").delete().eq("id", deleteId);
+    if (error) { toast({ title: "Erro ao excluir", description: error.message, variant: "destructive" }); return; }
+    toast({ title: "Colaborador excluído" });
+    queryClient.invalidateQueries({ queryKey: ["colaboradores"] });
+    setDeleteId(null);
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Colaboradores</h1>
-          <p className="text-sm text-muted-foreground">Gestão de funcionários internos — fonte 2Easy</p>
+          <p className="text-sm text-muted-foreground">Gestão de funcionários internos</p>
         </div>
-        <Button><Upload className="mr-1 h-4 w-4" />Importar Base</Button>
+        <div className="flex gap-2">
+          <Button variant="outline"><Upload className="mr-1 h-4 w-4" />Importar Base</Button>
+          <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Colaborador</Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -71,25 +178,21 @@ export default function ColaboradoresPage() {
           <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="todos">Todos status</SelectItem>
-            <SelectItem value="ativo">Ativo</SelectItem>
-            <SelectItem value="inativo">Inativo</SelectItem>
-            <SelectItem value="ferias">Férias</SelectItem>
-            <SelectItem value="afastado">Afastado</SelectItem>
-            <SelectItem value="desligado">Desligado</SelectItem>
+            {statusOptions.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={areaFilter} onValueChange={(v) => { setAreaFilter(v); setPage(1); }}>
           <SelectTrigger className="w-[180px]"><SelectValue placeholder="Área" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="todos">Todas áreas</SelectItem>
-            {areas.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+            {areasList.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={cargoFilter} onValueChange={(v) => { setCargoFilter(v); setPage(1); }}>
           <SelectTrigger className="w-[200px]"><SelectValue placeholder="Cargo" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="todos">Todos cargos</SelectItem>
-            {cargos.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+            {cargosList.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
@@ -110,6 +213,7 @@ export default function ColaboradoresPage() {
                     <th className="p-4 font-medium">Área</th>
                     <th className="p-4 font-medium">Origem</th>
                     <th className="p-4 font-medium">Status</th>
+                    <th className="p-4 font-medium">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -126,21 +230,28 @@ export default function ColaboradoresPage() {
                         <Badge variant="outline" className={
                           c.origem === "csv" ? "bg-primary/10 text-primary border-primary/30" :
                           c.origem === "entra_id" ? "bg-info/10 text-info border-info/30" :
-                          c.origem === "obsoleto" ? "bg-muted text-muted-foreground" :
                           "bg-muted text-muted-foreground"
-                        }>
-                          {c.origem}
-                        </Badge>
+                        }>{c.origem}</Badge>
                       </td>
                       <td className="p-4">
                         <Badge variant="outline" className={statusConfig[c.status]?.class || ""}>
                           {statusConfig[c.status]?.label || c.status}
                         </Badge>
                       </td>
+                      <td className="p-4">
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(c)}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteId(c.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                   {paginatedItems.length === 0 && (
-                    <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">Nenhum colaborador encontrado.</td></tr>
+                    <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">Nenhum colaborador encontrado.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -148,13 +259,101 @@ export default function ColaboradoresPage() {
           )}
         </CardContent>
       </Card>
-      <TablePagination
-        totalItems={filtered.length}
-        pageSize={pageSize}
-        currentPage={safePage}
-        onPageChange={setPage}
-        onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
-      />
+      <TablePagination totalItems={filtered.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
+
+      {/* Dialog Novo/Editar */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingId ? "Editar Colaborador" : "Novo Colaborador"}</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <Label>Nome *</Label>
+              <Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
+            </div>
+            <div>
+              <Label>Email</Label>
+              <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            </div>
+            <div>
+              <Label>CPF</Label>
+              <Input value={form.cpf} onChange={(e) => setForm({ ...form, cpf: e.target.value })} />
+            </div>
+            <div>
+              <Label>Matrícula</Label>
+              <Input value={form.matricula} onChange={(e) => setForm({ ...form, matricula: e.target.value })} />
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {statusOptions.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Empresa</Label>
+              <Select value={form.empresa_id} onValueChange={(v) => setForm({ ...form, empresa_id: v })}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  {(empresas ?? []).map((e: any) => <SelectItem key={e.id} value={e.id}>{e.nome}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Área</Label>
+              <Select value={form.area_id} onValueChange={(v) => setForm({ ...form, area_id: v })}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  {(areas ?? []).map((a: any) => <SelectItem key={a.id} value={a.id}>{a.nome}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Cargo</Label>
+              <Select value={form.cargo_id} onValueChange={(v) => setForm({ ...form, cargo_id: v })}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  {(cargos ?? []).map((c: any) => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Localidade</Label>
+              <Select value={form.localidade_id} onValueChange={(v) => setForm({ ...form, localidade_id: v })}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  {(localidades ?? []).map((l: any) => <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Data Admissão</Label>
+              <Input type="date" value={form.data_admissao} onChange={(e) => setForm({ ...form, data_admissao: e.target.value })} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSave} disabled={saving}>{saving ? "Salvando..." : "Salvar"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* AlertDialog Excluir */}
+      <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir colaborador?</AlertDialogTitle>
+            <AlertDialogDescription>Esta ação não pode ser desfeita. Todos os acessos e dados vinculados serão removidos.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Excluir</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

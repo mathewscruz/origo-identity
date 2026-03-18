@@ -112,7 +112,7 @@ export function usePerfilAtribuicoes(perfilId?: string, colaboradorId?: string) 
   return useQuery({
     queryKey: ["perfil_atribuicoes", perfilId, colaboradorId],
     queryFn: async () => {
-      let q = supabase.from("perfil_atribuicoes").select("*, perfis_acesso(nome, aplicacoes(nome)), colaboradores(nome, cargos(nome), areas(nome))").eq("ativo", true);
+      let q = supabase.from("perfil_atribuicoes").select("*, perfis_acesso(nome, perfil_aplicacoes(aplicacao_id, aplicacoes(nome))), colaboradores(nome, cargos(nome), areas(nome))").eq("ativo", true);
       if (perfilId) q = q.eq("perfil_id", perfilId);
       if (colaboradorId) q = q.eq("colaborador_id", colaboradorId);
       const { data, error } = await q;
