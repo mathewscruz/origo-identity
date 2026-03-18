@@ -298,9 +298,13 @@ export default function PerfisAcessoPage() {
             </TabsContent>
 
             <TabsContent value="aplicacoes" className="mt-4 overflow-auto flex-1">
+              <div className="relative mb-2">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input placeholder="Buscar aplicações..." className="pl-9" value={buscaApps} onChange={e => setBuscaApps(e.target.value)} />
+              </div>
               <ScrollArea className="h-64 rounded-md border p-3">
                 <div className="space-y-2">
-                  {(aplicacoes ?? []).map((a: any) => (
+                  {(aplicacoes ?? []).filter((a: any) => !buscaApps || a.nome.toLowerCase().includes(buscaApps.toLowerCase())).map((a: any) => (
                     <label key={a.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
                       <Checkbox checked={form.aplicacao_ids.includes(a.id)} onCheckedChange={() => toggleItem("aplicacao_ids", a.id)} />
                       <span className="text-sm">{a.nome}</span>
