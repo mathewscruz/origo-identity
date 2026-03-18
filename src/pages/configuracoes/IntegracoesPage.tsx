@@ -143,7 +143,7 @@ function CsvProgressPanel({ job }: { job: any }) {
         {(job.colab_total ?? 0) > 0 && <div className="flex gap-2 text-xs flex-wrap">
           <Badge variant="outline" className="bg-success/15 text-success border-success/30">{job.colab_created || 0} novos</Badge>
           <Badge variant="outline">{job.colab_updated || 0} atualizados</Badge>
-          {(job.colab_quarentena ?? 0) > 0 && <Badge variant="outline" className="bg-warning/15 text-warning border-warning/30">{job.colab_quarentena} quarentena</Badge>}
+          {(job.colab_quarentena ?? 0) > 0 && <Badge variant="outline" className="bg-destructive/15 text-destructive border-destructive/30">{job.colab_quarentena} removidos</Badge>}
           <span className="text-muted-foreground">{job.colab_total} total</span>
         </div>}
       </div>
