@@ -89,6 +89,7 @@ Deno.serve(async (req) => {
         displayName: colab.nome,
         mailNickname,
         userPrincipalName: colab.email,
+        usageLocation,
         passwordProfile: {
           forceChangePasswordNextSignIn: true,
           password: tempPassword,
