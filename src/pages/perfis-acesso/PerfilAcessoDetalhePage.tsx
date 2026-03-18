@@ -96,22 +96,25 @@ export default function PerfilAcessoDetalhePage() {
       if (editForm.grupo_ids.length > 0) await (supabase as any).from("perfil_grupos").insert(editForm.grupo_ids.map(gid => ({ perfil_id: id!, grupo_id: gid })));
 
       toast({ title: "Perfil atualizado" });
+
+      // Reprovision affected Entra ID users BEFORE closing dialog
+      const { data: reprovData, error: fnErr } = await supabase.functions.invoke("reprovision-entra-users", { body: { perfil_id: id } });
+      if (fnErr) {
+        console.error("Reprovision error:", fnErr);
+        toast({ title: "Aviso", description: "Perfil salvo, mas houve erro ao sincronizar Entra ID.", variant: "destructive" });
+      } else {
+        const result = reprovData as any;
+        if (result?.processed > 0) {
+          toast({ title: "Entra ID atualizado", description: `${result.processed} usuário(s) reprovisado(s).${result.errors > 0 ? ` ${result.errors} erro(s).` : ""}` });
+        }
+      }
+
       queryClient.invalidateQueries({ queryKey: ["perfil_acesso", id] });
       queryClient.invalidateQueries({ queryKey: ["perfil_aplicacoes", id] });
       queryClient.invalidateQueries({ queryKey: ["perfil_licencas", id] });
       queryClient.invalidateQueries({ queryKey: ["perfil_grupos", id] });
       queryClient.invalidateQueries({ queryKey: ["perfis_acesso"] });
       setEditOpen(false);
-
-      // Reprovision affected Entra ID users in background
-      supabase.functions.invoke("reprovision-entra-users", { body: { perfil_id: id } })
-        .then(({ data, error: fnErr }) => {
-          if (fnErr) { console.error("Reprovision error:", fnErr); return; }
-          const result = data as any;
-          if (result?.processed > 0) {
-            toast({ title: "Entra ID atualizado", description: `${result.processed} usuário(s) reprovisado(s).` });
-          }
-        });
     } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
     setSaving(false);
   };
