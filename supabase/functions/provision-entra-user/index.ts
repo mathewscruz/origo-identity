@@ -63,6 +63,14 @@ Deno.serve(async (req) => {
     if (colab.entra_id) throw new Error("Colaborador já possui entra_id");
     if (!colab.email) throw new Error("Email é obrigatório para criar usuário no Entra ID");
 
+    // Fetch usage_location parameter (default: "BR")
+    const { data: paramRow } = await supabase
+      .from("parametros")
+      .select("valor")
+      .eq("chave", "usage_location")
+      .single();
+    const usageLocation = paramRow?.valor || "BR";
+
     const token = await getAccessToken();
     const graphHeaders = {
       Authorization: `Bearer ${token}`,
