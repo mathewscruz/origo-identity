@@ -38,6 +38,7 @@ export default function PerfisAcessoPage() {
   const { data: aplicacoes } = useAplicacoes();
   const { data: entraLicencas } = useEntraLicencas();
   const { data: entraGrupos } = useEntraGrupos();
+  const [syncing, setSyncing] = useState(false);
   const [busca, setBusca] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
