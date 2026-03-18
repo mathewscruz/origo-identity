@@ -225,6 +225,9 @@ export default function ColaboradoresPage() {
         const provResult = await provisionEntraUser(colaboradorId);
         if (provResult.success) {
           toast({ title: "Usuário criado no Entra ID", description: `${provResult.licenses_assigned} licença(s), ${provResult.groups_added} grupo(s) atribuído(s).` });
+          if (provResult.temp_password) {
+            setTempPasswordInfo({ nome: form.nome.trim(), email: form.email.trim(), password: provResult.temp_password });
+          }
         } else {
           toast({ title: "Aviso: Entra ID", description: provResult.error, variant: "destructive" });
         }
