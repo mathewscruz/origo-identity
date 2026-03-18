@@ -26,6 +26,14 @@ const origemColors: Record<string, string> = {
   regra: "bg-primary/15 text-primary border-primary/30",
   excecao: "bg-warning/15 text-warning border-warning/30",
   manual: "bg-muted text-muted-foreground",
+  cargo: "bg-info/15 text-info border-info/30",
+};
+
+const origemLabels: Record<string, string> = {
+  regra: "Regra",
+  excecao: "Exceção",
+  manual: "Manual",
+  cargo: "Cargo",
 };
 
 const tipoJMLColors: Record<string, string> = {
@@ -85,7 +93,6 @@ export default function ColaboradorDetalhePage() {
   const gestor = (pessoa.gestor as any)?.nome || "—";
   const sc = statusConfig[pessoa.status] || { label: pessoa.status, class: "" };
 
-  // Get apps for each atribuicao from perfil_aplicacoes via the perfis_acesso nested data
   const getPerfilApps = (a: any) => {
     const apps = (a.perfis_acesso as any)?.perfil_aplicacoes;
     if (!apps || !Array.isArray(apps)) return [];
@@ -175,7 +182,7 @@ export default function ColaboradorDetalhePage() {
                         </td>
                         <td className="p-4">
                           <Badge variant="outline" className={origemColors[a.origem || "manual"]}>
-                            {a.origem === "regra" ? "Regra" : a.origem === "excecao" ? "Exceção" : "Manual"}
+                            {origemLabels[a.origem || "manual"] || a.origem}
                           </Badge>
                         </td>
                         <td className="p-4 text-muted-foreground">{new Date(a.data_concessao).toLocaleDateString("pt-BR")}</td>

@@ -15,6 +15,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { provisionCargoAcessos } from "@/lib/provisionCargoAcessos";
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
@@ -60,6 +61,7 @@ export default function ColaboradoresPage() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingCargoId, setEditingCargoId] = useState<string | null>(null);
   const [form, setForm] = useState<ColabForm>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -104,12 +106,14 @@ export default function ColaboradoresPage() {
 
   function openNew() {
     setEditingId(null);
+    setEditingCargoId(null);
     setForm(emptyForm);
     setDialogOpen(true);
   }
 
   function openEdit(c: typeof mapped[0]) {
     setEditingId(c.id);
+    setEditingCargoId(c.cargo_id || null);
     setForm({
       nome: c.nome, email: c.email, cpf: c.cpf_raw, matricula: c.matricula,
       status: c.status, empresa_id: c.empresa_id, area_id: c.area_id,
@@ -134,16 +138,33 @@ export default function ColaboradoresPage() {
       data_admissao: form.data_admissao || null,
       origem: "manual",
     };
+
+    let colaboradorId = editingId;
     let error;
+
     if (editingId) {
       ({ error } = await supabase.from("colaboradores").update(payload).eq("id", editingId));
     } else {
-      ({ error } = await supabase.from("colaboradores").insert(payload));
+      const res = await supabase.from("colaboradores").insert(payload).select("id").single();
+      error = res.error;
+      colaboradorId = res.data?.id || null;
     }
+    
+    if (error) { setSaving(false); toast({ title: "Erro ao salvar", description: error.message, variant: "destructive" }); return; }
+
+    // Provision access profiles if cargo changed
+    const cargoChanged = form.cargo_id !== (editingCargoId || "");
+    if (colaboradorId && (cargoChanged || !editingId)) {
+      const result = await provisionCargoAcessos(colaboradorId, form.cargo_id || null, editingCargoId || null);
+      if (result.provisioned > 0 || result.revoked > 0) {
+        toast({ title: `Acessos atualizados: ${result.provisioned} concedido(s), ${result.revoked} revogado(s)` });
+      }
+    }
+
     setSaving(false);
-    if (error) { toast({ title: "Erro ao salvar", description: error.message, variant: "destructive" }); return; }
     toast({ title: editingId ? "Colaborador atualizado" : "Colaborador criado" });
     queryClient.invalidateQueries({ queryKey: ["colaboradores"] });
+    queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
     setDialogOpen(false);
   }
 
