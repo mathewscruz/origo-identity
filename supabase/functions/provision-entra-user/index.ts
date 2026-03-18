@@ -130,6 +130,7 @@ Deno.serve(async (req) => {
     const perfilIds = (atribuicoes ?? []).map((a: any) => a.perfil_id);
     let licensesAssigned = 0;
     let groupsAdded = 0;
+    let appsAssigned = 0;
 
     if (perfilIds.length > 0) {
       // Wait for Entra ID to fully propagate the new user before assigning licenses
