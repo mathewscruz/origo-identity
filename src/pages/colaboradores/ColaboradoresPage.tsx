@@ -71,6 +71,47 @@ const emptyForm: ColabForm = {
   empresa_id: "", area_id: "", cargo_id: "", localidade_id: "", data_admissao: "",
 };
 
+function TempPasswordDisplay({ info, toast }: { info: { nome: string; email: string; password: string }; toast: any }) {
+  const [showPwd, setShowPwd] = useState(false);
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    toast({ title: `${label} copiado!` });
+  };
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        O usuário <span className="font-medium text-foreground">{info.nome}</span> foi criado no Entra ID. Compartilhe as credenciais abaixo com segurança.
+      </p>
+      <div className="space-y-2 rounded-md border bg-muted/50 p-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground">E-mail / UPN</p>
+            <p className="text-sm font-medium font-mono">{info.email}</p>
+          </div>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyToClipboard(info.email, "E-mail")}>
+            <Copy className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground">Senha provisória</p>
+            <p className="text-sm font-medium font-mono">{showPwd ? info.password : "••••••••••••"}</p>
+          </div>
+          <div className="flex gap-1">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowPwd(!showPwd)}>
+              {showPwd ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyToClipboard(info.password, "Senha")}>
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">⚠️ O usuário deverá alterar a senha no primeiro login.</p>
+    </div>
+  );
+}
+
 export default function ColaboradoresPage() {
   const [busca, setBusca] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
