@@ -73,6 +73,9 @@ export default function ColaboradoresPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingCargoId, setEditingCargoId] = useState<string | null>(null);
+  const [editingStatus, setEditingStatus] = useState<string | null>(null);
+  const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
+  const [editingOrigem, setEditingOrigem] = useState<string | null>(null);
   const [form, setForm] = useState<ColabForm>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
