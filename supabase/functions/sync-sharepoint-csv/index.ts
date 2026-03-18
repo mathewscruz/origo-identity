@@ -275,30 +275,32 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     // Events
     for (const b of chunk([...joinerEvents, ...moverEvents], 200)) await sb.from("eventos_jml").insert(b);
 
-    // Leavers
-    await sb.from("sync_jobs").update({ phase: "quarentena", message: "Verificando ausências...", colab_percent: 80 }).eq("id", jobId);
-    let quarentenaCount = 0;
-    const qInserts: any[] = [], lEvents: any[] = [];
+    // DELETE colaboradores ausentes do CSV
+    await sb.from("sync_jobs").update({ phase: "removendo", message: "Removendo ausentes do CSV...", colab_percent: 80 }).eq("id", jobId);
+    let deletedCount = 0;
+    const lEvents: any[] = [];
+    const idsToDelete: string[] = [];
     for (const [mat, ex] of existingMap.entries()) {
-      if (!csvMatriculas.has(mat) && ex.status !== "desligado" && ex.status !== "inativo") {
-        quarentenaCount++;
-        qInserts.push({ colaborador_id: ex.id, import_job_id: jobId, motivo: "ausente_no_csv" });
-        lEvents.push({ tipo: "leaver", colaborador_id: ex.id, colaborador_nome: ex.nome, status: "quarentena", origem: "importacao_csv", dados_antes: { nome: ex.nome, status: ex.status } });
+      if (!csvMatriculas.has(mat)) {
+        idsToDelete.push(ex.id);
+        lEvents.push({ tipo: "leaver", colaborador_id: ex.id, colaborador_nome: ex.nome, status: "executado", origem: "importacao_csv", dados_antes: { nome: ex.nome, status: ex.status, matricula: mat } });
       }
     }
-    for (const b of chunk(qInserts, 200)) await sb.from("colab_quarentena").insert(b);
     for (const b of chunk(lEvents, 200)) await sb.from("eventos_jml").insert(b);
+    for (const b of chunk(idsToDelete, 100)) {
+      const { error } = await sb.from("colaboradores").delete().in("id", b);
+      if (!error) deletedCount += b.length;
+    }
 
-    // Gestores and Snapshots skipped in SharePoint sync for performance (avoids timeout)
-    // Gestores can be resolved via a separate manual trigger if needed
+    if (deletedCount > 0) await sb.from("alertas").insert({ tipo: "remocao_csv", titulo: `${deletedCount} colaborador(es) removido(s)`, mensagem: `Importação CSV removeu ${deletedCount} colaborador(es) ausentes do arquivo.`, severidade: "info", ref_tipo: "sync_job", ref_id: jobId });
 
     // Done
     const syntheticMsg = syntheticMatCount > 0 ? `, ${syntheticMatCount} sem matrícula original` : "";
-    await sb.from("sync_jobs").update({ status: "done", phase: "done", colab_percent: 100, colab_created: created, colab_updated: updated, colab_quarentena: quarentenaCount, message: `Concluído: ${created} novos, ${updated} atualizados, ${quarentenaCount} quarentena${syntheticMsg}` }).eq("id", jobId);
-    await sb.from("auditoria").insert({ entidade: "importacao_csv", acao: "importar", resumo: `CSV SharePoint: ${totalRows} linhas, ${created} novos, ${updated} atualizados, ${quarentenaCount} quarentena`, detalhes: { filename, totalRows, created, updated, quarentenaCount, jobId } });
-    if (quarentenaCount > 0) await sb.from("alertas").insert({ tipo: "quarentena_csv", titulo: `${quarentenaCount} colaborador(es) em quarentena`, mensagem: `Importação CSV detectou ${quarentenaCount} colaborador(es) ausentes.`, severidade: "aviso", ref_tipo: "sync_job", ref_id: jobId });
+    const dupMsg = dupCount > 0 ? `, ${dupCount} duplicatas consolidadas` : "";
+    await sb.from("sync_jobs").update({ status: "done", phase: "done", colab_percent: 100, colab_created: created, colab_updated: updated, colab_quarentena: deletedCount, message: `Concluído: ${created} novos, ${updated} atualizados, ${deletedCount} removidos${syntheticMsg}${dupMsg}` }).eq("id", jobId);
+    await sb.from("auditoria").insert({ entidade: "importacao_csv", acao: "importar", resumo: `CSV SharePoint: ${totalRows} linhas, ${created} novos, ${updated} atualizados, ${deletedCount} removidos`, detalhes: { filename, totalRows, created, updated, deleted: deletedCount, jobId } });
 
-    return { success: true, jobId, file: filename, created, updated, quarentena: quarentenaCount, total: totalRows };
+    return { success: true, jobId, file: filename, created, updated, deleted: deletedCount, total: totalRows };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro desconhecido";
     console.error("Processing error:", msg);
