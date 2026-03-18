@@ -19,14 +19,22 @@ import { useToast } from "@/hooks/use-toast";
 import { provisionCargoAcessos } from "@/lib/provisionCargoAcessos";
 import { createEventoJML } from "@/lib/createEventoJML";
 
-async function disableEntraUser(colaboradorId: string, action: "disable" | "enable") {
+async function callEdgeFunction(fnName: string, body: Record<string, unknown>) {
   const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-  const res = await fetch(`https://${projectId}.supabase.co/functions/v1/disable-entra-user`, {
+  const res = await fetch(`https://${projectId}.supabase.co/functions/v1/${fnName}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
-    body: JSON.stringify({ colaborador_id: colaboradorId, action }),
+    body: JSON.stringify(body),
   });
   return res.json();
+}
+
+async function disableEntraUser(colaboradorId: string, action: "disable" | "enable") {
+  return callEdgeFunction("disable-entra-user", { colaborador_id: colaboradorId, action });
+}
+
+async function provisionEntraUser(colaboradorId: string) {
+  return callEdgeFunction("provision-entra-user", { colaborador_id: colaboradorId });
 }
 
 const statusConfig: Record<string, { label: string; class: string }> = {
