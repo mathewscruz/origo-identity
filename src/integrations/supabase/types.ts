@@ -750,6 +750,42 @@ export type Database = {
         }
         Relationships: []
       }
+      perfil_aplicacoes: {
+        Row: {
+          aplicacao_id: string
+          created_at: string
+          id: string
+          perfil_id: string
+        }
+        Insert: {
+          aplicacao_id: string
+          created_at?: string
+          id?: string
+          perfil_id: string
+        }
+        Update: {
+          aplicacao_id?: string
+          created_at?: string
+          id?: string
+          perfil_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "perfil_aplicacoes_aplicacao_id_fkey"
+            columns: ["aplicacao_id"]
+            isOneToOne: false
+            referencedRelation: "aplicacoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "perfil_aplicacoes_perfil_id_fkey"
+            columns: ["perfil_id"]
+            isOneToOne: false
+            referencedRelation: "perfis_acesso"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       perfil_atribuicoes: {
         Row: {
           ativo: boolean
@@ -845,47 +881,33 @@ export type Database = {
       }
       perfis_acesso: {
         Row: {
-          aplicacao_id: string | null
           ativo: boolean
           created_at: string
           descricao: string | null
           id: string
           nome: string
-          sensibilidade: Database["public"]["Enums"]["sensibilidade_perfil"]
           tipo: Database["public"]["Enums"]["tipo_perfil"]
           updated_at: string
         }
         Insert: {
-          aplicacao_id?: string | null
           ativo?: boolean
           created_at?: string
           descricao?: string | null
           id?: string
           nome: string
-          sensibilidade?: Database["public"]["Enums"]["sensibilidade_perfil"]
           tipo?: Database["public"]["Enums"]["tipo_perfil"]
           updated_at?: string
         }
         Update: {
-          aplicacao_id?: string | null
           ativo?: boolean
           created_at?: string
           descricao?: string | null
           id?: string
           nome?: string
-          sensibilidade?: Database["public"]["Enums"]["sensibilidade_perfil"]
           tipo?: Database["public"]["Enums"]["tipo_perfil"]
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "perfis_acesso_aplicacao_id_fkey"
-            columns: ["aplicacao_id"]
-            isOneToOne: false
-            referencedRelation: "aplicacoes"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       profiles: {
         Row: {

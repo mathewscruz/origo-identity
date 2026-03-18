@@ -91,13 +91,13 @@ export function useAplicacoes() {
 }
 
 export function usePerfisAcesso() {
-  return useQuery({ queryKey: ["perfis_acesso"], queryFn: () => fetchAll("perfis_acesso", "*, aplicacoes(nome)", "nome"), ...REFETCH_OPTS });
+  return useQuery({ queryKey: ["perfis_acesso"], queryFn: () => fetchAll("perfis_acesso", "*, perfil_aplicacoes(aplicacao_id, aplicacoes(nome))", "nome"), ...REFETCH_OPTS });
 }
 
 export function usePerfilAcesso(id: string | undefined) {
   return useQuery({
     queryKey: ["perfil_acesso", id], enabled: !!id,
-    queryFn: async () => { const { data, error } = await supabase.from("perfis_acesso").select("*, aplicacoes(nome)").eq("id", id!).single(); if (error) throw error; return data; },
+    queryFn: async () => { const { data, error } = await supabase.from("perfis_acesso").select("*").eq("id", id!).single(); if (error) throw error; return data; },
   });
 }
 

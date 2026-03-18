@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Pencil, Plus, Trash2 } from "lucide-react";
 import { usePerfilAcesso, usePerfilComposicao, usePerfilAtribuicoes, useAplicacoes } from "@/hooks/useOrigoData";
@@ -13,17 +14,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-
-const sensibilidadeConfig: Record<string, { label: string; class: string }> = {
-  baixa: { label: "Normal", class: "bg-muted text-muted-foreground" },
-  media: { label: "Sensível", class: "bg-warning/15 text-warning border-warning/30" },
-  alta: { label: "Alto", class: "bg-warning/15 text-warning border-warning/30" },
-  critica: { label: "Privilegiado", class: "bg-destructive/15 text-destructive border-destructive/30" },
-};
 
 const origemColors: Record<string, string> = {
   regra: "bg-primary/15 text-primary border-primary/30",
@@ -37,12 +32,21 @@ export default function PerfilAcessoDetalhePage() {
   const { data: composicao } = usePerfilComposicao(id);
   const { data: atribuicoes } = usePerfilAtribuicoes(id);
   const { data: aplicacoes } = useAplicacoes();
+  const { data: perfilApps } = useQuery({
+    queryKey: ["perfil_aplicacoes", id],
+    enabled: !!id,
+    queryFn: async () => {
+      const { data, error } = await (supabase as any).from("perfil_aplicacoes").select("*, aplicacoes(nome)").eq("perfil_id", id!);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   // Edit perfil dialog
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ nome: "", descricao: "", aplicacao_id: "", tipo: "funcional", sensibilidade: "media", ativo: true });
+  const [editForm, setEditForm] = useState({ nome: "", descricao: "", tipo: "funcional", ativo: true, aplicacao_ids: [] as string[] });
   const [saving, setSaving] = useState(false);
 
   // Add composicao dialog
@@ -51,8 +55,18 @@ export default function PerfilAcessoDetalhePage() {
 
   const openEdit = () => {
     if (!perfil) return;
-    setEditForm({ nome: perfil.nome, descricao: perfil.descricao || "", aplicacao_id: perfil.aplicacao_id || "", tipo: perfil.tipo, sensibilidade: perfil.sensibilidade, ativo: perfil.ativo });
+    const appIds = (perfilApps ?? []).map((pa: any) => pa.aplicacao_id);
+    setEditForm({ nome: perfil.nome, descricao: perfil.descricao || "", tipo: perfil.tipo, ativo: perfil.ativo, aplicacao_ids: appIds });
     setEditOpen(true);
+  };
+
+  const toggleApp = (appId: string) => {
+    setEditForm(prev => ({
+      ...prev,
+      aplicacao_ids: prev.aplicacao_ids.includes(appId)
+        ? prev.aplicacao_ids.filter(id => id !== appId)
+        : [...prev.aplicacao_ids, appId],
+    }));
   };
 
   const handleSaveEdit = async () => {
@@ -60,12 +74,18 @@ export default function PerfilAcessoDetalhePage() {
     try {
       const { error } = await supabase.from("perfis_acesso").update({
         nome: editForm.nome.trim(), descricao: editForm.descricao.trim() || null,
-        aplicacao_id: editForm.aplicacao_id || null, tipo: editForm.tipo as any,
-        sensibilidade: editForm.sensibilidade as any, ativo: editForm.ativo,
+        tipo: editForm.tipo as any, ativo: editForm.ativo,
       }).eq("id", id!);
       if (error) throw error;
+      // Sync apps
+      await (supabase as any).from("perfil_aplicacoes").delete().eq("perfil_id", id!);
+      if (editForm.aplicacao_ids.length > 0) {
+        const rows = editForm.aplicacao_ids.map(aid => ({ perfil_id: id!, aplicacao_id: aid }));
+        await (supabase as any).from("perfil_aplicacoes").insert(rows);
+      }
       toast({ title: "Perfil atualizado" });
       queryClient.invalidateQueries({ queryKey: ["perfil_acesso", id] });
+      queryClient.invalidateQueries({ queryKey: ["perfil_aplicacoes", id] });
       queryClient.invalidateQueries({ queryKey: ["perfis_acesso"] });
       setEditOpen(false);
     } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
@@ -96,7 +116,7 @@ export default function PerfilAcessoDetalhePage() {
   if (isLoading) return <div className="space-y-4 p-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}</div>;
   if (!perfil) return <div className="p-8 text-center text-muted-foreground">Perfil não encontrado.</div>;
 
-  const sens = sensibilidadeConfig[perfil.sensibilidade] || { label: perfil.sensibilidade, class: "" };
+  const appNames = (perfilApps ?? []).map((pa: any) => pa.aplicacoes?.nome).filter(Boolean);
 
   return (
     <div className="space-y-6">
@@ -105,8 +125,8 @@ export default function PerfilAcessoDetalhePage() {
         <div className="flex-1">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold tracking-tight">{perfil.nome}</h1>
-            <Badge variant="outline" className={sens.class}>{sens.label}</Badge>
             <Badge variant="outline">{perfil.tipo}</Badge>
+            <Badge variant={perfil.ativo ? "default" : "secondary"}>{perfil.ativo ? "Ativo" : "Inativo"}</Badge>
           </div>
           <p className="text-sm text-muted-foreground mt-1">{perfil.descricao || "Sem descrição"}</p>
         </div>
@@ -114,16 +134,33 @@ export default function PerfilAcessoDetalhePage() {
       </div>
 
       <div className="grid grid-cols-3 gap-4">
-        <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Sensibilidade</p><p className="text-lg font-semibold">{sens.label}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Aplicações vinculadas</p><p className="text-lg font-semibold">{appNames.length}</p></CardContent></Card>
         <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Itens composição</p><p className="text-lg font-semibold">{composicao?.length ?? 0}</p></CardContent></Card>
         <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Pessoas atribuídas</p><p className="text-lg font-semibold">{atribuicoes?.length ?? 0}</p></CardContent></Card>
       </div>
 
-      <Tabs defaultValue="composicao">
+      <Tabs defaultValue="aplicacoes">
         <TabsList>
+          <TabsTrigger value="aplicacoes">Aplicações ({appNames.length})</TabsTrigger>
           <TabsTrigger value="composicao">Composição ({composicao?.length ?? 0})</TabsTrigger>
           <TabsTrigger value="pessoas">Pessoas Atribuídas ({atribuicoes?.length ?? 0})</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="aplicacoes" className="mt-4">
+          <Card><CardContent className="p-0">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b text-left text-muted-foreground">
+                <th className="p-4 font-medium">Aplicação</th>
+              </tr></thead>
+              <tbody>
+                {appNames.map((name: string, i: number) => (
+                  <tr key={i} className="border-b last:border-0"><td className="p-4 font-medium">{name}</td></tr>
+                ))}
+                {appNames.length === 0 && <tr><td className="p-8 text-center text-muted-foreground">Nenhuma aplicação vinculada a este perfil.</td></tr>}
+              </tbody>
+            </table>
+          </CardContent></Card>
+        </TabsContent>
 
         <TabsContent value="composicao" className="mt-4">
           <Card>
@@ -189,14 +226,21 @@ export default function PerfilAcessoDetalhePage() {
           <div className="space-y-4">
             <div className="space-y-2"><Label>Nome *</Label><Input value={editForm.nome} onChange={e => setEditForm({ ...editForm, nome: e.target.value })} /></div>
             <div className="space-y-2"><Label>Descrição</Label><Textarea value={editForm.descricao} onChange={e => setEditForm({ ...editForm, descricao: e.target.value })} rows={2} /></div>
+            <div className="space-y-2">
+              <Label>Aplicações</Label>
+              <ScrollArea className="h-40 rounded-md border p-3">
+                <div className="space-y-2">
+                  {(aplicacoes ?? []).map((a: any) => (
+                    <label key={a.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+                      <Checkbox checked={editForm.aplicacao_ids.includes(a.id)} onCheckedChange={() => toggleApp(a.id)} />
+                      <span className="text-sm">{a.nome}</span>
+                    </label>
+                  ))}
+                </div>
+              </ScrollArea>
+              {editForm.aplicacao_ids.length > 0 && <p className="text-xs text-muted-foreground">{editForm.aplicacao_ids.length} aplicação(ões) selecionada(s)</p>}
+            </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Aplicação</Label>
-                <Select value={editForm.aplicacao_id || undefined} onValueChange={v => setEditForm({ ...editForm, aplicacao_id: v })}>
-                  <SelectTrigger><SelectValue placeholder="Selecionar" /></SelectTrigger>
-                  <SelectContent>{(aplicacoes ?? []).map((a: any) => <SelectItem key={a.id} value={a.id}>{a.nome}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
               <div className="space-y-2">
                 <Label>Tipo</Label>
                 <Select value={editForm.tipo} onValueChange={v => setEditForm({ ...editForm, tipo: v })}>
@@ -205,20 +249,6 @@ export default function PerfilAcessoDetalhePage() {
                     <SelectItem value="funcional">Funcional</SelectItem>
                     <SelectItem value="tecnico">Técnico</SelectItem>
                     <SelectItem value="privilegiado">Privilegiado</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Sensibilidade</Label>
-                <Select value={editForm.sensibilidade} onValueChange={v => setEditForm({ ...editForm, sensibilidade: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="baixa">Normal</SelectItem>
-                    <SelectItem value="media">Sensível</SelectItem>
-                    <SelectItem value="alta">Alto</SelectItem>
-                    <SelectItem value="critica">Privilegiado</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
