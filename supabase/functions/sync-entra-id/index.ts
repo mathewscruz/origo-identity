@@ -126,7 +126,7 @@ Deno.serve(async (req) => {
         let gruposTotal = 0;
         let gruposPage = 0;
         try {
-          let gruposNextUrl: string | null = `${GRAPH_BASE}/groups?$select=id,displayName,description&$top=999`;
+          let gruposNextUrl: string | null = `${GRAPH_BASE}/groups?$select=id,displayName,description,mailEnabled,securityEnabled,groupTypes&$top=999&$count=true`;
 
           while (gruposNextUrl) {
             const res = await fetch(gruposNextUrl, { headers: { Authorization: `Bearer ${token}` } });
