@@ -3,7 +3,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Activity, UserPlus, ArrowRightLeft, UserMinus, Shield, ShieldOff } from "lucide-react";
+import { Activity, UserPlus, ArrowRightLeft, UserMinus, Shield, ShieldOff, Cloud, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -30,6 +30,13 @@ interface Atribuicao {
   perfis_acesso: { nome: string } | null;
 }
 
+interface AuditoriaItem {
+  id: string;
+  acao: string;
+  resumo: string | null;
+  timestamp: string;
+}
+
 const tipoConfig = {
   joiner: { label: "Entrada", icon: UserPlus, class: "text-success" },
   mover: { label: "Movimentação", icon: ArrowRightLeft, class: "text-info" },
@@ -39,13 +46,14 @@ const tipoConfig = {
 export default function ColaboradorActivityPopover({ colaboradorId, colaboradorNome }: Props) {
   const [eventos, setEventos] = useState<EventoJML[]>([]);
   const [atribuicoes, setAtribuicoes] = useState<Atribuicao[]>([]);
+  const [auditoriaItems, setAuditoriaItems] = useState<AuditoriaItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   async function loadData() {
     if (loaded) return;
     setLoading(true);
-    const [evRes, atRes] = await Promise.all([
+    const [evRes, atRes, auditRes] = await Promise.all([
       supabase
         .from("eventos_jml")
         .select("id, tipo, status, created_at, dados_antes, dados_depois")
@@ -58,14 +66,23 @@ export default function ColaboradorActivityPopover({ colaboradorId, colaboradorN
         .eq("colaborador_id", colaboradorId)
         .order("data_concessao", { ascending: false })
         .limit(10),
+      supabase
+        .from("auditoria")
+        .select("id, acao, resumo, timestamp")
+        .eq("entidade", "colaborador")
+        .eq("entidade_id", colaboradorId)
+        .in("acao", ["criar_entra_id", "atribuir_licencas_entra", "adicionar_grupos_entra", "erro_licencas_entra", "erro_grupo_entra", "desativar_entra", "reativar_entra"])
+        .order("timestamp", { ascending: false })
+        .limit(10),
     ]);
     setEventos((evRes.data as EventoJML[]) || []);
     setAtribuicoes((atRes.data as Atribuicao[]) || []);
+    setAuditoriaItems((auditRes.data as AuditoriaItem[]) || []);
     setLoading(false);
     setLoaded(true);
   }
 
-  const empty = !loading && loaded && eventos.length === 0 && atribuicoes.length === 0;
+  const empty = !loading && loaded && eventos.length === 0 && atribuicoes.length === 0 && auditoriaItems.length === 0;
 
   return (
     <Popover onOpenChange={(open) => open && loadData()}>
@@ -141,6 +158,30 @@ export default function ColaboradorActivityPopover({ colaboradorId, colaboradorN
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {!loading && auditoriaItems.length > 0 && (
+          <div className="p-3 border-t space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Entra ID</p>
+            {auditoriaItems.map((item) => {
+              const isError = item.acao.startsWith("erro_");
+              return (
+                <div key={item.id} className="flex items-start gap-2 text-sm">
+                  {isError ? (
+                    <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
+                  ) : (
+                    <Cloud className="h-4 w-4 mt-0.5 shrink-0 text-info" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs leading-snug">{item.resumo || item.acao}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {format(new Date(item.timestamp), "dd MMM yyyy HH:mm", { locale: ptBR })}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </PopoverContent>
