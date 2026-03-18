@@ -283,7 +283,8 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     // Gestores can be resolved via a separate manual trigger if needed
 
     // Done
-    await sb.from("sync_jobs").update({ status: "done", phase: "done", colab_percent: 100, colab_created: created, colab_updated: updated, colab_quarentena: quarentenaCount, message: `Concluído: ${created} novos, ${updated} atualizados, ${quarentenaCount} quarentena` }).eq("id", jobId);
+    const syntheticMsg = syntheticMatCount > 0 ? `, ${syntheticMatCount} sem matrícula original` : "";
+    await sb.from("sync_jobs").update({ status: "done", phase: "done", colab_percent: 100, colab_created: created, colab_updated: updated, colab_quarentena: quarentenaCount, message: `Concluído: ${created} novos, ${updated} atualizados, ${quarentenaCount} quarentena${syntheticMsg}` }).eq("id", jobId);
     await sb.from("auditoria").insert({ entidade: "importacao_csv", acao: "importar", resumo: `CSV SharePoint: ${totalRows} linhas, ${created} novos, ${updated} atualizados, ${quarentenaCount} quarentena`, detalhes: { filename, totalRows, created, updated, quarentenaCount, jobId } });
     if (quarentenaCount > 0) await sb.from("alertas").insert({ tipo: "quarentena_csv", titulo: `${quarentenaCount} colaborador(es) em quarentena`, mensagem: `Importação CSV detectou ${quarentenaCount} colaborador(es) ausentes.`, severidade: "aviso", ref_tipo: "sync_job", ref_id: jobId });
 

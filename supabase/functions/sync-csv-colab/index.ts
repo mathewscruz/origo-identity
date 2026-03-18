@@ -464,10 +464,11 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     // ── 12. Snapshots skipped for performance (data already in colaboradores) ──
 
     // ── 13. Finalize ──
+    const syntheticMsg = syntheticMatCount > 0 ? `, ${syntheticMatCount} sem matrícula original` : "";
     await sb.from("sync_jobs").update({
       status: "done", phase: "done", colab_percent: 100,
       colab_created: created, colab_updated: updated, colab_quarentena: quarentenaCount,
-      message: `Concluído: ${created} novos, ${updated} atualizados, ${quarentenaCount} em quarentena`,
+      message: `Concluído: ${created} novos, ${updated} atualizados, ${quarentenaCount} em quarentena${syntheticMsg}`,
     }).eq("id", jobId);
 
     await sb.from("auditoria").insert({
