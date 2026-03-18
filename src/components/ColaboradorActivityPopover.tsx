@@ -71,7 +71,7 @@ export default function ColaboradorActivityPopover({ colaboradorId, colaboradorN
         .select("id, acao, resumo, timestamp")
         .eq("entidade", "colaborador")
         .eq("entidade_id", colaboradorId)
-        .in("acao", ["criar_entra_id", "atribuir_licencas_entra", "adicionar_grupos_entra", "erro_licencas_entra", "erro_grupo_entra", "desativar_entra", "reativar_entra"])
+        .in("acao", ["criar_entra_id", "atribuir_licencas_entra", "adicionar_grupos_entra", "adicionar_apps_entra", "erro_licencas_entra", "erro_grupo_entra", "erro_apps_entra", "desativar_entra", "reativar_entra"])
         .order("timestamp", { ascending: false })
         .limit(10),
     ]);

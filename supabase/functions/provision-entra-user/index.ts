@@ -130,6 +130,7 @@ Deno.serve(async (req) => {
     const perfilIds = (atribuicoes ?? []).map((a: any) => a.perfil_id);
     let licensesAssigned = 0;
     let groupsAdded = 0;
+    let appsAssigned = 0;
 
     if (perfilIds.length > 0) {
       // Wait for Entra ID to fully propagate the new user before assigning licenses
@@ -223,6 +224,70 @@ Deno.serve(async (req) => {
           operador: "sistema",
         });
       }
+
+      // 7. Get apps linked to these profiles
+      const { data: perfilApps } = await supabase
+        .from("perfil_aplicacoes")
+        .select("aplicacao_id, aplicacoes(entra_id, nome)")
+        .in("perfil_id", perfilIds);
+
+      const apps = [...new Map((perfilApps ?? [])
+        .filter((pa: any) => pa.aplicacoes?.entra_id)
+        .map((pa: any) => [pa.aplicacoes.entra_id, pa.aplicacoes])
+      ).values()];
+
+      for (const app of apps) {
+        const appEntraId = (app as any).entra_id;
+        const appNome = (app as any).nome;
+        try {
+          const assignRes = await fetch(
+            `https://graph.microsoft.com/v1.0/servicePrincipals/${appEntraId}/appRoleAssignments`,
+            {
+              method: "POST",
+              headers: graphHeaders,
+              body: JSON.stringify({
+                principalId: entraId,
+                resourceId: appEntraId,
+                appRoleId: "00000000-0000-0000-0000-000000000000",
+              }),
+            }
+          );
+          if (assignRes.ok || assignRes.status === 201) {
+            appsAssigned++;
+          } else {
+            const errText = await assignRes.text();
+            if (errText.includes("already exist")) {
+              appsAssigned++;
+            } else {
+              await supabase.from("auditoria").insert({
+                entidade: "colaborador",
+                entidade_id: colaborador_id,
+                acao: "erro_apps_entra",
+                resumo: `Erro ao atribuir app ${appNome}: ${errText.substring(0, 200)}`,
+                operador: "sistema",
+              });
+            }
+          }
+        } catch (e) {
+          await supabase.from("auditoria").insert({
+            entidade: "colaborador",
+            entidade_id: colaborador_id,
+            acao: "erro_apps_entra",
+            resumo: `Exceção ao atribuir app ${appNome}: ${(e as Error).message?.substring(0, 200)}`,
+            operador: "sistema",
+          });
+        }
+      }
+
+      if (appsAssigned > 0) {
+        await supabase.from("auditoria").insert({
+          entidade: "colaborador",
+          entidade_id: colaborador_id,
+          acao: "adicionar_apps_entra",
+          resumo: `${appsAssigned} app(s) atribuído(s) ao usuário ${colab.nome} no Entra ID.`,
+          operador: "sistema",
+        });
+      }
     }
 
     return new Response(
@@ -232,6 +297,7 @@ Deno.serve(async (req) => {
         temp_password: tempPassword,
         licenses_assigned: licensesAssigned,
         groups_added: groupsAdded,
+        apps_assigned: appsAssigned,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
