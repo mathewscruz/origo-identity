@@ -238,6 +238,14 @@ export function useSyncJobsCsv() {
   });
 }
 
+export function useEntraLicencas() {
+  return useQuery({ queryKey: ["entra_licencas"], queryFn: () => fetchAll("entra_licencas", "*", "nome"), ...REFETCH_OPTS });
+}
+
+export function useEntraGrupos() {
+  return useQuery({ queryKey: ["entra_grupos"], queryFn: () => fetchAll("entra_grupos", "*", "nome"), ...REFETCH_OPTS });
+}
+
 export function useColabQuarentena() {
   return useQuery({
     queryKey: ["colab_quarentena"],
