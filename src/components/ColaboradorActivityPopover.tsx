@@ -46,13 +46,14 @@ const tipoConfig = {
 export default function ColaboradorActivityPopover({ colaboradorId, colaboradorNome }: Props) {
   const [eventos, setEventos] = useState<EventoJML[]>([]);
   const [atribuicoes, setAtribuicoes] = useState<Atribuicao[]>([]);
+  const [auditoriaItems, setAuditoriaItems] = useState<AuditoriaItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   async function loadData() {
     if (loaded) return;
     setLoading(true);
-    const [evRes, atRes] = await Promise.all([
+    const [evRes, atRes, auditRes] = await Promise.all([
       supabase
         .from("eventos_jml")
         .select("id, tipo, status, created_at, dados_antes, dados_depois")
@@ -65,14 +66,23 @@ export default function ColaboradorActivityPopover({ colaboradorId, colaboradorN
         .eq("colaborador_id", colaboradorId)
         .order("data_concessao", { ascending: false })
         .limit(10),
+      supabase
+        .from("auditoria")
+        .select("id, acao, resumo, timestamp")
+        .eq("entidade", "colaborador")
+        .eq("entidade_id", colaboradorId)
+        .in("acao", ["criar_entra_id", "atribuir_licencas_entra", "adicionar_grupos_entra", "erro_licencas_entra", "erro_grupo_entra", "desativar_entra", "reativar_entra"])
+        .order("timestamp", { ascending: false })
+        .limit(10),
     ]);
     setEventos((evRes.data as EventoJML[]) || []);
     setAtribuicoes((atRes.data as Atribuicao[]) || []);
+    setAuditoriaItems((auditRes.data as AuditoriaItem[]) || []);
     setLoading(false);
     setLoaded(true);
   }
 
-  const empty = !loading && loaded && eventos.length === 0 && atribuicoes.length === 0;
+  const empty = !loading && loaded && eventos.length === 0 && atribuicoes.length === 0 && auditoriaItems.length === 0;
 
   return (
     <Popover onOpenChange={(open) => open && loadData()}>
