@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, Upload, Plus, Pencil, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
+import ColaboradorActivityPopover from "@/components/ColaboradorActivityPopover";
 import { useColaboradores, useEmpresas, useAreas, useCargos, useLocalidades } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
 import TablePagination, { usePagination } from "@/components/TablePagination";
