@@ -114,7 +114,6 @@ function parseCsv(text: string): CsvRow[] {
       row[h] = values[idx] || "";
       if (reverseMap[h]) row[reverseMap[h]] = values[idx] || "";
     });
-    // Generate synthetic matricula for rows without employID
     if (!(row["employID"] || "").trim()) {
       const key = [row["displayName"] || "", row["mail"] || "", row["Cadastro_Pessoa_Fisica"] || ""].join("|");
       const encoder = new TextEncoder();
@@ -130,20 +129,6 @@ function parseCsv(text: string): CsvRow[] {
   }
   console.log(`Parsed ${rows.length} rows (${syntheticCount} without original matricula)`);
   return rows;
-}
-
-function hashFields(row: CsvRow): string {
-  return [
-    row.displayName, row.mail, row.company, row.title, row.description,
-    row.departmentNumber, row.status, row.Data_Admissao, row.Data_Rescisao,
-    row.Base_Local, row.manager, row.Cadastro_Pessoa_Fisica,
-  ].join("|");
-}
-
-async function sha256(text: string): Promise<string> {
-  const data = new TextEncoder().encode(text);
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 function parseDate(d: string): string | null {
@@ -175,82 +160,63 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
   const jobId = job.id;
 
   try {
-    // ── 2. Parse CSV ──
+    // ── 2. Parse CSV — ALL rows, NO deduplication ──
     const rows = parseCsv(csvText);
     const totalRows = rows.length;
 
-    await sb.from("sync_jobs").update({ message: `Parsed ${totalRows} registros. Processando...`, phase: "hashing", colab_total: totalRows }).eq("id", jobId);
+    await sb.from("sync_jobs").update({ message: `Parsed ${totalRows} registros. Processando...`, phase: "preparing", colab_total: totalRows }).eq("id", jobId);
 
-    // ── 3. Compute hashes for all rows ──
-    let rowsWithHash: { row: CsvRow; matricula: string; hash: string }[] = [];
-    let syntheticMatCount = 0;
-    for (const row of rows) {
-      const matricula = row.employID.trim();
-      if (!matricula) continue;
-      if (row["__synthetic_matricula"] === "true") syntheticMatCount++;
-      const hash = await sha256(hashFields(row));
-      rowsWithHash.push({ row, matricula, hash });
-    }
-
-    // ── 3b. Deduplicate matriculas — keep LAST occurrence (most recent data) ──
-    const dedupMap = new Map<string, typeof rowsWithHash[0]>();
-    let dupCount = 0;
-    for (const item of rowsWithHash) {
-      if (dedupMap.has(item.matricula)) dupCount++;
-      dedupMap.set(item.matricula, item); // overwrites previous, keeping last
-    }
-    rowsWithHash = Array.from(dedupMap.values());
-    if (dupCount > 0) console.log(`${dupCount} duplicate matriculas consolidated (kept last occurrence)`);
-
-    // ── 4. Load existing colaboradores (all CSV-origin) ──
-    // Handle >1000 rows by paginating
-    const existingMap = new Map<string, any>();
+    // ── 3. Count existing CSV-origin records for JML comparison ──
+    const existingMatriculas = new Set<string>();
     let from = 0;
     const PAGE = 1000;
+    const existingIds: string[] = [];
     while (true) {
       const { data } = await sb
         .from("colaboradores")
-        .select("id, matricula, import_hash, nome, email, status, empresa_id, cargo_id, area_id, localidade_id, gestor_id, cpf, data_admissao, data_desligamento")
+        .select("id, matricula, nome, email, status")
         .eq("origem", "csv")
         .range(from, from + PAGE - 1);
       if (!data || data.length === 0) break;
-      data.forEach((c: any) => { if (c.matricula) existingMap.set(c.matricula, c); });
+      data.forEach((c: any) => {
+        existingIds.push(c.id);
+        if (c.matricula) existingMatriculas.add(c.matricula);
+      });
       if (data.length < PAGE) break;
       from += PAGE;
     }
-    console.log(`Loaded ${existingMap.size} existing CSV colaboradores`);
+    const existingCount = existingIds.length;
+    console.log(`Existing CSV colaboradores: ${existingCount}`);
 
-    // ── 5. Classify rows: new / changed / unchanged ──
+    // ── 4. Collect CSV matriculas for JML events ──
     const csvMatriculas = new Set<string>();
-    const newRows: typeof rowsWithHash = [];
-    const changedRows: (typeof rowsWithHash[0] & { existing: any })[] = [];
-    const unchangedIds: string[] = [];
-
-    for (const item of rowsWithHash) {
-      csvMatriculas.add(item.matricula);
-      const existing = existingMap.get(item.matricula);
-      if (!existing) {
-        newRows.push(item);
-      } else if (existing.import_hash !== item.hash) {
-        changedRows.push({ ...item, existing });
-      } else {
-        unchangedIds.push(existing.id);
-      }
+    let syntheticMatCount = 0;
+    for (const row of rows) {
+      const mat = row.employID?.trim();
+      if (mat) csvMatriculas.add(mat);
+      if (row["__synthetic_matricula"] === "true") syntheticMatCount++;
     }
-    console.log(`Classification: ${newRows.length} new, ${changedRows.length} changed, ${unchangedIds.length} unchanged`);
 
-    await sb.from("sync_jobs").update({
-      phase: "lookups", message: `Resolvendo entidades auxiliares...`,
-      colab_percent: 10,
-    }).eq("id", jobId);
+    // Leavers: matriculas that existed but are not in CSV anymore
+    const leaverMatriculas: string[] = [];
+    for (const mat of existingMatriculas) {
+      if (!csvMatriculas.has(mat)) leaverMatriculas.push(mat);
+    }
+    // Joiners: matriculas in CSV that didn't exist before
+    const joinerMatriculas = new Set<string>();
+    for (const mat of csvMatriculas) {
+      if (!existingMatriculas.has(mat)) joinerMatriculas.add(mat);
+    }
+    console.log(`JML preview: ${joinerMatriculas.size} joiners, ${leaverMatriculas.length} leavers`);
 
-    // ── 6. Batch create lookup entities ──
+    // ── 5. Resolve lookup entities ──
+    await sb.from("sync_jobs").update({ phase: "lookups", message: "Resolvendo entidades auxiliares...", colab_percent: 10 }).eq("id", jobId);
+
     const empresaCache = new Map<string, string>();
     const cargoCache = new Map<string, string>();
     const areaCache = new Map<string, string>();
     const localCache = new Map<string, string>();
 
-    // Pre-load existing lookups
     const [empresas, cargosData, areasData, locaisData] = await Promise.all([
       sb.from("empresas").select("id, nome"),
       sb.from("cargos").select("id, nome"),
@@ -262,14 +228,12 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     (areasData.data || []).forEach((a: any) => areaCache.set(a.nome.toLowerCase(), a.id));
     (locaisData.data || []).forEach((l: any) => localCache.set(l.nome.toLowerCase(), l.id));
 
-    // Collect unique values to create
-    const allRows = [...newRows.map(r => r.row), ...changedRows.map(r => r.row)];
     const missingEmpresas = new Set<string>();
     const missingCargos = new Set<string>();
     const missingAreas = new Set<string>();
     const missingLocais = new Set<string>();
 
-    for (const row of allRows) {
+    for (const row of rows) {
       const company = row.company?.trim();
       if (company && company !== "NULL" && !empresaCache.has(company.toLowerCase())) missingEmpresas.add(company);
       const cargo = (row.description || row.title || "").trim();
@@ -280,43 +244,30 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       if (local && local !== "NULL" && !localCache.has(local.toLowerCase())) missingLocais.add(local);
     }
 
-    // Batch insert missing empresas
     if (missingEmpresas.size > 0) {
-      const toInsert = Array.from(missingEmpresas).map(nome => ({ nome }));
-      for (const batch of chunk(toInsert, 200)) {
-        const { data } = await sb.from("empresas").upsert(batch, { onConflict: "nome", ignoreDuplicates: true }).select("id, nome");
-        if (data) data.forEach((e: any) => empresaCache.set(e.nome.toLowerCase(), e.id));
+      for (const batch of chunk(Array.from(missingEmpresas).map(nome => ({ nome })), 200)) {
+        await sb.from("empresas").upsert(batch, { onConflict: "nome", ignoreDuplicates: true });
       }
-      // Re-fetch to ensure we have all IDs (upsert may not return existing)
       const { data: allEmp } = await sb.from("empresas").select("id, nome");
       if (allEmp) allEmp.forEach((e: any) => empresaCache.set(e.nome.toLowerCase(), e.id));
     }
-
-    // Batch insert missing cargos
     if (missingCargos.size > 0) {
-      const toInsert = Array.from(missingCargos).map(nome => ({ nome }));
-      for (const batch of chunk(toInsert, 200)) {
+      for (const batch of chunk(Array.from(missingCargos).map(nome => ({ nome })), 200)) {
         await sb.from("cargos").upsert(batch, { onConflict: "nome", ignoreDuplicates: true });
       }
       const { data: allCargos } = await sb.from("cargos").select("id, nome");
       if (allCargos) allCargos.forEach((c: any) => cargoCache.set(c.nome.toLowerCase(), c.id));
     }
-
-    // Batch insert missing areas
     if (missingAreas.size > 0) {
-      const toInsert = Array.from(missingAreas).map(nome => ({ nome, empresa_id: PLACEHOLDER_EMPRESA_ID }));
-      for (const batch of chunk(toInsert, 200)) {
-        await sb.from("areas").insert(batch).select("id, nome");
+      for (const batch of chunk(Array.from(missingAreas).map(nome => ({ nome, empresa_id: PLACEHOLDER_EMPRESA_ID })), 200)) {
+        await sb.from("areas").insert(batch);
       }
       const { data: allAreas } = await sb.from("areas").select("id, nome");
       if (allAreas) allAreas.forEach((a: any) => areaCache.set(a.nome.toLowerCase(), a.id));
     }
-
-    // Batch insert missing localidades
     if (missingLocais.size > 0) {
-      const toInsert = Array.from(missingLocais).map(nome => ({ nome, empresa_id: PLACEHOLDER_EMPRESA_ID }));
-      for (const batch of chunk(toInsert, 200)) {
-        await sb.from("localidades").insert(batch).select("id, nome");
+      for (const batch of chunk(Array.from(missingLocais).map(nome => ({ nome, empresa_id: PLACEHOLDER_EMPRESA_ID })), 200)) {
+        await sb.from("localidades").insert(batch);
       }
       const { data: allLocais } = await sb.from("localidades").select("id, nome");
       if (allLocais) allLocais.forEach((l: any) => localCache.set(l.nome.toLowerCase(), l.id));
@@ -324,8 +275,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
     console.log(`Lookups ready: ${empresaCache.size} empresas, ${cargoCache.size} cargos, ${areaCache.size} areas, ${localCache.size} locais`);
 
-    // Helper to build colab data from a row
-    function buildColabData(row: CsvRow, hash: string) {
+    function buildColabData(row: CsvRow) {
       const statusMapped = STATUS_MAP[(row.status || "ativo").toLowerCase()] || "ativo";
       return {
         nome: row.displayName,
@@ -340,140 +290,90 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         data_admissao: parseDate(row.Data_Admissao),
         data_desligamento: parseDate(row.Data_Rescisao),
         origem: "csv",
-        import_hash: hash,
         ultima_importacao_id: jobId,
       };
     }
 
-    // ── 7. Batch INSERT new colaboradores ──
-    await sb.from("sync_jobs").update({ phase: "inserting", message: `Inserindo ${newRows.length} novos colaboradores...`, colab_percent: 30 }).eq("id", jobId);
-
-    let created = 0;
-    const joinerEvents: any[] = [];
-    const newColabChunks = chunk(newRows, 500);
-
-    for (let ci = 0; ci < newColabChunks.length; ci++) {
-      const batch = newColabChunks[ci];
-      const insertData = batch.map(item => buildColabData(item.row, item.hash));
-      const { data: inserted, error: insErr } = await sb.from("colaboradores").insert(insertData).select("id, nome, matricula");
-      if (insErr) { console.error("Insert batch error:", insErr.message); continue; }
-      if (inserted) {
-        created += inserted.length;
-        // Map back to rows for JML events
-        const matriculaToRow = new Map(batch.map(b => [b.matricula, b.row]));
-        for (const col of inserted) {
-          const row = matriculaToRow.get(col.matricula);
-          joinerEvents.push({
-            tipo: "joiner",
-            colaborador_id: col.id,
-            colaborador_nome: col.nome,
-            status: "pendente",
-            origem: "importacao_csv",
-            dados_depois: row || {},
-          });
-        }
-      }
-      // Progress
-      const pct = 30 + Math.round((ci + 1) / newColabChunks.length * 20);
-      await sb.from("sync_jobs").update({ colab_percent: pct, colab_created: created, message: `Inseridos ${created}/${newRows.length}...` }).eq("id", jobId);
-    }
-
-    // ── 8. Batch UPDATE changed colaboradores ──
-    await sb.from("sync_jobs").update({ phase: "updating", message: `Atualizando ${changedRows.length} colaboradores...`, colab_percent: 55 }).eq("id", jobId);
-
-    let updated = 0;
-    const moverEvents: any[] = [];
-
-    // Updates must be done individually since each row has different data, but we can batch the events
-    const changedChunks = chunk(changedRows, 50);
-    for (let ci = 0; ci < changedChunks.length; ci++) {
-      const batch = changedChunks[ci];
-      // Run updates in parallel within chunk
-      await Promise.all(batch.map(async (item) => {
-        const data = buildColabData(item.row, item.hash);
-        const { error } = await sb.from("colaboradores").update(data).eq("id", item.existing.id);
-        if (!error) {
-          updated++;
-          moverEvents.push({
-            tipo: "mover",
-            colaborador_id: item.existing.id,
-            colaborador_nome: item.row.displayName,
-            status: "pendente",
-            origem: "importacao_csv",
-            dados_antes: { nome: item.existing.nome, email: item.existing.email, status: item.existing.status },
-            dados_depois: item.row,
-          });
-        }
-      }));
-      const pct = 55 + Math.round((ci + 1) / changedChunks.length * 15);
-      await sb.from("sync_jobs").update({ colab_percent: pct, colab_updated: updated, message: `Atualizados ${updated}/${changedRows.length}...` }).eq("id", jobId);
-    }
-
-    // ── 9. Batch insert JML events ──
-    await sb.from("sync_jobs").update({ phase: "events", message: "Registrando eventos JML...", colab_percent: 75 }).eq("id", jobId);
-
-    const allEvents = [...joinerEvents, ...moverEvents];
-    for (const batch of chunk(allEvents, 200)) {
-      await sb.from("eventos_jml").insert(batch);
-    }
-
-    // ── 10. DELETE colaboradores ausentes do CSV ──
-    await sb.from("sync_jobs").update({ phase: "removendo", message: "Removendo ausentes do CSV...", colab_percent: 80 }).eq("id", jobId);
+    // ── 6. DELETE all existing CSV-origin records ──
+    await sb.from("sync_jobs").update({ phase: "deleting", message: `Removendo ${existingCount} registros antigos...`, colab_percent: 20 }).eq("id", jobId);
 
     let deletedCount = 0;
-    const leaverEvents: any[] = [];
-    const idsToDelete: string[] = [];
-
-    for (const [matricula, existing] of existingMap.entries()) {
-      if (!csvMatriculas.has(matricula)) {
-        idsToDelete.push(existing.id);
-        leaverEvents.push({
-          tipo: "leaver",
-          colaborador_id: existing.id,
-          colaborador_nome: existing.nome,
-          status: "executado",
-          origem: "importacao_csv",
-          dados_antes: { nome: existing.nome, email: existing.email, status: existing.status, matricula },
-        });
-      }
-    }
-
-    // Insert leaver events before deleting
-    for (const batch of chunk(leaverEvents, 200)) await sb.from("eventos_jml").insert(batch);
-
-    // Delete in batches
-    for (const batch of chunk(idsToDelete, 100)) {
+    for (const batch of chunk(existingIds, 200)) {
       const { error } = await sb.from("colaboradores").delete().in("id", batch);
       if (!error) deletedCount += batch.length;
       else console.error("Delete batch error:", error.message);
     }
-    console.log(`Deleted ${deletedCount} colaboradores absent from CSV`);
+    console.log(`Deleted ${deletedCount} existing CSV colaboradores`);
 
-    if (deletedCount > 0) {
+    // ── 7. INSERT all CSV rows (no dedup) ──
+    await sb.from("sync_jobs").update({ phase: "inserting", message: `Inserindo ${totalRows} colaboradores...`, colab_percent: 30 }).eq("id", jobId);
+
+    let created = 0;
+    const insertChunks = chunk(rows, 500);
+    for (let ci = 0; ci < insertChunks.length; ci++) {
+      const batch = insertChunks[ci];
+      const insertData = batch.map(row => buildColabData(row));
+      const { data: inserted, error: insErr } = await sb.from("colaboradores").insert(insertData).select("id");
+      if (insErr) { console.error("Insert batch error:", insErr.message); continue; }
+      if (inserted) created += inserted.length;
+      const pct = 30 + Math.round((ci + 1) / insertChunks.length * 50);
+      await sb.from("sync_jobs").update({ colab_percent: pct, colab_created: created, message: `Inseridos ${created}/${totalRows}...` }).eq("id", jobId);
+    }
+
+    // ── 8. Register JML events ──
+    await sb.from("sync_jobs").update({ phase: "events", message: "Registrando eventos JML...", colab_percent: 85 }).eq("id", jobId);
+
+    // Leaver events (matriculas that disappeared)
+    if (leaverMatriculas.length > 0) {
+      const leaverEvents = leaverMatriculas.map(mat => ({
+        tipo: "leaver",
+        colaborador_nome: mat,
+        status: "executado",
+        origem: "importacao_csv",
+        dados_antes: { matricula: mat },
+      }));
+      for (const batch of chunk(leaverEvents, 200)) await sb.from("eventos_jml").insert(batch);
+    }
+
+    // Joiner events (new matriculas)
+    if (joinerMatriculas.size > 0) {
+      const joinerEvents = Array.from(joinerMatriculas).map(mat => ({
+        tipo: "joiner",
+        colaborador_nome: mat,
+        status: "pendente",
+        origem: "importacao_csv",
+        dados_depois: { matricula: mat },
+      }));
+      for (const batch of chunk(joinerEvents, 200)) await sb.from("eventos_jml").insert(batch);
+    }
+
+    // ── 9. Alert if leavers ──
+    if (leaverMatriculas.length > 0) {
       await sb.from("alertas").insert({
         tipo: "remocao_csv",
-        titulo: `${deletedCount} colaborador(es) removido(s)`,
-        mensagem: `Importação CSV removeu ${deletedCount} colaborador(es) ausentes do arquivo.`,
+        titulo: `${leaverMatriculas.length} colaborador(es) removido(s)`,
+        mensagem: `Importação CSV removeu ${leaverMatriculas.length} colaborador(es) ausentes do arquivo.`,
         severidade: "info", ref_tipo: "sync_job", ref_id: jobId,
       });
     }
 
-    // ── 13. Finalize ──
+    // ── 10. Finalize ──
     const syntheticMsg = syntheticMatCount > 0 ? `, ${syntheticMatCount} sem matrícula original` : "";
-    const dupMsg = dupCount > 0 ? `, ${dupCount} duplicatas consolidadas` : "";
+    const removedMsg = leaverMatriculas.length > 0 ? `, ${leaverMatriculas.length} removidos` : "";
+    const newMsg = joinerMatriculas.size > 0 ? `, ${joinerMatriculas.size} novos` : "";
     await sb.from("sync_jobs").update({
       status: "done", phase: "done", colab_percent: 100,
-      colab_created: created, colab_updated: updated, colab_quarentena: deletedCount,
-      message: `Concluído: ${created} novos, ${updated} atualizados, ${deletedCount} removidos${syntheticMsg}${dupMsg}`,
+      colab_created: created, colab_updated: 0, colab_quarentena: leaverMatriculas.length,
+      message: `Concluído: ${created} inseridos${newMsg}${removedMsg}${syntheticMsg}`,
     }).eq("id", jobId);
 
     await sb.from("auditoria").insert({
       entidade: "importacao_csv", acao: "importar",
-      resumo: `CSV importado: ${totalRows} linhas, ${created} novos, ${updated} atualizados, ${deletedCount} removidos`,
-      detalhes: { filename, totalRows, created, updated, deleted: deletedCount, jobId },
+      resumo: `CSV importado: ${totalRows} linhas → ${created} inseridos, ${leaverMatriculas.length} removidos`,
+      detalhes: { filename, totalRows, created, removed: leaverMatriculas.length, newJoiners: joinerMatriculas.size, jobId },
     });
 
-    return { success: true, jobId, created, updated, deleted: deletedCount, total: totalRows };
+    return { success: true, jobId, created, removed: leaverMatriculas.length, total: totalRows };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro desconhecido";
     console.error("Processing error:", msg);
