@@ -183,9 +183,11 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
     // ── 3. Compute hashes for all rows ──
     const rowsWithHash: { row: CsvRow; matricula: string; hash: string }[] = [];
+    let syntheticMatCount = 0;
     for (const row of rows) {
       const matricula = row.employID.trim();
       if (!matricula) continue;
+      if (row["__synthetic_matricula"] === "true") syntheticMatCount++;
       const hash = await sha256(hashFields(row));
       rowsWithHash.push({ row, matricula, hash });
     }
