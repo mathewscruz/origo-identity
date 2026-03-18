@@ -480,10 +480,11 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
     // ── 13. Finalize ──
     const syntheticMsg = syntheticMatCount > 0 ? `, ${syntheticMatCount} sem matrícula original` : "";
+    const dupMsg = dupCount > 0 ? `, ${dupCount} duplicatas no CSV` : "";
     await sb.from("sync_jobs").update({
       status: "done", phase: "done", colab_percent: 100,
       colab_created: created, colab_updated: updated, colab_quarentena: quarentenaCount,
-      message: `Concluído: ${created} novos, ${updated} atualizados, ${quarentenaCount} em quarentena${syntheticMsg}`,
+      message: `Concluído: ${created} novos, ${updated} atualizados, ${quarentenaCount} em quarentena${syntheticMsg}${dupMsg}`,
     }).eq("id", jobId);
 
     await sb.from("auditoria").insert({
