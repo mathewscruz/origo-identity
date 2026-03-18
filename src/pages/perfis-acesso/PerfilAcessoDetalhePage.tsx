@@ -102,6 +102,16 @@ export default function PerfilAcessoDetalhePage() {
       queryClient.invalidateQueries({ queryKey: ["perfil_grupos", id] });
       queryClient.invalidateQueries({ queryKey: ["perfis_acesso"] });
       setEditOpen(false);
+
+      // Reprovision affected Entra ID users in background
+      supabase.functions.invoke("reprovision-entra-users", { body: { perfil_id: id } })
+        .then(({ data, error: fnErr }) => {
+          if (fnErr) { console.error("Reprovision error:", fnErr); return; }
+          const result = data as any;
+          if (result?.processed > 0) {
+            toast({ title: "Entra ID atualizado", description: `${result.processed} usuário(s) reprovisado(s).` });
+          }
+        });
     } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
     setSaving(false);
   };

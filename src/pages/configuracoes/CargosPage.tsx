@@ -100,6 +100,18 @@ export default function CargosPage() {
     toast({ title: editing ? "Cargo atualizado" : "Cargo criado" });
     qc.invalidateQueries({ queryKey: ["cargos"] });
     setDialogOpen(false);
+
+    // Reprovision affected Entra ID users when cargo profiles changed
+    if (editing && (toRemove.length > 0 || toAdd.length > 0)) {
+      supabase.functions.invoke("reprovision-entra-users", { body: { cargo_id: cargoId } })
+        .then(({ data, error: fnErr }) => {
+          if (fnErr) { console.error("Reprovision error:", fnErr); return; }
+          const result = data as any;
+          if (result?.processed > 0) {
+            toast({ title: "Entra ID atualizado", description: `${result.processed} usuário(s) reprovisado(s).` });
+          }
+        });
+    }
   };
 
   const handleDelete = async () => {
