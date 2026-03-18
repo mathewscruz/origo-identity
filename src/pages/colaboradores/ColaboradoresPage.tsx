@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, Upload, Plus, Pencil, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
+import ColaboradorActivityPopover from "@/components/ColaboradorActivityPopover";
 import { useColaboradores, useEmpresas, useAreas, useCargos, useLocalidades } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
 import TablePagination, { usePagination } from "@/components/TablePagination";
@@ -335,7 +336,10 @@ export default function ColaboradoresPage() {
                   {paginatedItems.map((c) => (
                     <tr key={c.id} className="border-b last:border-0 hover:bg-muted/50">
                       <td className="p-4">
-                        <Link to={`/colaboradores/${c.id}`} className="font-medium text-primary hover:underline">{c.nome}</Link>
+                        <div className="flex items-center">
+                          <Link to={`/colaboradores/${c.id}`} className="font-medium text-primary hover:underline">{c.nome}</Link>
+                          <ColaboradorActivityPopover colaboradorId={c.id} colaboradorNome={c.nome} />
+                        </div>
                       </td>
                       <td className="p-4 text-muted-foreground">{c.email}</td>
                       <td className="p-4 text-muted-foreground font-mono text-xs">{c.cpf}</td>
