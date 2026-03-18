@@ -121,6 +121,9 @@ export default function ColaboradoresPage() {
   function openNew() {
     setEditingId(null);
     setEditingCargoId(null);
+    setEditingStatus(null);
+    setEditingAreaId(null);
+    setEditingOrigem(null);
     setForm(emptyForm);
     setDialogOpen(true);
   }
@@ -128,6 +131,9 @@ export default function ColaboradoresPage() {
   function openEdit(c: typeof mapped[0]) {
     setEditingId(c.id);
     setEditingCargoId(c.cargo_id || null);
+    setEditingStatus(c.status);
+    setEditingAreaId(c.area_id || null);
+    setEditingOrigem(c.origem);
     setForm({
       nome: c.nome, email: c.email, cpf: c.cpf_raw, matricula: c.matricula,
       status: c.status, empresa_id: c.empresa_id, area_id: c.area_id,
