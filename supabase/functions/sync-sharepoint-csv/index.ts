@@ -132,9 +132,11 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     await sb.from("sync_jobs").update({ message: `Parsed ${totalRows} registros.`, phase: "hashing", colab_total: totalRows }).eq("id", jobId);
 
     const rowsWithHash: { row: CsvRow; matricula: string; hash: string }[] = [];
+    let syntheticMatCount = 0;
     for (const row of rows) {
       const matricula = row.employID.trim();
       if (!matricula) continue;
+      if (row["__synthetic_matricula"] === "true") syntheticMatCount++;
       rowsWithHash.push({ row, matricula, hash: await sha256(hashFields(row)) });
     }
 
