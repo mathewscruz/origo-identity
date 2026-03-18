@@ -88,6 +88,7 @@ export default function ColaboradoresPage() {
   const [form, setForm] = useState<ColabForm>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [tempPasswordInfo, setTempPasswordInfo] = useState<{ nome: string; email: string; password: string } | null>(null);
 
   const { data: colaboradores, isLoading } = useColaboradores();
   const { data: empresas } = useEmpresas();
