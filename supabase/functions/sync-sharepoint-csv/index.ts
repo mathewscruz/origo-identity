@@ -69,15 +69,26 @@ function parseCsv(text: string): CsvRow[] {
   for (const [std, actual] of Object.entries(headerMap)) reverseMap[actual] = std;
 
   const rows: CsvRow[] = [];
+  let syntheticCount = 0;
   for (let i = 1; i < lines.length; i++) {
     const values = splitCsvLine(lines[i], delimiter);
     if (values.length < rawHeaders.length * 0.5) continue;
     const row: Record<string, string> = {};
     rawHeaders.forEach((h, idx) => { row[h] = values[idx] || ""; if (reverseMap[h]) row[reverseMap[h]] = values[idx] || ""; });
-    if (!(row["employID"] || "").trim()) continue;
+    if (!(row["employID"] || "").trim()) {
+      const key = [row["displayName"] || "", row["mail"] || "", row["Cadastro_Pessoa_Fisica"] || ""].join("|");
+      const encoder = new TextEncoder();
+      const data = encoder.encode(key);
+      let hash = 0;
+      for (const b of data) { hash = ((hash << 5) - hash + b) | 0; }
+      const shortHash = Math.abs(hash).toString(36).padStart(6, "0").slice(0, 8);
+      row["employID"] = `SEM_MAT_${shortHash}`;
+      row["__synthetic_matricula"] = "true";
+      syntheticCount++;
+    }
     rows.push(row);
   }
-  console.log(`Parsed ${rows.length} rows`);
+  console.log(`Parsed ${rows.length} rows (${syntheticCount} without original matricula)`);
   return rows;
 }
 
