@@ -169,6 +169,42 @@ export type Database = {
         }
         Relationships: []
       }
+      cargo_perfis: {
+        Row: {
+          cargo_id: string
+          created_at: string
+          id: string
+          perfil_id: string
+        }
+        Insert: {
+          cargo_id: string
+          created_at?: string
+          id?: string
+          perfil_id: string
+        }
+        Update: {
+          cargo_id?: string
+          created_at?: string
+          id?: string
+          perfil_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cargo_perfis_cargo_id_fkey"
+            columns: ["cargo_id"]
+            isOneToOne: false
+            referencedRelation: "cargos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cargo_perfis_perfil_id_fkey"
+            columns: ["perfil_id"]
+            isOneToOne: false
+            referencedRelation: "perfis_acesso"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cargos: {
         Row: {
           area_id: string | null
