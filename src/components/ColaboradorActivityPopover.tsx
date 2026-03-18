@@ -3,7 +3,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Activity, UserPlus, ArrowRightLeft, UserMinus, Shield, ShieldOff } from "lucide-react";
+import { Activity, UserPlus, ArrowRightLeft, UserMinus, Shield, ShieldOff, Cloud, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
