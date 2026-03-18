@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Search, Pencil, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { usePerfisAcesso, useAplicacoes } from "@/hooks/useOrigoData";
@@ -17,24 +18,17 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-
-const sensibilidadeConfig: Record<string, { label: string; class: string }> = {
-  baixa: { label: "Normal", class: "bg-muted text-muted-foreground" },
-  media: { label: "Sensível", class: "bg-warning/15 text-warning border-warning/30" },
-  alta: { label: "Alto", class: "bg-warning/15 text-warning border-warning/30" },
-  critica: { label: "Privilegiado", class: "bg-destructive/15 text-destructive border-destructive/30" },
-};
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface PerfilForm {
   nome: string;
   descricao: string;
-  aplicacao_id: string;
+  aplicacao_ids: string[];
   tipo: string;
-  sensibilidade: string;
   ativo: boolean;
 }
 
-const emptyForm: PerfilForm = { nome: "", descricao: "", aplicacao_id: "", tipo: "funcional", sensibilidade: "media", ativo: true };
+const emptyForm: PerfilForm = { nome: "", descricao: "", aplicacao_ids: [], tipo: "funcional", ativo: true };
 
 export default function PerfisAcessoPage() {
   const { data: perfis, isLoading } = usePerfisAcesso();
@@ -53,10 +47,22 @@ export default function PerfisAcessoPage() {
   const { paginatedItems, safePage } = usePagination(list, page, pageSize);
 
   const openNew = () => { setForm(emptyForm); setEditingId(null); setDialogOpen(true); };
-  const openEdit = (p: any) => {
-    setForm({ nome: p.nome, descricao: p.descricao || "", aplicacao_id: p.aplicacao_id || "", tipo: p.tipo, sensibilidade: p.sensibilidade, ativo: p.ativo });
+  const openEdit = async (p: any) => {
+    // Fetch current app associations
+    const { data: apps } = await (supabase as any).from("perfil_aplicacoes").select("aplicacao_id").eq("perfil_id", p.id);
+    const appIds = (apps ?? []).map((a: any) => a.aplicacao_id);
+    setForm({ nome: p.nome, descricao: p.descricao || "", aplicacao_ids: appIds, tipo: p.tipo, ativo: p.ativo });
     setEditingId(p.id);
     setDialogOpen(true);
+  };
+
+  const toggleApp = (appId: string) => {
+    setForm(prev => ({
+      ...prev,
+      aplicacao_ids: prev.aplicacao_ids.includes(appId)
+        ? prev.aplicacao_ids.filter(id => id !== appId)
+        : [...prev.aplicacao_ids, appId],
+    }));
   };
 
   const handleSave = async () => {
@@ -66,20 +72,26 @@ export default function PerfisAcessoPage() {
       const payload = {
         nome: form.nome.trim(),
         descricao: form.descricao.trim() || null,
-        aplicacao_id: form.aplicacao_id || null,
         tipo: form.tipo as any,
-        sensibilidade: form.sensibilidade as any,
         ativo: form.ativo,
       };
+      let perfilId = editingId;
       if (editingId) {
         const { error } = await supabase.from("perfis_acesso").update(payload).eq("id", editingId);
         if (error) throw error;
-        toast({ title: "Perfil atualizado" });
       } else {
-        const { error } = await supabase.from("perfis_acesso").insert(payload);
+        const { data, error } = await supabase.from("perfis_acesso").insert(payload).select("id").single();
         if (error) throw error;
-        toast({ title: "Perfil criado" });
+        perfilId = data.id;
       }
+      // Sync perfil_aplicacoes
+      await (supabase as any).from("perfil_aplicacoes").delete().eq("perfil_id", perfilId);
+      if (form.aplicacao_ids.length > 0) {
+        const rows = form.aplicacao_ids.map(aid => ({ perfil_id: perfilId, aplicacao_id: aid }));
+        const { error: insErr } = await (supabase as any).from("perfil_aplicacoes").insert(rows);
+        if (insErr) throw insErr;
+      }
+      toast({ title: editingId ? "Perfil atualizado" : "Perfil criado" });
       queryClient.invalidateQueries({ queryKey: ["perfis_acesso"] });
       setDialogOpen(false);
     } catch (err: any) {
@@ -104,7 +116,7 @@ export default function PerfisAcessoPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Perfis de Acesso</h1>
-          <p className="text-sm text-muted-foreground">Conjuntos nomeados de acessos a aplicações</p>
+          <p className="text-sm text-muted-foreground">Perfis baseados em cargo com múltiplas aplicações vinculadas</p>
         </div>
         <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Perfil</Button>
       </div>
@@ -126,8 +138,7 @@ export default function PerfisAcessoPage() {
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">
                     <th className="p-4 font-medium">Nome</th>
-                    <th className="p-4 font-medium">Aplicação</th>
-                    <th className="p-4 font-medium">Sensibilidade</th>
+                    <th className="p-4 font-medium">Aplicações</th>
                     <th className="p-4 font-medium">Tipo</th>
                     <th className="p-4 font-medium">Status</th>
                     <th className="p-4 font-medium w-20">Ações</th>
@@ -135,12 +146,20 @@ export default function PerfisAcessoPage() {
                 </thead>
                 <tbody>
                   {paginatedItems.map((p: any) => {
-                    const sens = sensibilidadeConfig[p.sensibilidade] || { label: p.sensibilidade, class: "" };
+                    const apps = (p.perfil_aplicacoes ?? []).map((pa: any) => pa.aplicacoes?.nome).filter(Boolean);
                     return (
                       <tr key={p.id} className="border-b last:border-0 hover:bg-muted/50">
                         <td className="p-4"><Link to={`/perfis-acesso/${p.id}`} className="font-medium text-primary hover:underline">{p.nome}</Link></td>
-                        <td className="p-4 text-muted-foreground">{p.aplicacoes?.nome || "—"}</td>
-                        <td className="p-4"><Badge variant="outline" className={sens.class}>{sens.label}</Badge></td>
+                        <td className="p-4">
+                          {apps.length === 0 ? <span className="text-muted-foreground">—</span> : (
+                            <div className="flex flex-wrap gap-1">
+                              {apps.slice(0, 3).map((name: string, i: number) => (
+                                <Badge key={i} variant="outline" className="text-xs">{name}</Badge>
+                              ))}
+                              {apps.length > 3 && <Badge variant="secondary" className="text-xs">+{apps.length - 3}</Badge>}
+                            </div>
+                          )}
+                        </td>
                         <td className="p-4"><Badge variant="outline">{p.tipo}</Badge></td>
                         <td className="p-4"><Badge variant={p.ativo ? "default" : "secondary"}>{p.ativo ? "Ativo" : "Inativo"}</Badge></td>
                         <td className="p-4">
@@ -170,16 +189,27 @@ export default function PerfisAcessoPage() {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader><DialogTitle>{editingId ? "Editar Perfil" : "Novo Perfil de Acesso"}</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2"><Label>Nome *</Label><Input value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })} placeholder="Ex: Acesso Financeiro" /></div>
+            <div className="space-y-2"><Label>Nome *</Label><Input value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })} placeholder="Ex: Especialista de Segurança da Informação" /></div>
             <div className="space-y-2"><Label>Descrição</Label><Textarea value={form.descricao} onChange={e => setForm({ ...form, descricao: e.target.value })} placeholder="Descreva o perfil" rows={2} /></div>
+            <div className="space-y-2">
+              <Label>Aplicações</Label>
+              <ScrollArea className="h-40 rounded-md border p-3">
+                <div className="space-y-2">
+                  {(aplicacoes ?? []).map((a: any) => (
+                    <label key={a.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+                      <Checkbox
+                        checked={form.aplicacao_ids.includes(a.id)}
+                        onCheckedChange={() => toggleApp(a.id)}
+                      />
+                      <span className="text-sm">{a.nome}</span>
+                    </label>
+                  ))}
+                  {(aplicacoes ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhuma aplicação cadastrada.</p>}
+                </div>
+              </ScrollArea>
+              {form.aplicacao_ids.length > 0 && <p className="text-xs text-muted-foreground">{form.aplicacao_ids.length} aplicação(ões) selecionada(s)</p>}
+            </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Aplicação</Label>
-                <Select value={form.aplicacao_id || undefined} onValueChange={v => setForm({ ...form, aplicacao_id: v })}>
-                  <SelectTrigger><SelectValue placeholder="Selecionar" /></SelectTrigger>
-                  <SelectContent>{(aplicacoes ?? []).map((a: any) => <SelectItem key={a.id} value={a.id}>{a.nome}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
               <div className="space-y-2">
                 <Label>Tipo</Label>
                 <Select value={form.tipo} onValueChange={v => setForm({ ...form, tipo: v })}>
@@ -188,20 +218,6 @@ export default function PerfisAcessoPage() {
                     <SelectItem value="funcional">Funcional</SelectItem>
                     <SelectItem value="tecnico">Técnico</SelectItem>
                     <SelectItem value="privilegiado">Privilegiado</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Sensibilidade</Label>
-                <Select value={form.sensibilidade} onValueChange={v => setForm({ ...form, sensibilidade: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="baixa">Normal</SelectItem>
-                    <SelectItem value="media">Sensível</SelectItem>
-                    <SelectItem value="alta">Alto</SelectItem>
-                    <SelectItem value="critica">Privilegiado</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

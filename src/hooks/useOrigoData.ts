@@ -91,7 +91,7 @@ export function useAplicacoes() {
 }
 
 export function usePerfisAcesso() {
-  return useQuery({ queryKey: ["perfis_acesso"], queryFn: () => fetchAll("perfis_acesso", "*, aplicacoes(nome)", "nome"), ...REFETCH_OPTS });
+  return useQuery({ queryKey: ["perfis_acesso"], queryFn: () => fetchAll("perfis_acesso", "*, perfil_aplicacoes(aplicacao_id, aplicacoes(nome))", "nome"), ...REFETCH_OPTS });
 }
 
 export function usePerfilAcesso(id: string | undefined) {
