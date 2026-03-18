@@ -316,10 +316,14 @@ export default function PerfisAcessoPage() {
             </TabsContent>
 
             <TabsContent value="licencas" className="mt-4 overflow-auto flex-1">
-              <p className="text-xs text-muted-foreground mb-3">Selecione as licenças Microsoft que serão atribuídas aos usuários deste perfil.</p>
+              <p className="text-xs text-muted-foreground mb-2">Selecione as licenças Microsoft que serão atribuídas aos usuários deste perfil.</p>
+              <div className="relative mb-2">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input placeholder="Buscar licenças..." className="pl-9" value={buscaLicencas} onChange={e => setBuscaLicencas(e.target.value)} />
+              </div>
               <ScrollArea className="h-64 rounded-md border p-3">
                 <div className="space-y-2">
-                  {(entraLicencas ?? []).map((lic: any) => (
+                  {(entraLicencas ?? []).filter((lic: any) => !buscaLicencas || lic.nome.toLowerCase().includes(buscaLicencas.toLowerCase())).map((lic: any) => (
                     <label key={lic.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-2 py-1">
                       <Checkbox checked={form.licenca_ids.includes(lic.id)} onCheckedChange={() => toggleItem("licenca_ids", lic.id)} />
                       <div className="flex-1 min-w-0">
