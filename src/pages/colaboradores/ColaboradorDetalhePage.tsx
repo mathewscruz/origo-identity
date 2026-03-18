@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Pencil, XCircle, Plus } from "lucide-react";
 import { useColaborador, usePerfilAtribuicoes, useEventosJML, usePerfisAcesso } from "@/hooks/useOrigoData";
+import { provisionCargoAcessos } from "@/lib/provisionCargoAcessos";
+import { createEventoJML } from "@/lib/createEventoJML";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -127,6 +129,7 @@ export default function ColaboradorDetalhePage() {
             value={pessoa.status}
             onValueChange={async (newStatus) => {
               const oldStatus = pessoa.status;
+              const isManual = pessoa.origem === "manual";
               const { error } = await supabase.from("colaboradores").update({ status: newStatus as any }).eq("id", id!);
               if (error) { toast({ title: "Erro ao alterar status", description: error.message, variant: "destructive" }); return; }
               
@@ -139,6 +142,16 @@ export default function ColaboradorDetalhePage() {
                 } else {
                   toast({ title: "Aviso", description: `Status alterado mas erro no Entra ID: ${result.error}`, variant: "destructive" });
                 }
+                // JML leaver event for manual
+                if (isManual) {
+                  await createEventoJML({
+                    colaboradorId: id!,
+                    colaboradorNome: pessoa.nome,
+                    tipo: "leaver",
+                    dadosAntes: { status: oldStatus },
+                    dadosDepois: { status: newStatus },
+                  });
+                }
               }
               // If changing TO ativo → re-enable in Entra ID
               if (oldStatus !== "ativo" && newStatus === "ativo") {
@@ -149,10 +162,28 @@ export default function ColaboradorDetalhePage() {
                 } else {
                   toast({ title: "Aviso", description: `Status alterado mas erro no Entra ID: ${result.error}`, variant: "destructive" });
                 }
+                // Re-provision cargo access for manual collaborators
+                if (isManual && pessoa.cargo_id) {
+                  const provResult = await provisionCargoAcessos(id!, pessoa.cargo_id, null);
+                  if (provResult.provisioned > 0) {
+                    toast({ title: `${provResult.provisioned} acesso(s) re-provisionado(s) do cargo` });
+                  }
+                }
+                // JML joiner event for manual
+                if (isManual) {
+                  await createEventoJML({
+                    colaboradorId: id!,
+                    colaboradorNome: pessoa.nome,
+                    tipo: "joiner",
+                    dadosAntes: { status: oldStatus },
+                    dadosDepois: { status: newStatus },
+                  });
+                }
               }
               
               queryClient.invalidateQueries({ queryKey: ["colaborador", id] });
               queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
+              queryClient.invalidateQueries({ queryKey: ["eventos_jml"] });
             }}
           >
             <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
