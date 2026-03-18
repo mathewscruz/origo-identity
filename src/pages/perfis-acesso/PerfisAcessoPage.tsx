@@ -41,6 +41,9 @@ export default function PerfisAcessoPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
   const [busca, setBusca] = useState("");
+  const [buscaApps, setBuscaApps] = useState("");
+  const [buscaLicencas, setBuscaLicencas] = useState("");
+  const [buscaGrupos, setBuscaGrupos] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [dialogOpen, setDialogOpen] = useState(false);
