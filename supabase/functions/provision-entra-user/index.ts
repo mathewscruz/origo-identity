@@ -63,6 +63,14 @@ Deno.serve(async (req) => {
     if (colab.entra_id) throw new Error("Colaborador já possui entra_id");
     if (!colab.email) throw new Error("Email é obrigatório para criar usuário no Entra ID");
 
+    // Fetch usage_location parameter (default: "BR")
+    const { data: paramRow } = await supabase
+      .from("parametros")
+      .select("valor")
+      .eq("chave", "usage_location")
+      .single();
+    const usageLocation = paramRow?.valor || "BR";
+
     const token = await getAccessToken();
     const graphHeaders = {
       Authorization: `Bearer ${token}`,
@@ -81,6 +89,7 @@ Deno.serve(async (req) => {
         displayName: colab.nome,
         mailNickname,
         userPrincipalName: colab.email,
+        usageLocation,
         passwordProfile: {
           forceChangePasswordNextSignIn: true,
           password: tempPassword,
@@ -123,6 +132,8 @@ Deno.serve(async (req) => {
     let groupsAdded = 0;
 
     if (perfilIds.length > 0) {
+      // Wait for Entra ID to fully propagate the new user before assigning licenses
+      await new Promise((r) => setTimeout(r, 3000));
       // 5. Get licenses linked to these profiles
       const { data: perfilLicencas } = await supabase
         .from("perfil_licencas")
