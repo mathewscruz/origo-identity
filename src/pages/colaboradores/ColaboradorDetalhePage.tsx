@@ -122,7 +122,50 @@ export default function ColaboradorDetalhePage() {
           </div>
           <p className="text-sm text-muted-foreground">{cargo} · {area} · {empresa}</p>
         </div>
-        <Button variant="outline" size="sm"><Pencil className="mr-1 h-3 w-3" /> Editar</Button>
+        <div className="flex gap-2">
+          <Select
+            value={pessoa.status}
+            onValueChange={async (newStatus) => {
+              const oldStatus = pessoa.status;
+              const { error } = await supabase.from("colaboradores").update({ status: newStatus as any }).eq("id", id!);
+              if (error) { toast({ title: "Erro ao alterar status", description: error.message, variant: "destructive" }); return; }
+              
+              // If changing FROM ativo to non-ativo → disable in Entra ID
+              if (oldStatus === "ativo" && newStatus !== "ativo") {
+                toast({ title: "Desativando usuário no Entra ID..." });
+                const result = await disableEntraUser(id!, "disable");
+                if (result.success) {
+                  toast({ title: "Usuário desativado", description: `Entra ID desativado. ${result.atribuicoes_revoked} acessos revogados.` });
+                } else {
+                  toast({ title: "Aviso", description: `Status alterado mas erro no Entra ID: ${result.error}`, variant: "destructive" });
+                }
+              }
+              // If changing TO ativo → re-enable in Entra ID
+              if (oldStatus !== "ativo" && newStatus === "ativo") {
+                toast({ title: "Reativando usuário no Entra ID..." });
+                const result = await disableEntraUser(id!, "enable");
+                if (result.success) {
+                  toast({ title: "Usuário reativado no Entra ID" });
+                } else {
+                  toast({ title: "Aviso", description: `Status alterado mas erro no Entra ID: ${result.error}`, variant: "destructive" });
+                }
+              }
+              
+              queryClient.invalidateQueries({ queryKey: ["colaborador", id] });
+              queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
+            }}
+          >
+            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ativo">Ativo</SelectItem>
+              <SelectItem value="inativo">Inativo</SelectItem>
+              <SelectItem value="ferias">Férias</SelectItem>
+              <SelectItem value="afastado">Afastado</SelectItem>
+              <SelectItem value="desligado">Desligado</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="sm"><Pencil className="mr-1 h-3 w-3" /> Editar</Button>
+        </div>
       </div>
 
       <Tabs defaultValue="dados">
