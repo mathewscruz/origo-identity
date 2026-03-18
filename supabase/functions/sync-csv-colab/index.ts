@@ -458,7 +458,22 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       });
     }
 
-    return { success: true, jobId, created, updated, quarentena: quarentenaCount, total: totalRows };
+    // ── 13. Finalize ──
+    const syntheticMsg = syntheticMatCount > 0 ? `, ${syntheticMatCount} sem matrícula original` : "";
+    const dupMsg = dupCount > 0 ? `, ${dupCount} duplicatas consolidadas` : "";
+    await sb.from("sync_jobs").update({
+      status: "done", phase: "done", colab_percent: 100,
+      colab_created: created, colab_updated: updated, colab_quarentena: deletedCount,
+      message: `Concluído: ${created} novos, ${updated} atualizados, ${deletedCount} removidos${syntheticMsg}${dupMsg}`,
+    }).eq("id", jobId);
+
+    await sb.from("auditoria").insert({
+      entidade: "importacao_csv", acao: "importar",
+      resumo: `CSV importado: ${totalRows} linhas, ${created} novos, ${updated} atualizados, ${deletedCount} removidos`,
+      detalhes: { filename, totalRows, created, updated, deleted: deletedCount, jobId },
+    });
+
+    return { success: true, jobId, created, updated, deleted: deletedCount, total: totalRows };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro desconhecido";
     console.error("Processing error:", msg);
