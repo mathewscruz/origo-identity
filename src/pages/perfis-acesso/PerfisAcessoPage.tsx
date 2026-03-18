@@ -41,6 +41,9 @@ export default function PerfisAcessoPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
   const [busca, setBusca] = useState("");
+  const [buscaApps, setBuscaApps] = useState("");
+  const [buscaLicencas, setBuscaLicencas] = useState("");
+  const [buscaGrupos, setBuscaGrupos] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -295,9 +298,13 @@ export default function PerfisAcessoPage() {
             </TabsContent>
 
             <TabsContent value="aplicacoes" className="mt-4 overflow-auto flex-1">
+              <div className="relative mb-2">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input placeholder="Buscar aplicações..." className="pl-9" value={buscaApps} onChange={e => setBuscaApps(e.target.value)} />
+              </div>
               <ScrollArea className="h-64 rounded-md border p-3">
                 <div className="space-y-2">
-                  {(aplicacoes ?? []).map((a: any) => (
+                  {(aplicacoes ?? []).filter((a: any) => !buscaApps || a.nome.toLowerCase().includes(buscaApps.toLowerCase())).map((a: any) => (
                     <label key={a.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
                       <Checkbox checked={form.aplicacao_ids.includes(a.id)} onCheckedChange={() => toggleItem("aplicacao_ids", a.id)} />
                       <span className="text-sm">{a.nome}</span>
@@ -309,10 +316,14 @@ export default function PerfisAcessoPage() {
             </TabsContent>
 
             <TabsContent value="licencas" className="mt-4 overflow-auto flex-1">
-              <p className="text-xs text-muted-foreground mb-3">Selecione as licenças Microsoft que serão atribuídas aos usuários deste perfil.</p>
+              <p className="text-xs text-muted-foreground mb-2">Selecione as licenças Microsoft que serão atribuídas aos usuários deste perfil.</p>
+              <div className="relative mb-2">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input placeholder="Buscar licenças..." className="pl-9" value={buscaLicencas} onChange={e => setBuscaLicencas(e.target.value)} />
+              </div>
               <ScrollArea className="h-64 rounded-md border p-3">
                 <div className="space-y-2">
-                  {(entraLicencas ?? []).map((lic: any) => (
+                  {(entraLicencas ?? []).filter((lic: any) => !buscaLicencas || lic.nome.toLowerCase().includes(buscaLicencas.toLowerCase())).map((lic: any) => (
                     <label key={lic.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-2 py-1">
                       <Checkbox checked={form.licenca_ids.includes(lic.id)} onCheckedChange={() => toggleItem("licenca_ids", lic.id)} />
                       <div className="flex-1 min-w-0">
@@ -327,10 +338,14 @@ export default function PerfisAcessoPage() {
             </TabsContent>
 
             <TabsContent value="grupos" className="mt-4 overflow-auto flex-1">
-              <p className="text-xs text-muted-foreground mb-3">Selecione os grupos do Entra ID que os usuários deste perfil receberão.</p>
+              <p className="text-xs text-muted-foreground mb-2">Selecione os grupos do Entra ID que os usuários deste perfil receberão.</p>
+              <div className="relative mb-2">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input placeholder="Buscar grupos..." className="pl-9" value={buscaGrupos} onChange={e => setBuscaGrupos(e.target.value)} />
+              </div>
               <ScrollArea className="h-64 rounded-md border p-3">
                 <div className="space-y-2">
-                  {(entraGrupos ?? []).map((grp: any) => (
+                  {(entraGrupos ?? []).filter((grp: any) => !buscaGrupos || grp.nome.toLowerCase().includes(buscaGrupos.toLowerCase())).map((grp: any) => (
                     <label key={grp.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-2 py-1">
                       <Checkbox checked={form.grupo_ids.includes(grp.id)} onCheckedChange={() => toggleItem("grupo_ids", grp.id)} />
                       <div className="flex-1 min-w-0">
