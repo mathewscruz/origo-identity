@@ -30,6 +30,13 @@ interface Atribuicao {
   perfis_acesso: { nome: string } | null;
 }
 
+interface AuditoriaItem {
+  id: string;
+  acao: string;
+  resumo: string | null;
+  timestamp: string;
+}
+
 const tipoConfig = {
   joiner: { label: "Entrada", icon: UserPlus, class: "text-success" },
   mover: { label: "Movimentação", icon: ArrowRightLeft, class: "text-info" },
