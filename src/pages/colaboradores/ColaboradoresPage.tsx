@@ -172,12 +172,85 @@ export default function ColaboradoresPage() {
     
     if (error) { setSaving(false); toast({ title: "Erro ao salvar", description: error.message, variant: "destructive" }); return; }
 
-    // Provision access profiles if cargo changed
-    const cargoChanged = form.cargo_id !== (editingCargoId || "");
-    if (colaboradorId && (cargoChanged || !editingId)) {
-      const result = await provisionCargoAcessos(colaboradorId, form.cargo_id || null, editingCargoId || null);
-      if (result.provisioned > 0 || result.revoked > 0) {
-        toast({ title: `Acessos atualizados: ${result.provisioned} concedido(s), ${result.revoked} revogado(s)` });
+    // --- Lifecycle only for manual collaborators ---
+    const isManual = !editingId || editingOrigem === "manual";
+    
+    if (isManual && colaboradorId) {
+      const cargoChanged = form.cargo_id !== (editingCargoId || "");
+      const areaChanged = form.area_id !== (editingAreaId || "");
+      const statusChanged = editingId ? form.status !== editingStatus : false;
+      const becameInactive = statusChanged && editingStatus === "ativo" && form.status !== "ativo";
+      const becameActive = statusChanged && editingStatus !== "ativo" && form.status === "ativo";
+
+      // 1. Provision cargo access profiles
+      if (cargoChanged || !editingId || becameActive) {
+        const result = await provisionCargoAcessos(colaboradorId, form.cargo_id || null, editingId ? (editingCargoId || null) : null);
+        if (result.provisioned > 0 || result.revoked > 0) {
+          toast({ title: `Acessos atualizados: ${result.provisioned} concedido(s), ${result.revoked} revogado(s)` });
+        }
+      }
+
+      // 2. Handle Entra ID disable/enable on status change
+      if (becameInactive) {
+        toast({ title: "Desativando usuário no Entra ID..." });
+        const result = await disableEntraUser(colaboradorId, "disable");
+        if (result.success) {
+          toast({ title: "Usuário desativado", description: `Entra ID desativado. ${result.atribuicoes_revoked} acessos revogados.` });
+        } else {
+          toast({ title: "Aviso", description: `Status alterado mas erro no Entra ID: ${result.error}`, variant: "destructive" });
+        }
+      } else if (becameActive) {
+        toast({ title: "Reativando usuário no Entra ID..." });
+        const result = await disableEntraUser(colaboradorId, "enable");
+        if (result.success) {
+          toast({ title: "Usuário reativado no Entra ID" });
+        } else {
+          toast({ title: "Aviso", description: `Status alterado mas erro no Entra ID: ${result.error}`, variant: "destructive" });
+        }
+      }
+
+      // 3. Generate JML events
+      if (!editingId) {
+        // New collaborator = joiner
+        await createEventoJML({
+          colaboradorId,
+          colaboradorNome: form.nome.trim(),
+          tipo: "joiner",
+          dadosDepois: { cargo_id: form.cargo_id, area_id: form.area_id, status: form.status },
+        });
+      } else if (becameInactive) {
+        await createEventoJML({
+          colaboradorId,
+          colaboradorNome: form.nome.trim(),
+          tipo: "leaver",
+          dadosAntes: { status: editingStatus },
+          dadosDepois: { status: form.status },
+        });
+      } else if (becameActive) {
+        await createEventoJML({
+          colaboradorId,
+          colaboradorNome: form.nome.trim(),
+          tipo: "joiner",
+          dadosAntes: { status: editingStatus },
+          dadosDepois: { status: form.status },
+        });
+      } else if (cargoChanged || areaChanged) {
+        await createEventoJML({
+          colaboradorId,
+          colaboradorNome: form.nome.trim(),
+          tipo: "mover",
+          dadosAntes: { cargo_id: editingCargoId, area_id: editingAreaId },
+          dadosDepois: { cargo_id: form.cargo_id, area_id: form.area_id },
+        });
+      }
+    } else if (colaboradorId) {
+      // Non-manual: keep existing cargo provisioning only
+      const cargoChanged = form.cargo_id !== (editingCargoId || "");
+      if (cargoChanged || !editingId) {
+        const result = await provisionCargoAcessos(colaboradorId, form.cargo_id || null, editingCargoId || null);
+        if (result.provisioned > 0 || result.revoked > 0) {
+          toast({ title: `Acessos atualizados: ${result.provisioned} concedido(s), ${result.revoked} revogado(s)` });
+        }
       }
     }
 
@@ -185,6 +258,7 @@ export default function ColaboradoresPage() {
     toast({ title: editingId ? "Colaborador atualizado" : "Colaborador criado" });
     queryClient.invalidateQueries({ queryKey: ["colaboradores"] });
     queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
+    queryClient.invalidateQueries({ queryKey: ["eventos_jml"] });
     setDialogOpen(false);
   }
 
