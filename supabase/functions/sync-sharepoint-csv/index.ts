@@ -70,6 +70,8 @@ function parseCsv(text: string): CsvRow[] {
 
   const rows: CsvRow[] = [];
   let syntheticCount = 0;
+  const matCount = new Map<string, number>();
+
   for (let i = 1; i < lines.length; i++) {
     const values = splitCsvLine(lines[i], delimiter);
     if (values.length < rawHeaders.length * 0.5) continue;
@@ -86,6 +88,14 @@ function parseCsv(text: string): CsvRow[] {
       row["__synthetic_matricula"] = "true";
       syntheticCount++;
     }
+
+    const baseMat = row["employID"].trim();
+    const count = matCount.get(baseMat) || 0;
+    matCount.set(baseMat, count + 1);
+    if (count > 0) {
+      row["employID"] = `${baseMat}_ROW_${count + 1}`;
+    }
+
     rows.push(row);
   }
   console.log(`Parsed ${rows.length} rows (${syntheticCount} without original matricula)`);
@@ -108,7 +118,22 @@ function chunk<T>(arr: T[], size: number): T[][] {
 
 const PLACEHOLDER_EMPRESA_ID = "00000000-0000-0000-0000-000000000000";
 
-// ── Delete-all + Re-insert processing logic ──
+function buildFingerprint(row: CsvRow): string {
+  return [
+    row.displayName || "",
+    row.mail || "",
+    (row.status || "ativo").toLowerCase(),
+    row.company || "",
+    (row.description || row.title || ""),
+    row.departmentNumber || "",
+    row.Base_Local || "",
+    row.Cadastro_Pessoa_Fisica || "",
+    row.Data_Admissao || "",
+    row.Data_Rescisao || "",
+  ].join("|").toLowerCase();
+}
+
+// ── Incremental sync processing logic ──
 async function processCsvData(sb: any, csvText: string, filename: string) {
   const { data: job, error: jobErr } = await sb.from("sync_jobs")
     .insert({ status: "running", tipo: "csv_colab", message: "Iniciando importação CSV (SharePoint)...", phase: "parsing", filename })
@@ -117,46 +142,23 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
   const jobId = job.id;
 
   try {
-    // ── Parse CSV — ALL rows, NO deduplication ──
     const rows = parseCsv(csvText);
     const totalRows = rows.length;
-    await sb.from("sync_jobs").update({ message: `Parsed ${totalRows} registros.`, phase: "preparing", colab_total: totalRows }).eq("id", jobId);
+    await sb.from("sync_jobs").update({ message: `Parsed ${totalRows} registros. Comparando...`, phase: "comparing", colab_total: totalRows }).eq("id", jobId);
 
-    // ── Count existing CSV-origin records for JML comparison ──
-    const existingMatriculas = new Set<string>();
+    // ── Load existing CSV-origin records ──
+    const existingMap = new Map<string, { id: string; fingerprint: string }>();
     let from = 0;
-    const existingIds: string[] = [];
     while (true) {
-      const { data } = await sb.from("colaboradores").select("id, matricula, nome, status").eq("origem", "csv").range(from, from + 999);
+      const { data } = await sb.from("colaboradores").select("id, matricula, import_hash").eq("origem", "csv").range(from, from + 999);
       if (!data || data.length === 0) break;
       data.forEach((c: any) => {
-        existingIds.push(c.id);
-        if (c.matricula) existingMatriculas.add(c.matricula);
+        if (c.matricula) existingMap.set(c.matricula, { id: c.id, fingerprint: c.import_hash || "" });
       });
       if (data.length < 1000) break;
       from += 1000;
     }
-    const existingCount = existingIds.length;
-    console.log(`Existing CSV colaboradores: ${existingCount}`);
-
-    // ── Collect CSV matriculas for JML events ──
-    const csvMatriculas = new Set<string>();
-    let syntheticMatCount = 0;
-    for (const row of rows) {
-      const mat = row.employID?.trim();
-      if (mat) csvMatriculas.add(mat);
-      if (row["__synthetic_matricula"] === "true") syntheticMatCount++;
-    }
-
-    const leaverMatriculas: string[] = [];
-    for (const mat of existingMatriculas) {
-      if (!csvMatriculas.has(mat)) leaverMatriculas.push(mat);
-    }
-    const joinerMatriculas = new Set<string>();
-    for (const mat of csvMatriculas) {
-      if (!existingMatriculas.has(mat)) joinerMatriculas.add(mat);
-    }
-    console.log(`JML preview: ${joinerMatriculas.size} joiners, ${leaverMatriculas.length} leavers`);
+    console.log(`Existing CSV colaboradores: ${existingMap.size}`);
 
     // ── Resolve lookup entities ──
     await sb.from("sync_jobs").update({ phase: "lookups", message: "Resolvendo entidades...", colab_percent: 10 }).eq("id", jobId);
@@ -224,32 +226,88 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         status: STATUS_MAP[(row.status || "ativo").toLowerCase()] || "ativo",
         data_admissao: parseDate(row.Data_Admissao), data_desligamento: parseDate(row.Data_Rescisao),
         origem: "csv", ultima_importacao_id: jobId,
+        import_hash: buildFingerprint(row),
       };
     }
 
-    // ── DELETE all existing CSV-origin records ──
-    await sb.from("sync_jobs").update({ phase: "deleting", message: `Removendo ${existingCount} registros antigos...`, colab_percent: 20 }).eq("id", jobId);
+    // ── Classify rows ──
+    await sb.from("sync_jobs").update({ phase: "classifying", message: "Classificando mudanças...", colab_percent: 20 }).eq("id", jobId);
 
-    let deletedCount = 0;
-    for (const batch of chunk(existingIds, 200)) {
-      const { error } = await sb.from("colaboradores").delete().in("id", batch);
-      if (!error) deletedCount += batch.length;
-      else console.error("Delete batch error:", error.message);
+    const toInsert: any[] = [];
+    const toUpdate: { id: string; data: any }[] = [];
+    const csvMatriculas = new Set<string>();
+    let unchanged = 0;
+
+    for (const row of rows) {
+      const mat = row.employID.trim();
+      csvMatriculas.add(mat);
+      const fp = buildFingerprint(row);
+      const existing = existingMap.get(mat);
+
+      if (!existing) {
+        toInsert.push(buildColabData(row));
+      } else if (existing.fingerprint !== fp) {
+        toUpdate.push({ id: existing.id, data: buildColabData(row) });
+      } else {
+        unchanged++;
+      }
     }
-    console.log(`Deleted ${deletedCount} existing CSV colaboradores`);
 
-    // ── INSERT all CSV rows ──
-    await sb.from("sync_jobs").update({ phase: "inserting", message: `Inserindo ${totalRows} colaboradores...`, colab_percent: 30 }).eq("id", jobId);
+    const leaverIds: string[] = [];
+    const leaverMatriculas: string[] = [];
+    for (const [mat, rec] of existingMap) {
+      if (!csvMatriculas.has(mat)) {
+        leaverIds.push(rec.id);
+        leaverMatriculas.push(mat);
+      }
+    }
+
+    console.log(`Classification: ${toInsert.length} new, ${toUpdate.length} changed, ${unchanged} unchanged, ${leaverIds.length} leavers`);
+
+    // ── Execute INSERTs ──
+    await sb.from("sync_jobs").update({ phase: "inserting", message: `Inserindo ${toInsert.length} novos...`, colab_percent: 30 }).eq("id", jobId);
 
     let created = 0;
-    const insertChunks = chunk(rows, 500);
-    for (let ci = 0; ci < insertChunks.length; ci++) {
-      const batch = insertChunks[ci];
-      const { data: inserted, error: insErr } = await sb.from("colaboradores").insert(batch.map(row => buildColabData(row))).select("id");
-      if (insErr) { console.error("Insert batch error:", insErr.message); continue; }
-      if (inserted) created += inserted.length;
-      const pct = 30 + Math.round((ci + 1) / insertChunks.length * 50);
-      await sb.from("sync_jobs").update({ colab_percent: pct, colab_created: created, message: `Inseridos ${created}/${totalRows}...` }).eq("id", jobId);
+    if (toInsert.length > 0) {
+      const insertChunks = chunk(toInsert, 500);
+      for (let ci = 0; ci < insertChunks.length; ci++) {
+        const { data: inserted, error: insErr } = await sb.from("colaboradores").insert(insertChunks[ci]).select("id");
+        if (insErr) { console.error("Insert batch error:", insErr.message); continue; }
+        if (inserted) created += inserted.length;
+        const pct = 30 + Math.round((ci + 1) / insertChunks.length * 20);
+        await sb.from("sync_jobs").update({ colab_percent: pct, colab_created: created }).eq("id", jobId);
+      }
+    }
+
+    // ── Execute UPDATEs ──
+    let updated = 0;
+    if (toUpdate.length > 0) {
+      await sb.from("sync_jobs").update({ phase: "updating", message: `Atualizando ${toUpdate.length}...`, colab_percent: 55 }).eq("id", jobId);
+      for (const item of toUpdate) {
+        const { error } = await sb.from("colaboradores").update(item.data).eq("id", item.id);
+        if (!error) updated++;
+      }
+    }
+
+    // ── DELETE leavers ──
+    if (leaverIds.length > 0) {
+      await sb.from("sync_jobs").update({ phase: "removing", message: `Removendo ${leaverIds.length} ausentes...`, colab_percent: 75 }).eq("id", jobId);
+      for (const batch of chunk(leaverIds, 200)) {
+        await sb.from("colaboradores").delete().in("id", batch);
+      }
+    }
+
+    // ── Update unchanged records' import job ──
+    if (unchanged > 0) {
+      const unchangedIds: string[] = [];
+      for (const row of rows) {
+        const mat = row.employID.trim();
+        const existing = existingMap.get(mat);
+        if (existing && existing.fingerprint === buildFingerprint(row)) unchangedIds.push(existing.id);
+      }
+      for (const batch of chunk(unchangedIds, 500)) {
+        await sb.from("colaboradores").update({ ultima_importacao_id: jobId }).in("id", batch);
+      }
     }
 
     // ── Register JML events ──
@@ -257,15 +315,21 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
     if (leaverMatriculas.length > 0) {
       const leaverEvents = leaverMatriculas.map(mat => ({
-        tipo: "leaver", colaborador_nome: mat, status: "executado", origem: "importacao_csv", dados_antes: { matricula: mat },
+        tipo: "leaver", colaborador_nome: mat, status: "pendente", origem: "importacao_csv", dados_antes: { matricula: mat },
       }));
       for (const b of chunk(leaverEvents, 200)) await sb.from("eventos_jml").insert(b);
     }
-    if (joinerMatriculas.size > 0) {
-      const joinerEvents = Array.from(joinerMatriculas).map(mat => ({
-        tipo: "joiner", colaborador_nome: mat, status: "pendente", origem: "importacao_csv", dados_depois: { matricula: mat },
+    if (toInsert.length > 0) {
+      const joinerEvents = toInsert.map(c => ({
+        tipo: "joiner", colaborador_nome: c.nome || c.matricula, status: "pendente", origem: "importacao_csv", dados_depois: { matricula: c.matricula },
       }));
       for (const b of chunk(joinerEvents, 200)) await sb.from("eventos_jml").insert(b);
+    }
+    if (toUpdate.length > 0) {
+      const moverEvents = toUpdate.map(u => ({
+        tipo: "mover", colaborador_nome: u.data.nome || u.data.matricula, colaborador_id: u.id, status: "pendente", origem: "importacao_csv", dados_depois: { matricula: u.data.matricula },
+      }));
+      for (const b of chunk(moverEvents, 200)) await sb.from("eventos_jml").insert(b);
     }
 
     if (leaverMatriculas.length > 0) {
@@ -277,22 +341,19 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     }
 
     // ── Finalize ──
-    const syntheticMsg = syntheticMatCount > 0 ? `, ${syntheticMatCount} sem matrícula original` : "";
-    const removedMsg = leaverMatriculas.length > 0 ? `, ${leaverMatriculas.length} removidos` : "";
-    const newMsg = joinerMatriculas.size > 0 ? `, ${joinerMatriculas.size} novos` : "";
     await sb.from("sync_jobs").update({
       status: "done", phase: "done", colab_percent: 100,
-      colab_created: created, colab_updated: 0, colab_quarentena: leaverMatriculas.length,
-      message: `Concluído: ${created} inseridos${newMsg}${removedMsg}${syntheticMsg}`,
+      colab_created: created, colab_updated: updated, colab_quarentena: leaverMatriculas.length,
+      message: `Concluído: ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos`,
     }).eq("id", jobId);
 
     await sb.from("auditoria").insert({
       entidade: "importacao_csv", acao: "importar",
-      resumo: `CSV SharePoint: ${totalRows} linhas → ${created} inseridos, ${leaverMatriculas.length} removidos`,
-      detalhes: { filename, totalRows, created, removed: leaverMatriculas.length, newJoiners: joinerMatriculas.size, jobId },
+      resumo: `CSV SharePoint: ${totalRows} linhas → ${created} novos, ${updated} atualizados, ${leaverMatriculas.length} removidos`,
+      detalhes: { filename, totalRows, created, updated, unchanged, removed: leaverMatriculas.length, jobId },
     });
 
-    return { success: true, jobId, file: filename, created, removed: leaverMatriculas.length, total: totalRows };
+    return { success: true, jobId, file: filename, created, updated, unchanged, removed: leaverMatriculas.length, total: totalRows };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro desconhecido";
     console.error("Processing error:", msg);
@@ -322,7 +383,6 @@ Deno.serve(async (req) => {
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
 
   try {
-    // 1. Azure AD token
     console.log("Authenticating with Azure AD...");
     const tokenRes = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
       method: "POST",
@@ -335,7 +395,6 @@ Deno.serve(async (req) => {
 
     const graphHeaders = { Authorization: `Bearer ${access_token}`, "Content-Type": "application/json" };
 
-    // 2. Resolve SharePoint site
     console.log("Resolving SharePoint site...");
     const siteRes = await fetch("https://graph.microsoft.com/v1.0/sites/origoenergia.sharepoint.com:/sites/dataanalytics", { headers: graphHeaders });
     if (!siteRes.ok) throw new Error(`Site resolution failed: ${siteRes.status}`);
@@ -343,7 +402,6 @@ Deno.serve(async (req) => {
     const siteId = site.id;
     console.log(`Site resolved: ${siteId}`);
 
-    // 3. List files
     console.log("Listing files in RH_COLAB...");
     const filesRes = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/RH_COLAB:/children?$orderby=lastModifiedDateTime desc&$top=50`, { headers: graphHeaders });
     if (!filesRes.ok) throw new Error(`Folder listing failed: ${filesRes.status}`);
@@ -359,7 +417,6 @@ Deno.serve(async (req) => {
     const latestFile = csvFiles[0];
     console.log(`Latest CSV: ${latestFile.name} (modified: ${latestFile.lastModifiedDateTime})`);
 
-    // 4. Download CSV
     const downloadUrl = latestFile["@microsoft.graph.downloadUrl"];
     let csvBytes: Uint8Array;
     if (downloadUrl) {
@@ -373,7 +430,6 @@ Deno.serve(async (req) => {
     }
     console.log(`Downloaded ${csvBytes.length} bytes`);
 
-    // 5. Process CSV DIRECTLY
     const csvText = new TextDecoder("utf-8").decode(csvBytes);
     const result = await processCsvData(sb, csvText, latestFile.name);
 

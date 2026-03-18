@@ -106,6 +106,9 @@ function parseCsv(text: string): CsvRow[] {
 
   const rows: CsvRow[] = [];
   let syntheticCount = 0;
+  // Track duplicate employIDs to add positional suffix
+  const matCount = new Map<string, number>();
+
   for (let i = 1; i < lines.length; i++) {
     const values = splitCsvLine(lines[i], delimiter);
     if (values.length < rawHeaders.length * 0.5) continue;
@@ -125,6 +128,15 @@ function parseCsv(text: string): CsvRow[] {
       row["__synthetic_matricula"] = "true";
       syntheticCount++;
     }
+
+    // Handle duplicate matriculas: add _ROW_N suffix for duplicates
+    const baseMat = row["employID"].trim();
+    const count = matCount.get(baseMat) || 0;
+    matCount.set(baseMat, count + 1);
+    if (count > 0) {
+      row["employID"] = `${baseMat}_ROW_${count + 1}`;
+    }
+
     rows.push(row);
   }
   console.log(`Parsed ${rows.length} rows (${syntheticCount} without original matricula)`);
@@ -150,6 +162,22 @@ function chunk<T>(arr: T[], size: number): T[][] {
 
 const PLACEHOLDER_EMPRESA_ID = "00000000-0000-0000-0000-000000000000";
 
+/** Build a fingerprint string from a CSV row's key fields for change detection */
+function buildFingerprint(row: CsvRow): string {
+  return [
+    row.displayName || "",
+    row.mail || "",
+    (row.status || "ativo").toLowerCase(),
+    row.company || "",
+    (row.description || row.title || ""),
+    row.departmentNumber || "",
+    row.Base_Local || "",
+    row.Cadastro_Pessoa_Fisica || "",
+    row.Data_Admissao || "",
+    row.Data_Rescisao || "",
+  ].join("|").toLowerCase();
+}
+
 async function processCsvData(sb: any, csvText: string, filename: string) {
   // ── 1. Create sync_job ──
   const { data: job, error: jobErr } = await sb
@@ -160,56 +188,37 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
   const jobId = job.id;
 
   try {
-    // ── 2. Parse CSV — ALL rows, NO deduplication ──
+    // ── 2. Parse CSV — ALL rows, with positional suffix for duplicates ──
     const rows = parseCsv(csvText);
     const totalRows = rows.length;
 
-    await sb.from("sync_jobs").update({ message: `Parsed ${totalRows} registros. Processando...`, phase: "preparing", colab_total: totalRows }).eq("id", jobId);
+    await sb.from("sync_jobs").update({ message: `Parsed ${totalRows} registros. Comparando...`, phase: "comparing", colab_total: totalRows }).eq("id", jobId);
 
-    // ── 3. Count existing CSV-origin records for JML comparison ──
-    const existingMatriculas = new Set<string>();
+    // ── 3. Load existing CSV-origin records into a Map ──
+    const existingMap = new Map<string, { id: string; fingerprint: string }>();
     let from = 0;
     const PAGE = 1000;
-    const existingIds: string[] = [];
     while (true) {
       const { data } = await sb
         .from("colaboradores")
-        .select("id, matricula, nome, email, status")
+        .select("id, matricula, nome, email, status, empresa_id, cargo_id, area_id, localidade_id, cpf, data_admissao, data_desligamento, import_hash")
         .eq("origem", "csv")
         .range(from, from + PAGE - 1);
       if (!data || data.length === 0) break;
       data.forEach((c: any) => {
-        existingIds.push(c.id);
-        if (c.matricula) existingMatriculas.add(c.matricula);
+        if (c.matricula) {
+          existingMap.set(c.matricula, {
+            id: c.id,
+            fingerprint: c.import_hash || "", // we store fingerprint in import_hash
+          });
+        }
       });
       if (data.length < PAGE) break;
       from += PAGE;
     }
-    const existingCount = existingIds.length;
-    console.log(`Existing CSV colaboradores: ${existingCount}`);
+    console.log(`Existing CSV colaboradores: ${existingMap.size}`);
 
-    // ── 4. Collect CSV matriculas for JML events ──
-    const csvMatriculas = new Set<string>();
-    let syntheticMatCount = 0;
-    for (const row of rows) {
-      const mat = row.employID?.trim();
-      if (mat) csvMatriculas.add(mat);
-      if (row["__synthetic_matricula"] === "true") syntheticMatCount++;
-    }
-
-    // Leavers: matriculas that existed but are not in CSV anymore
-    const leaverMatriculas: string[] = [];
-    for (const mat of existingMatriculas) {
-      if (!csvMatriculas.has(mat)) leaverMatriculas.push(mat);
-    }
-    // Joiners: matriculas in CSV that didn't exist before
-    const joinerMatriculas = new Set<string>();
-    for (const mat of csvMatriculas) {
-      if (!existingMatriculas.has(mat)) joinerMatriculas.add(mat);
-    }
-    console.log(`JML preview: ${joinerMatriculas.size} joiners, ${leaverMatriculas.length} leavers`);
-
-    // ── 5. Resolve lookup entities ──
+    // ── 4. Resolve lookup entities ──
     await sb.from("sync_jobs").update({ phase: "lookups", message: "Resolvendo entidades auxiliares...", colab_percent: 10 }).eq("id", jobId);
 
     const empresaCache = new Map<string, string>();
@@ -291,63 +300,143 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         data_desligamento: parseDate(row.Data_Rescisao),
         origem: "csv",
         ultima_importacao_id: jobId,
+        import_hash: buildFingerprint(row),
       };
     }
 
-    // ── 6. DELETE all existing CSV-origin records ──
-    await sb.from("sync_jobs").update({ phase: "deleting", message: `Removendo ${existingCount} registros antigos...`, colab_percent: 20 }).eq("id", jobId);
+    // ── 5. Classify rows: insert / update / skip ──
+    await sb.from("sync_jobs").update({ phase: "classifying", message: "Classificando mudanças...", colab_percent: 20 }).eq("id", jobId);
 
-    let deletedCount = 0;
-    for (const batch of chunk(existingIds, 200)) {
-      const { error } = await sb.from("colaboradores").delete().in("id", batch);
-      if (!error) deletedCount += batch.length;
-      else console.error("Delete batch error:", error.message);
+    const toInsert: any[] = [];
+    const toUpdate: { id: string; data: any }[] = [];
+    const csvMatriculas = new Set<string>();
+    let unchanged = 0;
+
+    for (const row of rows) {
+      const mat = row.employID.trim();
+      csvMatriculas.add(mat);
+      const fp = buildFingerprint(row);
+      const existing = existingMap.get(mat);
+
+      if (!existing) {
+        // New record
+        toInsert.push(buildColabData(row));
+      } else if (existing.fingerprint !== fp) {
+        // Changed record — update by existing id
+        toUpdate.push({ id: existing.id, data: buildColabData(row) });
+      } else {
+        // Unchanged — just update ultima_importacao_id
+        unchanged++;
+      }
     }
-    console.log(`Deleted ${deletedCount} existing CSV colaboradores`);
 
-    // ── 7. INSERT all CSV rows (no dedup) ──
-    await sb.from("sync_jobs").update({ phase: "inserting", message: `Inserindo ${totalRows} colaboradores...`, colab_percent: 30 }).eq("id", jobId);
+    // Leavers: matriculas in DB but not in CSV
+    const leaverIds: string[] = [];
+    const leaverMatriculas: string[] = [];
+    for (const [mat, rec] of existingMap) {
+      if (!csvMatriculas.has(mat)) {
+        leaverIds.push(rec.id);
+        leaverMatriculas.push(mat);
+      }
+    }
+
+    console.log(`Classification: ${toInsert.length} new, ${toUpdate.length} changed, ${unchanged} unchanged, ${leaverIds.length} leavers`);
+
+    // ── 6. Execute INSERTs ──
+    await sb.from("sync_jobs").update({ phase: "inserting", message: `Inserindo ${toInsert.length} novos...`, colab_percent: 30 }).eq("id", jobId);
 
     let created = 0;
-    const insertChunks = chunk(rows, 500);
-    for (let ci = 0; ci < insertChunks.length; ci++) {
-      const batch = insertChunks[ci];
-      const insertData = batch.map(row => buildColabData(row));
-      const { data: inserted, error: insErr } = await sb.from("colaboradores").insert(insertData).select("id");
-      if (insErr) { console.error("Insert batch error:", insErr.message); continue; }
-      if (inserted) created += inserted.length;
-      const pct = 30 + Math.round((ci + 1) / insertChunks.length * 50);
-      await sb.from("sync_jobs").update({ colab_percent: pct, colab_created: created, message: `Inseridos ${created}/${totalRows}...` }).eq("id", jobId);
+    if (toInsert.length > 0) {
+      const insertChunks = chunk(toInsert, 500);
+      for (let ci = 0; ci < insertChunks.length; ci++) {
+        const { data: inserted, error: insErr } = await sb.from("colaboradores").insert(insertChunks[ci]).select("id");
+        if (insErr) { console.error("Insert batch error:", insErr.message); continue; }
+        if (inserted) created += inserted.length;
+        const pct = 30 + Math.round((ci + 1) / insertChunks.length * 20);
+        await sb.from("sync_jobs").update({ colab_percent: pct, colab_created: created, message: `Inseridos ${created}/${toInsert.length}...` }).eq("id", jobId);
+      }
     }
 
-    // ── 8. Register JML events ──
+    // ── 7. Execute UPDATEs ──
+    await sb.from("sync_jobs").update({ phase: "updating", message: `Atualizando ${toUpdate.length} registros...`, colab_percent: 55 }).eq("id", jobId);
+
+    let updated = 0;
+    if (toUpdate.length > 0) {
+      const updateChunks = chunk(toUpdate, 200);
+      for (let ci = 0; ci < updateChunks.length; ci++) {
+        for (const item of updateChunks[ci]) {
+          const { error } = await sb.from("colaboradores").update(item.data).eq("id", item.id);
+          if (error) { console.error("Update error:", error.message); continue; }
+          updated++;
+        }
+        const pct = 55 + Math.round((ci + 1) / updateChunks.length * 15);
+        await sb.from("sync_jobs").update({ colab_percent: pct, colab_updated: updated }).eq("id", jobId);
+      }
+    }
+
+    // ── 8. DELETE leavers ──
+    if (leaverIds.length > 0) {
+      await sb.from("sync_jobs").update({ phase: "removing", message: `Removendo ${leaverIds.length} ausentes...`, colab_percent: 75 }).eq("id", jobId);
+      for (const batch of chunk(leaverIds, 200)) {
+        const { error } = await sb.from("colaboradores").delete().in("id", batch);
+        if (error) console.error("Delete batch error:", error.message);
+      }
+    }
+
+    // ── 9. Update unchanged records' ultima_importacao_id ──
+    if (unchanged > 0) {
+      // Batch update all records that were unchanged
+      const unchangedMats: string[] = [];
+      for (const row of rows) {
+        const mat = row.employID.trim();
+        const existing = existingMap.get(mat);
+        if (existing && existing.fingerprint === buildFingerprint(row)) {
+          unchangedMats.push(existing.id);
+        }
+      }
+      for (const batch of chunk(unchangedMats, 500)) {
+        await sb.from("colaboradores").update({ ultima_importacao_id: jobId }).in("id", batch);
+      }
+    }
+
+    // ── 10. Register JML events ──
     await sb.from("sync_jobs").update({ phase: "events", message: "Registrando eventos JML...", colab_percent: 85 }).eq("id", jobId);
 
-    // Leaver events (matriculas that disappeared)
     if (leaverMatriculas.length > 0) {
       const leaverEvents = leaverMatriculas.map(mat => ({
         tipo: "leaver",
         colaborador_nome: mat,
-        status: "executado",
+        status: "pendente",
         origem: "importacao_csv",
         dados_antes: { matricula: mat },
       }));
       for (const batch of chunk(leaverEvents, 200)) await sb.from("eventos_jml").insert(batch);
     }
 
-    // Joiner events (new matriculas)
-    if (joinerMatriculas.size > 0) {
-      const joinerEvents = Array.from(joinerMatriculas).map(mat => ({
+    if (toInsert.length > 0) {
+      const joinerEvents = toInsert.map(c => ({
         tipo: "joiner",
-        colaborador_nome: mat,
+        colaborador_nome: c.nome || c.matricula,
         status: "pendente",
         origem: "importacao_csv",
-        dados_depois: { matricula: mat },
+        dados_depois: { matricula: c.matricula, nome: c.nome },
       }));
       for (const batch of chunk(joinerEvents, 200)) await sb.from("eventos_jml").insert(batch);
     }
 
-    // ── 9. Alert if leavers ──
+    if (toUpdate.length > 0) {
+      const moverEvents = toUpdate.map(u => ({
+        tipo: "mover",
+        colaborador_nome: u.data.nome || u.data.matricula,
+        colaborador_id: u.id,
+        status: "pendente",
+        origem: "importacao_csv",
+        dados_depois: { matricula: u.data.matricula, nome: u.data.nome },
+      }));
+      for (const batch of chunk(moverEvents, 200)) await sb.from("eventos_jml").insert(batch);
+    }
+
+    // ── 11. Alert if leavers ──
     if (leaverMatriculas.length > 0) {
       await sb.from("alertas").insert({
         tipo: "remocao_csv",
@@ -357,23 +446,20 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       });
     }
 
-    // ── 10. Finalize ──
-    const syntheticMsg = syntheticMatCount > 0 ? `, ${syntheticMatCount} sem matrícula original` : "";
-    const removedMsg = leaverMatriculas.length > 0 ? `, ${leaverMatriculas.length} removidos` : "";
-    const newMsg = joinerMatriculas.size > 0 ? `, ${joinerMatriculas.size} novos` : "";
+    // ── 12. Finalize ──
     await sb.from("sync_jobs").update({
       status: "done", phase: "done", colab_percent: 100,
-      colab_created: created, colab_updated: 0, colab_quarentena: leaverMatriculas.length,
-      message: `Concluído: ${created} inseridos${newMsg}${removedMsg}${syntheticMsg}`,
+      colab_created: created, colab_updated: updated, colab_quarentena: leaverMatriculas.length,
+      message: `Concluído: ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos`,
     }).eq("id", jobId);
 
     await sb.from("auditoria").insert({
       entidade: "importacao_csv", acao: "importar",
-      resumo: `CSV importado: ${totalRows} linhas → ${created} inseridos, ${leaverMatriculas.length} removidos`,
-      detalhes: { filename, totalRows, created, removed: leaverMatriculas.length, newJoiners: joinerMatriculas.size, jobId },
+      resumo: `CSV importado: ${totalRows} linhas → ${created} novos, ${updated} atualizados, ${leaverMatriculas.length} removidos`,
+      detalhes: { filename, totalRows, created, updated, unchanged, removed: leaverMatriculas.length, jobId },
     });
 
-    return { success: true, jobId, created, removed: leaverMatriculas.length, total: totalRows };
+    return { success: true, jobId, created, updated, unchanged, removed: leaverMatriculas.length, total: totalRows };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro desconhecido";
     console.error("Processing error:", msg);
