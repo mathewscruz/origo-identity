@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Pencil, Plus, Trash2 } from "lucide-react";
-import { usePerfilAcesso, usePerfilComposicao, usePerfilAtribuicoes, useAplicacoes } from "@/hooks/useOrigoData";
+import { usePerfilAcesso, usePerfilComposicao, usePerfilAtribuicoes, useAplicacoes, useEntraLicencas, useEntraGrupos } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -24,6 +24,7 @@ const origemColors: Record<string, string> = {
   regra: "bg-primary/15 text-primary border-primary/30",
   excecao: "bg-warning/15 text-warning border-warning/30",
   manual: "bg-muted text-muted-foreground",
+  cargo: "bg-info/15 text-info border-info/30",
 };
 
 export default function PerfilAcessoDetalhePage() {
@@ -32,40 +33,44 @@ export default function PerfilAcessoDetalhePage() {
   const { data: composicao } = usePerfilComposicao(id);
   const { data: atribuicoes } = usePerfilAtribuicoes(id);
   const { data: aplicacoes } = useAplicacoes();
+  const { data: entraLicencas } = useEntraLicencas();
+  const { data: entraGrupos } = useEntraGrupos();
   const { data: perfilApps } = useQuery({
-    queryKey: ["perfil_aplicacoes", id],
-    enabled: !!id,
-    queryFn: async () => {
-      const { data, error } = await (supabase as any).from("perfil_aplicacoes").select("*, aplicacoes(nome)").eq("perfil_id", id!);
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryKey: ["perfil_aplicacoes", id], enabled: !!id,
+    queryFn: async () => { const { data, error } = await (supabase as any).from("perfil_aplicacoes").select("*, aplicacoes(nome)").eq("perfil_id", id!); if (error) throw error; return data ?? []; },
+  });
+  const { data: perfilLicencas } = useQuery({
+    queryKey: ["perfil_licencas", id], enabled: !!id,
+    queryFn: async () => { const { data, error } = await (supabase as any).from("perfil_licencas").select("*, entra_licencas(nome, sku_id, total, em_uso)").eq("perfil_id", id!); if (error) throw error; return data ?? []; },
+  });
+  const { data: perfilGrupos } = useQuery({
+    queryKey: ["perfil_grupos", id], enabled: !!id,
+    queryFn: async () => { const { data, error } = await (supabase as any).from("perfil_grupos").select("*, entra_grupos(nome, descricao)").eq("perfil_id", id!); if (error) throw error; return data ?? []; },
   });
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  // Edit perfil dialog
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ nome: "", descricao: "", tipo: "funcional", ativo: true, aplicacao_ids: [] as string[] });
+  const [editForm, setEditForm] = useState({ nome: "", descricao: "", tipo: "funcional", ativo: true, aplicacao_ids: [] as string[], licenca_ids: [] as string[], grupo_ids: [] as string[] });
   const [saving, setSaving] = useState(false);
-
-  // Add composicao dialog
   const [compOpen, setCompOpen] = useState(false);
   const [compForm, setCompForm] = useState({ tipo: "grupo", nome: "", detalhe: "" });
 
   const openEdit = () => {
     if (!perfil) return;
-    const appIds = (perfilApps ?? []).map((pa: any) => pa.aplicacao_id);
-    setEditForm({ nome: perfil.nome, descricao: perfil.descricao || "", tipo: perfil.tipo, ativo: perfil.ativo, aplicacao_ids: appIds });
+    setEditForm({
+      nome: perfil.nome, descricao: perfil.descricao || "", tipo: perfil.tipo, ativo: perfil.ativo,
+      aplicacao_ids: (perfilApps ?? []).map((pa: any) => pa.aplicacao_id),
+      licenca_ids: (perfilLicencas ?? []).map((pl: any) => pl.licenca_id),
+      grupo_ids: (perfilGrupos ?? []).map((pg: any) => pg.grupo_id),
+    });
     setEditOpen(true);
   };
 
-  const toggleApp = (appId: string) => {
+  const toggleItem = (field: "aplicacao_ids" | "licenca_ids" | "grupo_ids", itemId: string) => {
     setEditForm(prev => ({
       ...prev,
-      aplicacao_ids: prev.aplicacao_ids.includes(appId)
-        ? prev.aplicacao_ids.filter(id => id !== appId)
-        : [...prev.aplicacao_ids, appId],
+      [field]: prev[field].includes(itemId) ? prev[field].filter(i => i !== itemId) : [...prev[field], itemId],
     }));
   };
 
@@ -77,15 +82,24 @@ export default function PerfilAcessoDetalhePage() {
         tipo: editForm.tipo as any, ativo: editForm.ativo,
       }).eq("id", id!);
       if (error) throw error;
+
       // Sync apps
       await (supabase as any).from("perfil_aplicacoes").delete().eq("perfil_id", id!);
-      if (editForm.aplicacao_ids.length > 0) {
-        const rows = editForm.aplicacao_ids.map(aid => ({ perfil_id: id!, aplicacao_id: aid }));
-        await (supabase as any).from("perfil_aplicacoes").insert(rows);
-      }
+      if (editForm.aplicacao_ids.length > 0) await (supabase as any).from("perfil_aplicacoes").insert(editForm.aplicacao_ids.map(aid => ({ perfil_id: id!, aplicacao_id: aid })));
+
+      // Sync licencas
+      await (supabase as any).from("perfil_licencas").delete().eq("perfil_id", id!);
+      if (editForm.licenca_ids.length > 0) await (supabase as any).from("perfil_licencas").insert(editForm.licenca_ids.map(lid => ({ perfil_id: id!, licenca_id: lid })));
+
+      // Sync grupos
+      await (supabase as any).from("perfil_grupos").delete().eq("perfil_id", id!);
+      if (editForm.grupo_ids.length > 0) await (supabase as any).from("perfil_grupos").insert(editForm.grupo_ids.map(gid => ({ perfil_id: id!, grupo_id: gid })));
+
       toast({ title: "Perfil atualizado" });
       queryClient.invalidateQueries({ queryKey: ["perfil_acesso", id] });
       queryClient.invalidateQueries({ queryKey: ["perfil_aplicacoes", id] });
+      queryClient.invalidateQueries({ queryKey: ["perfil_licencas", id] });
+      queryClient.invalidateQueries({ queryKey: ["perfil_grupos", id] });
       queryClient.invalidateQueries({ queryKey: ["perfis_acesso"] });
       setEditOpen(false);
     } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
@@ -117,6 +131,8 @@ export default function PerfilAcessoDetalhePage() {
   if (!perfil) return <div className="p-8 text-center text-muted-foreground">Perfil não encontrado.</div>;
 
   const appNames = (perfilApps ?? []).map((pa: any) => pa.aplicacoes?.nome).filter(Boolean);
+  const licNames = (perfilLicencas ?? []).map((pl: any) => pl.entra_licencas).filter(Boolean);
+  const grpNames = (perfilGrupos ?? []).map((pg: any) => pg.entra_grupos).filter(Boolean);
 
   return (
     <div className="space-y-6">
@@ -133,30 +149,74 @@ export default function PerfilAcessoDetalhePage() {
         <Button variant="outline" size="sm" onClick={openEdit}><Pencil className="mr-1 h-3 w-3" />Editar</Button>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
-        <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Aplicações vinculadas</p><p className="text-lg font-semibold">{appNames.length}</p></CardContent></Card>
-        <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Itens composição</p><p className="text-lg font-semibold">{composicao?.length ?? 0}</p></CardContent></Card>
-        <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Pessoas atribuídas</p><p className="text-lg font-semibold">{atribuicoes?.length ?? 0}</p></CardContent></Card>
+      <div className="grid grid-cols-5 gap-4">
+        <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Aplicações</p><p className="text-lg font-semibold">{appNames.length}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Licenças</p><p className="text-lg font-semibold">{licNames.length}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Grupos</p><p className="text-lg font-semibold">{grpNames.length}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Composição</p><p className="text-lg font-semibold">{composicao?.length ?? 0}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Pessoas</p><p className="text-lg font-semibold">{atribuicoes?.length ?? 0}</p></CardContent></Card>
       </div>
 
       <Tabs defaultValue="aplicacoes">
         <TabsList>
           <TabsTrigger value="aplicacoes">Aplicações ({appNames.length})</TabsTrigger>
+          <TabsTrigger value="licencas">Licenças ({licNames.length})</TabsTrigger>
+          <TabsTrigger value="grupos">Grupos ({grpNames.length})</TabsTrigger>
           <TabsTrigger value="composicao">Composição ({composicao?.length ?? 0})</TabsTrigger>
-          <TabsTrigger value="pessoas">Pessoas Atribuídas ({atribuicoes?.length ?? 0})</TabsTrigger>
+          <TabsTrigger value="pessoas">Pessoas ({atribuicoes?.length ?? 0})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="aplicacoes" className="mt-4">
           <Card><CardContent className="p-0">
             <table className="w-full text-sm">
-              <thead><tr className="border-b text-left text-muted-foreground">
-                <th className="p-4 font-medium">Aplicação</th>
-              </tr></thead>
+              <thead><tr className="border-b text-left text-muted-foreground"><th className="p-4 font-medium">Aplicação</th></tr></thead>
               <tbody>
                 {appNames.map((name: string, i: number) => (
                   <tr key={i} className="border-b last:border-0"><td className="p-4 font-medium">{name}</td></tr>
                 ))}
-                {appNames.length === 0 && <tr><td className="p-8 text-center text-muted-foreground">Nenhuma aplicação vinculada a este perfil.</td></tr>}
+                {appNames.length === 0 && <tr><td className="p-8 text-center text-muted-foreground">Nenhuma aplicação vinculada.</td></tr>}
+              </tbody>
+            </table>
+          </CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="licencas" className="mt-4">
+          <Card><CardContent className="p-0">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b text-left text-muted-foreground">
+                <th className="p-4 font-medium">Licença</th>
+                <th className="p-4 font-medium">SKU</th>
+                <th className="p-4 font-medium">Uso</th>
+              </tr></thead>
+              <tbody>
+                {licNames.map((lic: any, i: number) => (
+                  <tr key={i} className="border-b last:border-0">
+                    <td className="p-4 font-medium">{lic.nome}</td>
+                    <td className="p-4 text-muted-foreground text-xs font-mono">{lic.sku_id}</td>
+                    <td className="p-4"><Badge variant="outline">{lic.em_uso}/{lic.total}</Badge></td>
+                  </tr>
+                ))}
+                {licNames.length === 0 && <tr><td colSpan={3} className="p-8 text-center text-muted-foreground">Nenhuma licença vinculada.</td></tr>}
+              </tbody>
+            </table>
+          </CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="grupos" className="mt-4">
+          <Card><CardContent className="p-0">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b text-left text-muted-foreground">
+                <th className="p-4 font-medium">Grupo</th>
+                <th className="p-4 font-medium">Descrição</th>
+              </tr></thead>
+              <tbody>
+                {grpNames.map((grp: any, i: number) => (
+                  <tr key={i} className="border-b last:border-0">
+                    <td className="p-4 font-medium">{grp.nome}</td>
+                    <td className="p-4 text-muted-foreground">{grp.descricao || "—"}</td>
+                  </tr>
+                ))}
+                {grpNames.length === 0 && <tr><td colSpan={2} className="p-8 text-center text-muted-foreground">Nenhum grupo vinculado.</td></tr>}
               </tbody>
             </table>
           </CardContent></Card>
@@ -183,14 +243,14 @@ export default function PerfilAcessoDetalhePage() {
                         <AlertDialog>
                           <AlertDialogTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive"><Trash2 className="h-3 w-3" /></Button></AlertDialogTrigger>
                           <AlertDialogContent>
-                            <AlertDialogHeader><AlertDialogTitle>Remover item?</AlertDialogTitle><AlertDialogDescription>O item "{item.nome}" será removido da composição.</AlertDialogDescription></AlertDialogHeader>
+                            <AlertDialogHeader><AlertDialogTitle>Remover item?</AlertDialogTitle><AlertDialogDescription>O item "{item.nome}" será removido.</AlertDialogDescription></AlertDialogHeader>
                             <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={() => handleDeleteComp(item.id)}>Remover</AlertDialogAction></AlertDialogFooter>
                           </AlertDialogContent>
                         </AlertDialog>
                       </td>
                     </tr>
                   ))}
-                  {(composicao ?? []).length === 0 && <tr><td colSpan={4} className="p-8 text-center text-muted-foreground">Nenhum item de composição cadastrado.</td></tr>}
+                  {(composicao ?? []).length === 0 && <tr><td colSpan={4} className="p-8 text-center text-muted-foreground">Nenhum item de composição.</td></tr>}
                 </tbody>
               </table>
             </CardContent>
@@ -209,10 +269,10 @@ export default function PerfilAcessoDetalhePage() {
                     <td className="p-4 font-medium text-primary">{(a.colaboradores as any)?.nome || "—"}</td>
                     <td className="p-4 text-muted-foreground">{(a.colaboradores as any)?.cargos?.nome || "—"}</td>
                     <td className="p-4 text-muted-foreground">{(a.colaboradores as any)?.areas?.nome || "—"}</td>
-                    <td className="p-4"><Badge variant="outline" className={origemColors[a.origem || "manual"]}>{a.origem === "regra" ? "Regra" : a.origem === "excecao" ? "Exceção" : "Manual"}</Badge></td>
+                    <td className="p-4"><Badge variant="outline" className={origemColors[a.origem || "manual"]}>{a.origem === "regra" ? "Regra" : a.origem === "excecao" ? "Exceção" : a.origem === "cargo" ? "Cargo" : "Manual"}</Badge></td>
                   </tr>
                 ))}
-                {(atribuicoes ?? []).length === 0 && <tr><td colSpan={4} className="p-8 text-center text-muted-foreground">Nenhuma pessoa atribuída a este perfil.</td></tr>}
+                {(atribuicoes ?? []).length === 0 && <tr><td colSpan={4} className="p-8 text-center text-muted-foreground">Nenhuma pessoa atribuída.</td></tr>}
               </tbody>
             </table>
           </CardContent></Card>
@@ -221,44 +281,84 @@ export default function PerfilAcessoDetalhePage() {
 
       {/* Edit Perfil Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
           <DialogHeader><DialogTitle>Editar Perfil</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2"><Label>Nome *</Label><Input value={editForm.nome} onChange={e => setEditForm({ ...editForm, nome: e.target.value })} /></div>
-            <div className="space-y-2"><Label>Descrição</Label><Textarea value={editForm.descricao} onChange={e => setEditForm({ ...editForm, descricao: e.target.value })} rows={2} /></div>
-            <div className="space-y-2">
-              <Label>Aplicações</Label>
-              <ScrollArea className="h-40 rounded-md border p-3">
+          <Tabs defaultValue="geral" className="flex-1 overflow-hidden flex flex-col">
+            <TabsList className="w-full justify-start">
+              <TabsTrigger value="geral">Geral</TabsTrigger>
+              <TabsTrigger value="aplicacoes">Aplicações ({editForm.aplicacao_ids.length})</TabsTrigger>
+              <TabsTrigger value="licencas">Licenças ({editForm.licenca_ids.length})</TabsTrigger>
+              <TabsTrigger value="grupos">Grupos ({editForm.grupo_ids.length})</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="geral" className="mt-4 space-y-4 overflow-auto flex-1">
+              <div className="space-y-2"><Label>Nome *</Label><Input value={editForm.nome} onChange={e => setEditForm({ ...editForm, nome: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Descrição</Label><Textarea value={editForm.descricao} onChange={e => setEditForm({ ...editForm, descricao: e.target.value })} rows={2} /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Tipo</Label>
+                  <Select value={editForm.tipo} onValueChange={v => setEditForm({ ...editForm, tipo: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="funcional">Funcional</SelectItem>
+                      <SelectItem value="tecnico">Técnico</SelectItem>
+                      <SelectItem value="privilegiado">Privilegiado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-2 pt-6">
+                  <Switch checked={editForm.ativo} onCheckedChange={v => setEditForm({ ...editForm, ativo: v })} />
+                  <Label>Ativo</Label>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="aplicacoes" className="mt-4 overflow-auto flex-1">
+              <ScrollArea className="h-64 rounded-md border p-3">
                 <div className="space-y-2">
                   {(aplicacoes ?? []).map((a: any) => (
                     <label key={a.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
-                      <Checkbox checked={editForm.aplicacao_ids.includes(a.id)} onCheckedChange={() => toggleApp(a.id)} />
+                      <Checkbox checked={editForm.aplicacao_ids.includes(a.id)} onCheckedChange={() => toggleItem("aplicacao_ids", a.id)} />
                       <span className="text-sm">{a.nome}</span>
                     </label>
                   ))}
                 </div>
               </ScrollArea>
-              {editForm.aplicacao_ids.length > 0 && <p className="text-xs text-muted-foreground">{editForm.aplicacao_ids.length} aplicação(ões) selecionada(s)</p>}
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Tipo</Label>
-                <Select value={editForm.tipo} onValueChange={v => setEditForm({ ...editForm, tipo: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="funcional">Funcional</SelectItem>
-                    <SelectItem value="tecnico">Técnico</SelectItem>
-                    <SelectItem value="privilegiado">Privilegiado</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex items-center gap-2 pt-6">
-                <Switch checked={editForm.ativo} onCheckedChange={v => setEditForm({ ...editForm, ativo: v })} />
-                <Label>Ativo</Label>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
+            </TabsContent>
+
+            <TabsContent value="licencas" className="mt-4 overflow-auto flex-1">
+              <ScrollArea className="h-64 rounded-md border p-3">
+                <div className="space-y-2">
+                  {(entraLicencas ?? []).map((lic: any) => (
+                    <label key={lic.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-2 py-1">
+                      <Checkbox checked={editForm.licenca_ids.includes(lic.id)} onCheckedChange={() => toggleItem("licenca_ids", lic.id)} />
+                      <span className="text-sm font-medium">{lic.nome}</span>
+                      <span className="text-xs text-muted-foreground">({lic.em_uso}/{lic.total})</span>
+                    </label>
+                  ))}
+                  {(entraLicencas ?? []).length === 0 && <p className="text-sm text-muted-foreground">Sincronize com o Entra ID primeiro.</p>}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+
+            <TabsContent value="grupos" className="mt-4 overflow-auto flex-1">
+              <ScrollArea className="h-64 rounded-md border p-3">
+                <div className="space-y-2">
+                  {(entraGrupos ?? []).map((grp: any) => (
+                    <label key={grp.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-2 py-1">
+                      <Checkbox checked={editForm.grupo_ids.includes(grp.id)} onCheckedChange={() => toggleItem("grupo_ids", grp.id)} />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium">{grp.nome}</span>
+                        {grp.descricao && <p className="text-xs text-muted-foreground truncate">{grp.descricao}</p>}
+                      </div>
+                    </label>
+                  ))}
+                  {(entraGrupos ?? []).length === 0 && <p className="text-sm text-muted-foreground">Sincronize com o Entra ID primeiro.</p>}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+          </Tabs>
+          <DialogFooter className="pt-4 border-t">
             <Button variant="outline" onClick={() => setEditOpen(false)}>Cancelar</Button>
             <Button onClick={handleSaveEdit} disabled={saving}>{saving ? "Salvando..." : "Atualizar"}</Button>
           </DialogFooter>

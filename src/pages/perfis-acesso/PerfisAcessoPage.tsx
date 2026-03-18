@@ -8,12 +8,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Search, Pencil, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { usePerfisAcesso, useAplicacoes } from "@/hooks/useOrigoData";
+import { usePerfisAcesso, useAplicacoes, useEntraLicencas, useEntraGrupos } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
 import TablePagination, { usePagination } from "@/components/TablePagination";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
@@ -24,15 +25,19 @@ interface PerfilForm {
   nome: string;
   descricao: string;
   aplicacao_ids: string[];
+  licenca_ids: string[];
+  grupo_ids: string[];
   tipo: string;
   ativo: boolean;
 }
 
-const emptyForm: PerfilForm = { nome: "", descricao: "", aplicacao_ids: [], tipo: "funcional", ativo: true };
+const emptyForm: PerfilForm = { nome: "", descricao: "", aplicacao_ids: [], licenca_ids: [], grupo_ids: [], tipo: "funcional", ativo: true };
 
 export default function PerfisAcessoPage() {
   const { data: perfis, isLoading } = usePerfisAcesso();
   const { data: aplicacoes } = useAplicacoes();
+  const { data: entraLicencas } = useEntraLicencas();
+  const { data: entraGrupos } = useEntraGrupos();
   const [busca, setBusca] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -48,20 +53,24 @@ export default function PerfisAcessoPage() {
 
   const openNew = () => { setForm(emptyForm); setEditingId(null); setDialogOpen(true); };
   const openEdit = async (p: any) => {
-    // Fetch current app associations
     const { data: apps } = await (supabase as any).from("perfil_aplicacoes").select("aplicacao_id").eq("perfil_id", p.id);
-    const appIds = (apps ?? []).map((a: any) => a.aplicacao_id);
-    setForm({ nome: p.nome, descricao: p.descricao || "", aplicacao_ids: appIds, tipo: p.tipo, ativo: p.ativo });
+    const { data: lics } = await (supabase as any).from("perfil_licencas").select("licenca_id").eq("perfil_id", p.id);
+    const { data: grps } = await (supabase as any).from("perfil_grupos").select("grupo_id").eq("perfil_id", p.id);
+    setForm({
+      nome: p.nome, descricao: p.descricao || "",
+      aplicacao_ids: (apps ?? []).map((a: any) => a.aplicacao_id),
+      licenca_ids: (lics ?? []).map((l: any) => l.licenca_id),
+      grupo_ids: (grps ?? []).map((g: any) => g.grupo_id),
+      tipo: p.tipo, ativo: p.ativo,
+    });
     setEditingId(p.id);
     setDialogOpen(true);
   };
 
-  const toggleApp = (appId: string) => {
+  const toggleItem = (field: "aplicacao_ids" | "licenca_ids" | "grupo_ids", itemId: string) => {
     setForm(prev => ({
       ...prev,
-      aplicacao_ids: prev.aplicacao_ids.includes(appId)
-        ? prev.aplicacao_ids.filter(id => id !== appId)
-        : [...prev.aplicacao_ids, appId],
+      [field]: prev[field].includes(itemId) ? prev[field].filter(id => id !== itemId) : [...prev[field], itemId],
     }));
   };
 
@@ -69,12 +78,7 @@ export default function PerfisAcessoPage() {
     if (!form.nome.trim()) { toast({ title: "Nome obrigatório", variant: "destructive" }); return; }
     setSaving(true);
     try {
-      const payload = {
-        nome: form.nome.trim(),
-        descricao: form.descricao.trim() || null,
-        tipo: form.tipo as any,
-        ativo: form.ativo,
-      };
+      const payload = { nome: form.nome.trim(), descricao: form.descricao.trim() || null, tipo: form.tipo as any, ativo: form.ativo };
       let perfilId = editingId;
       if (editingId) {
         const { error } = await supabase.from("perfis_acesso").update(payload).eq("id", editingId);
@@ -84,13 +88,25 @@ export default function PerfisAcessoPage() {
         if (error) throw error;
         perfilId = data.id;
       }
+
       // Sync perfil_aplicacoes
       await (supabase as any).from("perfil_aplicacoes").delete().eq("perfil_id", perfilId);
       if (form.aplicacao_ids.length > 0) {
-        const rows = form.aplicacao_ids.map(aid => ({ perfil_id: perfilId, aplicacao_id: aid }));
-        const { error: insErr } = await (supabase as any).from("perfil_aplicacoes").insert(rows);
-        if (insErr) throw insErr;
+        await (supabase as any).from("perfil_aplicacoes").insert(form.aplicacao_ids.map(aid => ({ perfil_id: perfilId, aplicacao_id: aid })));
       }
+
+      // Sync perfil_licencas
+      await (supabase as any).from("perfil_licencas").delete().eq("perfil_id", perfilId);
+      if (form.licenca_ids.length > 0) {
+        await (supabase as any).from("perfil_licencas").insert(form.licenca_ids.map(lid => ({ perfil_id: perfilId, licenca_id: lid })));
+      }
+
+      // Sync perfil_grupos
+      await (supabase as any).from("perfil_grupos").delete().eq("perfil_id", perfilId);
+      if (form.grupo_ids.length > 0) {
+        await (supabase as any).from("perfil_grupos").insert(form.grupo_ids.map(gid => ({ perfil_id: perfilId, grupo_id: gid })));
+      }
+
       toast({ title: editingId ? "Perfil atualizado" : "Perfil criado" });
       queryClient.invalidateQueries({ queryKey: ["perfis_acesso"] });
       setDialogOpen(false);
@@ -185,49 +201,99 @@ export default function PerfisAcessoPage() {
       </Card>
       <TablePagination totalItems={list.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
 
+      {/* Dialog Novo/Editar Perfil - com Tabs */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
           <DialogHeader><DialogTitle>{editingId ? "Editar Perfil" : "Novo Perfil de Acesso"}</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2"><Label>Nome *</Label><Input value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })} placeholder="Ex: Especialista de Segurança da Informação" /></div>
-            <div className="space-y-2"><Label>Descrição</Label><Textarea value={form.descricao} onChange={e => setForm({ ...form, descricao: e.target.value })} placeholder="Descreva o perfil" rows={2} /></div>
-            <div className="space-y-2">
-              <Label>Aplicações</Label>
-              <ScrollArea className="h-40 rounded-md border p-3">
+          
+          <Tabs defaultValue="geral" className="flex-1 overflow-hidden flex flex-col">
+            <TabsList className="w-full justify-start">
+              <TabsTrigger value="geral">Geral</TabsTrigger>
+              <TabsTrigger value="aplicacoes">Aplicações ({form.aplicacao_ids.length})</TabsTrigger>
+              <TabsTrigger value="licencas">Licenças ({form.licenca_ids.length})</TabsTrigger>
+              <TabsTrigger value="grupos">Grupos ({form.grupo_ids.length})</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="geral" className="mt-4 space-y-4 overflow-auto flex-1">
+              <div className="space-y-2">
+                <Label>Nome *</Label>
+                <Input value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })} placeholder="Ex: Especialista de Segurança da Informação" />
+              </div>
+              <div className="space-y-2">
+                <Label>Descrição</Label>
+                <Textarea value={form.descricao} onChange={e => setForm({ ...form, descricao: e.target.value })} placeholder="Descreva o perfil" rows={2} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Tipo</Label>
+                  <Select value={form.tipo} onValueChange={v => setForm({ ...form, tipo: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="funcional">Funcional</SelectItem>
+                      <SelectItem value="tecnico">Técnico</SelectItem>
+                      <SelectItem value="privilegiado">Privilegiado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-2 pt-6">
+                  <Switch checked={form.ativo} onCheckedChange={v => setForm({ ...form, ativo: v })} />
+                  <Label>Ativo</Label>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="aplicacoes" className="mt-4 overflow-auto flex-1">
+              <ScrollArea className="h-64 rounded-md border p-3">
                 <div className="space-y-2">
                   {(aplicacoes ?? []).map((a: any) => (
                     <label key={a.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
-                      <Checkbox
-                        checked={form.aplicacao_ids.includes(a.id)}
-                        onCheckedChange={() => toggleApp(a.id)}
-                      />
+                      <Checkbox checked={form.aplicacao_ids.includes(a.id)} onCheckedChange={() => toggleItem("aplicacao_ids", a.id)} />
                       <span className="text-sm">{a.nome}</span>
                     </label>
                   ))}
-                  {(aplicacoes ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhuma aplicação cadastrada.</p>}
+                  {(aplicacoes ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhuma aplicação cadastrada. Sincronize com o Entra ID primeiro.</p>}
                 </div>
               </ScrollArea>
-              {form.aplicacao_ids.length > 0 && <p className="text-xs text-muted-foreground">{form.aplicacao_ids.length} aplicação(ões) selecionada(s)</p>}
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Tipo</Label>
-                <Select value={form.tipo} onValueChange={v => setForm({ ...form, tipo: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="funcional">Funcional</SelectItem>
-                    <SelectItem value="tecnico">Técnico</SelectItem>
-                    <SelectItem value="privilegiado">Privilegiado</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex items-center gap-2 pt-6">
-                <Switch checked={form.ativo} onCheckedChange={v => setForm({ ...form, ativo: v })} />
-                <Label>Ativo</Label>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
+            </TabsContent>
+
+            <TabsContent value="licencas" className="mt-4 overflow-auto flex-1">
+              <p className="text-xs text-muted-foreground mb-3">Selecione as licenças Microsoft que serão atribuídas aos usuários deste perfil.</p>
+              <ScrollArea className="h-64 rounded-md border p-3">
+                <div className="space-y-2">
+                  {(entraLicencas ?? []).map((lic: any) => (
+                    <label key={lic.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-2 py-1">
+                      <Checkbox checked={form.licenca_ids.includes(lic.id)} onCheckedChange={() => toggleItem("licenca_ids", lic.id)} />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium">{lic.nome}</span>
+                        <span className="text-xs text-muted-foreground ml-2">({lic.em_uso}/{lic.total} em uso)</span>
+                      </div>
+                    </label>
+                  ))}
+                  {(entraLicencas ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhuma licença encontrada. Sincronize com o Entra ID primeiro.</p>}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+
+            <TabsContent value="grupos" className="mt-4 overflow-auto flex-1">
+              <p className="text-xs text-muted-foreground mb-3">Selecione os grupos do Entra ID que os usuários deste perfil receberão.</p>
+              <ScrollArea className="h-64 rounded-md border p-3">
+                <div className="space-y-2">
+                  {(entraGrupos ?? []).map((grp: any) => (
+                    <label key={grp.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-2 py-1">
+                      <Checkbox checked={form.grupo_ids.includes(grp.id)} onCheckedChange={() => toggleItem("grupo_ids", grp.id)} />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium">{grp.nome}</span>
+                        {grp.descricao && <p className="text-xs text-muted-foreground truncate">{grp.descricao}</p>}
+                      </div>
+                    </label>
+                  ))}
+                  {(entraGrupos ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhum grupo encontrado. Sincronize com o Entra ID primeiro.</p>}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+          </Tabs>
+
+          <DialogFooter className="pt-4 border-t">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
             <Button onClick={handleSave} disabled={saving}>{saving ? "Salvando..." : editingId ? "Atualizar" : "Criar"}</Button>
           </DialogFooter>
