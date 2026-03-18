@@ -105,6 +105,7 @@ function parseCsv(text: string): CsvRow[] {
   }
 
   const rows: CsvRow[] = [];
+  let syntheticCount = 0;
   for (let i = 1; i < lines.length; i++) {
     const values = splitCsvLine(lines[i], delimiter);
     if (values.length < rawHeaders.length * 0.5) continue;
@@ -113,10 +114,21 @@ function parseCsv(text: string): CsvRow[] {
       row[h] = values[idx] || "";
       if (reverseMap[h]) row[reverseMap[h]] = values[idx] || "";
     });
-    if (!(row["employID"] || "").trim()) continue;
+    // Generate synthetic matricula for rows without employID
+    if (!(row["employID"] || "").trim()) {
+      const key = [row["displayName"] || "", row["mail"] || "", row["Cadastro_Pessoa_Fisica"] || ""].join("|");
+      const encoder = new TextEncoder();
+      const data = encoder.encode(key);
+      let hash = 0;
+      for (const b of data) { hash = ((hash << 5) - hash + b) | 0; }
+      const shortHash = Math.abs(hash).toString(36).padStart(6, "0").slice(0, 8);
+      row["employID"] = `SEM_MAT_${shortHash}`;
+      row["__synthetic_matricula"] = "true";
+      syntheticCount++;
+    }
     rows.push(row);
   }
-  console.log(`Parsed ${rows.length} rows`);
+  console.log(`Parsed ${rows.length} rows (${syntheticCount} without original matricula)`);
   return rows;
 }
 
@@ -171,9 +183,11 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
     // ── 3. Compute hashes for all rows ──
     const rowsWithHash: { row: CsvRow; matricula: string; hash: string }[] = [];
+    let syntheticMatCount = 0;
     for (const row of rows) {
       const matricula = row.employID.trim();
       if (!matricula) continue;
+      if (row["__synthetic_matricula"] === "true") syntheticMatCount++;
       const hash = await sha256(hashFields(row));
       rowsWithHash.push({ row, matricula, hash });
     }
@@ -450,10 +464,11 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     // ── 12. Snapshots skipped for performance (data already in colaboradores) ──
 
     // ── 13. Finalize ──
+    const syntheticMsg = syntheticMatCount > 0 ? `, ${syntheticMatCount} sem matrícula original` : "";
     await sb.from("sync_jobs").update({
       status: "done", phase: "done", colab_percent: 100,
       colab_created: created, colab_updated: updated, colab_quarentena: quarentenaCount,
-      message: `Concluído: ${created} novos, ${updated} atualizados, ${quarentenaCount} em quarentena`,
+      message: `Concluído: ${created} novos, ${updated} atualizados, ${quarentenaCount} em quarentena${syntheticMsg}`,
     }).eq("id", jobId);
 
     await sb.from("auditoria").insert({

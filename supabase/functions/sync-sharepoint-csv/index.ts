@@ -69,15 +69,26 @@ function parseCsv(text: string): CsvRow[] {
   for (const [std, actual] of Object.entries(headerMap)) reverseMap[actual] = std;
 
   const rows: CsvRow[] = [];
+  let syntheticCount = 0;
   for (let i = 1; i < lines.length; i++) {
     const values = splitCsvLine(lines[i], delimiter);
     if (values.length < rawHeaders.length * 0.5) continue;
     const row: Record<string, string> = {};
     rawHeaders.forEach((h, idx) => { row[h] = values[idx] || ""; if (reverseMap[h]) row[reverseMap[h]] = values[idx] || ""; });
-    if (!(row["employID"] || "").trim()) continue;
+    if (!(row["employID"] || "").trim()) {
+      const key = [row["displayName"] || "", row["mail"] || "", row["Cadastro_Pessoa_Fisica"] || ""].join("|");
+      const encoder = new TextEncoder();
+      const data = encoder.encode(key);
+      let hash = 0;
+      for (const b of data) { hash = ((hash << 5) - hash + b) | 0; }
+      const shortHash = Math.abs(hash).toString(36).padStart(6, "0").slice(0, 8);
+      row["employID"] = `SEM_MAT_${shortHash}`;
+      row["__synthetic_matricula"] = "true";
+      syntheticCount++;
+    }
     rows.push(row);
   }
-  console.log(`Parsed ${rows.length} rows`);
+  console.log(`Parsed ${rows.length} rows (${syntheticCount} without original matricula)`);
   return rows;
 }
 
@@ -121,9 +132,11 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     await sb.from("sync_jobs").update({ message: `Parsed ${totalRows} registros.`, phase: "hashing", colab_total: totalRows }).eq("id", jobId);
 
     const rowsWithHash: { row: CsvRow; matricula: string; hash: string }[] = [];
+    let syntheticMatCount = 0;
     for (const row of rows) {
       const matricula = row.employID.trim();
       if (!matricula) continue;
+      if (row["__synthetic_matricula"] === "true") syntheticMatCount++;
       rowsWithHash.push({ row, matricula, hash: await sha256(hashFields(row)) });
     }
 
@@ -270,7 +283,8 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     // Gestores can be resolved via a separate manual trigger if needed
 
     // Done
-    await sb.from("sync_jobs").update({ status: "done", phase: "done", colab_percent: 100, colab_created: created, colab_updated: updated, colab_quarentena: quarentenaCount, message: `Concluído: ${created} novos, ${updated} atualizados, ${quarentenaCount} quarentena` }).eq("id", jobId);
+    const syntheticMsg = syntheticMatCount > 0 ? `, ${syntheticMatCount} sem matrícula original` : "";
+    await sb.from("sync_jobs").update({ status: "done", phase: "done", colab_percent: 100, colab_created: created, colab_updated: updated, colab_quarentena: quarentenaCount, message: `Concluído: ${created} novos, ${updated} atualizados, ${quarentenaCount} quarentena${syntheticMsg}` }).eq("id", jobId);
     await sb.from("auditoria").insert({ entidade: "importacao_csv", acao: "importar", resumo: `CSV SharePoint: ${totalRows} linhas, ${created} novos, ${updated} atualizados, ${quarentenaCount} quarentena`, detalhes: { filename, totalRows, created, updated, quarentenaCount, jobId } });
     if (quarentenaCount > 0) await sb.from("alertas").insert({ tipo: "quarentena_csv", titulo: `${quarentenaCount} colaborador(es) em quarentena`, mensagem: `Importação CSV detectou ${quarentenaCount} colaborador(es) ausentes.`, severidade: "aviso", ref_tipo: "sync_job", ref_id: jobId });
 
