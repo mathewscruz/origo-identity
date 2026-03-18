@@ -496,6 +496,19 @@ export default function ColaboradoresPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialog Senha Provisória */}
+      <Dialog open={!!tempPasswordInfo} onOpenChange={(open) => !open && setTempPasswordInfo(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Senha Provisória — Entra ID</DialogTitle>
+          </DialogHeader>
+          {tempPasswordInfo && <TempPasswordDisplay info={tempPasswordInfo} toast={toast} />}
+          <DialogFooter>
+            <Button onClick={() => setTempPasswordInfo(null)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
