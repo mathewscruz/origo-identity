@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Upload, Plus, Pencil, Trash2 } from "lucide-react";
+import { Search, Upload, Plus, Pencil, Trash2, Copy, Eye, EyeOff } from "lucide-react";
 import { Link } from "react-router-dom";
 import ColaboradorActivityPopover from "@/components/ColaboradorActivityPopover";
 import { useColaboradores, useEmpresas, useAreas, useCargos, useLocalidades } from "@/hooks/useOrigoData";
@@ -71,6 +71,47 @@ const emptyForm: ColabForm = {
   empresa_id: "", area_id: "", cargo_id: "", localidade_id: "", data_admissao: "",
 };
 
+function TempPasswordDisplay({ info, toast }: { info: { nome: string; email: string; password: string }; toast: any }) {
+  const [showPwd, setShowPwd] = useState(false);
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    toast({ title: `${label} copiado!` });
+  };
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        O usuário <span className="font-medium text-foreground">{info.nome}</span> foi criado no Entra ID. Compartilhe as credenciais abaixo com segurança.
+      </p>
+      <div className="space-y-2 rounded-md border bg-muted/50 p-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground">E-mail / UPN</p>
+            <p className="text-sm font-medium font-mono">{info.email}</p>
+          </div>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyToClipboard(info.email, "E-mail")}>
+            <Copy className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground">Senha provisória</p>
+            <p className="text-sm font-medium font-mono">{showPwd ? info.password : "••••••••••••"}</p>
+          </div>
+          <div className="flex gap-1">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowPwd(!showPwd)}>
+              {showPwd ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyToClipboard(info.password, "Senha")}>
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">⚠️ O usuário deverá alterar a senha no primeiro login.</p>
+    </div>
+  );
+}
+
 export default function ColaboradoresPage() {
   const [busca, setBusca] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
@@ -88,6 +129,7 @@ export default function ColaboradoresPage() {
   const [form, setForm] = useState<ColabForm>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [tempPasswordInfo, setTempPasswordInfo] = useState<{ nome: string; email: string; password: string } | null>(null);
 
   const { data: colaboradores, isLoading } = useColaboradores();
   const { data: empresas } = useEmpresas();
@@ -224,6 +266,9 @@ export default function ColaboradoresPage() {
         const provResult = await provisionEntraUser(colaboradorId);
         if (provResult.success) {
           toast({ title: "Usuário criado no Entra ID", description: `${provResult.licenses_assigned} licença(s), ${provResult.groups_added} grupo(s) atribuído(s).` });
+          if (provResult.temp_password) {
+            setTempPasswordInfo({ nome: form.nome.trim(), email: form.email.trim(), password: provResult.temp_password });
+          }
         } else {
           toast({ title: "Aviso: Entra ID", description: provResult.error, variant: "destructive" });
         }
@@ -492,6 +537,19 @@ export default function ColaboradoresPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialog Senha Provisória */}
+      <Dialog open={!!tempPasswordInfo} onOpenChange={(open) => !open && setTempPasswordInfo(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Senha Provisória — Entra ID</DialogTitle>
+          </DialogHeader>
+          {tempPasswordInfo && <TempPasswordDisplay info={tempPasswordInfo} toast={toast} />}
+          <DialogFooter>
+            <Button onClick={() => setTempPasswordInfo(null)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

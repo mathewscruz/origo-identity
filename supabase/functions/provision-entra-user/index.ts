@@ -218,6 +218,7 @@ Deno.serve(async (req) => {
       JSON.stringify({
         success: true,
         entra_id: entraId,
+        temp_password: tempPassword,
         licenses_assigned: licensesAssigned,
         groups_added: groupsAdded,
       }),
