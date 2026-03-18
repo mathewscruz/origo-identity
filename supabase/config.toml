@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.disable-entra-user]
 verify_jwt = false
+
+[functions.reprovision-entra-users]
+verify_jwt = false
