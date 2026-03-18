@@ -23,19 +23,6 @@ async function getAccessToken(): Promise<string> {
   return (await res.json()).access_token;
 }
 
-async function fetchAllPages<T>(url: string, token: string): Promise<T[]> {
-  const items: T[] = [];
-  let nextUrl: string | null = url;
-  while (nextUrl) {
-    const res = await fetch(nextUrl, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) throw new Error(`Graph API error [${res.status}]: ${await res.text()}`);
-    const data = await res.json();
-    items.push(...(data.value || []));
-    nextUrl = data["@odata.nextLink"] || null;
-  }
-  return items;
-}
-
 interface GraphApp { id: string; displayName: string; signInAudience: string | null; }
 interface GraphSku { skuId: string; skuPartNumber: string; prepaidUnits: { enabled: number }; consumedUnits: number; }
 interface GraphGroup { id: string; displayName: string; description: string | null; }
@@ -63,32 +50,43 @@ Deno.serve(async (req) => {
         send({ phase: "auth", message: "Autenticando..." });
         const token = await getAccessToken();
 
-        // ===== APPS =====
+        // ===== APPS (page-by-page) =====
         send({ phase: "fetch_apps", message: "Buscando aplicações do Entra ID..." });
         await updateJob({ phase: "fetch_apps", message: "Buscando aplicações..." });
-        const apps = await fetchAllPages<GraphApp>(`${GRAPH_BASE}/applications?$select=id,displayName,signInAudience&$top=999`, token);
-        send({ phase: "fetch_apps_done", totalApps: apps.length, message: `${apps.length} aplicações encontradas` });
-        await updateJob({ phase: "fetch_apps_done", message: `${apps.length} aplicações encontradas`, apps_total: apps.length });
 
-        let created = 0, updated = 0;
-        for (let i = 0; i < apps.length; i++) {
-          const app = apps[i];
-          const { data: existing } = await supabase.from("aplicacoes").select("id").eq("entra_id", app.id).maybeSingle();
-          if (existing) {
-            await supabase.from("aplicacoes").update({ nome: app.displayName, tipo_auth: app.signInAudience || null }).eq("entra_id", app.id);
-            updated++;
-          } else {
-            await supabase.from("aplicacoes").insert({ entra_id: app.id, nome: app.displayName, tipo_auth: app.signInAudience || null, criticidade: "media" });
-            created++;
+        let appsCreated = 0, appsUpdated = 0, appsTotal = 0;
+        let appsNextUrl: string | null = `${GRAPH_BASE}/applications?$select=id,displayName,signInAudience&$top=999`;
+        let appsPage = 0;
+
+        while (appsNextUrl) {
+          const res = await fetch(appsNextUrl, { headers: { Authorization: `Bearer ${token}` } });
+          if (!res.ok) throw new Error(`Graph API apps error [${res.status}]: ${await res.text()}`);
+          const data = await res.json();
+          const apps: GraphApp[] = data.value || [];
+          appsPage++;
+
+          for (const app of apps) {
+            const { data: existing } = await supabase.from("aplicacoes").select("id").eq("entra_id", app.id).maybeSingle();
+            if (existing) {
+              await supabase.from("aplicacoes").update({ nome: app.displayName, tipo_auth: app.signInAudience || null }).eq("entra_id", app.id);
+              appsUpdated++;
+            } else {
+              await supabase.from("aplicacoes").insert({ entra_id: app.id, nome: app.displayName, tipo_auth: app.signInAudience || null, criticidade: "media" });
+              appsCreated++;
+            }
           }
-          if ((i + 1) % 10 === 0 || i === apps.length - 1) {
-            const percent = Math.round(((i + 1) / apps.length) * 100);
-            send({ phase: "sync_apps", current: i + 1, total: apps.length, percent, created, updated });
-            await updateJob({ phase: "sync_apps", message: `Sincronizando apps: ${i + 1}/${apps.length}`, apps_percent: percent, apps_created: created, apps_updated: updated });
-          }
+          appsTotal += apps.length;
+
+          send({ phase: "sync_apps", synced: appsTotal, page: appsPage, created: appsCreated, updated: appsUpdated, message: `${appsTotal} aplicações sincronizadas...` });
+          await updateJob({ phase: "sync_apps", message: `Sincronizando apps: ${appsTotal}`, apps_total: appsTotal, apps_created: appsCreated, apps_updated: appsUpdated });
+
+          appsNextUrl = data["@odata.nextLink"] || null;
         }
 
-        // ===== LICENÇAS (subscribedSkus) =====
+        send({ phase: "apps_done", total: appsTotal, created: appsCreated, updated: appsUpdated, message: `${appsTotal} aplicações concluídas` });
+        await updateJob({ phase: "apps_done", message: `${appsTotal} aplicações concluídas`, apps_percent: 100, apps_total: appsTotal, apps_created: appsCreated, apps_updated: appsUpdated });
+
+        // ===== LICENÇAS (subscribedSkus — single page) =====
         send({ phase: "fetch_licencas", message: "Buscando licenças Microsoft..." });
         await updateJob({ phase: "fetch_licencas", message: "Buscando licenças..." });
         let licencasSynced = 0;
@@ -122,38 +120,53 @@ Deno.serve(async (req) => {
           await updateJob({ message: `Licenças: ${msg}` });
         }
 
-        // ===== GRUPOS =====
+        // ===== GRUPOS (page-by-page) =====
         send({ phase: "fetch_grupos", message: "Buscando grupos do Entra ID..." });
         await updateJob({ phase: "fetch_grupos", message: "Buscando grupos..." });
-        let gruposSynced = 0;
+        let gruposTotal = 0;
+        let gruposPage = 0;
         try {
-          const groups = await fetchAllPages<GraphGroup>(`${GRAPH_BASE}/groups?$select=id,displayName,description&$top=999`, token);
-          
-          for (const g of groups) {
-            const { data: existing } = await supabase.from("entra_grupos").select("id").eq("entra_id", g.id).maybeSingle();
-            const payload = {
-              entra_id: g.id,
-              nome: g.displayName,
-              descricao: g.description || null,
-              updated_at: new Date().toISOString(),
-            };
-            if (existing) {
-              await supabase.from("entra_grupos").update(payload).eq("id", existing.id);
-            } else {
-              await supabase.from("entra_grupos").insert(payload);
+          let gruposNextUrl: string | null = `${GRAPH_BASE}/groups?$select=id,displayName,description&$top=999`;
+
+          while (gruposNextUrl) {
+            const res = await fetch(gruposNextUrl, { headers: { Authorization: `Bearer ${token}` } });
+            if (!res.ok) throw new Error(`Graph API groups error [${res.status}]: ${await res.text()}`);
+            const data = await res.json();
+            const groups: GraphGroup[] = data.value || [];
+            gruposPage++;
+
+            for (const g of groups) {
+              const { data: existing } = await supabase.from("entra_grupos").select("id").eq("entra_id", g.id).maybeSingle();
+              const payload = {
+                entra_id: g.id,
+                nome: g.displayName,
+                descricao: g.description || null,
+                updated_at: new Date().toISOString(),
+              };
+              if (existing) {
+                await supabase.from("entra_grupos").update(payload).eq("id", existing.id);
+              } else {
+                await supabase.from("entra_grupos").insert(payload);
+              }
             }
-            gruposSynced++;
+            gruposTotal += groups.length;
+
+            send({ phase: "sync_grupos", synced: gruposTotal, page: gruposPage, message: `${gruposTotal} grupos sincronizados...` });
+            await updateJob({ phase: "sync_grupos", message: `Sincronizando grupos: ${gruposTotal}` });
+
+            gruposNextUrl = data["@odata.nextLink"] || null;
           }
-          send({ phase: "grupos_done", total: gruposSynced, message: `${gruposSynced} grupos sincronizados` });
-          await updateJob({ phase: "grupos_done", message: `${gruposSynced} grupos sincronizados` });
+
+          send({ phase: "grupos_done", total: gruposTotal, message: `${gruposTotal} grupos sincronizados` });
+          await updateJob({ phase: "grupos_done", message: `${gruposTotal} grupos sincronizados` });
         } catch (grpErr: unknown) {
           const msg = grpErr instanceof Error ? grpErr.message : "Erro ao buscar grupos";
           send({ phase: "grupos_error", message: msg });
           await updateJob({ message: `Grupos: ${msg}` });
         }
 
-        send({ phase: "done", success: true, apps: { total: apps.length, created, updated }, licencas: licencasSynced, grupos: gruposSynced });
-        await updateJob({ status: "done", phase: "done", message: "Concluído!", apps_percent: 100, apps_created: created, apps_updated: updated });
+        send({ phase: "done", success: true, apps: { total: appsTotal, created: appsCreated, updated: appsUpdated }, licencas: licencasSynced, grupos: gruposTotal });
+        await updateJob({ status: "done", phase: "done", message: "Concluído!", apps_percent: 100, apps_created: appsCreated, apps_updated: appsUpdated });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Unknown error";
         send({ phase: "error", success: false, error: message });
