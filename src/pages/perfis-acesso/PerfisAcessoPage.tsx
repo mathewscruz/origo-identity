@@ -280,7 +280,7 @@ export default function PerfisAcessoPage() {
                       </div>
                     </label>
                   ))}
-                  {(entraLicencas ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhuma licença encontrada. Sincronize com o Entra ID primeiro.</p>}
+                  {(entraLicencas ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhuma licença encontrada.</p>}
                 </div>
               </ScrollArea>
             </TabsContent>
