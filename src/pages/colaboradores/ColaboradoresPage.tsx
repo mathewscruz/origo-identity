@@ -130,6 +130,7 @@ export default function ColaboradoresPage() {
     setEditingOrigem(c.origem);
     setForm({
       nome: c.nome, email: c.email, cpf: c.cpf_raw, matricula: c.matricula,
+      sam_account_name: "",
       status: c.status, empresa_id: c.empresa_id, area_id: c.area_id,
       cargo_id: c.cargo_id, localidade_id: c.localidade_id, data_admissao: c.data_admissao,
     });
