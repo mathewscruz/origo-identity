@@ -707,36 +707,48 @@ export type Database = {
           colaborador_id: string | null
           correlation_id: string
           created_at: string
+          error_code: string | null
           id: string
           payload_json: Json
           processed_at: string | null
+          processed_by: string | null
           requested_by: string | null
           result_message: string | null
+          retry_count: number
           status: string
+          target_identity: string | null
         }
         Insert: {
           action_type: string
           colaborador_id?: string | null
           correlation_id?: string
           created_at?: string
+          error_code?: string | null
           id?: string
           payload_json: Json
           processed_at?: string | null
+          processed_by?: string | null
           requested_by?: string | null
           result_message?: string | null
+          retry_count?: number
           status?: string
+          target_identity?: string | null
         }
         Update: {
           action_type?: string
           colaborador_id?: string | null
           correlation_id?: string
           created_at?: string
+          error_code?: string | null
           id?: string
           payload_json?: Json
           processed_at?: string | null
+          processed_by?: string | null
           requested_by?: string | null
           result_message?: string | null
+          retry_count?: number
           status?: string
+          target_identity?: string | null
         }
         Relationships: []
       }
