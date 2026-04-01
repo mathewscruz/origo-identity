@@ -258,7 +258,7 @@ export default function PerfisAcessoPage() {
                       <span className="text-sm">{a.nome}</span>
                     </label>
                   ))}
-                  {(aplicacoes ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhuma aplicação cadastrada. Sincronize com o Entra ID primeiro.</p>}
+                  {(aplicacoes ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhuma aplicação cadastrada.</p>}
                 </div>
               </ScrollArea>
             </TabsContent>
