@@ -68,23 +68,6 @@ export default function AplicacoesPage() {
     setDeleteId(null);
   };
 
-  const handleMicrosoftImport = useCallback(async () => {
-    setImporting(true);
-    try {
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-entra-id`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
-      });
-      if (res.body) { const r = res.body.getReader(); while (!(await r.read()).done); }
-      refetchEntra();
-      qc.invalidateQueries({ queryKey: ["aplicacoes"] });
-      toast({ title: "Importação concluída", description: "Apps do Microsoft Entra ID importados." });
-    } catch (err: any) {
-      toast({ title: "Erro na importação", description: err.message, variant: "destructive" });
-    }
-    setImporting(false);
-  }, [toast, refetchEntra, qc]);
 
   return (
     <div className="space-y-6">
