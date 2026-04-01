@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Search, Pencil, Trash2, RefreshCw } from "lucide-react";
+import { Plus, Search, Pencil, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { usePerfisAcesso, useAplicacoes, useEntraLicencas, useEntraGrupos } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
