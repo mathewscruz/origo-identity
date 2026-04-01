@@ -76,6 +76,7 @@ Deno.serve(async (req) => {
     if (result_message !== undefined) updatePayload.result_message = result_message;
     if (processed_by) updatePayload.processed_by = processed_by;
     if (error_code !== undefined) updatePayload.error_code = error_code;
+    if (target_identity) updatePayload.target_identity = target_identity;
 
     const { data, error: updateError } = await supabase
       .from("iam_queue")
