@@ -59,9 +59,14 @@ export default function IntegracoesPage() {
       const safeToClean = (toClean || []).filter((c: any) => !c.email || !protectedEmails.has(c.email.toLowerCase()));
       if (safeToClean.length === 0) { toast({ title: "Nada a limpar" }); setCleaning(false); return; }
       const ids = safeToClean.map((c: any) => c.id);
-      const { error } = await supabase.from("colaboradores").update({ status: "inativo", origem: "obsoleto" } as any).in("id", ids);
+      // Remove related records first, then delete collaborators
+      await supabase.from("perfil_atribuicoes").delete().in("colaborador_id", ids);
+      await supabase.from("eventos_jml").delete().in("colaborador_id", ids);
+      await supabase.from("iam_queue").delete().in("colaborador_id", ids);
+      await supabase.from("colab_quarentena").delete().in("colaborador_id", ids);
+      const { error } = await supabase.from("colaboradores").delete().in("id", ids);
       if (error) throw error;
-      toast({ title: "Base limpa", description: `${ids.length} colaborador(es) marcados como inativos/obsoletos.` });
+      toast({ title: "Base limpa", description: `${ids.length} colaborador(es) excluídos permanentemente.` });
     } catch (err: unknown) { toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" }); }
     setCleaning(false);
   }, [toast]);
