@@ -488,6 +488,10 @@ export default function ColaboradoresPage() {
               <Input value={form.matricula} onChange={(e) => setForm({ ...form, matricula: e.target.value })} />
             </div>
             <div>
+              <Label>Nome de login AD {!editingId ? "*" : ""}</Label>
+              <Input placeholder="ex: joao.silva" value={form.sam_account_name} onChange={(e) => setForm({ ...form, sam_account_name: e.target.value })} />
+            </div>
+            <div>
               <Label>Status</Label>
               <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
