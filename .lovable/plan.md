@@ -1,64 +1,49 @@
 
 
-## Plano: Corrigir erro ao limpar base de colaboradores
+## Plano: Adicionar campo samAccountName e corrigir payload de criacao
 
-### Problema
+### O que muda
 
-A funcao `handleCleanBase` nao limpa todas as tabelas que referenciam `colaborador_id`. As tabelas `excecoes` e `revisao_itens` possuem foreign keys para `colaboradores` com `ON DELETE SET NULL`, mas pode haver constraints ou erros nao tratados. Alem disso, o operador `.in()` do Supabase tem limite de URL quando ha muitos IDs.
+1. **Novo campo no formulario**: "Nome de login AD (samAccountName)" — obrigatorio para novos colaboradores.
 
-### Solucao
+2. **Payload `create` padronizado**: O `samAccountName` passa a vir do novo campo dedicado (nao mais da matricula). O `userPrincipalName` sera `samAccountName@ebessolar.local`.
 
-#### 1. Adicionar limpeza das tabelas faltantes
+3. **Mensagem ao salvar**: "Solicitacao enviada para processamento".
 
-Antes de deletar colaboradores, limpar tambem:
-- `excecoes` (tem `colaborador_id` referenciando colaboradores)
-- `revisao_itens` (tem `colaborador_id` referenciando colaboradores)
+### Alteracoes no arquivo `ColaboradoresPage.tsx`
 
-#### 2. Processar em lotes para evitar limite de URL
+#### Interface `ColabForm`
+- Adicionar campo `sam_account_name: string`
 
-Dividir os IDs em lotes de 200 para evitar que o `.in()` ultrapasse o limite de tamanho da URL do PostgREST.
+#### `emptyForm`
+- Adicionar `sam_account_name: ""`
 
-#### 3. Tratar erros individuais por tabela
+#### Validacao em `handleSave`
+- Para novos colaboradores: exigir `sam_account_name` preenchido, mostrar toast de erro se vazio.
 
-Capturar e logar erros de cada delete para identificar qual tabela causa o problema.
+#### Payload `iam_queue` (action_type = "create", linhas 227-252)
+- `samAccountName`: usar `form.sam_account_name.trim()`
+- `userPrincipalName`: `form.sam_account_name.trim() + "@ebessolar.local"`
+- `mail`: `form.email.trim() || null`
+- `department`: nome da area (ja existe)
+- `title`: nome do cargo (ja existe)
+- `company`: nome da empresa (ja existe)
+- `telephoneNumber`: `null`
+- `manager`: `null`
+
+#### Payload `iam_queue` para update/disable/delete
+- Usar `form.sam_account_name` como `samAccountName` quando disponivel (fallback para matricula/email).
+
+#### Formulario (dialog, linhas 465-531)
+- Adicionar campo Input "Nome de login AD *" logo apos o campo Matricula.
+- Mostrar apenas para novos colaboradores (ou sempre, para permitir edicao futura).
+
+#### `openEdit`
+- Nao ha `sam_account_name` na tabela `colaboradores` hoje. O campo ficara vazio na edicao (opcional nesse caso).
 
 ### Arquivo afetado
 
 | Acao | Arquivo |
 |---|---|
-| Editar | `src/pages/configuracoes/IntegracoesPage.tsx` |
-
-### Codigo da correcao
-
-```typescript
-const handleCleanBase = useCallback(async () => {
-  setCleaning(true);
-  try {
-    const { data: operadores } = await supabase.from("operadores").select("email");
-    const protectedEmails = new Set((operadores || []).map((o: any) => o.email?.toLowerCase()));
-    const { data: toClean } = await supabase.from("colaboradores").select("id, email");
-    const safeToClean = (toClean || []).filter((c: any) => !c.email || !protectedEmails.has(c.email.toLowerCase()));
-    if (safeToClean.length === 0) { toast({ title: "Nada a limpar" }); setCleaning(false); return; }
-    const ids = safeToClean.map((c: any) => c.id);
-
-    // Processar em lotes de 200
-    const BATCH = 200;
-    for (let i = 0; i < ids.length; i += BATCH) {
-      const batch = ids.slice(i, i + BATCH);
-      await supabase.from("perfil_atribuicoes").delete().in("colaborador_id", batch);
-      await supabase.from("eventos_jml").delete().in("colaborador_id", batch);
-      await supabase.from("iam_queue").delete().in("colaborador_id", batch);
-      await supabase.from("colab_quarentena").delete().in("colaborador_id", batch);
-      await supabase.from("excecoes").delete().in("colaborador_id", batch);
-      await supabase.from("revisao_itens").delete().in("colaborador_id", batch);
-      const { error } = await supabase.from("colaboradores").delete().in("id", batch);
-      if (error) throw error;
-    }
-    toast({ title: "Base limpa", description: `${ids.length} colaborador(es) excluídos.` });
-  } catch (err: unknown) {
-    toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
-  }
-  setCleaning(false);
-}, [toast]);
-```
+| Editar | `src/pages/colaboradores/ColaboradoresPage.tsx` |
 
