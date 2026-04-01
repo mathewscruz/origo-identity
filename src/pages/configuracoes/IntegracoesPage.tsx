@@ -55,7 +55,7 @@ export default function IntegracoesPage() {
     try {
       const { data: operadores } = await supabase.from("operadores").select("email");
       const protectedEmails = new Set((operadores || []).map((o: any) => o.email?.toLowerCase()));
-      const { data: toClean } = await supabase.from("colaboradores").select("id, email, origem").in("origem", ["manual", "entra_id"]);
+      const { data: toClean } = await supabase.from("colaboradores").select("id, email, origem").eq("origem", "manual");
       const safeToClean = (toClean || []).filter((c: any) => !c.email || !protectedEmails.has(c.email.toLowerCase()));
       if (safeToClean.length === 0) { toast({ title: "Nada a limpar" }); setCleaning(false); return; }
       const ids = safeToClean.map((c: any) => c.id);
@@ -123,7 +123,7 @@ export default function IntegracoesPage() {
         <CardContent>
           <AlertDialog>
             <AlertDialogTrigger asChild><Button variant="destructive" disabled={cleaning}><Trash2 className="mr-2 h-4 w-4" />{cleaning ? "Excluindo..." : "Limpar Base Manual"}</Button></AlertDialogTrigger>
-            <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle><AlertDialogDescription>Todos os colaboradores de origem manual/entra_id serão excluídos permanentemente do sistema. Esta ação não pode ser desfeita.</AlertDialogDescription></AlertDialogHeader>
+            <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle><AlertDialogDescription>Todos os colaboradores de origem manual serão excluídos permanentemente do sistema. Esta ação não pode ser desfeita.</AlertDialogDescription></AlertDialogHeader>
               <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleCleanBase}>Confirmar</AlertDialogAction></AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>

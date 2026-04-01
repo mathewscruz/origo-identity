@@ -1,7 +1,5 @@
 project_id = "jobopjhhxgcfanlhzlkc"
 
-[functions.sync-entra-id]
-verify_jwt = false
 
 [functions.sync-csv-colab]
 verify_jwt = false
@@ -12,8 +10,3 @@ verify_jwt = false
 [functions.execute-rules]
 verify_jwt = false
 
-[functions.disable-entra-user]
-verify_jwt = false
-
-[functions.reprovision-entra-users]
-verify_jwt = false

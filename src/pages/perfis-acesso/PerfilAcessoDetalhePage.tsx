@@ -365,7 +365,7 @@ export default function PerfilAcessoDetalhePage() {
                       <span className="text-xs text-muted-foreground">({lic.em_uso}/{lic.total})</span>
                     </label>
                   ))}
-                  {(entraLicencas ?? []).length === 0 && <p className="text-sm text-muted-foreground">Sincronize com o Entra ID primeiro.</p>}
+                  {(entraLicencas ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhuma licença encontrada.</p>}
                 </div>
               </ScrollArea>
             </TabsContent>
@@ -382,7 +382,7 @@ export default function PerfilAcessoDetalhePage() {
                       </div>
                     </label>
                   ))}
-                  {(entraGrupos ?? []).length === 0 && <p className="text-sm text-muted-foreground">Sincronize com o Entra ID primeiro.</p>}
+                  {(entraGrupos ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhum grupo encontrado.</p>}
                 </div>
               </ScrollArea>
             </TabsContent>

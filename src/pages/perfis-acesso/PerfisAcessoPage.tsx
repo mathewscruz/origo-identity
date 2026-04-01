@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Search, Pencil, Trash2, RefreshCw } from "lucide-react";
+import { Plus, Search, Pencil, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { usePerfisAcesso, useAplicacoes, useEntraLicencas, useEntraGrupos } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -38,8 +38,6 @@ export default function PerfisAcessoPage() {
   const { data: aplicacoes } = useAplicacoes();
   const { data: entraLicencas } = useEntraLicencas();
   const { data: entraGrupos } = useEntraGrupos();
-  const [syncing, setSyncing] = useState(false);
-  const [syncMessage, setSyncMessage] = useState("");
   const [busca, setBusca] = useState("");
   const [buscaApps, setBuscaApps] = useState("");
   const [buscaLicencas, setBuscaLicencas] = useState("");
@@ -139,57 +137,7 @@ export default function PerfisAcessoPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Perfis de Acesso</h1>
           <p className="text-sm text-muted-foreground">Perfis baseados em cargo com múltiplas aplicações vinculadas</p>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size={syncing ? "default" : "icon"}
-            disabled={syncing}
-            title="Sincronizar Entra ID (apps, licenças, grupos)"
-            onClick={async () => {
-              setSyncing(true);
-              setSyncMessage("Iniciando...");
-              try {
-                const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-                const res = await fetch(`https://${projectId}.supabase.co/functions/v1/sync-entra-id`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
-                });
-                const reader = res.body?.getReader();
-                if (reader) {
-                  const decoder = new TextDecoder();
-                  while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    const text = decoder.decode(value);
-                    const lines = text.split("\n").filter(l => l.startsWith("data: "));
-                    for (const line of lines) {
-                      try {
-                        const evt = JSON.parse(line.replace("data: ", ""));
-                        if (evt.message) setSyncMessage(evt.message);
-                        if (evt.phase === "done") {
-                          toast({ title: "Sincronização concluída!", description: `${evt.apps?.total ?? 0} apps, ${evt.licencas ?? 0} licenças, ${evt.grupos ?? 0} grupos` });
-                        }
-                        if (evt.phase === "error") toast({ title: "Erro na sincronização", description: evt.error, variant: "destructive" });
-                      } catch { /* skip */ }
-                    }
-                  }
-                }
-                queryClient.invalidateQueries({ queryKey: ["aplicacoes"] });
-                queryClient.invalidateQueries({ queryKey: ["entra_licencas"] });
-                queryClient.invalidateQueries({ queryKey: ["entra_grupos"] });
-                queryClient.invalidateQueries({ queryKey: ["sync_jobs"] });
-              } catch (err: any) {
-                toast({ title: "Erro", description: err.message, variant: "destructive" });
-              }
-              setSyncing(false);
-              setSyncMessage("");
-            }}
-          >
-            <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-            {syncing && <span className="text-xs">{syncMessage}</span>}
-          </Button>
-          <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Perfil</Button>
-        </div>
+        <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Perfil</Button>
       </div>
 
       <div className="flex gap-2">
@@ -310,7 +258,7 @@ export default function PerfisAcessoPage() {
                       <span className="text-sm">{a.nome}</span>
                     </label>
                   ))}
-                  {(aplicacoes ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhuma aplicação cadastrada. Sincronize com o Entra ID primeiro.</p>}
+                  {(aplicacoes ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhuma aplicação cadastrada.</p>}
                 </div>
               </ScrollArea>
             </TabsContent>
@@ -332,13 +280,13 @@ export default function PerfisAcessoPage() {
                       </div>
                     </label>
                   ))}
-                  {(entraLicencas ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhuma licença encontrada. Sincronize com o Entra ID primeiro.</p>}
+                  {(entraLicencas ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhuma licença encontrada.</p>}
                 </div>
               </ScrollArea>
             </TabsContent>
 
             <TabsContent value="grupos" className="mt-4 overflow-auto flex-1">
-              <p className="text-xs text-muted-foreground mb-2">Selecione os grupos do Entra ID que os usuários deste perfil receberão.</p>
+              <p className="text-xs text-muted-foreground mb-2">Selecione os grupos que os usuários deste perfil receberão.</p>
               <div className="relative mb-2">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input placeholder="Buscar grupos..." className="pl-9" value={buscaGrupos} onChange={e => setBuscaGrupos(e.target.value)} />
@@ -354,7 +302,7 @@ export default function PerfisAcessoPage() {
                       </div>
                     </label>
                   ))}
-                  {(entraGrupos ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhum grupo encontrado. Sincronize com o Entra ID primeiro.</p>}
+                  {(entraGrupos ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhum grupo encontrado.</p>}
                 </div>
               </ScrollArea>
             </TabsContent>
