@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
@@ -23,16 +24,6 @@ const statusConfig: Record<string, { label: string; class: string }> = {
   afastado: { label: "Afastado", class: "bg-warning/15 text-warning border-warning/30" },
   desligado: { label: "Desligado", class: "bg-destructive/15 text-destructive border-destructive/30" },
 };
-
-async function disableEntraUser(colaboradorId: string, action: "disable" | "enable") {
-  const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-  const res = await fetch(`https://${projectId}.supabase.co/functions/v1/disable-entra-user`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
-    body: JSON.stringify({ colaborador_id: colaboradorId, action }),
-  });
-  return res.json();
-}
 
 const origemColors: Record<string, string> = {
   regra: "bg-primary/15 text-primary border-primary/30",
@@ -62,6 +53,7 @@ export default function ColaboradorDetalhePage() {
   const { data: perfisDisponiveis } = usePerfisAcesso();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { profile } = useAuth();
 
   const [atribuirOpen, setAtribuirOpen] = useState(false);
   const [selectedPerfilId, setSelectedPerfilId] = useState("");
@@ -133,16 +125,21 @@ export default function ColaboradorDetalhePage() {
               const { error } = await supabase.from("colaboradores").update({ status: newStatus as any }).eq("id", id!);
               if (error) { toast({ title: "Erro ao alterar status", description: error.message, variant: "destructive" }); return; }
               
-              // If changing FROM ativo to non-ativo → disable in Entra ID
+              // Queue disable request
               if (oldStatus === "ativo" && newStatus !== "ativo") {
-                toast({ title: "Desativando usuário no Entra ID..." });
-                const result = await disableEntraUser(id!, "disable");
-                if (result.success) {
-                  toast({ title: "Usuário desativado", description: `Entra ID desativado. ${result.atribuicoes_revoked} acessos revogados.` });
-                } else {
-                  toast({ title: "Aviso", description: `Status alterado mas erro no Entra ID: ${result.error}`, variant: "destructive" });
-                }
-                // JML leaver event for manual
+                await supabase.from("iam_queue" as any).insert({
+                  action_type: "disable",
+                  payload_json: {
+                    samAccountName: pessoa.matricula || pessoa.email,
+                    displayName: pessoa.nome,
+                    motivo: `Status alterado para ${newStatus}`,
+                    data_solicitacao: new Date().toISOString(),
+                  },
+                  requested_by: profile?.email || "sistema",
+                  colaborador_id: id,
+                });
+                toast({ title: "Solicitação de desativação enviada para processamento" });
+
                 if (isManual) {
                   await createEventoJML({
                     colaboradorId: id!,
@@ -153,23 +150,26 @@ export default function ColaboradorDetalhePage() {
                   });
                 }
               }
-              // If changing TO ativo → re-enable in Entra ID
+
+              // Queue enable request
               if (oldStatus !== "ativo" && newStatus === "ativo") {
-                toast({ title: "Reativando usuário no Entra ID..." });
-                const result = await disableEntraUser(id!, "enable");
-                if (result.success) {
-                  toast({ title: "Usuário reativado no Entra ID" });
-                } else {
-                  toast({ title: "Aviso", description: `Status alterado mas erro no Entra ID: ${result.error}`, variant: "destructive" });
-                }
-                // Re-provision cargo access for manual collaborators
+                await supabase.from("iam_queue" as any).insert({
+                  action_type: "update",
+                  payload_json: {
+                    samAccountName: pessoa.matricula || pessoa.email,
+                    displayName: pessoa.nome,
+                    action: "enable",
+                    motivo: "Usuário reativado",
+                    data_solicitacao: new Date().toISOString(),
+                  },
+                  requested_by: profile?.email || "sistema",
+                  colaborador_id: id,
+                });
+                toast({ title: "Solicitação de reativação enviada para processamento" });
+
                 if (isManual && pessoa.cargo_id) {
-                  const provResult = await provisionCargoAcessos(id!, pessoa.cargo_id, null);
-                  if (provResult.provisioned > 0) {
-                    toast({ title: `${provResult.provisioned} acesso(s) re-provisionado(s) do cargo` });
-                  }
+                  await provisionCargoAcessos(id!, pessoa.cargo_id, null);
                 }
-                // JML joiner event for manual
                 if (isManual) {
                   await createEventoJML({
                     colaboradorId: id!,
