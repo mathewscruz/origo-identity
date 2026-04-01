@@ -196,13 +196,14 @@ export default function ColaboradoresPage() {
         await supabase.from("iam_queue" as any).insert({
           action_type: "disable",
           payload_json: {
-            samAccountName: form.matricula.trim() || form.email.trim(),
+            samAccountName: form.sam_account_name.trim() || form.matricula.trim() || form.email.trim(),
             displayName: form.nome.trim(),
             motivo: `Status alterado para ${form.status}`,
             data_solicitacao: new Date().toISOString(),
           },
           requested_by: profile?.email || "sistema",
           colaborador_id: colaboradorId,
+          target_identity: form.sam_account_name.trim() || form.matricula.trim() || null,
         });
         toast({ title: "Solicitação de desativação enviada para processamento" });
       } else if (becameActive) {
