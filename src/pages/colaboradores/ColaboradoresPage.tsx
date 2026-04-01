@@ -41,6 +41,7 @@ interface ColabForm {
   email: string;
   cpf: string;
   matricula: string;
+  sam_account_name: string;
   status: string;
   empresa_id: string;
   area_id: string;
@@ -50,7 +51,7 @@ interface ColabForm {
 }
 
 const emptyForm: ColabForm = {
-  nome: "", email: "", cpf: "", matricula: "", status: "ativo",
+  nome: "", email: "", cpf: "", matricula: "", sam_account_name: "", status: "ativo",
   empresa_id: "", area_id: "", cargo_id: "", localidade_id: "", data_admissao: "",
 };
 
@@ -129,6 +130,7 @@ export default function ColaboradoresPage() {
     setEditingOrigem(c.origem);
     setForm({
       nome: c.nome, email: c.email, cpf: c.cpf_raw, matricula: c.matricula,
+      sam_account_name: "",
       status: c.status, empresa_id: c.empresa_id, area_id: c.area_id,
       cargo_id: c.cargo_id, localidade_id: c.localidade_id, data_admissao: c.data_admissao,
     });
@@ -142,6 +144,7 @@ export default function ColaboradoresPage() {
 
   async function handleSave() {
     if (!form.nome.trim()) { toast({ title: "Nome é obrigatório", variant: "destructive" }); return; }
+    if (!editingId && !form.sam_account_name.trim()) { toast({ title: "Nome de login AD é obrigatório para novos colaboradores", variant: "destructive" }); return; }
     setSaving(true);
     const payload: any = {
       nome: form.nome.trim(),
@@ -193,20 +196,21 @@ export default function ColaboradoresPage() {
         await supabase.from("iam_queue" as any).insert({
           action_type: "disable",
           payload_json: {
-            samAccountName: form.matricula.trim() || form.email.trim(),
+            samAccountName: form.sam_account_name.trim() || form.matricula.trim() || form.email.trim(),
             displayName: form.nome.trim(),
             motivo: `Status alterado para ${form.status}`,
             data_solicitacao: new Date().toISOString(),
           },
           requested_by: profile?.email || "sistema",
           colaborador_id: colaboradorId,
+          target_identity: form.sam_account_name.trim() || form.matricula.trim() || null,
         });
         toast({ title: "Solicitação de desativação enviada para processamento" });
       } else if (becameActive) {
         await supabase.from("iam_queue" as any).insert({
           action_type: "update",
           payload_json: {
-            samAccountName: form.matricula.trim() || form.email.trim(),
+            samAccountName: form.sam_account_name.trim() || form.matricula.trim() || form.email.trim(),
             displayName: form.nome.trim(),
             action: "enable",
             motivo: "Usuário reativado",
@@ -214,6 +218,7 @@ export default function ColaboradoresPage() {
           },
           requested_by: profile?.email || "sistema",
           colaborador_id: colaboradorId,
+          target_identity: form.sam_account_name.trim() || form.matricula.trim() || null,
         });
         toast({ title: "Solicitação de reativação enviada para processamento" });
 
@@ -228,6 +233,7 @@ export default function ColaboradoresPage() {
         const nameParts = form.nome.trim().split(" ");
         const givenName = nameParts[0] || "";
         const surname = nameParts.slice(1).join(" ") || givenName;
+        const sam = form.sam_account_name.trim();
 
         await supabase.from("iam_queue" as any).insert({
           action_type: "create",
@@ -235,20 +241,21 @@ export default function ColaboradoresPage() {
             givenName,
             surname,
             displayName: form.nome.trim(),
-            samAccountName: form.matricula.trim() || "",
-            userPrincipalName: form.email.trim() || "",
-            mail: form.email.trim() || "",
+            samAccountName: sam,
+            userPrincipalName: `${sam}@ebessolar.local`,
+            mail: form.email.trim() || null,
             department: getNameById(areas, form.area_id),
             title: getNameById(cargos, form.cargo_id),
-            manager: "",
+            manager: null,
             company: getNameById(empresas, form.empresa_id),
-            telephoneNumber: "",
+            telephoneNumber: null,
             ouPath: "",
           },
           requested_by: profile?.email || "sistema",
           colaborador_id: colaboradorId,
+          target_identity: sam || null,
         });
-        toast({ title: "Solicitação de criação enviada para processamento" });
+        toast({ title: "Solicitação enviada para processamento" });
       }
 
       // 4. Queue update for edits (cargo/area change)
@@ -260,12 +267,13 @@ export default function ColaboradoresPage() {
         await supabase.from("iam_queue" as any).insert({
           action_type: "update",
           payload_json: {
-            samAccountName: form.matricula.trim() || form.email.trim(),
+            samAccountName: form.sam_account_name.trim() || form.matricula.trim() || form.email.trim(),
             displayName: form.nome.trim(),
             changedFields,
           },
           requested_by: profile?.email || "sistema",
           colaborador_id: colaboradorId,
+          target_identity: form.sam_account_name.trim() || form.matricula.trim() || null,
         });
         toast({ title: "Solicitação de atualização enviada para processamento" });
       }
@@ -478,6 +486,10 @@ export default function ColaboradoresPage() {
             <div>
               <Label>Matrícula</Label>
               <Input value={form.matricula} onChange={(e) => setForm({ ...form, matricula: e.target.value })} />
+            </div>
+            <div>
+              <Label>Nome de login AD {!editingId ? "*" : ""}</Label>
+              <Input placeholder="ex: joao.silva" value={form.sam_account_name} onChange={(e) => setForm({ ...form, sam_account_name: e.target.value })} />
             </div>
             <div>
               <Label>Status</Label>
