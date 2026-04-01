@@ -76,14 +76,7 @@ export default function AplicacoesPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Aplicações</h1>
           <p className="text-sm text-muted-foreground">Catálogo corporativo de aplicações</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={handleMicrosoftImport} disabled={importing}>
-            <MicrosoftIcon />
-            <span className="ml-1">{importing ? "Importando..." : "Importar Microsoft"}</span>
-            {importing && <RefreshCw className="ml-1 h-3 w-3 animate-spin" />}
-          </Button>
           <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Aplicação</Button>
-        </div>
       </div>
 
       <div className="flex gap-2">
