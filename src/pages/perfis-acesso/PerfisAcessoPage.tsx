@@ -286,7 +286,7 @@ export default function PerfisAcessoPage() {
             </TabsContent>
 
             <TabsContent value="grupos" className="mt-4 overflow-auto flex-1">
-              <p className="text-xs text-muted-foreground mb-2">Selecione os grupos do Entra ID que os usuários deste perfil receberão.</p>
+              <p className="text-xs text-muted-foreground mb-2">Selecione os grupos que os usuários deste perfil receberão.</p>
               <div className="relative mb-2">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input placeholder="Buscar grupos..." className="pl-9" value={buscaGrupos} onChange={e => setBuscaGrupos(e.target.value)} />
