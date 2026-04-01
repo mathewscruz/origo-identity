@@ -193,32 +193,41 @@ export default function ColaboradoresPage() {
 
       // 2. Queue disable/enable requests
       if (becameInactive) {
+        const sam = form.sam_account_name.trim();
         await supabase.from("iam_queue" as any).insert({
           action_type: "disable",
           payload_json: {
-            samAccountName: form.sam_account_name.trim() || form.matricula.trim() || form.email.trim(),
+            samAccountName: sam,
+            mail: form.email.trim() || null,
             displayName: form.nome.trim(),
-            motivo: `Status alterado para ${form.status}`,
-            data_solicitacao: new Date().toISOString(),
+            status: "disabled",
+            status_anterior: editingStatus || "ativo",
+            status_novo: form.status,
+            changed_fields: ["status"],
+            new_values: { status: "disabled" },
           },
           requested_by: profile?.email || "sistema",
           colaborador_id: colaboradorId,
-          target_identity: form.sam_account_name.trim() || form.matricula.trim() || null,
+          target_identity: sam || null,
         });
         toast({ title: "Solicitação de desativação enviada para processamento" });
       } else if (becameActive) {
+        const sam = form.sam_account_name.trim();
         await supabase.from("iam_queue" as any).insert({
           action_type: "update",
           payload_json: {
-            samAccountName: form.sam_account_name.trim() || form.matricula.trim() || form.email.trim(),
+            samAccountName: sam,
+            mail: form.email.trim() || null,
             displayName: form.nome.trim(),
-            action: "enable",
-            motivo: "Usuário reativado",
-            data_solicitacao: new Date().toISOString(),
+            status: "enabled",
+            status_anterior: editingStatus || "inativo",
+            status_novo: "ativo",
+            changed_fields: ["status"],
+            new_values: { status: "enabled" },
           },
           requested_by: profile?.email || "sistema",
           colaborador_id: colaboradorId,
-          target_identity: form.sam_account_name.trim() || form.matricula.trim() || null,
+          target_identity: sam || null,
         });
         toast({ title: "Solicitação de reativação enviada para processamento" });
 
@@ -260,20 +269,25 @@ export default function ColaboradoresPage() {
 
       // 4. Queue update for edits (cargo/area change)
       if (editingId && (cargoChanged || areaChanged) && !becameInactive && !becameActive) {
-        const changedFields: Record<string, any> = {};
-        if (cargoChanged) changedFields.title = getNameById(cargos, form.cargo_id);
-        if (areaChanged) changedFields.department = getNameById(areas, form.area_id);
+        const sam = form.sam_account_name.trim();
+        const changedFieldsList: string[] = [];
+        const newValues: Record<string, string> = {};
+        if (cargoChanged) { changedFieldsList.push("title"); newValues.title = getNameById(cargos, form.cargo_id); }
+        if (areaChanged) { changedFieldsList.push("department"); newValues.department = getNameById(areas, form.area_id); }
 
         await supabase.from("iam_queue" as any).insert({
           action_type: "update",
           payload_json: {
-            samAccountName: form.sam_account_name.trim() || form.matricula.trim() || form.email.trim(),
+            samAccountName: sam,
+            mail: form.email.trim() || null,
             displayName: form.nome.trim(),
-            changedFields,
+            status: "enabled",
+            changed_fields: changedFieldsList,
+            new_values: newValues,
           },
           requested_by: profile?.email || "sistema",
           colaborador_id: colaboradorId,
-          target_identity: form.sam_account_name.trim() || form.matricula.trim() || null,
+          target_identity: sam || null,
         });
         toast({ title: "Solicitação de atualização enviada para processamento" });
       }
