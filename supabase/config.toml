@@ -10,3 +10,6 @@ verify_jwt = false
 [functions.execute-rules]
 verify_jwt = false
 
+[functions.iam-agent-api]
+verify_jwt = false
+
