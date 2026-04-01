@@ -55,7 +55,7 @@ export default function IntegracoesPage() {
     try {
       const { data: operadores } = await supabase.from("operadores").select("email");
       const protectedEmails = new Set((operadores || []).map((o: any) => o.email?.toLowerCase()));
-      const { data: toClean } = await supabase.from("colaboradores").select("id, email, origem").in("origem", ["manual", "entra_id"]);
+      const { data: toClean } = await supabase.from("colaboradores").select("id, email, origem").eq("origem", "manual");
       const safeToClean = (toClean || []).filter((c: any) => !c.email || !protectedEmails.has(c.email.toLowerCase()));
       if (safeToClean.length === 0) { toast({ title: "Nada a limpar" }); setCleaning(false); return; }
       const ids = safeToClean.map((c: any) => c.id);
