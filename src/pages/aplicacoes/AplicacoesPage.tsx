@@ -26,7 +26,7 @@ const criticidadeColors: Record<string, string> = {
 
 export default function AplicacoesPage() {
   const { data: apps, isLoading } = useAplicacoes();
-  const { data: entraJob, refetch: refetchEntra } = useSyncJobs();
+  
   const [busca, setBusca] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
