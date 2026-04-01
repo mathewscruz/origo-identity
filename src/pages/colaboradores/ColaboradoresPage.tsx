@@ -267,12 +267,13 @@ export default function ColaboradoresPage() {
         await supabase.from("iam_queue" as any).insert({
           action_type: "update",
           payload_json: {
-            samAccountName: form.matricula.trim() || form.email.trim(),
+            samAccountName: form.sam_account_name.trim() || form.matricula.trim() || form.email.trim(),
             displayName: form.nome.trim(),
             changedFields,
           },
           requested_by: profile?.email || "sistema",
           colaborador_id: colaboradorId,
+          target_identity: form.sam_account_name.trim() || form.matricula.trim() || null,
         });
         toast({ title: "Solicitação de atualização enviada para processamento" });
       }
