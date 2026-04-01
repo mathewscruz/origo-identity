@@ -59,13 +59,18 @@ export default function IntegracoesPage() {
       const safeToClean = (toClean || []).filter((c: any) => !c.email || !protectedEmails.has(c.email.toLowerCase()));
       if (safeToClean.length === 0) { toast({ title: "Nada a limpar" }); setCleaning(false); return; }
       const ids = safeToClean.map((c: any) => c.id);
-      // Remove related records first, then delete collaborators
-      await supabase.from("perfil_atribuicoes").delete().in("colaborador_id", ids);
-      await supabase.from("eventos_jml").delete().in("colaborador_id", ids);
-      await supabase.from("iam_queue").delete().in("colaborador_id", ids);
-      await supabase.from("colab_quarentena").delete().in("colaborador_id", ids);
-      const { error } = await supabase.from("colaboradores").delete().in("id", ids);
-      if (error) throw error;
+      const BATCH = 200;
+      for (let i = 0; i < ids.length; i += BATCH) {
+        const batch = ids.slice(i, i + BATCH);
+        await supabase.from("perfil_atribuicoes").delete().in("colaborador_id", batch);
+        await supabase.from("eventos_jml").delete().in("colaborador_id", batch);
+        await supabase.from("iam_queue").delete().in("colaborador_id", batch);
+        await supabase.from("colab_quarentena").delete().in("colaborador_id", batch);
+        await supabase.from("excecoes").delete().in("colaborador_id", batch);
+        await supabase.from("revisao_itens").delete().in("colaborador_id", batch);
+        const { error } = await supabase.from("colaboradores").delete().in("id", batch);
+        if (error) throw error;
+      }
       toast({ title: "Base limpa", description: `${ids.length} colaborador(es) excluídos permanentemente.` });
     } catch (err: unknown) { toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" }); }
     setCleaning(false);
