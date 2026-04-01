@@ -117,13 +117,13 @@ export default function IntegracoesPage() {
         <CardHeader>
           <div className="flex items-center gap-3">
             <Trash2 className="h-5 w-5 text-destructive" />
-            <div><CardTitle className="text-base">Limpar Base Manual</CardTitle><CardDescription>Marcar colaboradores importados manualmente como obsoletos</CardDescription></div>
+            <div><CardTitle className="text-base">Limpar Base Manual</CardTitle><CardDescription>Excluir permanentemente colaboradores importados manualmente</CardDescription></div>
           </div>
         </CardHeader>
         <CardContent>
           <AlertDialog>
-            <AlertDialogTrigger asChild><Button variant="destructive" disabled={cleaning}><Trash2 className="mr-2 h-4 w-4" />{cleaning ? "Limpando..." : "Limpar Base Manual"}</Button></AlertDialogTrigger>
-            <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Confirmar Limpeza</AlertDialogTitle><AlertDialogDescription>Todos os colaboradores de origem manual/entra_id serão marcados como inativos/obsoletos.</AlertDialogDescription></AlertDialogHeader>
+            <AlertDialogTrigger asChild><Button variant="destructive" disabled={cleaning}><Trash2 className="mr-2 h-4 w-4" />{cleaning ? "Excluindo..." : "Limpar Base Manual"}</Button></AlertDialogTrigger>
+            <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle><AlertDialogDescription>Todos os colaboradores de origem manual/entra_id serão excluídos permanentemente do sistema. Esta ação não pode ser desfeita.</AlertDialogDescription></AlertDialogHeader>
               <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleCleanBase}>Confirmar</AlertDialogAction></AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
