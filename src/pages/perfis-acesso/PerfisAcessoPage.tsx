@@ -137,57 +137,7 @@ export default function PerfisAcessoPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Perfis de Acesso</h1>
           <p className="text-sm text-muted-foreground">Perfis baseados em cargo com múltiplas aplicações vinculadas</p>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size={syncing ? "default" : "icon"}
-            disabled={syncing}
-            title="Sincronizar Entra ID (apps, licenças, grupos)"
-            onClick={async () => {
-              setSyncing(true);
-              setSyncMessage("Iniciando...");
-              try {
-                const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-                const res = await fetch(`https://${projectId}.supabase.co/functions/v1/sync-entra-id`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
-                });
-                const reader = res.body?.getReader();
-                if (reader) {
-                  const decoder = new TextDecoder();
-                  while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    const text = decoder.decode(value);
-                    const lines = text.split("\n").filter(l => l.startsWith("data: "));
-                    for (const line of lines) {
-                      try {
-                        const evt = JSON.parse(line.replace("data: ", ""));
-                        if (evt.message) setSyncMessage(evt.message);
-                        if (evt.phase === "done") {
-                          toast({ title: "Sincronização concluída!", description: `${evt.apps?.total ?? 0} apps, ${evt.licencas ?? 0} licenças, ${evt.grupos ?? 0} grupos` });
-                        }
-                        if (evt.phase === "error") toast({ title: "Erro na sincronização", description: evt.error, variant: "destructive" });
-                      } catch { /* skip */ }
-                    }
-                  }
-                }
-                queryClient.invalidateQueries({ queryKey: ["aplicacoes"] });
-                queryClient.invalidateQueries({ queryKey: ["entra_licencas"] });
-                queryClient.invalidateQueries({ queryKey: ["entra_grupos"] });
-                queryClient.invalidateQueries({ queryKey: ["sync_jobs"] });
-              } catch (err: any) {
-                toast({ title: "Erro", description: err.message, variant: "destructive" });
-              }
-              setSyncing(false);
-              setSyncMessage("");
-            }}
-          >
-            <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-            {syncing && <span className="text-xs">{syncMessage}</span>}
-          </Button>
-          <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Perfil</Button>
-        </div>
+        <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Perfil</Button>
       </div>
 
       <div className="flex gap-2">
