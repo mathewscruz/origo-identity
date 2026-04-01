@@ -13,7 +13,10 @@ import { Button } from "@/components/ui/button";
 import logoImg from "@/assets/logo.png";
 
 const sidebarGroups = [
-  { label: "Operação", items: [{ title: "Dashboard", url: "/", icon: LayoutDashboard }] },
+  { label: "Operação", items: [
+    { title: "Dashboard", url: "/", icon: LayoutDashboard },
+    { title: "Fila de Provisionamento", url: "/fila-provisionamento", icon: ListOrdered },
+  ]},
   { label: "Identidades", items: [
     { title: "Colaboradores", url: "/colaboradores", icon: Users },
     { title: "Terceiros", url: "/terceiros", icon: UserCheck },

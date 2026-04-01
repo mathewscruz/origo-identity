@@ -3,10 +3,11 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Activity, UserPlus, ArrowRightLeft, UserMinus, Shield, ShieldOff, Cloud, AlertTriangle } from "lucide-react";
+import { Activity, UserPlus, ArrowRightLeft, UserMinus, Shield, ShieldOff, Cloud, AlertTriangle, ListOrdered } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { Link } from "react-router-dom";
 
 interface Props {
   colaboradorId: string;
@@ -30,11 +31,13 @@ interface Atribuicao {
   perfis_acesso: { nome: string } | null;
 }
 
-interface AuditoriaItem {
+interface QueueItem {
   id: string;
-  acao: string;
-  resumo: string | null;
-  timestamp: string;
+  action_type: string;
+  status: string;
+  created_at: string;
+  result_message: string | null;
+  correlation_id: string;
 }
 
 const tipoConfig = {
@@ -43,17 +46,31 @@ const tipoConfig = {
   leaver: { label: "Saída", icon: UserMinus, class: "text-destructive" },
 };
 
+const queueStatusConfig: Record<string, { label: string; class: string }> = {
+  pending: { label: "Pendente", class: "bg-warning/15 text-warning border-warning/30" },
+  processing: { label: "Processando", class: "bg-info/15 text-info border-info/30" },
+  success: { label: "Concluído", class: "bg-success/15 text-success border-success/30" },
+  failed: { label: "Falhou", class: "bg-destructive/15 text-destructive border-destructive/30" },
+};
+
+const actionLabels: Record<string, string> = {
+  create: "Criação",
+  update: "Atualização",
+  disable: "Desativação",
+  delete: "Exclusão",
+};
+
 export default function ColaboradorActivityPopover({ colaboradorId, colaboradorNome }: Props) {
   const [eventos, setEventos] = useState<EventoJML[]>([]);
   const [atribuicoes, setAtribuicoes] = useState<Atribuicao[]>([]);
-  const [auditoriaItems, setAuditoriaItems] = useState<AuditoriaItem[]>([]);
+  const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   async function loadData() {
     if (loaded) return;
     setLoading(true);
-    const [evRes, atRes, auditRes] = await Promise.all([
+    const [evRes, atRes, queueRes] = await Promise.all([
       supabase
         .from("eventos_jml")
         .select("id, tipo, status, created_at, dados_antes, dados_depois")
@@ -66,23 +83,21 @@ export default function ColaboradorActivityPopover({ colaboradorId, colaboradorN
         .eq("colaborador_id", colaboradorId)
         .order("data_concessao", { ascending: false })
         .limit(10),
-      supabase
-        .from("auditoria")
-        .select("id, acao, resumo, timestamp")
-        .eq("entidade", "colaborador")
-        .eq("entidade_id", colaboradorId)
-        .in("acao", ["criar_entra_id", "atribuir_licencas_entra", "adicionar_grupos_entra", "adicionar_apps_entra", "erro_licencas_entra", "erro_grupo_entra", "erro_apps_entra", "desativar_entra", "reativar_entra"])
-        .order("timestamp", { ascending: false })
+      (supabase as any)
+        .from("iam_queue")
+        .select("id, action_type, status, created_at, result_message, correlation_id")
+        .eq("colaborador_id", colaboradorId)
+        .order("created_at", { ascending: false })
         .limit(10),
     ]);
     setEventos((evRes.data as EventoJML[]) || []);
     setAtribuicoes((atRes.data as Atribuicao[]) || []);
-    setAuditoriaItems((auditRes.data as AuditoriaItem[]) || []);
+    setQueueItems((queueRes.data as QueueItem[]) || []);
     setLoading(false);
     setLoaded(true);
   }
 
-  const empty = !loading && loaded && eventos.length === 0 && atribuicoes.length === 0 && auditoriaItems.length === 0;
+  const empty = !loading && loaded && eventos.length === 0 && atribuicoes.length === 0 && queueItems.length === 0;
 
   return (
     <Popover onOpenChange={(open) => open && loadData()}>
@@ -108,8 +123,35 @@ export default function ColaboradorActivityPopover({ colaboradorId, colaboradorN
           <p className="p-4 text-center text-sm text-muted-foreground">Nenhuma atividade registrada.</p>
         )}
 
-        {!loading && eventos.length > 0 && (
+        {/* Queue items */}
+        {!loading && queueItems.length > 0 && (
           <div className="p-3 space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Fila de Provisionamento</p>
+            {queueItems.map((item) => {
+              const sCfg = queueStatusConfig[item.status] || { label: item.status, class: "" };
+              return (
+                <Link key={item.id} to={`/fila-provisionamento/${item.id}`} className="flex items-start gap-2 text-sm hover:bg-muted/50 rounded p-1 -m-1">
+                  <ListOrdered className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium">{actionLabels[item.action_type] || item.action_type}</span>
+                      <Badge variant="outline" className={`text-[10px] px-1 py-0 ${sCfg.class}`}>
+                        {sCfg.label}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {format(new Date(item.created_at), "dd MMM yyyy HH:mm", { locale: ptBR })}
+                    </p>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+
+        {/* JML events */}
+        {!loading && eventos.length > 0 && (
+          <div className="p-3 border-t space-y-2">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Eventos JML</p>
             {eventos.map((ev) => {
               const cfg = tipoConfig[ev.tipo];
@@ -134,6 +176,7 @@ export default function ColaboradorActivityPopover({ colaboradorId, colaboradorN
           </div>
         )}
 
+        {/* Access profiles */}
         {!loading && atribuicoes.length > 0 && (
           <div className="p-3 border-t space-y-2">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Perfis de Acesso</p>
@@ -158,30 +201,6 @@ export default function ColaboradorActivityPopover({ colaboradorId, colaboradorN
                 </div>
               </div>
             ))}
-          </div>
-        )}
-
-        {!loading && auditoriaItems.length > 0 && (
-          <div className="p-3 border-t space-y-2">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Entra ID</p>
-            {auditoriaItems.map((item) => {
-              const isError = item.acao.startsWith("erro_");
-              return (
-                <div key={item.id} className="flex items-start gap-2 text-sm">
-                  {isError ? (
-                    <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
-                  ) : (
-                    <Cloud className="h-4 w-4 mt-0.5 shrink-0 text-info" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs leading-snug">{item.resumo || item.acao}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {format(new Date(item.timestamp), "dd MMM yyyy HH:mm", { locale: ptBR })}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         )}
       </PopoverContent>
