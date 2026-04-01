@@ -33,7 +33,6 @@ export default function AplicacoesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editing, setEditing] = useState<any>(null);
-  const [importing, setImporting] = useState(false);
   const [form, setForm] = useState({ nome: "", criticidade: "media", tipo_auth: "", owner: "", aprovacao_necessaria: false, integracao_ativa: false });
   const qc = useQueryClient();
   const { toast } = useToast();
