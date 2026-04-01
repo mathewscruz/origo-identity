@@ -117,7 +117,7 @@ export default function IntegracoesPage() {
         <CardHeader>
           <div className="flex items-center gap-3">
             <Trash2 className="h-5 w-5 text-destructive" />
-            <div><CardTitle className="text-base">Limpar Base Manual</CardTitle><CardDescription>Excluir permanentemente colaboradores importados manualmente</CardDescription></div>
+            <div><CardTitle className="text-base">Limpar Base Completa</CardTitle><CardDescription>Excluir permanentemente todos os colaboradores do sistema</CardDescription></div>
           </div>
         </CardHeader>
         <CardContent>
