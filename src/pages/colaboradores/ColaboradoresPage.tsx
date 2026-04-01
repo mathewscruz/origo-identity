@@ -41,6 +41,7 @@ interface ColabForm {
   email: string;
   cpf: string;
   matricula: string;
+  sam_account_name: string;
   status: string;
   empresa_id: string;
   area_id: string;
@@ -50,7 +51,7 @@ interface ColabForm {
 }
 
 const emptyForm: ColabForm = {
-  nome: "", email: "", cpf: "", matricula: "", status: "ativo",
+  nome: "", email: "", cpf: "", matricula: "", sam_account_name: "", status: "ativo",
   empresa_id: "", area_id: "", cargo_id: "", localidade_id: "", data_admissao: "",
 };
 
