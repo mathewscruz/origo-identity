@@ -57,12 +57,13 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Invalid JSON body" }, 400);
     }
 
-    const { id, status, processed_at, result_message, processed_by, error_code } = body as {
+    const { id, status, processed_at, result_message, processed_by, target_identity, error_code } = body as {
       id?: string;
       status?: string;
       processed_at?: string;
       result_message?: string;
       processed_by?: string;
+      target_identity?: string;
       error_code?: string;
     };
 
@@ -75,6 +76,7 @@ Deno.serve(async (req) => {
     if (result_message !== undefined) updatePayload.result_message = result_message;
     if (processed_by) updatePayload.processed_by = processed_by;
     if (error_code !== undefined) updatePayload.error_code = error_code;
+    if (target_identity) updatePayload.target_identity = target_identity;
 
     const { data, error: updateError } = await supabase
       .from("iam_queue")
