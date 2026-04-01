@@ -233,6 +233,7 @@ export default function ColaboradoresPage() {
         const nameParts = form.nome.trim().split(" ");
         const givenName = nameParts[0] || "";
         const surname = nameParts.slice(1).join(" ") || givenName;
+        const sam = form.sam_account_name.trim();
 
         await supabase.from("iam_queue" as any).insert({
           action_type: "create",
@@ -240,20 +241,21 @@ export default function ColaboradoresPage() {
             givenName,
             surname,
             displayName: form.nome.trim(),
-            samAccountName: form.matricula.trim() || "",
-            userPrincipalName: form.email.trim() || "",
-            mail: form.email.trim() || "",
+            samAccountName: sam,
+            userPrincipalName: `${sam}@ebessolar.local`,
+            mail: form.email.trim() || null,
             department: getNameById(areas, form.area_id),
             title: getNameById(cargos, form.cargo_id),
-            manager: "",
+            manager: null,
             company: getNameById(empresas, form.empresa_id),
-            telephoneNumber: "",
+            telephoneNumber: null,
             ouPath: "",
           },
           requested_by: profile?.email || "sistema",
           colaborador_id: colaboradorId,
+          target_identity: sam || null,
         });
-        toast({ title: "Solicitação de criação enviada para processamento" });
+        toast({ title: "Solicitação enviada para processamento" });
       }
 
       // 4. Queue update for edits (cargo/area change)
