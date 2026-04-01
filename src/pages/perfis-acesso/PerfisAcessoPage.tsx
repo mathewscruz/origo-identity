@@ -302,7 +302,7 @@ export default function PerfisAcessoPage() {
                       </div>
                     </label>
                   ))}
-                  {(entraGrupos ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhum grupo encontrado. Sincronize com o Entra ID primeiro.</p>}
+                  {(entraGrupos ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhum grupo encontrado.</p>}
                 </div>
               </ScrollArea>
             </TabsContent>

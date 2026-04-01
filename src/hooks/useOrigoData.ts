@@ -206,21 +206,6 @@ export function useAlertas() {
   return useQuery({ queryKey: ["alertas"], queryFn: () => fetchAll("alertas", "*", "data", false), ...REFETCH_OPTS });
 }
 
-export function useSyncJobs() {
-  return useQuery({
-    queryKey: ["sync_jobs"],
-    queryFn: async () => {
-      const { data, error } = await (supabase as any).from("sync_jobs").select("*").eq("tipo", "entra_apps").order("created_at", { ascending: false }).limit(1);
-      if (error) throw error;
-      return data?.[0] ?? null;
-    },
-    refetchInterval: (query: any) => {
-      const job = query.state.data;
-      if (job && job.status === "running") return 2000;
-      return false;
-    },
-  });
-}
 
 export function useSyncJobsCsv() {
   return useQuery({
