@@ -1,126 +1,64 @@
 
 
-## Plano: Migrar para arquitetura de fila de provisionamento (iam_queue)
+## Plano: Corrigir erro ao limpar base de colaboradores
 
-### Resumo
+### Problema
 
-Remover toda execucao direta no Entra ID. O sistema passa a ser uma camada de solicitacao e auditoria. Todas as acoes de lifecycle (criar, editar, desabilitar, excluir usuario) geram registros na tabela `iam_queue` com status `pending`. Um agent externo (fora do Lovable) consumira essa fila.
+A funcao `handleCleanBase` nao limpa todas as tabelas que referenciam `colaborador_id`. As tabelas `excecoes` e `revisao_itens` possuem foreign keys para `colaboradores` com `ON DELETE SET NULL`, mas pode haver constraints ou erros nao tratados. Alem disso, o operador `.in()` do Supabase tem limite de URL quando ha muitos IDs.
 
-### 1. Banco de dados — nova tabela `iam_queue`
+### Solucao
 
-```sql
-CREATE TABLE iam_queue (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  action_type text NOT NULL, -- create, update, disable, delete
-  status text NOT NULL DEFAULT 'pending', -- pending, processing, success, failed
-  payload_json jsonb NOT NULL,
-  requested_by text,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  processed_at timestamptz,
-  result_message text,
-  correlation_id text NOT NULL DEFAULT gen_random_uuid()::text,
-  colaborador_id uuid
-);
+#### 1. Adicionar limpeza das tabelas faltantes
 
-ALTER TABLE iam_queue ENABLE ROW LEVEL SECURITY;
--- Politicas RLS padrao (select all authenticated, insert/update/delete admin/operador)
--- Habilitar realtime para atualizacao de status
-ALTER PUBLICATION supabase_realtime ADD TABLE iam_queue;
-```
+Antes de deletar colaboradores, limpar tambem:
+- `excecoes` (tem `colaborador_id` referenciando colaboradores)
+- `revisao_itens` (tem `colaborador_id` referenciando colaboradores)
 
-### 2. Remover logica de execucao direta no Entra ID
+#### 2. Processar em lotes para evitar limite de URL
 
-**Edge functions a remover/desativar:**
-- `provision-entra-user` — remover chamadas do frontend (nao deletar arquivo, apenas parar de chamar)
-- `disable-entra-user` — remover chamadas do frontend
-- `reprovision-entra-users` — remover chamadas do frontend
+Dividir os IDs em lotes de 200 para evitar que o `.in()` ultrapasse o limite de tamanho da URL do PostgREST.
 
-**Arquivos frontend afetados:**
+#### 3. Tratar erros individuais por tabela
 
-| Arquivo | O que muda |
-|---|---|
-| `ColaboradoresPage.tsx` | Remover `callEdgeFunction`, `disableEntraUser`, `provisionEntraUser`. Substituir por inserts na `iam_queue`. Remover dialog de senha provisoria. Mensagens passam a ser "Solicitacao enviada para processamento". |
-| `ColaboradorDetalhePage.tsx` | Remover `disableEntraUser`. Status change gera insert na `iam_queue` (disable/enable). |
-| `PerfilAcessoDetalhePage.tsx` | Remover chamada a `reprovision-entra-users`. Ao salvar perfil, gerar registros `update` na `iam_queue` para cada colaborador afetado. |
-| `CargosPage.tsx` | Remover chamada a `reprovision-entra-users`. Gerar registros na `iam_queue`. |
+Capturar e logar erros de cada delete para identificar qual tabela causa o problema.
 
-### 3. Logica de insercao na fila por tipo de acao
-
-**Criar colaborador manual:**
-```typescript
-await supabase.from("iam_queue").insert({
-  action_type: "create",
-  payload_json: {
-    givenName, surname, displayName, samAccountName,
-    userPrincipalName, mail, department, title,
-    manager, company, telephoneNumber, ouPath
-  },
-  requested_by: profile?.email,
-  colaborador_id: novoId,
-});
-toast({ title: "Solicitação enviada para processamento" });
-```
-
-**Editar colaborador:**
-- `action_type: "update"`, payload com `samAccountName` + campos alterados
-
-**Desabilitar (status != ativo):**
-- `action_type: "disable"`, payload com `samAccountName`, motivo, data
-
-**Excluir:**
-- `action_type: "delete"`, payload com `samAccountName`, motivo, data
-
-**Editar perfil/cargo (reprovisionar):**
-- Para cada colaborador afetado, gerar `action_type: "update"` com os novos acessos consolidados
-
-### 4. Nova pagina: Fila de Provisionamento
-
-**Rota:** `/fila-provisionamento`
-
-**Sidebar:** Adicionar em "Operacao" com icone `ListOrdered`
-
-**Funcionalidades:**
-- Tabela com colunas: correlation_id, acao, usuario (do payload), status, solicitante, data solicitacao, data processamento, resultado
-- Filtros: status (pending/processing/success/failed), action_type (create/update/disable/delete), busca por nome
-- Paginacao
-
-### 5. Nova pagina: Detalhe da solicitacao
-
-**Rota:** `/fila-provisionamento/:id`
-
-Ao clicar numa solicitacao, mostra:
-- Acao (action_type)
-- Solicitante (requested_by)
-- payload_json formatado (JSON prettified em card)
-- Status atual com badge colorido
-- Resultado (result_message)
-- Datas (created_at, processed_at)
-- correlation_id
-
-### 6. Atualizar ColaboradorActivityPopover
-
-Adicionar consulta a `iam_queue` por `colaborador_id` para mostrar status das solicitacoes pendentes/processadas no popover de atividade.
-
-### 7. Ajustar mensagens de interface
-
-- Criar: "Solicitacao de criacao enviada para processamento"
-- Editar: "Solicitacao de atualizacao enviada"
-- Desabilitar: "Solicitacao de desativacao enviada"
-- Excluir: "Solicitacao de exclusao enviada"
-- Nunca exibir "usuario criado" como se ja tivesse sido processado
-
-### Arquivos afetados
+### Arquivo afetado
 
 | Acao | Arquivo |
 |---|---|
-| Migration | Nova tabela `iam_queue` + RLS |
-| Editar | `src/pages/colaboradores/ColaboradoresPage.tsx` |
-| Editar | `src/pages/colaboradores/ColaboradorDetalhePage.tsx` |
-| Editar | `src/pages/perfis-acesso/PerfilAcessoDetalhePage.tsx` |
-| Editar | `src/pages/configuracoes/CargosPage.tsx` |
-| Editar | `src/components/ColaboradorActivityPopover.tsx` |
-| Editar | `src/components/AppSidebar.tsx` |
-| Editar | `src/App.tsx` |
-| Criar | `src/pages/fila-provisionamento/FilaProvisionamentoPage.tsx` |
-| Criar | `src/pages/fila-provisionamento/SolicitacaoDetalhePage.tsx` |
+| Editar | `src/pages/configuracoes/IntegracoesPage.tsx` |
+
+### Codigo da correcao
+
+```typescript
+const handleCleanBase = useCallback(async () => {
+  setCleaning(true);
+  try {
+    const { data: operadores } = await supabase.from("operadores").select("email");
+    const protectedEmails = new Set((operadores || []).map((o: any) => o.email?.toLowerCase()));
+    const { data: toClean } = await supabase.from("colaboradores").select("id, email");
+    const safeToClean = (toClean || []).filter((c: any) => !c.email || !protectedEmails.has(c.email.toLowerCase()));
+    if (safeToClean.length === 0) { toast({ title: "Nada a limpar" }); setCleaning(false); return; }
+    const ids = safeToClean.map((c: any) => c.id);
+
+    // Processar em lotes de 200
+    const BATCH = 200;
+    for (let i = 0; i < ids.length; i += BATCH) {
+      const batch = ids.slice(i, i + BATCH);
+      await supabase.from("perfil_atribuicoes").delete().in("colaborador_id", batch);
+      await supabase.from("eventos_jml").delete().in("colaborador_id", batch);
+      await supabase.from("iam_queue").delete().in("colaborador_id", batch);
+      await supabase.from("colab_quarentena").delete().in("colaborador_id", batch);
+      await supabase.from("excecoes").delete().in("colaborador_id", batch);
+      await supabase.from("revisao_itens").delete().in("colaborador_id", batch);
+      const { error } = await supabase.from("colaboradores").delete().in("id", batch);
+      if (error) throw error;
+    }
+    toast({ title: "Base limpa", description: `${ids.length} colaborador(es) excluídos.` });
+  } catch (err: unknown) {
+    toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
+  }
+  setCleaning(false);
+}, [toast]);
+```
 
