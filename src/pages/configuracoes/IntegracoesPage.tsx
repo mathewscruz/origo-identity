@@ -122,8 +122,8 @@ export default function IntegracoesPage() {
         </CardHeader>
         <CardContent>
           <AlertDialog>
-            <AlertDialogTrigger asChild><Button variant="destructive" disabled={cleaning}><Trash2 className="mr-2 h-4 w-4" />{cleaning ? "Excluindo..." : "Limpar Base Manual"}</Button></AlertDialogTrigger>
-            <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle><AlertDialogDescription>Todos os colaboradores de origem manual serão excluídos permanentemente do sistema. Esta ação não pode ser desfeita.</AlertDialogDescription></AlertDialogHeader>
+            <AlertDialogTrigger asChild><Button variant="destructive" disabled={cleaning}><Trash2 className="mr-2 h-4 w-4" />{cleaning ? "Excluindo..." : "Limpar Base Completa"}</Button></AlertDialogTrigger>
+             <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle><AlertDialogDescription>Todos os colaboradores serão excluídos permanentemente do sistema, independente da origem. Esta ação não pode ser desfeita.</AlertDialogDescription></AlertDialogHeader>
               <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleCleanBase}>Confirmar</AlertDialogAction></AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
