@@ -144,6 +144,7 @@ export default function ColaboradoresPage() {
 
   async function handleSave() {
     if (!form.nome.trim()) { toast({ title: "Nome é obrigatório", variant: "destructive" }); return; }
+    if (!editingId && !form.sam_account_name.trim()) { toast({ title: "Nome de login AD é obrigatório para novos colaboradores", variant: "destructive" }); return; }
     setSaving(true);
     const payload: any = {
       nome: form.nome.trim(),
