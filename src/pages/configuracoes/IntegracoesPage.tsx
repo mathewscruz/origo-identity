@@ -55,7 +55,7 @@ export default function IntegracoesPage() {
     try {
       const { data: operadores } = await supabase.from("operadores").select("email");
       const protectedEmails = new Set((operadores || []).map((o: any) => o.email?.toLowerCase()));
-      const { data: toClean } = await supabase.from("colaboradores").select("id, email, origem").eq("origem", "manual");
+      const { data: toClean } = await supabase.from("colaboradores").select("id, email");
       const safeToClean = (toClean || []).filter((c: any) => !c.email || !protectedEmails.has(c.email.toLowerCase()));
       if (safeToClean.length === 0) { toast({ title: "Nada a limpar" }); setCleaning(false); return; }
       const ids = safeToClean.map((c: any) => c.id);
@@ -117,13 +117,13 @@ export default function IntegracoesPage() {
         <CardHeader>
           <div className="flex items-center gap-3">
             <Trash2 className="h-5 w-5 text-destructive" />
-            <div><CardTitle className="text-base">Limpar Base Manual</CardTitle><CardDescription>Excluir permanentemente colaboradores importados manualmente</CardDescription></div>
+            <div><CardTitle className="text-base">Limpar Base Completa</CardTitle><CardDescription>Excluir permanentemente todos os colaboradores do sistema</CardDescription></div>
           </div>
         </CardHeader>
         <CardContent>
           <AlertDialog>
-            <AlertDialogTrigger asChild><Button variant="destructive" disabled={cleaning}><Trash2 className="mr-2 h-4 w-4" />{cleaning ? "Excluindo..." : "Limpar Base Manual"}</Button></AlertDialogTrigger>
-            <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle><AlertDialogDescription>Todos os colaboradores de origem manual serão excluídos permanentemente do sistema. Esta ação não pode ser desfeita.</AlertDialogDescription></AlertDialogHeader>
+            <AlertDialogTrigger asChild><Button variant="destructive" disabled={cleaning}><Trash2 className="mr-2 h-4 w-4" />{cleaning ? "Excluindo..." : "Limpar Base Completa"}</Button></AlertDialogTrigger>
+             <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle><AlertDialogDescription>Todos os colaboradores serão excluídos permanentemente do sistema, independente da origem. Esta ação não pode ser desfeita.</AlertDialogDescription></AlertDialogHeader>
               <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleCleanBase}>Confirmar</AlertDialogAction></AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
