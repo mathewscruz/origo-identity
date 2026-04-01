@@ -701,6 +701,45 @@ export type Database = {
           },
         ]
       }
+      iam_queue: {
+        Row: {
+          action_type: string
+          colaborador_id: string | null
+          correlation_id: string
+          created_at: string
+          id: string
+          payload_json: Json
+          processed_at: string | null
+          requested_by: string | null
+          result_message: string | null
+          status: string
+        }
+        Insert: {
+          action_type: string
+          colaborador_id?: string | null
+          correlation_id?: string
+          created_at?: string
+          id?: string
+          payload_json: Json
+          processed_at?: string | null
+          requested_by?: string | null
+          result_message?: string | null
+          status?: string
+        }
+        Update: {
+          action_type?: string
+          colaborador_id?: string | null
+          correlation_id?: string
+          created_at?: string
+          id?: string
+          payload_json?: Json
+          processed_at?: string | null
+          requested_by?: string | null
+          result_message?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
       licencas: {
         Row: {
           aplicacao_id: string | null

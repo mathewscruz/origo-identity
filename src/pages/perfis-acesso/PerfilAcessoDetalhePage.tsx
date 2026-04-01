@@ -97,16 +97,32 @@ export default function PerfilAcessoDetalhePage() {
 
       toast({ title: "Perfil atualizado" });
 
-      // Reprovision affected Entra ID users BEFORE closing dialog
-      const { data: reprovData, error: fnErr } = await supabase.functions.invoke("reprovision-entra-users", { body: { perfil_id: id } });
-      if (fnErr) {
-        console.error("Reprovision error:", fnErr);
-        toast({ title: "Aviso", description: "Perfil salvo, mas houve erro ao sincronizar Entra ID.", variant: "destructive" });
-      } else {
-        const result = reprovData as any;
-        if (result?.processed > 0) {
-          toast({ title: "Entra ID atualizado", description: `${result.processed} usuário(s) reprovisado(s).${result.errors > 0 ? ` ${result.errors} erro(s).` : ""}` });
+      // Queue update requests for affected collaborators
+      try {
+        const { data: affectedColabs } = await supabase
+          .from("perfil_atribuicoes")
+          .select("colaborador_id, colaboradores(nome, matricula, email)")
+          .eq("perfil_id", id!)
+          .eq("ativo", true);
+
+        if (affectedColabs && affectedColabs.length > 0) {
+          const queueItems = affectedColabs
+            .filter((a: any) => a.colaborador_id)
+            .map((a: any) => ({
+              action_type: "update",
+              payload_json: {
+                samAccountName: (a.colaboradores as any)?.matricula || (a.colaboradores as any)?.email || "",
+                displayName: (a.colaboradores as any)?.nome || "",
+                changedFields: { perfil_atualizado: editForm.nome },
+              },
+              requested_by: "sistema",
+              colaborador_id: a.colaborador_id,
+            }));
+          await (supabase as any).from("iam_queue").insert(queueItems);
+          toast({ title: `${queueItems.length} solicitação(ões) de atualização enviada(s)` });
         }
+      } catch (err) {
+        console.error("Queue insert error:", err);
       }
 
       queryClient.invalidateQueries({ queryKey: ["perfil_acesso", id] });

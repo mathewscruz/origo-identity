@@ -99,17 +99,30 @@ export default function CargosPage() {
 
     toast({ title: editing ? "Cargo atualizado" : "Cargo criado" });
 
-    // Reprovision affected Entra ID users BEFORE closing dialog
+    // Queue update requests for affected collaborators
     if (editing && (toRemove.length > 0 || toAdd.length > 0)) {
-      const { data: reprovData, error: fnErr } = await supabase.functions.invoke("reprovision-entra-users", { body: { cargo_id: cargoId } });
-      if (fnErr) {
-        console.error("Reprovision error:", fnErr);
-        toast({ title: "Aviso", description: "Cargo salvo, mas houve erro ao sincronizar Entra ID.", variant: "destructive" });
-      } else {
-        const result = reprovData as any;
-        if (result?.processed > 0) {
-          toast({ title: "Entra ID atualizado", description: `${result.processed} usuário(s) reprovisado(s).${result.errors > 0 ? ` ${result.errors} erro(s).` : ""}` });
+      try {
+        const { data: affectedColabs } = await supabase
+          .from("colaboradores")
+          .select("id, nome, matricula, email")
+          .eq("cargo_id", cargoId);
+
+        if (affectedColabs && affectedColabs.length > 0) {
+          const queueItems = affectedColabs.map((c: any) => ({
+            action_type: "update",
+            payload_json: {
+              samAccountName: c.matricula || c.email || "",
+              displayName: c.nome,
+              changedFields: { cargo_atualizado: form.nome },
+            },
+            requested_by: "sistema",
+            colaborador_id: c.id,
+          }));
+          await (supabase as any).from("iam_queue").insert(queueItems);
+          toast({ title: `${queueItems.length} solicitação(ões) de atualização enviada(s)` });
         }
+      } catch (err) {
+        console.error("Queue insert error:", err);
       }
     }
 

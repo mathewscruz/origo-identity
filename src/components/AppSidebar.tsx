@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Users, UserCheck, GitPullRequest, AppWindow, Shield,
-  AlertTriangle, ClipboardCheck, Cog, Grid3X3, Key, FileText, Bell, Settings, LogOut, UsersRound,
+  AlertTriangle, ClipboardCheck, Cog, Grid3X3, Key, FileText, Bell, Settings, LogOut, UsersRound, ListOrdered,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -13,7 +13,10 @@ import { Button } from "@/components/ui/button";
 import logoImg from "@/assets/logo.png";
 
 const sidebarGroups = [
-  { label: "Operação", items: [{ title: "Dashboard", url: "/", icon: LayoutDashboard }] },
+  { label: "Operação", items: [
+    { title: "Dashboard", url: "/", icon: LayoutDashboard },
+    { title: "Fila de Provisionamento", url: "/fila-provisionamento", icon: ListOrdered },
+  ]},
   { label: "Identidades", items: [
     { title: "Colaboradores", url: "/colaboradores", icon: Users },
     { title: "Terceiros", url: "/terceiros", icon: UserCheck },

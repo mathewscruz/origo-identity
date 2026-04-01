@@ -36,6 +36,8 @@ import IntegracoesPage from "./pages/configuracoes/IntegracoesPage";
 import UsuariosPage from "./pages/admin/UsuariosPage";
 import LoginPage from "./pages/auth/LoginPage";
 import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
+import FilaProvisionamentoPage from "./pages/fila-provisionamento/FilaProvisionamentoPage";
+import SolicitacaoDetalhePage from "./pages/fila-provisionamento/SolicitacaoDetalhePage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import NotFound from "./pages/NotFound";
 
@@ -53,6 +55,8 @@ const App = () => (
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/fila-provisionamento" element={<FilaProvisionamentoPage />} />
+              <Route path="/fila-provisionamento/:id" element={<SolicitacaoDetalhePage />} />
               <Route path="/colaboradores" element={<ColaboradoresPage />} />
               <Route path="/colaboradores/:id" element={<ColaboradorDetalhePage />} />
               <Route path="/terceiros" element={<TerceirosPage />} />

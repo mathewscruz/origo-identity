@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Upload, Plus, Pencil, Trash2, Copy, Eye, EyeOff } from "lucide-react";
+import { Search, Upload, Plus, Pencil, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import ColaboradorActivityPopover from "@/components/ColaboradorActivityPopover";
 import { useColaboradores, useEmpresas, useAreas, useCargos, useLocalidades } from "@/hooks/useOrigoData";
@@ -16,26 +16,9 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { provisionCargoAcessos } from "@/lib/provisionCargoAcessos";
 import { createEventoJML } from "@/lib/createEventoJML";
-
-async function callEdgeFunction(fnName: string, body: Record<string, unknown>) {
-  const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-  const res = await fetch(`https://${projectId}.supabase.co/functions/v1/${fnName}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
-    body: JSON.stringify(body),
-  });
-  return res.json();
-}
-
-async function disableEntraUser(colaboradorId: string, action: "disable" | "enable") {
-  return callEdgeFunction("disable-entra-user", { colaborador_id: colaboradorId, action });
-}
-
-async function provisionEntraUser(colaboradorId: string) {
-  return callEdgeFunction("provision-entra-user", { colaborador_id: colaboradorId });
-}
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
@@ -71,47 +54,6 @@ const emptyForm: ColabForm = {
   empresa_id: "", area_id: "", cargo_id: "", localidade_id: "", data_admissao: "",
 };
 
-function TempPasswordDisplay({ info, toast }: { info: { nome: string; email: string; password: string }; toast: any }) {
-  const [showPwd, setShowPwd] = useState(false);
-  const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    toast({ title: `${label} copiado!` });
-  };
-  return (
-    <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">
-        O usuário <span className="font-medium text-foreground">{info.nome}</span> foi criado no Entra ID. Compartilhe as credenciais abaixo com segurança.
-      </p>
-      <div className="space-y-2 rounded-md border bg-muted/50 p-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs text-muted-foreground">E-mail / UPN</p>
-            <p className="text-sm font-medium font-mono">{info.email}</p>
-          </div>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyToClipboard(info.email, "E-mail")}>
-            <Copy className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs text-muted-foreground">Senha provisória</p>
-            <p className="text-sm font-medium font-mono">{showPwd ? info.password : "••••••••••••"}</p>
-          </div>
-          <div className="flex gap-1">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowPwd(!showPwd)}>
-              {showPwd ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-            </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyToClipboard(info.password, "Senha")}>
-              <Copy className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
-      </div>
-      <p className="text-xs text-muted-foreground">⚠️ O usuário deverá alterar a senha no primeiro login.</p>
-    </div>
-  );
-}
-
 export default function ColaboradoresPage() {
   const [busca, setBusca] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
@@ -129,7 +71,6 @@ export default function ColaboradoresPage() {
   const [form, setForm] = useState<ColabForm>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [tempPasswordInfo, setTempPasswordInfo] = useState<{ nome: string; email: string; password: string } | null>(null);
 
   const { data: colaboradores, isLoading } = useColaboradores();
   const { data: empresas } = useEmpresas();
@@ -138,6 +79,7 @@ export default function ColaboradoresPage() {
   const { data: localidades } = useLocalidades();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { profile } = useAuth();
 
   const mapped = (colaboradores ?? []).map((c: any) => ({
     id: c.id,
@@ -193,6 +135,11 @@ export default function ColaboradoresPage() {
     setDialogOpen(true);
   }
 
+  // Helper to look up names for payload
+  function getNameById(list: any[] | undefined, id: string) {
+    return list?.find((i: any) => i.id === id)?.nome || "";
+  }
+
   async function handleSave() {
     if (!form.nome.trim()) { toast({ title: "Nome é obrigatório", variant: "destructive" }); return; }
     setSaving(true);
@@ -241,42 +188,90 @@ export default function ColaboradoresPage() {
         }
       }
 
-      // 2. Handle Entra ID disable/enable on status change
+      // 2. Queue disable/enable requests
       if (becameInactive) {
-        toast({ title: "Desativando usuário no Entra ID..." });
-        const result = await disableEntraUser(colaboradorId, "disable");
-        if (result.success) {
-          toast({ title: "Usuário desativado", description: `Entra ID desativado. ${result.atribuicoes_revoked} acessos revogados.` });
-        } else {
-          toast({ title: "Aviso", description: `Status alterado mas erro no Entra ID: ${result.error}`, variant: "destructive" });
-        }
+        await supabase.from("iam_queue" as any).insert({
+          action_type: "disable",
+          payload_json: {
+            samAccountName: form.matricula.trim() || form.email.trim(),
+            displayName: form.nome.trim(),
+            motivo: `Status alterado para ${form.status}`,
+            data_solicitacao: new Date().toISOString(),
+          },
+          requested_by: profile?.email || "sistema",
+          colaborador_id: colaboradorId,
+        });
+        toast({ title: "Solicitação de desativação enviada para processamento" });
       } else if (becameActive) {
-        toast({ title: "Reativando usuário no Entra ID..." });
-        const result = await disableEntraUser(colaboradorId, "enable");
-        if (result.success) {
-          toast({ title: "Usuário reativado no Entra ID" });
-        } else {
-          toast({ title: "Aviso", description: `Status alterado mas erro no Entra ID: ${result.error}`, variant: "destructive" });
+        await supabase.from("iam_queue" as any).insert({
+          action_type: "update",
+          payload_json: {
+            samAccountName: form.matricula.trim() || form.email.trim(),
+            displayName: form.nome.trim(),
+            action: "enable",
+            motivo: "Usuário reativado",
+            data_solicitacao: new Date().toISOString(),
+          },
+          requested_by: profile?.email || "sistema",
+          colaborador_id: colaboradorId,
+        });
+        toast({ title: "Solicitação de reativação enviada para processamento" });
+
+        // Re-provision cargo access
+        if (form.cargo_id) {
+          await provisionCargoAcessos(colaboradorId, form.cargo_id, null);
         }
       }
 
-      // 3. Provision user in Entra ID for new collaborators
-      if (!editingId && form.status === "ativo" && form.email) {
-        toast({ title: "Provisionando usuário no Entra ID..." });
-        const provResult = await provisionEntraUser(colaboradorId);
-        if (provResult.success) {
-          toast({ title: "Usuário criado no Entra ID", description: `${provResult.licenses_assigned} licença(s), ${provResult.groups_added} grupo(s) atribuído(s).` });
-          if (provResult.temp_password) {
-            setTempPasswordInfo({ nome: form.nome.trim(), email: form.email.trim(), password: provResult.temp_password });
-          }
-        } else {
-          toast({ title: "Aviso: Entra ID", description: provResult.error, variant: "destructive" });
-        }
+      // 3. Queue create request for new collaborators
+      if (!editingId && form.status === "ativo") {
+        const nameParts = form.nome.trim().split(" ");
+        const givenName = nameParts[0] || "";
+        const surname = nameParts.slice(1).join(" ") || givenName;
+
+        await supabase.from("iam_queue" as any).insert({
+          action_type: "create",
+          payload_json: {
+            givenName,
+            surname,
+            displayName: form.nome.trim(),
+            samAccountName: form.matricula.trim() || "",
+            userPrincipalName: form.email.trim() || "",
+            mail: form.email.trim() || "",
+            department: getNameById(areas, form.area_id),
+            title: getNameById(cargos, form.cargo_id),
+            manager: "",
+            company: getNameById(empresas, form.empresa_id),
+            telephoneNumber: "",
+            ouPath: "",
+          },
+          requested_by: profile?.email || "sistema",
+          colaborador_id: colaboradorId,
+        });
+        toast({ title: "Solicitação de criação enviada para processamento" });
       }
 
-      // 4. Generate JML events
+      // 4. Queue update for edits (cargo/area change)
+      if (editingId && (cargoChanged || areaChanged) && !becameInactive && !becameActive) {
+        const changedFields: Record<string, any> = {};
+        if (cargoChanged) changedFields.title = getNameById(cargos, form.cargo_id);
+        if (areaChanged) changedFields.department = getNameById(areas, form.area_id);
+
+        await supabase.from("iam_queue" as any).insert({
+          action_type: "update",
+          payload_json: {
+            samAccountName: form.matricula.trim() || form.email.trim(),
+            displayName: form.nome.trim(),
+            changedFields,
+          },
+          requested_by: profile?.email || "sistema",
+          colaborador_id: colaboradorId,
+        });
+        toast({ title: "Solicitação de atualização enviada para processamento" });
+      }
+
+      // 5. Generate JML events
       if (!editingId) {
-        // New collaborator = joiner
         await createEventoJML({
           colaboradorId,
           colaboradorNome: form.nome.trim(),
@@ -329,9 +324,26 @@ export default function ColaboradoresPage() {
 
   async function handleDelete() {
     if (!deleteId) return;
+    const deletingColab = mapped.find(c => c.id === deleteId);
+    
+    // Queue delete request
+    if (deletingColab) {
+      await supabase.from("iam_queue" as any).insert({
+        action_type: "delete",
+        payload_json: {
+          samAccountName: deletingColab.matricula || deletingColab.email,
+          displayName: deletingColab.nome,
+          motivo: "Exclusão do sistema",
+          data_solicitacao: new Date().toISOString(),
+        },
+        requested_by: profile?.email || "sistema",
+        colaborador_id: deleteId,
+      });
+    }
+
     const { error } = await supabase.from("colaboradores").delete().eq("id", deleteId);
     if (error) { toast({ title: "Erro ao excluir", description: error.message, variant: "destructive" }); return; }
-    toast({ title: "Colaborador excluído" });
+    toast({ title: "Solicitação de exclusão enviada para processamento" });
     queryClient.invalidateQueries({ queryKey: ["colaboradores"] });
     setDeleteId(null);
   }
@@ -529,7 +541,7 @@ export default function ColaboradoresPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir colaborador?</AlertDialogTitle>
-            <AlertDialogDescription>Esta ação não pode ser desfeita. Todos os acessos e dados vinculados serão removidos.</AlertDialogDescription>
+            <AlertDialogDescription>Esta ação não pode ser desfeita. Todos os acessos e dados vinculados serão removidos. Uma solicitação de exclusão será enviada para o agente de provisionamento.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
@@ -537,19 +549,6 @@ export default function ColaboradoresPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Dialog Senha Provisória */}
-      <Dialog open={!!tempPasswordInfo} onOpenChange={(open) => !open && setTempPasswordInfo(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Senha Provisória — Entra ID</DialogTitle>
-          </DialogHeader>
-          {tempPasswordInfo && <TempPasswordDisplay info={tempPasswordInfo} toast={toast} />}
-          <DialogFooter>
-            <Button onClick={() => setTempPasswordInfo(null)}>Fechar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
