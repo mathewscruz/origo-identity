@@ -32,12 +32,12 @@ export async function provisionCargoAcessos(
       .eq("origem", "cargo")
       .eq("ativo", true);
 
-    if (activeAssignments && activeAssignments.length > 0 && sam) {
+    if (activeAssignments && activeAssignments.length > 0 && identity) {
       for (const assignment of activeAssignments) {
-        await queueProfileAccess(sam, colab?.nome || "", colab?.email || "", assignment.perfil_id, "remove", colaboradorId);
+        await queueProfileAccess(identity, colab?.nome || "", colab?.email || "", assignment.perfil_id, "remove", colaboradorId);
       }
-    } else if (activeAssignments && activeAssignments.length > 0 && !sam) {
-      console.warn(`[provisionCargoAcessos] sam_account_name vazio para colaborador ${colaboradorId} — revogação de grupos/licenças no diretório ignorada`);
+    } else if (activeAssignments && activeAssignments.length > 0 && !identity) {
+      console.warn(`[provisionCargoAcessos] sem identidade (email/sam) para colaborador ${colaboradorId} — revogação ignorada`);
       skippedDirectory = true;
     }
 
