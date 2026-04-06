@@ -85,7 +85,7 @@ export async function provisionCargoAcessos(
     }
   }
 
-  return { provisioned, revoked };
+  return { provisioned, revoked, skippedDirectory };
 }
 
 /**
