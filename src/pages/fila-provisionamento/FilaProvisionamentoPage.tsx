@@ -171,9 +171,10 @@ export default function FilaProvisionamentoPage() {
                     <th className="p-4 font-medium">Solicitante</th>
                     <th className="p-4 font-medium">Solicitado em</th>
                     <th className="p-4 font-medium">Processado em</th>
-                    <th className="p-4 font-medium">Resultado</th>
-                  </tr>
-                </thead>
+                     <th className="p-4 font-medium">Retries</th>
+                     <th className="p-4 font-medium">Resultado</th>
+                   </tr>
+                 </thead>
                 <tbody>
                   {paginatedItems.map((item) => {
                     const aCfg = actionConfig[item.action_type] || { label: item.action_type, class: "" };
