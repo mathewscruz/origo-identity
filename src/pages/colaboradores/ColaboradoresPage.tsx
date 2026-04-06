@@ -95,6 +95,7 @@ export default function ColaboradoresPage() {
     empresa_id: c.empresa_id || "",
     localidade_id: c.localidade_id || "",
     matricula: c.matricula || "",
+    sam_account_name: c.sam_account_name || "",
     data_admissao: c.data_admissao || "",
     status: c.status,
     origem: c.origem || "manual",
