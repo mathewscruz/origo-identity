@@ -115,19 +115,29 @@ export default function PerfilAcessoDetalhePage() {
 
       if (hasChanges) {
         try {
-          // Get all collaborators with active assignment to this profile (direct + via cargo)
-          const { data: affectedColabs } = await supabase
+          // Get collaborator IDs with active assignment (no FK join — separate queries)
+          const { data: atribuicoes } = await supabase
             .from("perfil_atribuicoes")
-            .select("colaborador_id, colaboradores(nome, email, sam_account_name)")
+            .select("colaborador_id")
             .eq("perfil_id", id!)
             .eq("ativo", true);
 
-          if (affectedColabs && affectedColabs.length > 0) {
+          const colabIds = (atribuicoes ?? []).map((a: any) => a.colaborador_id).filter(Boolean) as string[];
+          const uniqueColabIds = [...new Set(colabIds)];
+
+          if (uniqueColabIds.length > 0) {
+            // Fetch collaborator data separately
+            const { data: colabsData } = await supabase
+              .from("colaboradores")
+              .select("id, nome, email, sam_account_name")
+              .in("id", uniqueColabIds);
+
+            const colabMap = new Map((colabsData ?? []).map((c: any) => [c.id, c]));
             const queueEntries: any[] = [];
 
-            for (const a of affectedColabs) {
-              const colab = a.colaboradores as any;
-              if (!a.colaborador_id || !colab) continue;
+            for (const colabId of uniqueColabIds) {
+              const colab = colabMap.get(colabId);
+              if (!colab) continue;
 
               const base = {
                 target_identity: colab.sam_account_name || colab.email || "",
