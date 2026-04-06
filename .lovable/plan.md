@@ -1,81 +1,74 @@
 
 
-## Verificacao End-to-End do Fluxo IGA em Modo Simulacao
+## Plano: Mecanismo de retry automatico para provisionamento Entra ID
 
-Analisei todos os modulos envolvidos. Identifiquei **8 problemas** que impedem o funcionamento completo.
+### Problema
 
----
+Quando o cargo de um colaborador e alterado, o sistema gera corretamente as entradas `assign_group`/`assign_license` na `iam_queue`. Porem, se o usuario ainda nao foi replicado do AD local para o Entra ID, o agente PowerShell falha e a solicitacao fica com status `failed` permanentemente — sem retry.
 
-### Problemas Encontrados
+O fluxo atual:
+```text
+Cargo alterado → provisionCargoAcessos → iam_queue (assign_group) → Agente tenta → Falha → FIM
+```
 
-#### 1. `sam_account_name` nao e persistido na tabela `colaboradores`
+O fluxo correto:
+```text
+Cargo alterado → iam_queue (assign_group) → Agente tenta → Falha (user_not_found) → Aguarda → Retry → Sucesso
+```
 
-A coluna `sam_account_name` nao existe na tabela `colaboradores` (conferido no schema). O campo e capturado no formulario mas **nunca e salvo** no banco — o `payload` de insert/update (linhas 149-161) nao inclui `sam_account_name`. Isso significa que ao editar um colaborador existente, o campo volta vazio e todos os payloads de `update`/`disable` vao com `samAccountName: ""`.
+### Solucao
 
-**Correcao**: Adicionar coluna `sam_account_name text` na tabela `colaboradores` (migracao). Incluir no payload de insert/update. No `openEdit`, carregar o valor salvo.
-
-#### 2. Edicao de colaborador nao carrega `sam_account_name`
-
-Na funcao `openEdit` (linha 133), `sam_account_name` e sempre inicializado como `""`. Mesmo que a coluna exista, o valor nao seria carregado porque o `mapped` nao inclui esse campo.
-
-**Correcao**: Adicionar `sam_account_name` ao `mapped` e ao `openEdit`.
-
-#### 3. Exclusao de colaborador usa `matricula` como identidade AD
-
-Na funcao `handleDelete` (linha 356), o payload usa `samAccountName: deletingColab.matricula || deletingColab.email` — viola a regra de identidade unica. Deveria usar `sam_account_name`.
-
-**Correcao**: Usar `sam_account_name` do colaborador.
-
-#### 4. Terceiros: edicao nao gera `iam_queue` para disable/update
-
-Ao editar um terceiro e mudar `ativo` de true para false, **nenhuma solicitacao de desativacao e gerada** na `iam_queue`. O sistema apenas atualiza o registro.
-
-**Correcao**: Detectar mudanca de `ativo` e gerar `iam_queue` com `action_type: "disable"` quando desativado.
-
-#### 5. Terceiros: exclusao nao gera `iam_queue`
-
-`handleDelete` em `TerceirosPage.tsx` (linha 102) apenas deleta do banco sem gerar `iam_queue` para desativar no AD.
-
-**Correcao**: Antes de deletar, buscar `sam_account_name` e gerar `iam_queue` com `action_type: "disable"`.
-
-#### 6. Terceiros: atribuicao de perfil nao gera `iam_queue`
-
-Em `TerceiroDetalhePage.tsx`, `handleAtribuirPerfil` (linha 72) cria a atribuicao mas **nao gera entradas na `iam_queue`** para grupos/licencas do Entra ID. A funcao `provisionCargoAcessos` nao e chamada para terceiros.
-
-**Correcao**: Ao atribuir perfil, consultar `perfil_grupos` e `perfil_licencas` e gerar `iam_queue` entries para `assign_group`/`assign_license`. Ao revogar, gerar `remove_group`/`remove_license`.
-
-#### 7. Fila de Provisionamento nao mostra novos action_types
-
-`FilaProvisionamentoPage.tsx` e `SolicitacaoDetalhePage.tsx` so mapeiam `create`, `update`, `disable`, `delete`. Faltam: `create_if_not_exists`, `assign_group`, `remove_group`, `assign_license`, `remove_license`.
-
-**Correcao**: Adicionar os novos tipos ao `actionConfig` em ambas as paginas.
-
-#### 8. Revisao Externa: revogacao nao gera `iam_queue`
-
-Em `RevisaoExternaPage.tsx` (linha 76-81), ao revogar um acesso, o sistema desativa a `perfil_atribuicoes` mas **nao gera `iam_queue`** para remover o grupo/licenca no Entra ID.
-
-**Correcao**: Apos revogar, consultar `perfil_grupos` e `perfil_licencas` do perfil e gerar entries `remove_group`/`remove_license`.
+Adicionar um mecanismo de retry com backoff na `iam_queue` e na `iam-agent-api`.
 
 ---
 
-### Resumo de Alteracoes
+### 1. Migracao: adicionar coluna `next_retry_at` na `iam_queue`
+
+```sql
+ALTER TABLE public.iam_queue ADD COLUMN IF NOT EXISTS next_retry_at timestamptz;
+ALTER TABLE public.iam_queue ADD COLUMN IF NOT EXISTS max_retries integer NOT NULL DEFAULT 10;
+```
+
+- `next_retry_at`: quando a proxima tentativa pode ser feita (null = imediato)
+- `max_retries`: maximo de tentativas (default 10, cobrindo ~24h com backoff)
+
+### 2. Alterar `iam-agent-api` — endpoint `POST /update`
+
+Quando o agente reportar falha com erro retentavel:
+- Se `status = "failed"` e `error_code` esta na lista de erros retentaveis (`user_not_found`, `user_not_synced`, `not_found_in_entra`)
+- E `retry_count < max_retries`
+- Entao: incrementar `retry_count`, calcular `next_retry_at` com backoff exponencial (5min, 10min, 20min, 40min...), manter `status = "pending"` em vez de `failed`
+- Se `retry_count >= max_retries`: manter `status = "failed"` (desistir)
+
+### 3. Alterar `iam-agent-api` — endpoint `GET /pending`
+
+Ajustar a query para retornar:
+- Items com `status = "pending"` E (`next_retry_at IS NULL` OU `next_retry_at <= now()`)
+- Isso garante que items em retry so aparecem apos o tempo de espera
+
+### 4. Atualizar a interface da Fila de Provisionamento
+
+- `FilaProvisionamentoPage.tsx`: mostrar coluna `retry_count` e indicador visual quando um item esta aguardando retry
+- `SolicitacaoDetalhePage.tsx`: exibir `retry_count`, `next_retry_at` e `max_retries` nos detalhes
+
+---
+
+### Comportamento esperado
+
+Para o caso "Teste IAM 6":
+1. Cargo atribuido → sistema cria `assign_group` pendente
+2. Agente tenta atribuir grupo no Entra ID → usuario nao encontrado → retorna `error_code: "user_not_found"`
+3. API recebe, incrementa `retry_count` para 1, define `next_retry_at` = agora + 5 min, mantem `status = "pending"`
+4. Apos 5 min, `GET /pending` retorna o item novamente
+5. Agente tenta de novo → se usuario ja replicou, sucesso. Se nao, retry com 10 min
+6. Repete ate `max_retries` (10 tentativas, ~24h total)
+
+### Resumo de arquivos
 
 | Acao | Arquivo |
 |---|---|
-| Migracao | Adicionar `sam_account_name text` em `colaboradores` |
-| Editar | `src/pages/colaboradores/ColaboradoresPage.tsx` — persistir sam_account_name, carregar no edit, corrigir delete |
-| Editar | `src/pages/terceiros/TerceirosPage.tsx` — gerar iam_queue em disable/delete |
-| Editar | `src/pages/terceiros/TerceiroDetalhePage.tsx` — gerar iam_queue ao atribuir/revogar perfil |
-| Editar | `src/pages/fila-provisionamento/FilaProvisionamentoPage.tsx` — adicionar novos action_types |
-| Editar | `src/pages/fila-provisionamento/SolicitacaoDetalhePage.tsx` — adicionar novos action_types |
-| Editar | `src/pages/revisoes/RevisaoExternaPage.tsx` — gerar iam_queue ao revogar |
-
-### Ordem de implementacao
-
-1. Migracao `sam_account_name` em `colaboradores`
-2. Corrigir `ColaboradoresPage.tsx` (persistir, carregar, delete)
-3. Corrigir `TerceirosPage.tsx` (disable/delete)
-4. Corrigir `TerceiroDetalhePage.tsx` (iam_queue para perfis)
-5. Corrigir `RevisaoExternaPage.tsx` (iam_queue ao revogar)
-6. Atualizar mapeamento de action_types na fila
+| Migracao | Adicionar `next_retry_at` e `max_retries` em `iam_queue` |
+| Editar | `supabase/functions/iam-agent-api/index.ts` — logica de retry no POST /update e filtro no GET /pending |
+| Editar | `src/pages/fila-provisionamento/FilaProvisionamentoPage.tsx` — exibir retry_count |
+| Editar | `src/pages/fila-provisionamento/SolicitacaoDetalhePage.tsx` — exibir detalhes de retry |
 
