@@ -95,6 +95,7 @@ export default function ColaboradoresPage() {
     empresa_id: c.empresa_id || "",
     localidade_id: c.localidade_id || "",
     matricula: c.matricula || "",
+    sam_account_name: c.sam_account_name || "",
     data_admissao: c.data_admissao || "",
     status: c.status,
     origem: c.origem || "manual",
@@ -130,7 +131,7 @@ export default function ColaboradoresPage() {
     setEditingOrigem(c.origem);
     setForm({
       nome: c.nome, email: c.email, cpf: c.cpf_raw, matricula: c.matricula,
-      sam_account_name: "",
+      sam_account_name: c.sam_account_name || "",
       status: c.status, empresa_id: c.empresa_id, area_id: c.area_id,
       cargo_id: c.cargo_id, localidade_id: c.localidade_id, data_admissao: c.data_admissao,
     });
@@ -151,6 +152,7 @@ export default function ColaboradoresPage() {
       email: form.email.trim() || null,
       cpf: form.cpf.trim() || null,
       matricula: form.matricula.trim() || null,
+      sam_account_name: form.sam_account_name.trim() || null,
       status: form.status as any,
       empresa_id: form.empresa_id || null,
       area_id: form.area_id || null,
@@ -350,16 +352,20 @@ export default function ColaboradoresPage() {
     
     // Queue delete request
     if (deletingColab) {
+      const sam = deletingColab.sam_account_name || "";
       await supabase.from("iam_queue" as any).insert({
         action_type: "delete",
         payload_json: {
-          samAccountName: deletingColab.matricula || deletingColab.email,
+          samAccountName: sam,
+          mail: deletingColab.email || null,
           displayName: deletingColab.nome,
+          status: "disabled",
           motivo: "Exclusão do sistema",
           data_solicitacao: new Date().toISOString(),
         },
         requested_by: profile?.email || "sistema",
         colaborador_id: deleteId,
+        target_identity: sam || null,
       });
     }
 

@@ -341,6 +341,7 @@ export type Database = {
           matricula: string | null
           nome: string
           origem: string | null
+          sam_account_name: string | null
           status: Database["public"]["Enums"]["status_colaborador"]
           ultima_importacao_id: string | null
           updated_at: string
@@ -362,6 +363,7 @@ export type Database = {
           matricula?: string | null
           nome: string
           origem?: string | null
+          sam_account_name?: string | null
           status?: Database["public"]["Enums"]["status_colaborador"]
           ultima_importacao_id?: string | null
           updated_at?: string
@@ -383,6 +385,7 @@ export type Database = {
           matricula?: string | null
           nome?: string
           origem?: string | null
+          sam_account_name?: string | null
           status?: Database["public"]["Enums"]["status_colaborador"]
           ultima_importacao_id?: string | null
           updated_at?: string

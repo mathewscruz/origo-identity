@@ -1,0 +1,1 @@
+ALTER TABLE public.colaboradores ADD COLUMN IF NOT EXISTS sam_account_name text;

@@ -69,6 +69,44 @@ export default function TerceiroDetalhePage() {
   const dias = diasRestantes(terceiro.contrato_fim);
   const crit = criticidadeConfig[terceiro.criticidade] || { label: terceiro.criticidade, class: "" };
 
+  const sam = (terceiro as any)?.sam_account_name || "";
+
+  const generateProfileIamQueue = async (perfilId: string, action: "assign" | "remove") => {
+    if (!sam) return;
+    // Fetch groups for this profile
+    const { data: grupos } = await supabase.from("perfil_grupos").select("*, entra_grupos(nome, entra_id)").eq("perfil_id", perfilId);
+    for (const g of (grupos || [])) {
+      await supabase.from("iam_queue" as any).insert({
+        action_type: action === "assign" ? "assign_group" : "remove_group",
+        payload_json: {
+          samAccountName: sam,
+          displayName: terceiro?.nome || "",
+          groupName: g.entra_grupos?.nome || "",
+          groupEntraId: g.entra_grupos?.entra_id || "",
+        },
+        target_identity: sam,
+        requested_by: "sistema",
+        status: "pending",
+      });
+    }
+    // Fetch licenses for this profile
+    const { data: licencas } = await supabase.from("perfil_licencas").select("*, entra_licencas(nome, sku_id)").eq("perfil_id", perfilId);
+    for (const l of (licencas || [])) {
+      await supabase.from("iam_queue" as any).insert({
+        action_type: action === "assign" ? "assign_license" : "remove_license",
+        payload_json: {
+          samAccountName: sam,
+          displayName: terceiro?.nome || "",
+          licenseName: l.entra_licencas?.nome || "",
+          skuId: l.entra_licencas?.sku_id || "",
+        },
+        target_identity: sam,
+        requested_by: "sistema",
+        status: "pending",
+      });
+    }
+  };
+
   const handleAtribuirPerfil = async () => {
     if (!selectedPerfil || !id) return;
     const { error } = await supabase.from("perfil_atribuicoes").insert({
@@ -78,15 +116,21 @@ export default function TerceiroDetalhePage() {
       ativo: true,
     });
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
-    toast({ title: "Perfil atribuído" });
+    // Generate iam_queue for groups/licenses
+    await generateProfileIamQueue(selectedPerfil, "assign");
+    toast({ title: "Perfil atribuído — solicitações de acesso enviadas" });
     qc.invalidateQueries({ queryKey: ["terceiro_atribuicoes", id] });
     setAtribuirOpen(false);
     setSelectedPerfil("");
   };
 
-  const handleRevogar = async (atribuicaoId: string) => {
+  const handleRevogar = async (atribuicaoId: string, perfilId?: string) => {
     await supabase.from("perfil_atribuicoes").update({ ativo: false, data_revogacao: new Date().toISOString() }).eq("id", atribuicaoId);
-    toast({ title: "Perfil revogado" });
+    // Generate iam_queue to remove groups/licenses
+    if (perfilId) {
+      await generateProfileIamQueue(perfilId, "remove");
+    }
+    toast({ title: "Perfil revogado — solicitações de remoção enviadas" });
     qc.invalidateQueries({ queryKey: ["terceiro_atribuicoes", id] });
   };
 
@@ -194,7 +238,7 @@ export default function TerceiroDetalhePage() {
                         <td className="p-3 text-muted-foreground">{a.origem || "—"}</td>
                         <td className="p-3 text-muted-foreground text-xs">{new Date(a.data_concessao).toLocaleDateString("pt-BR")}</td>
                         <td className="p-3">
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleRevogar(a.id)}>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleRevogar(a.id, a.perfil_id)}>
                             <X className="h-3 w-3" />
                           </Button>
                         </td>

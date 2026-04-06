@@ -62,9 +62,34 @@ export default function TerceirosPage() {
     if (!editing && !form.sam_account_name.trim()) { toast({ title: "Nome de login AD é obrigatório", variant: "destructive" }); return; }
     const payload: any = { nome: form.nome.trim(), email: form.email || null, empresa_terceira: form.empresa_terceira || null, contrato_inicio: form.contrato_inicio || null, contrato_fim: form.contrato_fim || null, criticidade: form.criticidade as any, responsavel: form.responsavel || null, ativo: form.ativo, sam_account_name: form.sam_account_name.trim() || null };
     if (editing) {
+      // Detect disable: was active, now inactive
+      const wasActive = editing.ativo;
+      const nowInactive = !form.ativo;
       const { error } = await supabase.from("terceiros").update(payload).eq("id", editing.id);
       if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
-      toast({ title: "Terceiro atualizado" });
+
+      if (wasActive && nowInactive && form.sam_account_name.trim()) {
+        const sam = form.sam_account_name.trim();
+        await supabase.from("iam_queue" as any).insert({
+          action_type: "disable",
+          payload_json: {
+            samAccountName: sam,
+            mail: form.email || null,
+            displayName: form.nome.trim(),
+            status: "disabled",
+            status_anterior: "ativo",
+            status_novo: "inativo",
+            changed_fields: ["status"],
+            new_values: { status: "disabled" },
+          },
+          target_identity: sam,
+          requested_by: "sistema",
+          status: "pending",
+        });
+        toast({ title: "Terceiro desativado — solicitação enviada para o AD" });
+      } else {
+        toast({ title: "Terceiro atualizado" });
+      }
     } else {
       const { data: inserted, error } = await supabase.from("terceiros").insert(payload).select("id").single();
       if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
@@ -101,9 +126,27 @@ export default function TerceirosPage() {
 
   const handleDelete = async () => {
     if (!deleteId) return;
+    // Find the terceiro to get sam_account_name
+    const deleting = list.find((t: any) => t.id === deleteId);
+    if (deleting && (deleting as any).sam_account_name) {
+      const sam = (deleting as any).sam_account_name;
+      await supabase.from("iam_queue" as any).insert({
+        action_type: "disable",
+        payload_json: {
+          samAccountName: sam,
+          mail: deleting.email || null,
+          displayName: deleting.nome,
+          status: "disabled",
+          motivo: "Exclusão de terceiro do sistema",
+        },
+        target_identity: sam,
+        requested_by: "sistema",
+        status: "pending",
+      });
+    }
     const { error } = await supabase.from("terceiros").delete().eq("id", deleteId);
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
-    toast({ title: "Terceiro excluído" });
+    toast({ title: "Terceiro excluído — solicitação de desativação enviada" });
     qc.invalidateQueries({ queryKey: ["terceiros"] });
     setDeleteId(null);
   };
