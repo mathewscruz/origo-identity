@@ -1,89 +1,65 @@
 
 
-## Plano: Excluir eventos JML e corrigir o fluxo de provisionamento
+## Plano: Configurar e-mails de autenticação com branding do Órigo
 
-### Parte 1 — Excluir todos os eventos JML
+### Estado atual
 
-Executar SQL para deletar em cascata:
-1. `DELETE FROM evento_jml_aprovacoes`
-2. `DELETE FROM evento_jml_acoes`
-3. `DELETE FROM eventos_jml`
+- **Nenhum domínio de e-mail configurado.** O sistema está usando os e-mails padrão do Lovable (sem branding, sem logo, em inglês).
+- **Não existe `auth-email-hook`** — nenhum template personalizado foi criado ainda.
+- **O logo está em** `src/assets/logo.png` (o mesmo usado no sidebar).
 
-### Parte 2 — Causa raiz do provisionamento que não funciona
+### O que precisa ser feito
 
-Identifiquei **dois problemas distintos**:
+#### Passo 1 — Configurar domínio de e-mail
+A configuração de domínio de e-mail requer permissões de administrador do workspace. Você precisará abrir as configurações de e-mail no Lovable Cloud para adicionar um domínio (ex: `origo-identity.com` ou subdomínio como `notify.origo-identity.com`), e configurar os registros DNS necessários.
 
-#### Problema A: A tela de lista de perfis (PerfisAcessoPage.tsx) não gera nenhuma ação
+#### Passo 2 — Scaffoldar templates de e-mail de autenticação
+Depois do domínio configurado, usarei a ferramenta `scaffold_auth_email_templates` para criar todos os templates:
+- **Confirmação de cadastro** (signup)
+- **Redefinição de senha** (recovery)
+- **Magic link** (magiclink)
+- **Convite** (invite)
+- **Troca de e-mail** (email-change)
+- **Reautenticação** (reauthentication)
 
-O dialog "Editar Perfil" que aparece na tela de **lista** de perfis (`PerfisAcessoPage.tsx`, linhas 80-120) faz:
-- salva `perfis_acesso`
-- sincroniza `perfil_aplicacoes`, `perfil_licencas`, `perfil_grupos`
-- exibe toast e fecha
+#### Passo 3 — Aplicar branding do Órigo
 
-Mas **não calcula diff**, **não busca colaboradores afetados** e **não insere nada na `iam_queue`**. Quando o usuario edita o perfil pela lista, zero ações são geradas.
+Extraído do `index.css`:
+- **Primary:** `hsl(221, 83%, 53%)` (azul corporativo)
+- **Primary foreground:** `hsl(0, 0%, 100%)` (branco)
+- **Foreground:** `hsl(222, 47%, 11%)` (escuro)
+- **Muted foreground:** `hsl(215, 16%, 47%)`
+- **Border radius:** `0.5rem`
 
-Apenas a página de **detalhe** do perfil (`PerfilAcessoDetalhePage.tsx`) tem essa lógica.
+Cada template receberá:
+- Logo do Órigo (`src/assets/logo.png`) no topo, carregado via Storage bucket `email-assets`
+- Cores do tema corporativo em botões, títulos e textos
+- **Textos em português**, alinhados com o tom do sistema ("Entrar no Órigo", "Redefinir Senha", etc.)
+- Terminologia consistente: "sistema", "acesso", "conta"
 
-#### Problema B: As ações que chegam ao Entra ID estão falhando
+#### Passo 4 — Deploy do `auth-email-hook`
+Deploy automático da Edge Function que roteia os e-mails de autenticação.
 
-Os logs da Edge Function mostram:
-```
-Processing batch of 2 Entra ID queue items (force=true)
-[resolveUserId] Found user by email → 2eefb39b-...
-Done: 0 success, 0 retries, 2 failures
-```
+#### Passo 5 — Validar o `send-review-email`
+A função `send-review-email` já existe mas apenas **loga** o e-mail (não envia de fato). Após o domínio estar verificado, posso integrá-la ao sistema de e-mail transacional do Lovable para enviar e-mails de revisão reais.
 
-O usuario é encontrado por e-mail, mas a ação falha. Não há log de detalhe do erro. A Edge Function precisa logar a mensagem de erro retornada pela `executeAction` para que seja possível diagnosticar (pode ser permissão insuficiente no grupo, grupo inexistente, etc).
+### Pré-requisito
 
-### O que será ajustado
+Antes de eu executar os passos 2-5, **o domínio de e-mail precisa estar configurado**. Você pode fazer isso acessando as configurações do projeto no Lovable Cloud.
 
-#### 1. Adicionar lógica de provisioning na lista de perfis
-**Arquivo:** `src/pages/perfis-acesso/PerfisAcessoPage.tsx`
+Você já possui um domínio de e-mail que gostaria de usar para os e-mails do sistema?
 
-Ao editar um perfil existente, o `handleSave` passará a:
-- capturar o estado anterior (grupo_ids, licenca_ids, aplicacao_ids antigos vs novos)
-- calcular diff
-- chamar `findAffectedCollaborators(perfilId)` para descobrir todos os colaboradores impactados (direto + via cargo)
-- chamar `generateEntraQueueForDiff(colabs, diff)` para gerar assign/remove
-- disparar `triggerEntraProcessing()`
-
-Isso alinha o comportamento da lista com o da página de detalhe.
-
-#### 2. Adicionar logging detalhado na Edge Function
-**Arquivo:** `supabase/functions/process-iam-queue/index.ts`
-
-Adicionar `console.log` com o resultado da `executeAction` (success/failure + message) para cada item processado, antes de atualizar o status. Isso permitirá diagnosticar exatamente porque os 2 itens estão falhando.
-
-#### 3. Excluir todos os eventos JML
-**Script SQL:** DELETE cascata nas 3 tabelas de eventos JML.
-
-### Detalhe técnico
-
-```text
-Hoje (lista de perfis):
-editar perfil → salvar perfil_grupos/licencas/aplicacoes → fechar dialog
-→ zero ações no Entra ID
-
-Depois (lista de perfis):
-editar perfil → salvar perfil_grupos/licencas/aplicacoes
-→ calcular diff (adicionados vs removidos)
-→ buscar afetados (perfil_atribuicoes + cargo_perfis → colaboradores)
-→ gerar assign_*/remove_*
-→ triggerEntraProcessing()
-```
-
-### Arquivos principais
+### Arquivos que serão criados/editados
 
 | Ação | Arquivo |
 |---|---|
-| Adicionar provisioning na edição via lista | `src/pages/perfis-acesso/PerfisAcessoPage.tsx` |
-| Adicionar logs detalhados de erro | `supabase/functions/process-iam-queue/index.ts` |
-| Excluir eventos JML | Script SQL (3 DELETEs) |
-
-### Ordem de implementação
-
-1. Excluir eventos JML (SQL)
-2. Adicionar diff + provisioning em `PerfisAcessoPage.tsx`
-3. Adicionar logging detalhado na Edge Function
-4. Re-deploy da Edge Function
+| Criar | `supabase/functions/auth-email-hook/index.ts` |
+| Criar | `supabase/functions/auth-email-hook/deno.json` |
+| Criar | `supabase/functions/_shared/email-templates/signup.tsx` |
+| Criar | `supabase/functions/_shared/email-templates/recovery.tsx` |
+| Criar | `supabase/functions/_shared/email-templates/magic-link.tsx` |
+| Criar | `supabase/functions/_shared/email-templates/invite.tsx` |
+| Criar | `supabase/functions/_shared/email-templates/email-change.tsx` |
+| Criar | `supabase/functions/_shared/email-templates/reauthentication.tsx` |
+| Upload | `src/assets/logo.png` → Storage bucket `email-assets` |
 
