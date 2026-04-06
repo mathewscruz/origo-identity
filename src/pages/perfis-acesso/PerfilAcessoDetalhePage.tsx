@@ -99,29 +99,56 @@ export default function PerfilAcessoDetalhePage() {
 
       toast({ title: "Perfil atualizado" });
 
-      // Queue update requests for affected collaborators
+      // Re-provision all affected collaborators with proper group/license/app entries
       try {
         const { data: affectedColabs } = await supabase
           .from("perfil_atribuicoes")
-          .select("colaborador_id, colaboradores(nome, matricula, email)")
+          .select("colaborador_id, colaboradores(nome, email, sam_account_name)")
           .eq("perfil_id", id!)
           .eq("ativo", true);
 
         if (affectedColabs && affectedColabs.length > 0) {
-          const queueItems = affectedColabs
-            .filter((a: any) => a.colaborador_id)
-            .map((a: any) => ({
-              action_type: "update",
-              payload_json: {
-                samAccountName: (a.colaboradores as any)?.matricula || (a.colaboradores as any)?.email || "",
-                displayName: (a.colaboradores as any)?.nome || "",
-                changedFields: { perfil_atualizado: editForm.nome },
-              },
-              requested_by: "sistema",
-              colaborador_id: a.colaborador_id,
-            }));
-          await (supabase as any).from("iam_queue").insert(queueItems);
-          toast({ title: `${queueItems.length} solicitação(ões) de atualização enviada(s)` });
+          for (const a of affectedColabs) {
+            const colab = a.colaboradores as any;
+            const sam = colab?.sam_account_name || "";
+            if (!sam || !a.colaborador_id) continue;
+
+            // Remove old access then re-assign new — the Edge Function handles idempotency
+            // Generate remove entries for old config, then assign entries for new config
+            // Since we just saved new config, generate assign entries for current state
+            // Generate assign_group for each new grupo
+            for (const gid of editForm.grupo_ids) {
+              const grp = (entraGrupos ?? []).find((g: any) => g.id === gid);
+              if (!grp) continue;
+              await supabase.from("iam_queue" as any).insert({
+                action_type: "assign_group",
+                payload_json: { samAccountName: sam, displayName: colab?.nome || "", mail: colab?.email || "", groupId: grp.entra_id, groupName: grp.nome, onPremisesSync: grp.on_premises_sync || false },
+                target_identity: sam, requested_by: "sistema", colaborador_id: a.colaborador_id, status: "pending",
+              });
+            }
+            // Generate assign_license for each new licenca
+            for (const lid of editForm.licenca_ids) {
+              const lic = (entraLicencas ?? []).find((l: any) => l.id === lid);
+              if (!lic) continue;
+              await supabase.from("iam_queue" as any).insert({
+                action_type: "assign_license",
+                payload_json: { samAccountName: sam, displayName: colab?.nome || "", mail: colab?.email || "", skuId: lic.sku_id, licenseName: lic.nome },
+                target_identity: sam, requested_by: "sistema", colaborador_id: a.colaborador_id, status: "pending",
+              });
+            }
+            // Generate assign_app for each new app with entra_id
+            for (const aid of editForm.aplicacao_ids) {
+              const app = (aplicacoes ?? []).find((a: any) => a.id === aid);
+              if (!app?.entra_id) continue;
+              await supabase.from("iam_queue" as any).insert({
+                action_type: "assign_app",
+                payload_json: { samAccountName: sam, displayName: colab?.nome || "", mail: colab?.email || "", appId: app.entra_id, appName: app.nome, appRoleId: app.default_app_role_id || "00000000-0000-0000-0000-000000000000" },
+                target_identity: sam, requested_by: "sistema", colaborador_id: a.colaborador_id, status: "pending",
+              });
+            }
+          }
+          const count = affectedColabs.filter((a: any) => (a.colaboradores as any)?.sam_account_name).length;
+          if (count > 0) toast({ title: `${count} colaborador(es) sendo atualizado(s) no Entra ID` });
         }
       } catch (err) {
         console.error("Queue insert error:", err);
