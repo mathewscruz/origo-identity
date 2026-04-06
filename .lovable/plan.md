@@ -1,110 +1,68 @@
 
-## Plano: corrigir o erro de sincronização dos grupos
 
-### Diagnóstico validado
+## Plano: Corrigir provisionamento automatico e adicionar logs de acoes Entra ID
 
-O problema não está mais na lógica de sincronização dos grupos em si.
+### Diagnostico
 
-A função `sync-entra-groups` respondeu com sucesso quando chamada diretamente e retornou:
+Investiguei o banco e o codigo. Tres problemas identificados:
 
-```text
-total: 1712
-upserted: 1712
-onPremises: 268
-cloudOnly: 1444
-```
+**Problema 1 — Entradas faltando na fila**
+O perfil "Especialista em Seguranca da Informacao" tem 3 grupos, 1 licenca e 2 apps vinculados. Porem, a `iam_queue` so recebeu 1 grupo e 1 licenca. Os 2 grupos cloud (Visita, Visitas do mes) e 2 apps (Docusign) nunca foram enfileirados.
 
-Ou seja: a integração com o Entra ID está funcionando e a função consegue buscar todos os grupos.
+Causa: a funcao `queueProfileAccess` em `provisionCargoAcessos.ts` nao verifica o resultado dos inserts na `iam_queue`. Se algum insert falha (ex: tipo incompativel, RLS, timeout), ele e silenciosamente ignorado e o loop para. Alem disso, a funcao nao passa `colaborador_id` nos inserts.
 
-### Causa raiz
+**Problema 2 — Grupo on-premises travado em retry infinito**
+O unico grupo enfileirado (`TI - INFRA N1 MANAGERS`) e `on_premises_sync = true`. O `process-iam-queue` tenta atribui-lo via Graph API, recebe erro "on-premises mastered", e reenfileira como retry. Deveria marcar como `failed` imediatamente com mensagem clara.
 
-O erro `Failed to fetch` no navegador é causado por CORS/preflight.
-
-Hoje o frontend envia estes headers ao chamar a função:
-
-```text
-apikey
-authorization
-content-type
-```
-
-Mas a função `sync-entra-groups` responde com:
-
-```text
-Access-Control-Allow-Headers: authorization, content-type
-```
-
-Está faltando permitir `apikey` (e idealmente `x-client-info` também). Com isso, o navegador bloqueia a chamada antes mesmo da função processar a requisição.
+**Problema 3 — Popover de atividades nao mostra acoes Entra ID**
+O `ColaboradorActivityPopover` busca `iam_queue` pelo `colaborador_id`, que esta `null` em todos os registros. Alem disso, o popover nao mostra detalhes das acoes executadas (qual grupo, qual licenca, data de execucao pelo Entra ID).
 
 ---
 
-## O que ajustar
+### Correcoes
 
-### 1. Corrigir CORS da função `sync-entra-groups`
-Arquivo:
-- `supabase/functions/sync-entra-groups/index.ts`
+#### 1. Corrigir `provisionCargoAcessos.ts`
 
-Ajustar `corsHeaders` para incluir os mesmos headers aceitos nas outras funções que funcionam no browser, por exemplo:
+- Adicionar `colaborador_id` em todos os inserts da `iam_queue`
+- Aceitar `colaboradorId` como parametro em `queueProfileAccess`
+- Adicionar tratamento de erro em cada insert (log + continuar)
+- Para grupos `on_premises_sync = true`, inserir com status `failed` e mensagem explicativa ao inves de `pending`
 
-```text
-authorization, x-client-info, apikey, content-type
-```
+#### 2. Corrigir `process-iam-queue` para grupos on-premises
 
-E garantir que:
-- o `OPTIONS` continue respondendo com esses headers;
-- todas as respostas de sucesso e erro retornem os mesmos headers.
+- No handler `assign_group`, quando `payload.onPremisesSync === true`, marcar imediatamente como `failed` com `error_code = "on_premises_managed"` sem retry
 
-### 2. Padronizar com as outras funções já funcionais
-Usar o mesmo padrão de CORS já adotado em:
-- `supabase/functions/sync-sharepoint-csv/index.ts`
-- `supabase/functions/sync-csv-colab/index.ts`
-- `supabase/functions/send-review-email/index.ts`
+#### 3. Atualizar `ColaboradorActivityPopover`
 
-Assim evitamos divergência entre funções chamadas pela interface.
+- Buscar `iam_queue` tambem por `target_identity` (sam_account_name do colaborador) como fallback para `colaborador_id`
+- Adicionar secao "Acoes Entra ID" com detalhes:
+  - Tipo da acao (assign_group, assign_license, assign_app, remove_*)
+  - Nome do recurso (grupo, licenca, app) extraido de `payload_json`
+  - Status (pendente, sucesso, falhou)
+  - Data de execucao (`processed_at`)
+- Labels em portugues para cada action_type
 
-### 3. Revisar a chamada no frontend
-Arquivo:
-- `src/pages/configuracoes/IntegracoesPage.tsx`
+#### 4. Reprocessar as entradas faltantes
 
-Manter a chamada atual, mas validar se o tratamento de erro continua correto após o ajuste de CORS. Se necessário, melhorar a mensagem para exibir o erro retornado pela função em vez do genérico `Failed to fetch`.
-
----
-
-## Resultado esperado após a correção
-
-Ao clicar em `Sincronizar Grupos do Entra ID`:
-
-```text
-Frontend -> preflight OPTIONS aprovado
-POST executado normalmente
-Função busca todos os grupos no Entra ID
-Batch upsert grava os grupos na base
-Toast mostra totais importados
-```
-
-Exemplo esperado no toast:
-
-```text
-1712 grupos importados (1444 cloud-only, 268 on-premises)
-```
+- Script SQL para resetar a entrada `create_if_not_exists` para `failed` (nao aplicavel sem agente AD)
+- Script SQL para marcar o grupo on-premises como `failed`
+- Re-gerar as entradas faltantes (2 grupos cloud + 2 apps) manualmente via SQL ou disparar `provisionCargoAcessos` novamente apos a correcao
 
 ---
 
-## Arquivos envolvidos
+### Resumo de arquivos
 
-| Ação | Arquivo |
+| Acao | Arquivo |
 |---|---|
-| Editar | `supabase/functions/sync-entra-groups/index.ts` |
-| Revisar | `src/pages/configuracoes/IntegracoesPage.tsx` |
+| Editar | `src/lib/provisionCargoAcessos.ts` — adicionar colaborador_id, error handling, skip on-premises |
+| Editar | `supabase/functions/process-iam-queue/index.ts` — falhar imediatamente para on-premises groups |
+| Editar | `src/components/ColaboradorActivityPopover.tsx` — secao de acoes Entra ID com detalhes |
+| Script SQL | Corrigir entradas existentes e re-gerar as faltantes |
 
----
+### Ordem de implementacao
 
-## Observação técnica importante
+1. Corrigir `provisionCargoAcessos.ts` (colaborador_id + error handling)
+2. Corrigir `process-iam-queue` (on-premises fail-fast)
+3. Atualizar `ColaboradorActivityPopover` (logs detalhados)
+4. Executar SQL para limpar e re-gerar entradas da fila
 
-O teste direto na função já provou que:
-- as credenciais Azure estão válidas;
-- a paginação está funcionando;
-- o batch upsert está funcionando;
-- o problema atual é exclusivamente a chamada web bloqueada pelo navegador.
-
-Portanto, esta correção deve destravar o botão sem precisar alterar banco ou a lógica de busca dos grupos.
