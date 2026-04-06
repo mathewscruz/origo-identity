@@ -93,6 +93,7 @@ export default function AppLayout() {
       <div className="flex min-h-screen w-full">
         <AppSidebar />
         <div className="flex flex-1 flex-col">
+          <ModoOperacaoBanner />
           <header className="flex h-14 items-center gap-4 border-b bg-card px-4">
             <SidebarTrigger />
             <AppBreadcrumb />
