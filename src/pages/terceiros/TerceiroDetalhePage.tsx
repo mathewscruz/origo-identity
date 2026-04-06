@@ -123,6 +123,7 @@ export default function TerceiroDetalhePage() {
     qc.invalidateQueries({ queryKey: ["terceiro_atribuicoes", id] });
     setAtribuirOpen(false);
     setSelectedPerfil("");
+    triggerEntraProcessing();
   };
 
   const handleRevogar = async (atribuicaoId: string, perfilId?: string) => {
