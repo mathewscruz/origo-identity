@@ -201,6 +201,13 @@ export default function FilaProvisionamentoPage() {
                         <td className="p-4 text-muted-foreground text-xs">
                           {item.processed_at ? format(new Date(item.processed_at), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "—"}
                         </td>
+                        <td className="p-4 text-xs text-muted-foreground">
+                          {(item as any).retry_count > 0 ? (
+                            <Badge variant="outline" className="bg-warning/15 text-warning border-warning/30">
+                              {(item as any).retry_count}/{(item as any).max_retries || 10}
+                            </Badge>
+                          ) : "—"}
+                        </td>
                         <td className="p-4 text-xs text-muted-foreground max-w-[200px] truncate">
                           {item.result_message || "—"}
                         </td>
