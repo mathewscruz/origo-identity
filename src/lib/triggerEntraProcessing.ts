@@ -2,8 +2,10 @@
  * Triggers the process-iam-queue Edge Function to immediately process
  * pending Entra ID actions (assign/remove groups, licenses, apps).
  * Called after any change that generates iam_queue entries.
+ * 
+ * @param force - If true, ignores next_retry_at and processes all pending items immediately
  */
-export async function triggerEntraProcessing(): Promise<void> {
+export async function triggerEntraProcessing(force = true): Promise<void> {
   try {
     const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-iam-queue`;
     const res = await fetch(url, {
@@ -13,6 +15,7 @@ export async function triggerEntraProcessing(): Promise<void> {
         Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         "Content-Type": "application/json",
       },
+      body: JSON.stringify({ force }),
     });
     if (!res.ok) {
       console.warn("[triggerEntraProcessing] HTTP", res.status, await res.text());
