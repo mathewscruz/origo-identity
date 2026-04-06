@@ -445,8 +445,20 @@ export default function ColaboradoresPage() {
                   {paginatedItems.map((c) => (
                     <tr key={c.id} className="border-b last:border-0 hover:bg-muted/50">
                       <td className="p-4">
-                        <div className="flex items-center">
+                        <div className="flex items-center gap-1">
                           <Link to={`/colaboradores/${c.id}`} className="font-medium text-primary hover:underline">{c.nome}</Link>
+                          {c.cargo_id && !c.sam_account_name && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <AlertTriangle className="h-4 w-4 text-warning shrink-0" />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Login AD ausente — provisionamento de acessos bloqueado</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
                           <ColaboradorActivityPopover colaboradorId={c.id} colaboradorNome={c.nome} />
                         </div>
                       </td>
