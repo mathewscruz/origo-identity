@@ -382,11 +382,13 @@ Deno.serve(async (req) => {
 
         results.push({ id: item.id, action: item.action_type, status: "success", message: result.message });
       } else {
-        // Check if retryable
+        // Check if it's a non-retryable error (on-premises managed)
+        const isNonRetryable = result.message.includes("AD local") || result.message.includes("on-premises");
+
         const retryCount = (item.retry_count || 0) + 1;
         const maxRetries = item.max_retries || 10;
 
-        if (retryCount < maxRetries) {
+        if (!isNonRetryable && retryCount < maxRetries) {
           const nextRetry = calculateNextRetry(retryCount);
           await supabase.from("iam_queue").update({
             status: "pending",

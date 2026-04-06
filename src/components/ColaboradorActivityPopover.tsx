@@ -3,7 +3,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Activity, UserPlus, ArrowRightLeft, UserMinus, Shield, ShieldOff, Cloud, AlertTriangle, ListOrdered } from "lucide-react";
+import { Activity, UserPlus, ArrowRightLeft, UserMinus, Shield, ShieldOff, Cloud, ListOrdered } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -19,8 +19,6 @@ interface EventoJML {
   tipo: "joiner" | "mover" | "leaver";
   status: string;
   created_at: string;
-  dados_antes: any;
-  dados_depois: any;
 }
 
 interface Atribuicao {
@@ -36,8 +34,9 @@ interface QueueItem {
   action_type: string;
   status: string;
   created_at: string;
+  processed_at: string | null;
   result_message: string | null;
-  correlation_id: string;
+  payload_json: any;
 }
 
 const tipoConfig = {
@@ -54,11 +53,27 @@ const queueStatusConfig: Record<string, { label: string; class: string }> = {
 };
 
 const actionLabels: Record<string, string> = {
+  assign_group: "Grupo atribuído",
+  remove_group: "Grupo removido",
+  assign_license: "Licença atribuída",
+  remove_license: "Licença removida",
+  assign_app: "App atribuído",
+  remove_app: "App removido",
+  create_if_not_exists: "Criação AD",
   create: "Criação",
   update: "Atualização",
   disable: "Desativação",
   delete: "Exclusão",
 };
+
+function getResourceName(item: QueueItem): string {
+  const p = item.payload_json;
+  if (!p) return "";
+  if (p.groupName) return p.groupName;
+  if (p.licenseName) return p.licenseName;
+  if (p.appName) return p.appName;
+  return "";
+}
 
 export default function ColaboradorActivityPopover({ colaboradorId, colaboradorNome }: Props) {
   const [eventos, setEventos] = useState<EventoJML[]>([]);
@@ -70,10 +85,19 @@ export default function ColaboradorActivityPopover({ colaboradorId, colaboradorN
   async function loadData() {
     if (loaded) return;
     setLoading(true);
-    const [evRes, atRes, queueRes] = await Promise.all([
+
+    // First get sam_account_name for fallback query
+    const { data: colab } = await (supabase as any)
+      .from("colaboradores")
+      .select("sam_account_name")
+      .eq("id", colaboradorId)
+      .single();
+    const sam = colab?.sam_account_name || "";
+
+    const [evRes, atRes] = await Promise.all([
       supabase
         .from("eventos_jml")
-        .select("id, tipo, status, created_at, dados_antes, dados_depois")
+        .select("id, tipo, status, created_at")
         .eq("colaborador_id", colaboradorId)
         .order("created_at", { ascending: false })
         .limit(10),
@@ -83,16 +107,41 @@ export default function ColaboradorActivityPopover({ colaboradorId, colaboradorN
         .eq("colaborador_id", colaboradorId)
         .order("data_concessao", { ascending: false })
         .limit(10),
-      (supabase as any)
-        .from("iam_queue")
-        .select("id, action_type, status, created_at, result_message, correlation_id")
-        .eq("colaborador_id", colaboradorId)
-        .order("created_at", { ascending: false })
-        .limit(10),
     ]);
+
+    // Query iam_queue by colaborador_id OR target_identity (sam)
+    let allQueueItems: QueueItem[] = [];
+    const { data: q1 } = await (supabase as any)
+      .from("iam_queue")
+      .select("id, action_type, status, created_at, processed_at, result_message, payload_json")
+      .eq("colaborador_id", colaboradorId)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (q1) allQueueItems = q1;
+
+    // Also search by sam if available
+    if (sam) {
+      const { data: q2 } = await (supabase as any)
+        .from("iam_queue")
+        .select("id, action_type, status, created_at, processed_at, result_message, payload_json")
+        .eq("target_identity", sam)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (q2) {
+        const existingIds = new Set(allQueueItems.map((i: QueueItem) => i.id));
+        for (const item of q2) {
+          if (!existingIds.has(item.id)) allQueueItems.push(item);
+        }
+      }
+    }
+
+    // Sort by created_at desc and take top 15
+    allQueueItems.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    allQueueItems = allQueueItems.slice(0, 15);
+
     setEventos((evRes.data as EventoJML[]) || []);
     setAtribuicoes((atRes.data as Atribuicao[]) || []);
-    setQueueItems((queueRes.data as QueueItem[]) || []);
+    setQueueItems(allQueueItems);
     setLoading(false);
     setLoaded(true);
   }
@@ -106,7 +155,7 @@ export default function ColaboradorActivityPopover({ colaboradorId, colaboradorN
           <Activity className="h-3.5 w-3.5 text-muted-foreground" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 max-h-96 overflow-y-auto p-0" align="start">
+      <PopoverContent className="w-96 max-h-[28rem] overflow-y-auto p-0" align="start">
         <div className="p-3 border-b">
           <p className="text-sm font-medium">Atividades — {colaboradorNome}</p>
         </div>
@@ -123,25 +172,39 @@ export default function ColaboradorActivityPopover({ colaboradorId, colaboradorN
           <p className="p-4 text-center text-sm text-muted-foreground">Nenhuma atividade registrada.</p>
         )}
 
-        {/* Queue items */}
+        {/* Entra ID Actions */}
         {!loading && queueItems.length > 0 && (
           <div className="p-3 space-y-2">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Fila de Provisionamento</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Ações Entra ID / AD</p>
             {queueItems.map((item) => {
               const sCfg = queueStatusConfig[item.status] || { label: item.status, class: "" };
+              const resourceName = getResourceName(item);
+              const label = actionLabels[item.action_type] || item.action_type;
               return (
-                <Link key={item.id} to={`/fila-provisionamento/${item.id}`} className="flex items-start gap-2 text-sm hover:bg-muted/50 rounded p-1 -m-1">
-                  <ListOrdered className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                <Link key={item.id} to={`/fila-provisionamento/${item.id}`} className="flex items-start gap-2 text-sm hover:bg-muted/50 rounded p-1.5 -m-1">
+                  <Cloud className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-medium">{actionLabels[item.action_type] || item.action_type}</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-medium">{label}</span>
                       <Badge variant="outline" className={`text-[10px] px-1 py-0 ${sCfg.class}`}>
                         {sCfg.label}
                       </Badge>
                     </div>
+                    {resourceName && (
+                      <p className="text-xs text-foreground/80 truncate">{resourceName}</p>
+                    )}
                     <p className="text-xs text-muted-foreground">
                       {format(new Date(item.created_at), "dd MMM yyyy HH:mm", { locale: ptBR })}
+                      {item.processed_at && item.status === "success" && (
+                        <span className="text-success"> • executado {format(new Date(item.processed_at), "dd MMM HH:mm", { locale: ptBR })}</span>
+                      )}
+                      {item.processed_at && item.status === "failed" && (
+                        <span className="text-destructive"> • falhou {format(new Date(item.processed_at), "dd MMM HH:mm", { locale: ptBR })}</span>
+                      )}
                     </p>
+                    {item.result_message && item.status === "failed" && (
+                      <p className="text-[11px] text-destructive/80 truncate">{item.result_message}</p>
+                    )}
                   </div>
                 </Link>
               );
