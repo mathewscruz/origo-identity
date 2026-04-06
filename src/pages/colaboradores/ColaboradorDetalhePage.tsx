@@ -191,6 +191,7 @@ export default function ColaboradorDetalhePage() {
             onValueChange={async (newStatus) => {
               const oldStatus = pessoa.status;
               const isManual = pessoa.origem === "manual";
+              const sam = (pessoa as any)?.sam_account_name || "";
               const { error } = await supabase.from("colaboradores").update({ status: newStatus as any }).eq("id", id!);
               if (error) { toast({ title: "Erro ao alterar status", description: error.message, variant: "destructive" }); return; }
               
@@ -199,13 +200,18 @@ export default function ColaboradorDetalhePage() {
                 await supabase.from("iam_queue" as any).insert({
                   action_type: "disable",
                   payload_json: {
-                    samAccountName: pessoa.matricula || pessoa.email,
+                    samAccountName: sam,
+                    mail: pessoa.email || null,
                     displayName: pessoa.nome,
-                    motivo: `Status alterado para ${newStatus}`,
-                    data_solicitacao: new Date().toISOString(),
+                    status: "disabled",
+                    status_anterior: oldStatus,
+                    status_novo: newStatus,
+                    changed_fields: ["status"],
+                    new_values: { status: "disabled" },
                   },
                   requested_by: profile?.email || "sistema",
                   colaborador_id: id,
+                  target_identity: sam || null,
                 });
                 toast({ title: "Solicitação de desativação enviada para processamento" });
 
@@ -225,14 +231,18 @@ export default function ColaboradorDetalhePage() {
                 await supabase.from("iam_queue" as any).insert({
                   action_type: "update",
                   payload_json: {
-                    samAccountName: pessoa.matricula || pessoa.email,
+                    samAccountName: sam,
+                    mail: pessoa.email || null,
                     displayName: pessoa.nome,
-                    action: "enable",
-                    motivo: "Usuário reativado",
-                    data_solicitacao: new Date().toISOString(),
+                    status: "enabled",
+                    status_anterior: oldStatus,
+                    status_novo: "ativo",
+                    changed_fields: ["status"],
+                    new_values: { status: "enabled" },
                   },
                   requested_by: profile?.email || "sistema",
                   colaborador_id: id,
+                  target_identity: sam || null,
                 });
                 toast({ title: "Solicitação de reativação enviada para processamento" });
 
@@ -253,6 +263,7 @@ export default function ColaboradorDetalhePage() {
               queryClient.invalidateQueries({ queryKey: ["colaborador", id] });
               queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
               queryClient.invalidateQueries({ queryKey: ["eventos_jml"] });
+              triggerEntraProcessing();
             }}
           >
             <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
