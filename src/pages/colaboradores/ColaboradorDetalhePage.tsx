@@ -112,14 +112,48 @@ export default function ColaboradorDetalhePage() {
     triggerEntraProcessing();
   }
 
-  async function handleRevogar(atribuicaoId: string) {
+  async function handleRevogar(atribuicaoId: string, perfilId?: string) {
     const { error } = await supabase.from("perfil_atribuicoes").update({
       ativo: false,
       data_revogacao: new Date().toISOString(),
     }).eq("id", atribuicaoId);
     if (error) { toast({ title: "Erro ao revogar", description: error.message, variant: "destructive" }); return; }
+
+    // Generate iam_queue entries to remove access
+    const sam = (pessoa as any)?.sam_account_name || "";
+    if (sam && perfilId) {
+      const { data: grupos } = await (supabase as any).from("perfil_grupos").select("grupo_id, entra_grupos(entra_id, nome, on_premises_sync)").eq("perfil_id", perfilId);
+      for (const g of (grupos || [])) {
+        if (!g.entra_grupos) continue;
+        await supabase.from("iam_queue" as any).insert({
+          action_type: "remove_group",
+          payload_json: { samAccountName: sam, displayName: pessoa.nome, mail: pessoa.email || "", groupId: g.entra_grupos.entra_id, groupName: g.entra_grupos.nome, onPremisesSync: g.entra_grupos.on_premises_sync || false },
+          target_identity: sam, requested_by: profile?.email || "sistema", colaborador_id: id, status: "pending",
+        });
+      }
+      const { data: licencas } = await (supabase as any).from("perfil_licencas").select("licenca_id, entra_licencas(sku_id, nome)").eq("perfil_id", perfilId);
+      for (const l of (licencas || [])) {
+        if (!l.entra_licencas) continue;
+        await supabase.from("iam_queue" as any).insert({
+          action_type: "remove_license",
+          payload_json: { samAccountName: sam, displayName: pessoa.nome, mail: pessoa.email || "", skuId: l.entra_licencas.sku_id, licenseName: l.entra_licencas.nome },
+          target_identity: sam, requested_by: profile?.email || "sistema", colaborador_id: id, status: "pending",
+        });
+      }
+      const { data: apps } = await (supabase as any).from("perfil_aplicacoes").select("aplicacao_id, aplicacoes(entra_id, nome)").eq("perfil_id", perfilId);
+      for (const a of (apps || [])) {
+        if (!a.aplicacoes?.entra_id) continue;
+        await supabase.from("iam_queue" as any).insert({
+          action_type: "remove_app",
+          payload_json: { samAccountName: sam, displayName: pessoa.nome, mail: pessoa.email || "", appId: a.aplicacoes.entra_id, appName: a.aplicacoes.nome },
+          target_identity: sam, requested_by: profile?.email || "sistema", colaborador_id: id, status: "pending",
+        });
+      }
+    }
+
     toast({ title: "Acesso revogado" });
     queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
+    triggerEntraProcessing();
   }
 
   if (isLoading) return <div className="space-y-4 p-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}</div>;
