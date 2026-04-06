@@ -18,9 +18,14 @@ const statusConfig: Record<string, { label: string; class: string }> = {
 
 const actionConfig: Record<string, string> = {
   create: "Criação de Usuário",
+  create_if_not_exists: "Criação Automática",
   update: "Atualização de Usuário",
   disable: "Desativação de Usuário",
   delete: "Exclusão de Usuário",
+  assign_group: "Atribuição de Grupo",
+  remove_group: "Remoção de Grupo",
+  assign_license: "Atribuição de Licença",
+  remove_license: "Remoção de Licença",
 };
 
 interface QueueItem {

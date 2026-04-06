@@ -352,16 +352,20 @@ export default function ColaboradoresPage() {
     
     // Queue delete request
     if (deletingColab) {
+      const sam = deletingColab.sam_account_name || "";
       await supabase.from("iam_queue" as any).insert({
         action_type: "delete",
         payload_json: {
-          samAccountName: deletingColab.matricula || deletingColab.email,
+          samAccountName: sam,
+          mail: deletingColab.email || null,
           displayName: deletingColab.nome,
+          status: "disabled",
           motivo: "Exclusão do sistema",
           data_solicitacao: new Date().toISOString(),
         },
         requested_by: profile?.email || "sistema",
         colaborador_id: deleteId,
+        target_identity: sam || null,
       });
     }
 

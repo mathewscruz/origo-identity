@@ -78,6 +78,30 @@ export default function RevisaoExternaPage() {
           ativo: false,
           data_revogacao: now,
         }).eq("colaborador_id", item.colaborador_id).eq("perfil_id", item.perfil_id).eq("ativo", true);
+
+        // Buscar sam_account_name do colaborador
+        const { data: colab } = await (supabase as any).from("colaboradores").select("sam_account_name, nome, email").eq("id", item.colaborador_id).single();
+        const sam = colab?.sam_account_name || "";
+        if (sam) {
+          // Buscar grupos do perfil revogado
+          const { data: grupos } = await supabase.from("perfil_grupos").select("*, entra_grupos(nome, entra_id)").eq("perfil_id", item.perfil_id);
+          for (const g of (grupos || [])) {
+            await supabase.from("iam_queue" as any).insert({
+              action_type: "remove_group",
+              payload_json: { samAccountName: sam, displayName: colab?.nome || item.colaborador_nome || "", groupName: g.entra_grupos?.nome || "", groupEntraId: g.entra_grupos?.entra_id || "" },
+              target_identity: sam, requested_by: revisao.owner_email || "revisao_externa", colaborador_id: item.colaborador_id, status: "pending",
+            });
+          }
+          // Buscar licenças do perfil revogado
+          const { data: licencas } = await supabase.from("perfil_licencas").select("*, entra_licencas(nome, sku_id)").eq("perfil_id", item.perfil_id);
+          for (const l of (licencas || [])) {
+            await supabase.from("iam_queue" as any).insert({
+              action_type: "remove_license",
+              payload_json: { samAccountName: sam, displayName: colab?.nome || item.colaborador_nome || "", licenseName: l.entra_licencas?.nome || "", skuId: l.entra_licencas?.sku_id || "" },
+              target_identity: sam, requested_by: revisao.owner_email || "revisao_externa", colaborador_id: item.colaborador_id, status: "pending",
+            });
+          }
+        }
       }
     }
 

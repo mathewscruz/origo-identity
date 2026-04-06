@@ -21,9 +21,14 @@ const statusConfig: Record<string, { label: string; class: string }> = {
 
 const actionConfig: Record<string, { label: string; class: string }> = {
   create: { label: "Criação", class: "bg-success/15 text-success border-success/30" },
+  create_if_not_exists: { label: "Criação (Auto)", class: "bg-success/15 text-success border-success/30" },
   update: { label: "Atualização", class: "bg-info/15 text-info border-info/30" },
   disable: { label: "Desativação", class: "bg-warning/15 text-warning border-warning/30" },
   delete: { label: "Exclusão", class: "bg-destructive/15 text-destructive border-destructive/30" },
+  assign_group: { label: "Atribuir Grupo", class: "bg-primary/15 text-primary border-primary/30" },
+  remove_group: { label: "Remover Grupo", class: "bg-muted text-muted-foreground border-muted" },
+  assign_license: { label: "Atribuir Licença", class: "bg-primary/15 text-primary border-primary/30" },
+  remove_license: { label: "Remover Licença", class: "bg-muted text-muted-foreground border-muted" },
 };
 
 interface QueueItem {

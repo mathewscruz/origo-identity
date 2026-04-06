@@ -238,7 +238,7 @@ export default function TerceiroDetalhePage() {
                         <td className="p-3 text-muted-foreground">{a.origem || "—"}</td>
                         <td className="p-3 text-muted-foreground text-xs">{new Date(a.data_concessao).toLocaleDateString("pt-BR")}</td>
                         <td className="p-3">
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleRevogar(a.id)}>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleRevogar(a.id, a.perfil_id)}>
                             <X className="h-3 w-3" />
                           </Button>
                         </td>
