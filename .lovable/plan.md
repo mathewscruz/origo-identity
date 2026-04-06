@@ -1,173 +1,90 @@
 
 
-## Plano: Evolucao completa do IGA - 4 modulos + modo producao
+## Validacao do Fluxo IGA — Gaps Identificados
 
-Este plano abrange as 4 demandas principais e uma analise de gaps para completar o sistema como IGA/IAM funcional.
+Analisei todo o codigo dos modulos envolvidos. O fluxo conceitual esta correto, mas existem **6 lacunas tecnicas** que impedem o funcionamento completo.
 
 ---
 
-### Modulo 1: Validacao de usuarios importados contra o AD
+### Fluxo Esperado vs. Realidade
 
-**Problema**: A importacao diaria (sync-csv-colab) cria colaboradores no sistema mas nao verifica se ja existem no AD.
+```text
+SharePoint CSV → sync-sharepoint-csv → colaboradores → iam_queue (create) → AD
+                                                      → cargo_perfis → provisionCargoAcessos → iam_queue (assign_group/license) → Entra ID
 
-**Solucao**: Apos cada importacao, gerar automaticamente solicitacoes `create` na `iam_queue` apenas para colaboradores novos. O agente PowerShell externo faz a validacao real no AD (verificar se o samAccountName existe, se nao existir criar).
+Terceiros → cadastro manual → iam_queue (create) → AD → provisionCargoAcessos → Entra ID
+```
 
-**Alteracoes**:
+---
 
-1. **Adicionar campo `sam_account_name` na tabela `colaboradores`** — migracao SQL para persistir o login AD.
-2. **Alterar `sync-csv-colab`** — ao detectar um novo colaborador (joiner), gerar automaticamente uma entrada na `iam_queue` com `action_type = "create_if_not_exists"` (novo tipo). O payload segue o mesmo padrao ja definido.
-3. **Atualizar `iam-agent-api`** — adicionar o novo action_type `create_if_not_exists` na documentacao do endpoint. O agente PowerShell decide: se o usuario ja existe no AD, atualiza o status para `completed` com `result_message = "already_exists"`; se nao existe, cria e retorna `completed`.
-4. **Logica de samAccountName para importados** — gerar automaticamente o samAccountName a partir do CSV: usar o campo `mail` (parte antes do @) ou `employID` como fallback. Gravar em `colaboradores.sam_account_name`.
+### Gap 1: sync-sharepoint-csv NAO gera iam_queue nem sam_account_name
 
-| Acao | Arquivo |
+O `sync-sharepoint-csv` tem sua propria funcao `buildColabData` (linha 218-231) que **nao inclui `sam_account_name`** e **nao gera entradas na `iam_queue`**. Apenas o `sync-csv-colab` faz isso.
+
+**Correcao**: Alinhar `sync-sharepoint-csv` com `sync-csv-colab` — adicionar `sam_account_name` no `buildColabData` e gerar `iam_queue` entries para joiners, movers e leavers.
+
+---
+
+### Gap 2: Payload de create_if_not_exists com department/title/company = null
+
+No `sync-csv-colab` (linhas 443-445), o payload de criacao envia `department: null`, `title: null`, `company: null` — apesar de ter esses dados no CSV. O `buildColabData` ja resolve os IDs de empresa/cargo/area, mas o payload do `iam_queue` nao usa os **nomes** dessas entidades.
+
+**Correcao**: Resolver os nomes usando os caches (`empresaCache`, `cargoCache`, `areaCache`) e popular `department`, `title` e `company` com os valores textuais corretos.
+
+---
+
+### Gap 3: Movers (atualizacoes) NAO geram iam_queue
+
+Quando um colaborador ja existente muda de cargo/area/status na importacao CSV, o sistema atualiza o registro mas **nao gera nenhuma entrada na `iam_queue`** para o agente AD/Entra ID. Apenas eventos JML sao registrados.
+
+**Correcao**: Para cada `toUpdate`, comparar os campos alterados e gerar:
+- `action_type: "update"` com `changed_fields` e `new_values` quando cargo/area mudam
+- `action_type: "disable"` quando status muda para desligado/inativo
+
+---
+
+### Gap 4: Leavers NAO geram iam_queue (disable)
+
+Colaboradores removidos do CSV sao deletados da tabela, mas **nenhuma solicitacao de desativacao e enviada ao AD**. O usuario continua ativo no AD.
+
+**Correcao**: Antes de deletar, buscar o `sam_account_name` dos leavers e gerar `iam_queue` com `action_type: "disable"` para cada um.
+
+---
+
+### Gap 5: Importacao NAO dispara provisionCargoAcessos
+
+O fluxo `cargo → perfil → grupos/licencas` so e executado manualmente no `ColaboradoresPage`. Na importacao, mesmo que o colaborador tenha um cargo com perfis configurados, **nenhuma atribuicao de perfil e criada e nenhuma iam_queue de grupo/licenca e gerada**.
+
+**Correcao**: Apos inserir novos colaboradores, chamar a logica equivalente ao `provisionCargoAcessos` dentro da Edge Function (usando service_role). Para movers com cargo alterado, revogar perfis antigos e atribuir novos.
+
+---
+
+### Gap 6: Falta mecanismo para detectar replicacao AD → Entra ID
+
+O fluxo assume que o agente AD cria o usuario e que um script separado replica para o Entra ID. Porem, **nao existe nenhum mecanismo no sistema para saber quando o usuario ja apareceu no Entra ID** e disparar a atribuicao de grupos/licencas.
+
+**Opcoes**:
+- **A) Provisionar imediatamente**: Gerar `assign_group`/`assign_license` logo apos o `create` e confiar que o agente PowerShell vai executar quando o usuario ja existir no Entra ID (com retry).
+- **B) Novo action_type "provision_access"**: O agente, apos confirmar criacao no AD, retorna status e o sistema gera automaticamente os acessos Entra ID.
+
+Recomendacao: **Opcao A** — mais simples. O agente faz retry ate o usuario aparecer no Entra ID.
+
+---
+
+### Resumo de Alteracoes
+
+| Arquivo | O que corrigir |
 |---|---|
-| Migracao | Adicionar coluna `sam_account_name` em `colaboradores` |
-| Editar | `supabase/functions/sync-csv-colab/index.ts` |
-| Editar | `supabase/functions/iam-agent-api/index.ts` (documentar novo tipo) |
+| `supabase/functions/sync-sharepoint-csv/index.ts` | Adicionar `sam_account_name` no buildColabData; gerar iam_queue para joiners, movers e leavers |
+| `supabase/functions/sync-csv-colab/index.ts` | Popular department/title/company no payload; gerar iam_queue para movers e leavers; disparar provisionamento de perfis/grupos/licencas para novos e movers |
+| `supabase/functions/iam-agent-api/index.ts` | Sem alteracoes necessarias (ja suporta todos os action_types) |
+| `src/lib/provisionCargoAcessos.ts` | Sem alteracoes (ja funciona corretamente quando chamado) |
 
----
+### Ordem de implementacao
 
-### Modulo 2: Reintegrar Entra ID para provisionamento de perfis de acesso
-
-**Problema**: O Entra ID foi removido para criacao de usuarios, mas ainda e necessario para atribuir apps, grupos e licencas.
-
-**Solucao**: Criar uma Edge Function `entra-provision-access` que, quando um perfil de acesso e atribuido a um colaborador, gera solicitacoes na `iam_queue` para o agente sincronizar grupos/apps no Entra ID (apos o usuario ter sido replicado do AD local para o Entra ID pelo script automatico existente).
-
-**Alteracoes**:
-
-1. **Novo action_type na `iam_queue`**: `assign_group`, `remove_group`, `assign_license`, `remove_license` — o agente PowerShell usa o Microsoft Graph API para executar.
-2. **Alterar `provisionCargoAcessos.ts`** — apos criar/revogar `perfil_atribuicoes`, consultar a composicao do perfil (grupos, licencas, apps via `perfil_grupos`, `perfil_licencas`, `perfil_aplicacoes`) e gerar entradas na `iam_queue` para cada grupo/licenca.
-3. **Payload padrao para grupo**: `{ samAccountName, groupId (entra_id do grupo), groupName, action: "add"|"remove" }`
-4. **Payload padrao para licenca**: `{ samAccountName, skuId, licenseName, action: "add"|"remove" }`
-
-| Acao | Arquivo |
-|---|---|
-| Editar | `src/lib/provisionCargoAcessos.ts` |
-| Editar | `supabase/functions/iam-agent-api/index.ts` (documentar novos tipos) |
-
----
-
-### Modulo 3: Terceiros com perfis de acesso
-
-**Problema**: Terceiros nao tem atribuicao de perfis de acesso como colaboradores.
-
-**Solucao**: Reaproveitar a infraestrutura de `perfil_atribuicoes` (que ja tem `terceiro_id`) e criar interface no detalhe do terceiro.
-
-**Alteracoes**:
-
-1. **Adicionar campo `sam_account_name` na tabela `terceiros`** — migracao SQL.
-2. **Editar `TerceiroDetalhePage.tsx`** — adicionar aba "Perfis de Acesso" com:
-   - Lista de perfis atribuidos (via `perfil_atribuicoes` onde `terceiro_id = id`)
-   - Botao "Atribuir Perfil" — dialog com select de perfis, cria `perfil_atribuicoes` e gera entradas na `iam_queue` (mesma logica de grupos/licencas do Modulo 2)
-   - Botao "Revogar" em cada perfil
-3. **Editar `TerceirosPage.tsx`** — adicionar campo `sam_account_name` no formulario de criacao. Ao criar, gerar `iam_queue` com `action_type = "create"` (mesmo padrao de colaboradores).
-4. **Editar `useOrigoData.ts`** — adicionar hook `useTerceiroAtribuicoes(terceiroId)`.
-
-| Acao | Arquivo |
-|---|---|
-| Migracao | Adicionar coluna `sam_account_name` em `terceiros` |
-| Editar | `src/pages/terceiros/TerceiroDetalhePage.tsx` |
-| Editar | `src/pages/terceiros/TerceirosPage.tsx` |
-| Editar | `src/hooks/useOrigoData.ts` |
-
----
-
-### Modulo 4: Revisao de acesso funcional com fluxo de e-mail
-
-**Problema**: O modulo de revisoes e basico — nao gera campanhas automaticas por aplicacao, nao envia e-mail ao owner e nao executa acoes.
-
-**Solucao**: Reconstruir o fluxo completo de revisao de acesso.
-
-**Alteracoes**:
-
-1. **Migracao SQL** — adicionar campos na tabela `revisoes`:
-   - `aplicacao_id uuid` (FK para aplicacoes — a revisao e por app)
-   - `owner_email text` (copiado da aplicacao no momento da criacao)
-   - `token text` (token unico para acesso externo sem login)
-   - `tipo text default 'aplicacao'`
-
-2. **Nova pagina publica `RevisaoExternaPage.tsx`** — acessada via `/revisao-externa/:token` (rota publica, sem ProtectedRoute). Mostra:
-   - Nome da aplicacao
-   - Lista de colaboradores/terceiros com acesso ativo
-   - Para cada pessoa: botao "Manter" / "Revogar"
-   - Botao "Salvar Revisao" que atualiza `revisao_itens` e gera `iam_queue` para cada revogacao
-
-3. **Edge Function `send-review-email`** — envia e-mail ao owner usando Lovable AI (ou Resend se conectado) com link para a pagina de revisao externa.
-
-4. **Alterar `RevisoesPage.tsx`** — botao "Nova Campanha" abre dialog que permite:
-   - Selecionar aplicacao
-   - O sistema busca automaticamente o owner da aplicacao
-   - Gera `revisao_itens` com todos os colaboradores/terceiros que tem perfis vinculados aquela aplicacao
-   - Envia o e-mail ao owner
-
-5. **Alterar `RevisaoDetalhePage.tsx`** — mostrar resultado consolidado (quem manteve, quem revogou, quem decidiu, quando).
-
-6. **Registro de auditoria** — ao salvar, gravar em `auditoria` com todos os detalhes.
-
-| Acao | Arquivo |
-|---|---|
-| Migracao | Alterar tabela `revisoes`, adicionar campos |
-| Criar | `src/pages/revisoes/RevisaoExternaPage.tsx` |
-| Criar | `supabase/functions/send-review-email/index.ts` |
-| Editar | `src/pages/revisoes/RevisoesPage.tsx` |
-| Editar | `src/pages/revisoes/RevisaoDetalhePage.tsx` |
-| Editar | `src/App.tsx` (rota publica) |
-
----
-
-### Modulo 5: Modo Producao vs Simulacao
-
-**Solucao**: Criar um parametro global `modo_operacao` na tabela `parametros` com valores `simulacao` ou `producao`.
-
-**Alteracoes**:
-
-1. **Inserir parametro** `modo_operacao = "simulacao"` na tabela `parametros`.
-2. **Criar componente `ModoOperacaoBanner.tsx`** — banner fixo no topo quando em modo simulacao ("Modo Simulacao — as acoes nao serao executadas no AD").
-3. **Alterar `iam-agent-api` GET /pending** — quando `modo_operacao = "simulacao"`, retornar array vazio (o agente nao recebe nada para processar).
-4. **Alterar `ParametrosPage.tsx`** — adicionar card "Modo de Operacao" com toggle Simulacao/Producao e confirmacao de seguranca (AlertDialog).
-5. **Alterar `AppLayout.tsx`** — exibir o banner quando em modo simulacao.
-6. **Hook `useModoOperacao()`** — consulta o parametro e retorna o modo atual.
-
-| Acao | Arquivo |
-|---|---|
-| Migracao | Inserir parametro `modo_operacao` |
-| Criar | `src/components/ModoOperacaoBanner.tsx` |
-| Criar | `src/hooks/useModoOperacao.ts` |
-| Editar | `supabase/functions/iam-agent-api/index.ts` |
-| Editar | `src/pages/configuracoes/ParametrosPage.tsx` |
-| Editar | `src/components/AppLayout.tsx` |
-
----
-
-### Analise de Gaps — O que falta para ser um IGA completo
-
-| Gap | Descricao | Prioridade |
-|---|---|---|
-| **Segregacao de funcoes (SoD)** | Regras que impedem combinacoes perigosas de perfis (ex: quem aprova nao pode executar). Tabela `sod_rules` com pares de perfis conflitantes. | Alta |
-| **Relatorios e dashboards** | Dashboard com metricas: total de acessos, acessos nao revisados, licencas ociosas, SLAs de provisionamento. Exportacao CSV/PDF. | Media |
-| **Workflow de aprovacao** | Fluxo formal de aprovacao para excecoes e atribuicoes manuais com multi-nivel (gestor -> owner -> seguranca). | Alta |
-| **Self-service** | Portal para colaboradores solicitarem acesso a apps/perfis com justificativa e aprovacao automatica. | Baixa |
-| **Conectores de reconciliacao** | Comparar acessos reais no Entra ID/AD com o que o sistema espera. Detectar acessos nao autorizados. | Alta |
-| **Politica de senhas e MFA** | Registrar e monitorar politicas de senha e MFA por aplicacao. | Baixa |
-| **Lifecycle de contas de servico** | Gerenciar contas de servico (nao-humanas) com rotacao de credenciais. | Baixa |
-
-Os 3 primeiros (SoD, Relatorios, Workflow) sao os mais criticos para compliance e auditoria.
-
----
-
-### Ordem de implementacao sugerida
-
-1. Modulo 5 (Modo Producao) — rapido e necessario antes de tudo
-2. Modulo 1 (Validacao AD na importacao)
-3. Modulo 3 (Terceiros com perfis)
-4. Modulo 2 (Entra ID para perfis)
-5. Modulo 4 (Revisao de acesso)
-
-### Resumo de arquivos
-
-| Acao | Arquivo |
-|---|---|
-| Migracao | `sam_account_name` em `colaboradores` e `terceiros`; campos em `revisoes`; parametro `modo_operacao` |
-| Criar | `RevisaoExternaPage.tsx`, `send-review-email/index.ts`, `ModoOperacaoBanner.tsx`, `useModoOperacao.ts` |
-| Editar | `sync-csv-colab/index.ts`, `iam-agent-api/index.ts`, `provisionCargoAcessos.ts`, `TerceiroDetalhePage.tsx`, `TerceirosPage.tsx`, `RevisoesPage.tsx`, `RevisaoDetalhePage.tsx`, `ParametrosPage.tsx`, `AppLayout.tsx`, `App.tsx`, `useOrigoData.ts` |
+1. Corrigir payloads do `sync-csv-colab` (Gap 2)
+2. Adicionar iam_queue para movers e leavers em ambas edge functions (Gaps 3 e 4)
+3. Adicionar provisionamento de perfis na importacao (Gap 5)
+4. Alinhar `sync-sharepoint-csv` com todas as correcoes (Gap 1)
+5. Adotar estrategia de provisioning imediato para Entra ID (Gap 6)
 
