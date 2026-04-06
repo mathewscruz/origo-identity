@@ -425,6 +425,34 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         dados_depois: { matricula: c.matricula, nome: c.nome },
       }));
       for (const batch of chunk(joinerEvents, 200)) await sb.from("eventos_jml").insert(batch);
+
+      // Generate iam_queue entries for new colaboradores (create_if_not_exists)
+      const iamEntries = toInsert.filter(c => c.sam_account_name).map(c => {
+        const nameParts = (c.nome || "").split(" ");
+        const givenName = nameParts[0] || "";
+        const surname = nameParts.slice(1).join(" ") || givenName;
+        return {
+          action_type: "create_if_not_exists",
+          payload_json: {
+            givenName,
+            surname,
+            displayName: c.nome,
+            samAccountName: c.sam_account_name,
+            userPrincipalName: `${c.sam_account_name}@ebessolar.local`,
+            mail: c.email,
+            department: null,
+            title: null,
+            company: null,
+            telephoneNumber: null,
+            manager: null,
+            ouPath: "",
+          },
+          target_identity: c.sam_account_name,
+          requested_by: "importacao_csv",
+          status: "pending",
+        };
+      });
+      for (const batch of chunk(iamEntries, 200)) await sb.from("iam_queue").insert(batch);
     }
 
     if (toUpdate.length > 0) {
