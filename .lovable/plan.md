@@ -1,51 +1,93 @@
 
 
-## Diagnostico: Solicitacoes falharam no agente PowerShell
+## Plano: Automacao direta com Entra ID via Microsoft Graph API
 
 ### Situacao atual
 
-O sistema importou seu usuario corretamente e gerou **3 solicitacoes** na fila:
+Hoje o sistema enfileira acoes na `iam_queue` (assign_group, assign_license, etc.) e depende de um agente PowerShell externo para processar. O agente nao suporta os novos action_types e as solicitacoes ficam travadas como `failed`.
 
-| action_type | status | error_code | result_message |
-|---|---|---|---|
-| `create_if_not_exists` | failed | AD_AGENT_ERROR | "action_type invalido: create_if_not_exists" |
-| `assign_group` | failed | AD_AGENT_ERROR | "action_type invalido: assign_group" |
-| `assign_license` | failed | AD_AGENT_ERROR | "action_type invalido: assign_license" |
+Os secrets Azure ja estao configurados: `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` (usados hoje apenas pelo sync-sharepoint-csv).
 
-Os payloads estao **corretos e completos**:
-- `assign_group` → grupo "TI - INFRA N1 MANAGERS" (entra_id: `00c5e54e-577d-49fb-bddb-e9bbd49c9087`)
-- `assign_license` → licenca "SPE_E3" (sku_id: `05e9a617-0261-4cee-bb44-138d3ef5d965`)
+### Solucao
 
-### Causa raiz
+Criar uma nova Edge Function `process-iam-queue` que processa automaticamente os itens pendentes da fila, chamando a Microsoft Graph API diretamente -- sem depender do agente PowerShell para operacoes do Entra ID.
 
-O agente PowerShell so reconhece `create`, `update`, `disable`, `delete`. Os novos tipos (`create_if_not_exists`, `assign_group`, `assign_license`) nao estao implementados no script do agente.
+```text
+iam_queue (pending) → process-iam-queue → Microsoft Graph API → Entra ID
+                                        → Atualiza iam_queue (done/failed)
+```
 
-Alem disso, o retry nao recolocou as solicitacoes na fila porque `AD_AGENT_ERROR` nao esta na lista de erros retentaveis.
+O agente PowerShell continua responsavel apenas por operacoes no AD local (create, update, disable, delete). As operacoes Entra ID (assign_group, remove_group, assign_license, remove_license, assign_app, remove_app) passam a ser executadas diretamente pelo backend.
 
-### Correcoes necessarias
+---
 
-#### 1. Adicionar `AD_AGENT_ERROR` a lista de erros retentaveis (iam-agent-api)
+### 1. Nova Edge Function: `process-iam-queue`
 
-Na edge function, adicionar `"AD_AGENT_ERROR"` ao array `RETRYABLE_ERRORS`. Isso permite que quando o agente for atualizado, as solicitacoes sejam reprocessadas automaticamente.
+Fluxo:
+1. Obter token Azure via client_credentials (`https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token`)
+2. Buscar itens pendentes da `iam_queue` com action_type em `[assign_group, remove_group, assign_license, remove_license, assign_app, remove_app]` e (`next_retry_at IS NULL` ou `next_retry_at <= now()`)
+3. Para cada item:
+   - Resolver o `objectId` do usuario no Entra ID pelo `userPrincipalName` ou `mail` via Graph API (`GET /users?$filter=...`)
+   - Se usuario nao encontrado: marcar como retry (error_code: `user_not_found`, incrementar retry_count)
+   - Se encontrado, executar a acao correspondente:
 
-#### 2. Recolocar as 3 solicitacoes na fila
+| action_type | Graph API Call |
+|---|---|
+| assign_group | `POST /groups/{groupId}/members/$ref` com `@odata.id: /directoryObjects/{userId}` |
+| remove_group | `DELETE /groups/{groupId}/members/{userId}/$ref` |
+| assign_license | `POST /users/{userId}/assignLicense` com `addLicenses: [{skuId}]` |
+| remove_license | `POST /users/{userId}/assignLicense` com `removeLicenses: [skuId]` |
+| assign_app | `POST /servicePrincipals/{appId}/appRoleAssignedTo` |
+| remove_app | `DELETE /servicePrincipals/{appId}/appRoleAssignedTo/{assignmentId}` |
 
-Atualizar as 3 entradas com `status = 'pending'`, `error_code = null`, `retry_count = 0` para que voltem a ser entregues ao agente.
+4. Atualizar `iam_queue`: status=done, processed_at, processed_by="lovable_cloud", result_message
+5. Tratar erros 404 (usuario/grupo nao encontrado) com retry automatico
 
-#### 3. Voce precisa atualizar o agente PowerShell
+Seguranca: validar token IAM_AGENT_TOKEN ou permitir chamada interna (via cron).
 
-O script PowerShell no seu servidor precisa tratar os seguintes `action_type`:
+### 2. Novo action_type: assign_app / remove_app
 
-- **`create_if_not_exists`**: Verificar se o usuario ja existe no AD (por `samAccountName`). Se existir, retornar sucesso. Se nao, criar.
-- **`assign_group`**: Chamar Microsoft Graph para adicionar o usuario ao grupo do Entra ID usando `groupId` do payload.
-- **`assign_license`**: Chamar Microsoft Graph para atribuir a licenca usando `skuId` do payload.
-- **`remove_group`**: Remover usuario do grupo no Entra ID.
-- **`remove_license`**: Remover licenca do usuario no Entra ID.
+Hoje o sistema tem `perfil_aplicacoes` que vincula perfis a aplicacoes, mas a tabela `aplicacoes` ja possui o campo `entra_id` (ID do Service Principal no Entra ID). Falta:
+
+- Adicionar coluna `default_app_role_id` na tabela `aplicacoes` (para o ID do appRole a ser atribuido; default: `00000000-0000-0000-0000-000000000000` que e o "Default Access")
+- Ajustar `provisionCargoAcessos` e as funcoes `queueProfileAccess` (em sync-csv-colab e sync-sharepoint-csv) para tambem gerar `assign_app`/`remove_app` quando o perfil tem aplicacoes com `entra_id` preenchido
+
+### 3. Ajustar `iam-agent-api` GET /pending
+
+Filtrar para retornar ao agente PowerShell APENAS action_types de AD local: `create`, `create_if_not_exists`, `update`, `disable`, `delete`. As acoes Entra ID serao processadas pela nova function.
+
+### 4. Cron job para processamento automatico
+
+Criar um cron job (via pg_cron, ja habilitado) que chama `process-iam-queue` a cada 5 minutos, garantindo processamento continuo sem intervencao manual.
+
+### 5. Botao manual na interface
+
+Adicionar botao "Processar Fila Entra ID" na pagina de Fila de Provisionamento para execucao manual quando necessario.
+
+---
+
+### Permissoes necessarias no App Registration Azure
+
+O App Registration usado (`AZURE_CLIENT_ID`) precisa das seguintes permissoes Application (nao Delegated):
+
+- `Group.ReadWrite.All` — gerenciar membros de grupos
+- `User.ReadWrite.All` — atribuir licencas
+- `Application.ReadWrite.All` — gerenciar app role assignments
+- `Directory.Read.All` — buscar usuarios
+
+Essas permissoes devem ser concedidas com **Admin Consent** no portal Azure.
 
 ### Resumo de arquivos
 
 | Acao | Arquivo |
 |---|---|
-| Editar | `supabase/functions/iam-agent-api/index.ts` — adicionar `AD_AGENT_ERROR` aos erros retentaveis |
-| Script SQL | Reset das 3 solicitacoes para `pending` |
+| Criar | `supabase/functions/process-iam-queue/index.ts` — processador automatico via Graph API |
+| Migracao | Adicionar `default_app_role_id` em `aplicacoes`; cron job a cada 5min |
+| Editar | `supabase/functions/iam-agent-api/index.ts` — filtrar GET /pending so para AD local |
+| Editar | `src/lib/provisionCargoAcessos.ts` — gerar assign_app/remove_app |
+| Editar | `supabase/functions/sync-csv-colab/index.ts` — gerar assign_app/remove_app |
+| Editar | `supabase/functions/sync-sharepoint-csv/index.ts` — gerar assign_app/remove_app |
+| Editar | `src/pages/fila-provisionamento/FilaProvisionamentoPage.tsx` — botao processar + novos action_types |
+| Editar | `src/pages/fila-provisionamento/SolicitacaoDetalhePage.tsx` — novos action_types |
+| Editar | `supabase/config.toml` — registrar nova function |
 
