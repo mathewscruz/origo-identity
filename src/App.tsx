@@ -19,6 +19,7 @@ import PerfilAcessoDetalhePage from "./pages/perfis-acesso/PerfilAcessoDetalhePa
 import ExcecoesPage from "./pages/excecoes/ExcecoesPage";
 import RevisoesPage from "./pages/revisoes/RevisoesPage";
 import RevisaoDetalhePage from "./pages/revisoes/RevisaoDetalhePage";
+import RevisaoExternaPage from "./pages/revisoes/RevisaoExternaPage";
 import RegrasPage from "./pages/regras/RegrasPage";
 import RegraEditorPage from "./pages/regras/RegraEditorPage";
 import MatrizPage from "./pages/matriz/MatrizPage";
