@@ -4,15 +4,19 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Pencil, RefreshCw } from "lucide-react";
+import { ArrowLeft, Pencil, RefreshCw, Plus, X } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { useTerceiro } from "@/hooks/useOrigoData";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useTerceiro, usePerfisAcesso } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
 const criticidadeConfig: Record<string, { label: string; class: string }> = {
   baixa: { label: "Baixa", class: "bg-muted text-muted-foreground" },
@@ -38,6 +42,25 @@ export default function TerceiroDetalhePage() {
   const { id } = useParams();
   const { data: terceiro, isLoading } = useTerceiro(id);
   const [renovarOpen, setRenovarOpen] = useState(false);
+  const [atribuirOpen, setAtribuirOpen] = useState(false);
+  const [selectedPerfil, setSelectedPerfil] = useState("");
+  const { data: perfisAcesso } = usePerfisAcesso();
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const { data: atribuicoes } = useQuery({
+    queryKey: ["terceiro_atribuicoes", id],
+    enabled: !!id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("perfil_atribuicoes")
+        .select("*, perfis_acesso(nome, tipo)")
+        .eq("terceiro_id", id!)
+        .eq("ativo", true);
+      if (error) throw error;
+      return data;
+    },
+  });
 
   if (isLoading) return <div className="space-y-4 p-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}</div>;
   if (!terceiro) return <div className="p-8 text-center text-muted-foreground">Terceiro não encontrado.</div>;
@@ -45,6 +68,27 @@ export default function TerceiroDetalhePage() {
   const progress = contractProgress(terceiro.contrato_inicio, terceiro.contrato_fim);
   const dias = diasRestantes(terceiro.contrato_fim);
   const crit = criticidadeConfig[terceiro.criticidade] || { label: terceiro.criticidade, class: "" };
+
+  const handleAtribuirPerfil = async () => {
+    if (!selectedPerfil || !id) return;
+    const { error } = await supabase.from("perfil_atribuicoes").insert({
+      perfil_id: selectedPerfil,
+      terceiro_id: id,
+      origem: "manual",
+      ativo: true,
+    });
+    if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+    toast({ title: "Perfil atribuído" });
+    qc.invalidateQueries({ queryKey: ["terceiro_atribuicoes", id] });
+    setAtribuirOpen(false);
+    setSelectedPerfil("");
+  };
+
+  const handleRevogar = async (atribuicaoId: string) => {
+    await supabase.from("perfil_atribuicoes").update({ ativo: false, data_revogacao: new Date().toISOString() }).eq("id", atribuicaoId);
+    toast({ title: "Perfil revogado" });
+    qc.invalidateQueries({ queryKey: ["terceiro_atribuicoes", id] });
+  };
 
   return (
     <div className="space-y-6">
@@ -85,6 +129,7 @@ export default function TerceiroDetalhePage() {
         <TabsList>
           <TabsTrigger value="dados">Dados Pessoais</TabsTrigger>
           <TabsTrigger value="contrato">Dados Contrato</TabsTrigger>
+          <TabsTrigger value="perfis">Perfis de Acesso ({atribuicoes?.length || 0})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="dados" className="mt-4">
@@ -97,8 +142,9 @@ export default function TerceiroDetalhePage() {
                   ["Empresa terceira", terceiro.empresa_terceira || "—"],
                   ["Responsável", terceiro.responsavel || "—"],
                   ["Criticidade", crit.label],
+                  ["Login AD", (terceiro as any).sam_account_name || "—"],
                 ].map(([label, value]) => (
-                  <div key={label}><p className="text-xs text-muted-foreground">{label}</p><p className="text-sm font-medium">{value}</p></div>
+                  <div key={label as string}><p className="text-xs text-muted-foreground">{label}</p><p className="text-sm font-medium">{value}</p></div>
                 ))}
               </div>
             </CardContent>
@@ -115,9 +161,48 @@ export default function TerceiroDetalhePage() {
                   ["Status", terceiro.ativo ? "Ativo" : "Inativo"],
                   ["Criticidade", crit.label],
                 ].map(([label, value]) => (
-                  <div key={label}><p className="text-xs text-muted-foreground">{label}</p><p className="text-sm font-medium">{value}</p></div>
+                  <div key={label as string}><p className="text-xs text-muted-foreground">{label}</p><p className="text-sm font-medium">{value}</p></div>
                 ))}
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="perfis" className="mt-4">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-medium">Perfis de Acesso Atribuídos</h3>
+                <Button size="sm" onClick={() => setAtribuirOpen(true)}><Plus className="h-3 w-3 mr-1" /> Atribuir Perfil</Button>
+              </div>
+              {(atribuicoes || []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhum perfil atribuído.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b text-left text-muted-foreground">
+                    <th className="p-3 font-medium">Perfil</th>
+                    <th className="p-3 font-medium">Tipo</th>
+                    <th className="p-3 font-medium">Origem</th>
+                    <th className="p-3 font-medium">Concedido em</th>
+                    <th className="p-3 font-medium w-16">Ação</th>
+                  </tr></thead>
+                  <tbody>
+                    {(atribuicoes || []).map((a: any) => (
+                      <tr key={a.id} className="border-b last:border-0">
+                        <td className="p-3 font-medium">{a.perfis_acesso?.nome || "—"}</td>
+                        <td className="p-3"><Badge variant="outline">{a.perfis_acesso?.tipo || "—"}</Badge></td>
+                        <td className="p-3 text-muted-foreground">{a.origem || "—"}</td>
+                        <td className="p-3 text-muted-foreground text-xs">{new Date(a.data_concessao).toLocaleDateString("pt-BR")}</td>
+                        <td className="p-3">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleRevogar(a.id)}>
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -140,6 +225,31 @@ export default function TerceiroDetalhePage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setRenovarOpen(false)}>Cancelar</Button>
             <Button onClick={() => setRenovarOpen(false)}>Confirmar Renovação</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={atribuirOpen} onOpenChange={setAtribuirOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Atribuir Perfil de Acesso</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Perfil</Label>
+              <Select value={selectedPerfil} onValueChange={setSelectedPerfil}>
+                <SelectTrigger><SelectValue placeholder="Selecione um perfil" /></SelectTrigger>
+                <SelectContent>
+                  {(perfisAcesso || []).filter((p: any) => p.ativo).map((p: any) => (
+                    <SelectItem key={p.id} value={p.id}>{p.nome} ({p.tipo})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAtribuirOpen(false)}>Cancelar</Button>
+            <Button onClick={handleAtribuirPerfil} disabled={!selectedPerfil}>Atribuir</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
