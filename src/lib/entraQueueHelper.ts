@@ -49,9 +49,9 @@ export async function generateEntraQueueForDiff(
       : { data: [] },
   ]);
 
-  const grupoMap = new Map((gruposRes.data ?? []).map((g: any) => [g.id, g]));
-  const licencaMap = new Map((licencasRes.data ?? []).map((l: any) => [l.id, l]));
-  const appMap = new Map((appsRes.data ?? []).map((a: any) => [a.id, a]));
+  const grupoMap = new Map<string, any>((gruposRes.data ?? []).map((g: any) => [g.id, g]));
+  const licencaMap = new Map<string, any>((licencasRes.data ?? []).map((l: any) => [l.id, l]));
+  const appMap = new Map<string, any>((appsRes.data ?? []).map((a: any) => [a.id, a]));
 
   const queueEntries: any[] = [];
 
