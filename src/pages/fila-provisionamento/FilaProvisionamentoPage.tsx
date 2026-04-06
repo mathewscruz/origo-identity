@@ -85,10 +85,17 @@ export default function FilaProvisionamentoPage() {
   async function processEntraQueue() {
     setProcessing(true);
     try {
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/process-iam-queue`,
-        { method: "POST", headers: { "Content-Type": "application/json" } }
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-iam-queue`,
+        {
+          method: "POST",
+          headers: {
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ force: true }),
+        }
       );
       const data = await res.json();
       if (data.error) {

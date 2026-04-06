@@ -35,60 +35,57 @@ async function getAzureToken(tenantId: string, clientId: string, clientSecret: s
   return access_token;
 }
 
+/**
+ * Resolve user in Entra ID using email as primary identifier.
+ * Priority: mail → userPrincipalName → onPremisesSamAccountName (fallback)
+ */
 async function resolveUserId(
   token: string,
-  payload: Record<string, any>
-): Promise<string | null> {
+  email: string | null,
+  samAccountName: string | null
+): Promise<{ userId: string | null; resolvedBy: string }> {
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
-  // Try by mail first, then by userPrincipalName pattern
-  const mail = payload.mail;
-  const sam = payload.samAccountName;
-
-  if (mail) {
-    const res = await fetch(
-      `https://graph.microsoft.com/v1.0/users?$filter=mail eq '${encodeURIComponent(mail)}'&$select=id,displayName,mail`,
-      { headers }
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (data.value && data.value.length > 0) return data.value[0].id;
-    }
-  }
-
-  // Try by userPrincipalName
-  if (sam) {
-    // Try common UPN patterns
-    const upnPatterns = [
-      `${sam}@ebessolar.local`,
-      `${sam}@ebessolar.com.br`,
-      `${sam}@ebes.com.br`,
-    ];
-    for (const upn of upnPatterns) {
-      try {
-        const res = await fetch(
-          `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(upn)}?$select=id`,
-          { headers }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          if (data.id) return data.id;
+  // 1. Try by mail (primary)
+  if (email) {
+    const safeEmail = email.replace(/'/g, "''");
+    const filterUrl = `https://graph.microsoft.com/v1.0/users?$filter=mail eq '${safeEmail}' or userPrincipalName eq '${safeEmail}'&$select=id,displayName,mail,userPrincipalName`;
+    try {
+      const res = await fetch(filterUrl, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.value && data.value.length > 0) {
+          console.log(`[resolveUserId] Found user by email: ${email} → ${data.value[0].id}`);
+          return { userId: data.value[0].id, resolvedBy: `email:${email}` };
         }
-      } catch { /* try next */ }
-    }
-
-    // Try by displayName or onPremisesSamAccountName filter
-    const res = await fetch(
-      `https://graph.microsoft.com/v1.0/users?$filter=onPremisesSamAccountName eq '${encodeURIComponent(sam)}'&$select=id,displayName`,
-      { headers }
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (data.value && data.value.length > 0) return data.value[0].id;
+      } else {
+        const errText = await res.text();
+        console.warn(`[resolveUserId] Graph filter by email failed (${res.status}): ${errText}`);
+      }
+    } catch (e) {
+      console.warn(`[resolveUserId] Error searching by email:`, e);
     }
   }
 
-  return null;
+  // 2. Fallback: try by onPremisesSamAccountName
+  if (samAccountName) {
+    const safeSam = samAccountName.replace(/'/g, "''");
+    try {
+      const res = await fetch(
+        `https://graph.microsoft.com/v1.0/users?$filter=onPremisesSamAccountName eq '${safeSam}'&$select=id,displayName,mail`,
+        { headers }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.value && data.value.length > 0) {
+          console.log(`[resolveUserId] Found user by SAM: ${samAccountName} → ${data.value[0].id}`);
+          return { userId: data.value[0].id, resolvedBy: `sam:${samAccountName}` };
+        }
+      }
+    } catch { /* skip */ }
+  }
+
+  return { userId: null, resolvedBy: `not_found (email: ${email || "N/A"}, sam: ${samAccountName || "N/A"})` };
 }
 
 async function executeAction(
@@ -105,7 +102,6 @@ async function executeAction(
       const groupId = payload.groupId;
       if (!groupId) return { success: false, message: "groupId ausente no payload" };
 
-      // Check if on-prem synced group — skip with clear message
       if (payload.onPremisesSync) {
         return { success: false, message: `Grupo "${payload.groupName || groupId}" é sincronizado do AD local — adicione o membro no AD local e aguarde a replicação` };
       }
@@ -121,13 +117,11 @@ async function executeAction(
       if (res.status === 204 || res.status === 200) {
         return { success: true, message: `Usuário adicionado ao grupo ${payload.groupName || groupId}` };
       }
-      // 400 = already a member
       if (res.status === 400) {
         const err = await res.json().catch(() => ({}));
         if (err?.error?.message?.includes("already exist")) {
           return { success: true, message: `Usuário já é membro do grupo ${payload.groupName || groupId}`, alreadyExists: true };
         }
-        // On-premises mastered group error
         if (err?.error?.message?.includes("on-premises mastered")) {
           return { success: false, message: `Grupo "${payload.groupName || groupId}" é gerenciado pelo AD local — não pode ser alterado via Entra ID` };
         }
@@ -173,7 +167,6 @@ async function executeAction(
         return { success: true, message: `Licença ${payload.licenseName || skuId} atribuída com sucesso` };
       }
       const err = await res.json().catch(() => ({}));
-      // Already assigned
       if (err?.error?.message?.includes("already")) {
         return { success: true, message: `Licença ${payload.licenseName || skuId} já atribuída`, alreadyExists: true };
       }
@@ -201,7 +194,7 @@ async function executeAction(
     }
 
     case "assign_app": {
-      const appId = payload.appId; // Service Principal ID
+      const appId = payload.appId;
       const appRoleId = payload.appRoleId || "00000000-0000-0000-0000-000000000000";
       if (!appId) return { success: false, message: "appId ausente no payload" };
 
@@ -242,7 +235,6 @@ async function executeAction(
         return { success: false, message: `Erro ao remover app: ${errText}` };
       }
 
-      // If no assignmentId, find and remove
       const listRes = await fetch(
         `${graphBase}/servicePrincipals/${appId}/appRoleAssignedTo?$filter=principalId eq '${userId}'`,
         { headers }
@@ -290,6 +282,13 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
+  // Check for force mode from request body
+  let forceMode = false;
+  try {
+    const body = await req.json();
+    forceMode = body?.force === true;
+  } catch { /* no body or invalid JSON — default to non-force */ }
+
   try {
     // Check modo_operacao
     const { data: modoParam } = await supabase
@@ -312,12 +311,18 @@ Deno.serve(async (req) => {
     let totalProcessed = 0;
 
     while (true) {
-      const { data: items, error: fetchErr } = await supabase
+      let query = supabase
         .from("iam_queue")
         .select("*")
         .in("action_type", ENTRA_ACTION_TYPES)
-        .eq("status", "pending")
-        .or("next_retry_at.is.null,next_retry_at.lte." + new Date().toISOString())
+        .eq("status", "pending");
+
+      // In force mode, ignore next_retry_at — process everything pending
+      if (!forceMode) {
+        query = query.or("next_retry_at.is.null,next_retry_at.lte." + new Date().toISOString());
+      }
+
+      const { data: items, error: fetchErr } = await query
         .order("created_at", { ascending: true })
         .limit(50);
 
@@ -327,7 +332,7 @@ Deno.serve(async (req) => {
 
       if (!items || items.length === 0) break;
 
-      console.log(`Processing batch of ${items.length} Entra ID queue items...`);
+      console.log(`Processing batch of ${items.length} Entra ID queue items (force=${forceMode})...`);
 
       for (const item of items) {
         const payload = item.payload_json as Record<string, any>;
@@ -335,8 +340,26 @@ Deno.serve(async (req) => {
         // Mark as processing
         await supabase.from("iam_queue").update({ status: "processing" }).eq("id", item.id);
 
-        // Resolve user in Entra ID
-        const userId = await resolveUserId(token, payload);
+        // Resolve email/name from the database (source of truth), not from payload
+        let email = payload.mail;
+        let samAccount = payload.samAccountName;
+
+        if (item.colaborador_id) {
+          const { data: colab } = await supabase
+            .from("colaboradores")
+            .select("nome, email, sam_account_name")
+            .eq("id", item.colaborador_id)
+            .single();
+
+          if (colab) {
+            email = colab.email || email;
+            samAccount = colab.sam_account_name || samAccount;
+            console.log(`[process] Colaborador ${item.colaborador_id}: email=${email}, sam=${samAccount}, nome=${colab.nome}`);
+          }
+        }
+
+        // Resolve user in Entra ID using email as primary
+        const { userId, resolvedBy } = await resolveUserId(token, email, samAccount);
 
         if (!userId) {
           const retryCount = (item.retry_count || 0) + 1;
@@ -346,11 +369,11 @@ Deno.serve(async (req) => {
             await supabase.from("iam_queue").update({
               status: "failed",
               error_code: "user_not_found",
-              result_message: `Usuário não encontrado no Entra ID após ${maxRetries} tentativas (sam: ${payload.samAccountName}, mail: ${payload.mail})`,
+              result_message: `Usuário não encontrado no Entra ID após ${maxRetries} tentativas. Busca por: ${resolvedBy}`,
               processed_at: new Date().toISOString(),
               processed_by: "lovable_cloud",
             }).eq("id", item.id);
-            allResults.push({ id: item.id, action: item.action_type, status: "failed", message: "User not found - max retries exceeded" });
+            allResults.push({ id: item.id, action: item.action_type, status: "failed", message: `User not found - ${resolvedBy}` });
           } else {
             const nextRetry = calculateNextRetry(retryCount);
             await supabase.from("iam_queue").update({
@@ -358,7 +381,7 @@ Deno.serve(async (req) => {
               retry_count: retryCount,
               next_retry_at: nextRetry,
               error_code: "user_not_found",
-              result_message: `Retry ${retryCount}/${maxRetries} — usuário não encontrado no Entra ID`,
+              result_message: `Retry ${retryCount}/${maxRetries} — Busca por: ${resolvedBy}`,
             }).eq("id", item.id);
             allResults.push({ id: item.id, action: item.action_type, status: "retry", message: `Retry ${retryCount}/${maxRetries}` });
           }
@@ -373,7 +396,7 @@ Deno.serve(async (req) => {
             status: "success",
             processed_at: new Date().toISOString(),
             processed_by: "lovable_cloud",
-            result_message: result.message,
+            result_message: `${result.message} [resolvido por: ${resolvedBy}]`,
             error_code: null,
           }).eq("id", item.id);
           allResults.push({ id: item.id, action: item.action_type, status: "success", message: result.message });
@@ -398,7 +421,7 @@ Deno.serve(async (req) => {
               processed_at: new Date().toISOString(),
               processed_by: "lovable_cloud",
               result_message: result.message,
-              error_code: "graph_api_error",
+              error_code: isNonRetryable ? "on_premises_managed" : "graph_api_error",
             }).eq("id", item.id);
             allResults.push({ id: item.id, action: item.action_type, status: "failed", message: result.message });
           }
@@ -407,7 +430,6 @@ Deno.serve(async (req) => {
 
       totalProcessed += items.length;
 
-      // Safety: if batch was full, there might be more
       if (items.length < 50) break;
     }
 
