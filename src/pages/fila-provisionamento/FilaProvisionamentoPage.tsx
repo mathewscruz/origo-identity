@@ -82,6 +82,27 @@ export default function FilaProvisionamentoPage() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
+  async function processEntraQueue() {
+    setProcessing(true);
+    try {
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/process-iam-queue`,
+        { method: "POST", headers: { "Content-Type": "application/json" } }
+      );
+      const data = await res.json();
+      if (data.error) {
+        toast.error(`Erro: ${data.error}`);
+      } else {
+        toast.success(`Processado: ${data.summary?.success || 0} sucesso, ${data.summary?.retries || 0} retries, ${data.summary?.failures || 0} falhas`);
+        loadData();
+      }
+    } catch (err) {
+      toast.error("Erro ao processar fila Entra ID");
+    }
+    setProcessing(false);
+  }
+
   const filtered = items.filter((item) => {
     if (busca) {
       const displayName = item.payload_json?.displayName || "";
