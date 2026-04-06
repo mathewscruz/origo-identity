@@ -59,15 +59,41 @@ export default function TerceirosPage() {
 
   const handleSave = async () => {
     if (!form.nome.trim()) { toast({ title: "Nome obrigatório", variant: "destructive" }); return; }
-    const payload = { nome: form.nome.trim(), email: form.email || null, empresa_terceira: form.empresa_terceira || null, contrato_inicio: form.contrato_inicio || null, contrato_fim: form.contrato_fim || null, criticidade: form.criticidade as any, responsavel: form.responsavel || null, ativo: form.ativo };
+    if (!editing && !form.sam_account_name.trim()) { toast({ title: "Nome de login AD é obrigatório", variant: "destructive" }); return; }
+    const payload: any = { nome: form.nome.trim(), email: form.email || null, empresa_terceira: form.empresa_terceira || null, contrato_inicio: form.contrato_inicio || null, contrato_fim: form.contrato_fim || null, criticidade: form.criticidade as any, responsavel: form.responsavel || null, ativo: form.ativo, sam_account_name: form.sam_account_name.trim() || null };
     if (editing) {
       const { error } = await supabase.from("terceiros").update(payload).eq("id", editing.id);
       if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
       toast({ title: "Terceiro atualizado" });
     } else {
-      const { error } = await supabase.from("terceiros").insert(payload);
+      const { data: inserted, error } = await supabase.from("terceiros").insert(payload).select("id").single();
       if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
-      toast({ title: "Terceiro criado" });
+      // Generate iam_queue for AD creation
+      if (form.sam_account_name.trim()) {
+        const sam = form.sam_account_name.trim();
+        const nameParts = form.nome.trim().split(" ");
+        await supabase.from("iam_queue" as any).insert({
+          action_type: "create",
+          payload_json: {
+            givenName: nameParts[0] || "",
+            surname: nameParts.slice(1).join(" ") || nameParts[0],
+            displayName: form.nome.trim(),
+            samAccountName: sam,
+            userPrincipalName: `${sam}@ebessolar.local`,
+            mail: form.email || null,
+            department: null,
+            title: "Terceiro",
+            company: form.empresa_terceira || null,
+            telephoneNumber: null,
+            manager: null,
+            ouPath: "",
+          },
+          target_identity: sam,
+          requested_by: "sistema",
+          status: "pending",
+        });
+      }
+      toast({ title: "Terceiro criado — solicitação enviada para processamento" });
     }
     qc.invalidateQueries({ queryKey: ["terceiros"] });
     setDialogOpen(false);
