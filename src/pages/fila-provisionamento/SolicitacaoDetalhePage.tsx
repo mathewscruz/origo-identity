@@ -39,6 +39,7 @@ interface QueueItem {
   result_message: string | null;
   correlation_id: string;
   colaborador_id: string | null;
+  error_code: string | null;
 }
 
 export default function SolicitacaoDetalhePage() {
