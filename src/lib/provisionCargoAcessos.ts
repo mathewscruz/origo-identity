@@ -101,7 +101,7 @@ async function queueProfileAccess(
   // Get groups linked to this profile
   const { data: grupos } = await (supabase as any)
     .from("perfil_grupos")
-    .select("grupo_id, entra_grupos(entra_id, nome)")
+    .select("grupo_id, entra_grupos(entra_id, nome, on_premises_sync)")
     .eq("perfil_id", perfilId);
 
   if (grupos) {
@@ -115,6 +115,7 @@ async function queueProfileAccess(
           mail,
           groupId: g.entra_grupos.entra_id,
           groupName: g.entra_grupos.nome,
+          onPremisesSync: g.entra_grupos.on_premises_sync || false,
           action,
         },
         target_identity: samAccountName,

@@ -464,6 +464,7 @@ export type Database = {
           entra_id: string
           id: string
           nome: string
+          on_premises_sync: boolean
           updated_at: string
         }
         Insert: {
@@ -471,6 +472,7 @@ export type Database = {
           entra_id: string
           id?: string
           nome: string
+          on_premises_sync?: boolean
           updated_at?: string
         }
         Update: {
@@ -478,6 +480,7 @@ export type Database = {
           entra_id?: string
           id?: string
           nome?: string
+          on_premises_sync?: boolean
           updated_at?: string
         }
         Relationships: []

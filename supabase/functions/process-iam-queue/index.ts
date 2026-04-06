@@ -105,6 +105,11 @@ async function executeAction(
       const groupId = payload.groupId;
       if (!groupId) return { success: false, message: "groupId ausente no payload" };
 
+      // Check if on-prem synced group — skip with clear message
+      if (payload.onPremisesSync) {
+        return { success: false, message: `Grupo "${payload.groupName || groupId}" é sincronizado do AD local — adicione o membro no AD local e aguarde a replicação` };
+      }
+
       const res = await fetch(`${graphBase}/groups/${groupId}/members/$ref`, {
         method: "POST",
         headers,
@@ -121,6 +126,10 @@ async function executeAction(
         const err = await res.json().catch(() => ({}));
         if (err?.error?.message?.includes("already exist")) {
           return { success: true, message: `Usuário já é membro do grupo ${payload.groupName || groupId}`, alreadyExists: true };
+        }
+        // On-premises mastered group error
+        if (err?.error?.message?.includes("on-premises mastered")) {
+          return { success: false, message: `Grupo "${payload.groupName || groupId}" é gerenciado pelo AD local — não pode ser alterado via Entra ID` };
         }
         return { success: false, message: `Erro ao adicionar ao grupo: ${err?.error?.message || res.status}` };
       }

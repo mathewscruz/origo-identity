@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
   RefreshCw, CheckCircle, AlertCircle, Cloud, Users,
-  FileUp, Trash2, AlertTriangle, FileSpreadsheet, Clock,
+  FileUp, Trash2, AlertTriangle, FileSpreadsheet, Clock, Shield,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSyncJobsCsv } from "@/hooks/useOrigoData";
@@ -19,6 +19,7 @@ export default function IntegracoesPage() {
   const [csvSyncing, setCsvSyncing] = useState(false);
   const [spSyncing, setSpSyncing] = useState(false);
   const [cleaning, setCleaning] = useState(false);
+  const [groupSyncing, setGroupSyncing] = useState(false);
   const { toast } = useToast();
   const { data: csvJob, refetch: refetchCsv } = useSyncJobsCsv();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -49,6 +50,33 @@ export default function IntegracoesPage() {
     } catch (err: unknown) { toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" }); }
     setSpSyncing(false);
   }, [toast, refetchCsv]);
+
+  const handleSyncGroups = useCallback(async () => {
+    setGroupSyncing(true);
+    try {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-entra-groups`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          "Content-Type": "application/json",
+        },
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        toast({ title: "Erro ao sincronizar grupos", description: body.error || `HTTP ${res.status}`, variant: "destructive" });
+      } else {
+        toast({
+          title: "Grupos sincronizados",
+          description: `${body.total} grupos encontrados: ${body.created} novos, ${body.updated} atualizados, ${body.cloudOnly} cloud-only, ${body.onPremises} on-premises`,
+        });
+      }
+    } catch (err: unknown) {
+      toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
+    }
+    setGroupSyncing(false);
+  }, [toast]);
 
   const handleCleanBase = useCallback(async () => {
     setCleaning(true);
@@ -99,6 +127,25 @@ export default function IntegracoesPage() {
             <RefreshCw className={`mr-2 h-4 w-4 ${spSyncing ? "animate-spin" : ""}`} />{spSyncing ? "Buscando no SharePoint..." : "Executar Agora"}
           </Button>
           {showCsvProgress && <CsvProgressPanel job={csvJob} />}
+        </CardContent>
+      </Card>
+
+      <Card className="border-primary/20">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <Shield className="h-5 w-5 text-primary" />
+            <div><CardTitle className="text-base">Sincronizar Grupos — Entra ID</CardTitle><CardDescription>Puxa todos os grupos do Entra ID (cloud e on-premises) para a base local</CardDescription></div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="text-sm text-muted-foreground space-y-1">
+            <p>Importa todos os grupos do Entra ID via Microsoft Graph API.</p>
+            <p>Grupos <strong>cloud-only</strong> podem ser gerenciados diretamente pelo sistema.</p>
+            <p>Grupos <strong>on-premises</strong> (sincronizados do AD) são identificados automaticamente.</p>
+          </div>
+          <Button onClick={handleSyncGroups} disabled={groupSyncing}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${groupSyncing ? "animate-spin" : ""}`} />{groupSyncing ? "Sincronizando grupos..." : "Sincronizar Grupos do Entra ID"}
+          </Button>
         </CardContent>
       </Card>
 

@@ -19,3 +19,6 @@ verify_jwt = false
 [functions.process-iam-queue]
 verify_jwt = false
 
+[functions.sync-entra-groups]
+verify_jwt = false
+
