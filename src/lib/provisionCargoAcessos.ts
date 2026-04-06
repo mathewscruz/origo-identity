@@ -149,4 +149,31 @@ async function queueProfileAccess(
       });
     }
   }
+
+  // Get apps linked to this profile (with entra_id set)
+  const { data: apps } = await (supabase as any)
+    .from("perfil_aplicacoes")
+    .select("aplicacao_id, aplicacoes(entra_id, nome, default_app_role_id)")
+    .eq("perfil_id", perfilId);
+
+  if (apps) {
+    for (const a of apps) {
+      if (!a.aplicacoes || !a.aplicacoes.entra_id) continue;
+      await supabase.from("iam_queue" as any).insert({
+        action_type: action === "add" ? "assign_app" : "remove_app",
+        payload_json: {
+          samAccountName,
+          displayName,
+          mail,
+          appId: a.aplicacoes.entra_id,
+          appName: a.aplicacoes.nome,
+          appRoleId: a.aplicacoes.default_app_role_id || "00000000-0000-0000-0000-000000000000",
+          action,
+        },
+        target_identity: samAccountName,
+        requested_by: "sistema",
+        status: "pending",
+      });
+    }
+  }
 }

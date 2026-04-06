@@ -299,6 +299,33 @@ async function queueProfileAccess(
       });
     }
   }
+
+  // Apps with entra_id
+  const { data: apps } = await sb
+    .from("perfil_aplicacoes")
+    .select("aplicacao_id, aplicacoes(entra_id, nome, default_app_role_id)")
+    .eq("perfil_id", perfilId);
+
+  if (apps) {
+    for (const a of apps) {
+      if (!a.aplicacoes || !a.aplicacoes.entra_id) continue;
+      await sb.from("iam_queue").insert({
+        action_type: action === "add" ? "assign_app" : "remove_app",
+        payload_json: {
+          samAccountName,
+          displayName,
+          mail,
+          appId: a.aplicacoes.entra_id,
+          appName: a.aplicacoes.nome,
+          appRoleId: a.aplicacoes.default_app_role_id || "00000000-0000-0000-0000-000000000000",
+          action,
+        },
+        target_identity: samAccountName,
+        requested_by: "importacao_csv",
+        status: "pending",
+      });
+    }
+  }
 }
 
 async function processCsvData(sb: any, csvText: string, filename: string) {
