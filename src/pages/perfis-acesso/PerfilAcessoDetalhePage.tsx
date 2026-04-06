@@ -99,59 +99,90 @@ export default function PerfilAcessoDetalhePage() {
 
       toast({ title: "Perfil atualizado" });
 
-      // Re-provision all affected collaborators with proper group/license/app entries
-      try {
-        const { data: affectedColabs } = await supabase
-          .from("perfil_atribuicoes")
-          .select("colaborador_id, colaboradores(nome, email, sam_account_name)")
-          .eq("perfil_id", id!)
-          .eq("ativo", true);
+      // Calculate diff between old and new state
+      const oldGrupoIds = (perfilGrupos ?? []).map((pg: any) => pg.grupo_id as string);
+      const oldLicencaIds = (perfilLicencas ?? []).map((pl: any) => pl.licenca_id as string);
+      const oldAppIds = (perfilApps ?? []).map((pa: any) => pa.aplicacao_id as string);
 
-        if (affectedColabs && affectedColabs.length > 0) {
-          for (const a of affectedColabs) {
-            const colab = a.colaboradores as any;
-            const sam = colab?.sam_account_name || "";
-            if (!sam || !a.colaborador_id) continue;
+      const addedGrupos = editForm.grupo_ids.filter(gid => !oldGrupoIds.includes(gid));
+      const removedGrupos = oldGrupoIds.filter(gid => !editForm.grupo_ids.includes(gid));
+      const addedLicencas = editForm.licenca_ids.filter(lid => !oldLicencaIds.includes(lid));
+      const removedLicencas = oldLicencaIds.filter(lid => !editForm.licenca_ids.includes(lid));
+      const addedApps = editForm.aplicacao_ids.filter(aid => !oldAppIds.includes(aid));
+      const removedApps = oldAppIds.filter(aid => !editForm.aplicacao_ids.includes(aid));
 
-            // Remove old access then re-assign new — the Edge Function handles idempotency
-            // Generate remove entries for old config, then assign entries for new config
-            // Since we just saved new config, generate assign entries for current state
-            // Generate assign_group for each new grupo
-            for (const gid of editForm.grupo_ids) {
-              const grp = (entraGrupos ?? []).find((g: any) => g.id === gid);
-              if (!grp) continue;
-              await supabase.from("iam_queue" as any).insert({
-                action_type: "assign_group",
-                payload_json: { samAccountName: sam, displayName: colab?.nome || "", mail: colab?.email || "", groupId: grp.entra_id, groupName: grp.nome, onPremisesSync: grp.on_premises_sync || false },
-                target_identity: sam, requested_by: "sistema", colaborador_id: a.colaborador_id, status: "pending",
-              });
+      const hasChanges = addedGrupos.length + removedGrupos.length + addedLicencas.length + removedLicencas.length + addedApps.length + removedApps.length > 0;
+
+      if (hasChanges) {
+        try {
+          // Get all collaborators with active assignment to this profile (direct + via cargo)
+          const { data: affectedColabs } = await supabase
+            .from("perfil_atribuicoes")
+            .select("colaborador_id, colaboradores(nome, email, sam_account_name)")
+            .eq("perfil_id", id!)
+            .eq("ativo", true);
+
+          if (affectedColabs && affectedColabs.length > 0) {
+            const queueEntries: any[] = [];
+
+            for (const a of affectedColabs) {
+              const colab = a.colaboradores as any;
+              if (!a.colaborador_id || !colab) continue;
+
+              const base = {
+                target_identity: colab.sam_account_name || colab.email || "",
+                requested_by: "sistema",
+                colaborador_id: a.colaborador_id,
+                status: "pending",
+              };
+
+              // Added groups
+              for (const gid of addedGrupos) {
+                const grp = (entraGrupos ?? []).find((g: any) => g.id === gid);
+                if (!grp) continue;
+                queueEntries.push({ ...base, action_type: "assign_group", payload_json: { displayName: colab.nome, mail: colab.email || "", groupId: grp.entra_id, groupName: grp.nome, onPremisesSync: grp.on_premises_sync || false } });
+              }
+              // Removed groups
+              for (const gid of removedGrupos) {
+                const grp = (entraGrupos ?? []).find((g: any) => g.id === gid) || (perfilGrupos ?? []).find((pg: any) => pg.grupo_id === gid)?.entra_grupos;
+                if (!grp) continue;
+                const entraId = grp.entra_id || grp.entra_id;
+                queueEntries.push({ ...base, action_type: "remove_group", payload_json: { displayName: colab.nome, mail: colab.email || "", groupId: entraId, groupName: grp.nome } });
+              }
+              // Added licenses
+              for (const lid of addedLicencas) {
+                const lic = (entraLicencas ?? []).find((l: any) => l.id === lid);
+                if (!lic) continue;
+                queueEntries.push({ ...base, action_type: "assign_license", payload_json: { displayName: colab.nome, mail: colab.email || "", skuId: lic.sku_id, licenseName: lic.nome } });
+              }
+              // Removed licenses
+              for (const lid of removedLicencas) {
+                const lic = (entraLicencas ?? []).find((l: any) => l.id === lid) || (perfilLicencas ?? []).find((pl: any) => pl.licenca_id === lid)?.entra_licencas;
+                if (!lic) continue;
+                queueEntries.push({ ...base, action_type: "remove_license", payload_json: { displayName: colab.nome, mail: colab.email || "", skuId: lic.sku_id, licenseName: lic.nome } });
+              }
+              // Added apps
+              for (const aid of addedApps) {
+                const app = (aplicacoes ?? []).find((a: any) => a.id === aid);
+                if (!app?.entra_id) continue;
+                queueEntries.push({ ...base, action_type: "assign_app", payload_json: { displayName: colab.nome, mail: colab.email || "", appId: app.entra_id, appName: app.nome, appRoleId: app.default_app_role_id || "00000000-0000-0000-0000-000000000000" } });
+              }
+              // Removed apps
+              for (const aid of removedApps) {
+                const app = (aplicacoes ?? []).find((a: any) => a.id === aid);
+                if (!app?.entra_id) continue;
+                queueEntries.push({ ...base, action_type: "remove_app", payload_json: { displayName: colab.nome, mail: colab.email || "", appId: app.entra_id, appName: app.nome } });
+              }
             }
-            // Generate assign_license for each new licenca
-            for (const lid of editForm.licenca_ids) {
-              const lic = (entraLicencas ?? []).find((l: any) => l.id === lid);
-              if (!lic) continue;
-              await supabase.from("iam_queue" as any).insert({
-                action_type: "assign_license",
-                payload_json: { samAccountName: sam, displayName: colab?.nome || "", mail: colab?.email || "", skuId: lic.sku_id, licenseName: lic.nome },
-                target_identity: sam, requested_by: "sistema", colaborador_id: a.colaborador_id, status: "pending",
-              });
-            }
-            // Generate assign_app for each new app with entra_id
-            for (const aid of editForm.aplicacao_ids) {
-              const app = (aplicacoes ?? []).find((a: any) => a.id === aid);
-              if (!app?.entra_id) continue;
-              await supabase.from("iam_queue" as any).insert({
-                action_type: "assign_app",
-                payload_json: { samAccountName: sam, displayName: colab?.nome || "", mail: colab?.email || "", appId: app.entra_id, appName: app.nome, appRoleId: app.default_app_role_id || "00000000-0000-0000-0000-000000000000" },
-                target_identity: sam, requested_by: "sistema", colaborador_id: a.colaborador_id, status: "pending",
-              });
+
+            if (queueEntries.length > 0) {
+              await supabase.from("iam_queue" as any).insert(queueEntries);
+              toast({ title: `${queueEntries.length} ação(ões) gerada(s) para o Entra ID` });
             }
           }
-          const count = affectedColabs.filter((a: any) => (a.colaboradores as any)?.sam_account_name).length;
-          if (count > 0) toast({ title: `${count} colaborador(es) sendo atualizado(s) no Entra ID` });
+        } catch (err) {
+          console.error("Queue insert error:", err);
         }
-      } catch (err) {
-        console.error("Queue insert error:", err);
       }
 
       queryClient.invalidateQueries({ queryKey: ["perfil_acesso", id] });
