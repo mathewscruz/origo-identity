@@ -1,226 +1,89 @@
 
-## Plano: corrigir e simplificar todo o fluxo Perfil -> Cargo -> Colaborador -> fila -> Entra ID
 
-### Diagnóstico validado
+## Plano: Excluir eventos JML e corrigir o fluxo de provisionamento
 
-Há mais de um ponto quebrando o fluxo hoje. O principal problema não é só “processar a fila”, e sim a combinação de inconsistências na geração das ações.
+### Parte 1 — Excluir todos os eventos JML
 
-#### 1. `provisionCargoAcessos.ts` ainda está inconsistente e hoje é um ponto de risco
-O arquivo continua com problemas estruturais:
-- ele ainda gera fila manualmente em vez de reutilizar o helper central;
-- depende de selects aninhados como `entra_grupos(...)`, `entra_licencas(...)` e `aplicacoes(...)`, em um projeto onde várias relações não têm FK confiável;
-- é justamente o arquivo que já apresentou erro de TypeScript antes.
+Executar SQL para deletar em cascata:
+1. `DELETE FROM evento_jml_aprovacoes`
+2. `DELETE FROM evento_jml_acoes`
+3. `DELETE FROM eventos_jml`
 
-Isso o torna frágil e propenso a “salvar cargo mas não gerar nada”.
+### Parte 2 — Causa raiz do provisionamento que não funciona
 
-#### 2. Existem dois motores diferentes de geração da `iam_queue`
-Hoje o sistema mistura:
-- um fluxo novo e melhor em `src/lib/entraQueueHelper.ts`
-- vários fluxos antigos que inserem em `iam_queue` manualmente
+Identifiquei **dois problemas distintos**:
 
-Isso aparece em:
-- `src/lib/provisionCargoAcessos.ts`
-- `src/pages/colaboradores/ColaboradorDetalhePage.tsx`
-- outros pontos que ainda fazem `supabase.from("iam_queue").insert(...)`
+#### Problema A: A tela de lista de perfis (PerfisAcessoPage.tsx) não gera nenhuma ação
 
-Resultado:
-- payloads diferentes
-- regra de identidade diferente
-- diffs inconsistentes
-- mais chance de esquecer grupos/licenças/apps em algum caminho
+O dialog "Editar Perfil" que aparece na tela de **lista** de perfis (`PerfisAcessoPage.tsx`, linhas 80-120) faz:
+- salva `perfis_acesso`
+- sincroniza `perfil_aplicacoes`, `perfil_licencas`, `perfil_grupos`
+- exibe toast e fecha
 
-#### 3. O fluxo de edição de perfil está parcialmente certo, mas ainda depende de um estado materializado paralelo
-`PerfilAcessoDetalhePage.tsx` já usa `findAffectedCollaborators()` e `generateEntraQueueForDiff()`, o que é melhor.
+Mas **não calcula diff**, **não busca colaboradores afetados** e **não insere nada na `iam_queue`**. Quando o usuario edita o perfil pela lista, zero ações são geradas.
 
-Mas o fluxo geral ainda depende de `perfil_atribuicoes` materializada por cargo em vários momentos. Se essa materialização falhar, duplicar ou ficar desatualizada, o sistema entra em estado inconsistente.
+Apenas a página de **detalhe** do perfil (`PerfilAcessoDetalhePage.tsx`) tem essa lógica.
 
-#### 4. O caminho “cargo mudou no colaborador” usa uma lógica antiga diferente do caminho “perfil mudou”
-Hoje:
-- editar perfil usa `generateEntraQueueForDiff`
-- editar cargo usa `reprovisionCargoCollaborators`
-- alterar colaborador/cargo usa `provisionCargoAcessos`
+#### Problema B: As ações que chegam ao Entra ID estão falhando
 
-Ou seja: três caminhos com responsabilidades parecidas, mas implementações diferentes.
-
-#### 5. Há um indício forte de falha de resolução de relação na lógica antiga
-Em `provisionCargoAcessos.ts`, os selects usam:
-```ts
-.select("grupo_id, entra_grupos(entra_id, nome, on_premises_sync)")
-.select("licenca_id, entra_licencas(sku_id, nome)")
-.select("aplicacao_id, aplicacoes(entra_id, nome, default_app_role_id)")
+Os logs da Edge Function mostram:
+```
+Processing batch of 2 Entra ID queue items (force=true)
+[resolveUserId] Found user by email → 2eefb39b-...
+Done: 0 success, 0 retries, 2 failures
 ```
 
-Como o projeto já sofre com ausência de FK em outras tabelas, esse padrão é um candidato forte a retornar objetos nulos silenciosamente e gerar zero ações, mesmo havendo itens no perfil.
+O usuario é encontrado por e-mail, mas a ação falha. Não há log de detalhe do erro. A Edge Function precisa logar a mensagem de erro retornada pela `executeAction` para que seja possível diagnosticar (pode ser permissão insuficiente no grupo, grupo inexistente, etc).
 
-#### 6. O processamento da Edge Function está funcionando, mas está recebendo pouco ou nada
-Os logs mostram:
-```text
-Processing batch of 2 Entra ID queue items
-Found user by email
-Done: 0 success, 2 retries
-```
+### O que será ajustado
 
-Ou seja:
-- o backend está tentando processar
-- o usuário está sendo encontrado por e-mail
-- o gargalo atual está antes: geração incompleta, inconsistente ou inexistente da fila
+#### 1. Adicionar lógica de provisioning na lista de perfis
+**Arquivo:** `src/pages/perfis-acesso/PerfisAcessoPage.tsx`
 
-### Estratégia de correção
+Ao editar um perfil existente, o `handleSave` passará a:
+- capturar o estado anterior (grupo_ids, licenca_ids, aplicacao_ids antigos vs novos)
+- calcular diff
+- chamar `findAffectedCollaborators(perfilId)` para descobrir todos os colaboradores impactados (direto + via cargo)
+- chamar `generateEntraQueueForDiff(colabs, diff)` para gerar assign/remove
+- disparar `triggerEntraProcessing()`
 
-## Objetivo final
-Toda alteração que impactar acesso efetivo do usuário deve:
-1. descobrir os colaboradores afetados
-2. calcular o delta real
-3. gerar `assign_*` e `remove_*`
-4. disparar processamento imediato
+Isso alinha o comportamento da lista com o da página de detalhe.
 
-Isso deve valer para:
-- editar perfil de acesso
-- editar cargo
-- trocar cargo do colaborador
-- atribuir/revogar perfil manualmente
-- reativar usuário
+#### 2. Adicionar logging detalhado na Edge Function
+**Arquivo:** `supabase/functions/process-iam-queue/index.ts`
 
-## O que será ajustado
+Adicionar `console.log` com o resultado da `executeAction` (success/failure + message) para cada item processado, antes de atualizar o status. Isso permitirá diagnosticar exatamente porque os 2 itens estão falhando.
 
-### 1. Transformar `entraQueueHelper.ts` no único motor oficial
-**Arquivo:** `src/lib/entraQueueHelper.ts`
+#### 3. Excluir todos os eventos JML
+**Script SQL:** DELETE cascata nas 3 tabelas de eventos JML.
 
-Vou consolidar nele:
-- descoberta de colaboradores afetados
-- leitura de composição de perfil
-- geração de diff
-- enfileiramento de grupos/licenças/apps
-- disparo imediato
-
-Além do que já existe, ele deve ganhar funções utilitárias como:
-- `getPerfilResourceIds(perfilId)`
-- `queuePerfilAssignments(colabs, perfilIds, mode)`
-- `queueSinglePerfilDiffForAffectedUsers(perfilId, oldState, newState)`
-
-Assim todo o sistema usa uma única regra.
-
-### 2. Reescrever `provisionCargoAcessos.ts` para parar de inserir fila manualmente
-**Arquivo:** `src/lib/provisionCargoAcessos.ts`
-
-Esse arquivo deve virar apenas um orquestrador de alto nível:
-- revoga atribuições de cargo antigas
-- materializa novas atribuições
-- busca os perfis do cargo
-- chama o helper central para gerar assign/remove
-
-Sem:
-- joins aninhados frágeis
-- inserts manuais na `iam_queue`
-- lógica duplicada por tipo de recurso
-
-Isso também elimina os erros de TypeScript e simplifica manutenção.
-
-### 3. Fazer `CargosPage.tsx` usar somente o fluxo central
-**Arquivo:** `src/pages/configuracoes/CargosPage.tsx`
-
-Ao salvar alterações no cargo:
-- calcular `toAdd` e `toRemove`
-- persistir `cargo_perfis`
-- chamar uma função central para reprovisionar os colaboradores daquele cargo
-- invalidar queries e fechar o dialog
-
-A lógica principal continuará, mas ficará dependente apenas do helper central e não de múltiplos caminhos paralelos.
-
-### 4. Endurecer `PerfilAcessoDetalhePage.tsx`
-**Arquivo:** `src/pages/perfis-acesso/PerfilAcessoDetalhePage.tsx`
-
-A página já está próxima do correto, mas vou ajustar para:
-- capturar o estado antigo antes de qualquer delete/insert
-- persistir novo estado
-- calcular delta de forma explícita e confiável
-- usar somente o helper central
-- disparar processamento imediato só se houve ações geradas
-
-Também vale remover imports não usados, como `provisionCargoAcessos`, se realmente não for utilizado ali.
-
-### 5. Corrigir `ColaboradorDetalhePage.tsx`
-**Arquivo:** `src/pages/colaboradores/ColaboradorDetalhePage.tsx`
-
-Hoje ele ainda faz inserts manuais na `iam_queue` e ainda amarra parte do fluxo ao `sam`.
-
-Vou trocar por helper central para:
-- atribuição manual de perfil
-- revogação manual de perfil
-
-Assim o colaborador também segue a regra correta:
-- e-mail como identidade principal
-- mesmo payload
-- mesmo tratamento de grupos on-premises
-- mesmo trigger imediato
-
-### 6. Revisar `ColaboradoresPage.tsx`
-**Arquivo:** `src/pages/colaboradores/ColaboradoresPage.tsx`
-
-Quando o cargo do colaborador muda:
-- `provisionCargoAcessos()` precisa refletir exatamente o diff do cargo anterior vs novo cargo
-- se o usuário for reativado, reexecutar o provisionamento corretamente
-- o texto de toast precisa deixar de sugerir que só `sam` importa, porque para Entra o principal agora é e-mail
-
-### 7. Padronizar regra de identidade
-**Arquivos afetados:** helper central + páginas que ainda montam payload
-
-Regra única:
-- Entra ID: `email` primeiro, `sam_account_name` como fallback
-- payload sempre com `displayName` vindo do nome atual do colaborador
-- `target_identity` consistente com a identidade usada para resolução
-- sem depender de nome para localizar usuário
-
-### 8. Simplificar a arquitetura
-Em vez de múltiplos caminhos, o sistema ficará assim:
+### Detalhe técnico
 
 ```text
-Mudança em perfil
--> descobrir afetados (direto + cargo)
--> calcular diff
--> gerar assign/remove
--> processar imediatamente
+Hoje (lista de perfis):
+editar perfil → salvar perfil_grupos/licencas/aplicacoes → fechar dialog
+→ zero ações no Entra ID
 
-Mudança em cargo
--> descobrir colaboradores do cargo
--> materializar/revogar perfil_atribuicoes origem=cargo
--> expandir perfis afetados
--> gerar assign/remove
--> processar imediatamente
-
-Mudança de cargo no colaborador
--> revogar perfis do cargo antigo
--> materializar perfis do cargo novo
--> gerar assign/remove
--> processar imediatamente
+Depois (lista de perfis):
+editar perfil → salvar perfil_grupos/licencas/aplicacoes
+→ calcular diff (adicionados vs removidos)
+→ buscar afetados (perfil_atribuicoes + cargo_perfis → colaboradores)
+→ gerar assign_*/remove_*
+→ triggerEntraProcessing()
 ```
 
 ### Arquivos principais
 
 | Ação | Arquivo |
 |---|---|
-| Consolidar motor central | `src/lib/entraQueueHelper.ts` |
-| Reescrever orquestração de cargo por colaborador | `src/lib/provisionCargoAcessos.ts` |
-| Ajustar edição de cargos | `src/pages/configuracoes/CargosPage.tsx` |
-| Ajustar edição de perfil | `src/pages/perfis-acesso/PerfilAcessoDetalhePage.tsx` |
-| Remover inserts manuais no detalhe do colaborador | `src/pages/colaboradores/ColaboradorDetalhePage.tsx` |
-| Alinhar troca de cargo/reativação | `src/pages/colaboradores/ColaboradoresPage.tsx` |
+| Adicionar provisioning na edição via lista | `src/pages/perfis-acesso/PerfisAcessoPage.tsx` |
+| Adicionar logs detalhados de erro | `supabase/functions/process-iam-queue/index.ts` |
+| Excluir eventos JML | Script SQL (3 DELETEs) |
 
 ### Ordem de implementação
 
-1. Fortalecer `entraQueueHelper.ts` como fonte única
-2. Reescrever `provisionCargoAcessos.ts` para usar apenas o helper
-3. Ajustar `CargosPage.tsx`
-4. Ajustar `PerfilAcessoDetalhePage.tsx`
-5. Ajustar `ColaboradorDetalhePage.tsx`
-6. Revisar `ColaboradoresPage.tsx`
-7. Validar todos os caminhos de mudança com processamento imediato
+1. Excluir eventos JML (SQL)
+2. Adicionar diff + provisioning em `PerfisAcessoPage.tsx`
+3. Adicionar logging detalhado na Edge Function
+4. Re-deploy da Edge Function
 
-### Resultado esperado
-
-Depois dessa correção:
-- adicionar ou remover grupo/licença/app em um perfil refletirá em todos os usuários impactados pelo cargo
-- adicionar ou remover um perfil de um cargo refletirá nos usuários daquele cargo
-- trocar o cargo do colaborador aplicará exatamente o delta correto
-- o sistema ficará mais simples, com um único motor de geração de fila
-- o Entra ID será acionado imediatamente após cada mudança relevante
