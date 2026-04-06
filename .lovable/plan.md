@@ -1,33 +1,51 @@
 
 
-## Plano: Corrigir provisionamento quando sam_account_name esta ausente
+## Diagnostico: Solicitacoes falharam no agente PowerShell
+
+### Situacao atual
+
+O sistema importou seu usuario corretamente e gerou **3 solicitacoes** na fila:
+
+| action_type | status | error_code | result_message |
+|---|---|---|---|
+| `create_if_not_exists` | failed | AD_AGENT_ERROR | "action_type invalido: create_if_not_exists" |
+| `assign_group` | failed | AD_AGENT_ERROR | "action_type invalido: assign_group" |
+| `assign_license` | failed | AD_AGENT_ERROR | "action_type invalido: assign_license" |
+
+Os payloads estao **corretos e completos**:
+- `assign_group` → grupo "TI - INFRA N1 MANAGERS" (entra_id: `00c5e54e-577d-49fb-bddb-e9bbd49c9087`)
+- `assign_license` → licenca "SPE_E3" (sku_id: `05e9a617-0261-4cee-bb44-138d3ef5d965`)
 
 ### Causa raiz
 
-O colaborador "Teste IAM 6" tem `sam_account_name = ""` no banco. A funcao `provisionCargoAcessos` exige esse campo para gerar entradas `assign_group`/`assign_license` na `iam_queue`. Como o campo esta vazio, o provisionamento de grupos/licencas e silenciosamente ignorado.
+O agente PowerShell so reconhece `create`, `update`, `disable`, `delete`. Os novos tipos (`create_if_not_exists`, `assign_group`, `assign_license`) nao estao implementados no script do agente.
 
-### Correcoes
+Alem disso, o retry nao recolocou as solicitacoes na fila porque `AD_AGENT_ERROR` nao esta na lista de erros retentaveis.
 
-#### 1. Validacao obrigatoria no formulario (ColaboradoresPage.tsx)
+### Correcoes necessarias
 
-Ao salvar qualquer colaborador (novo ou edicao), se `sam_account_name` estiver vazio **e** o colaborador tiver cargo atribuido, exibir erro e impedir o salvamento. Mensagem: "Nome de login AD e obrigatorio para provisionamento de acessos".
+#### 1. Adicionar `AD_AGENT_ERROR` a lista de erros retentaveis (iam-agent-api)
 
-#### 2. Alerta visual quando sam_account_name esta ausente
+Na edge function, adicionar `"AD_AGENT_ERROR"` ao array `RETRYABLE_ERRORS`. Isso permite que quando o agente for atualizado, as solicitacoes sejam reprocessadas automaticamente.
 
-Na listagem de colaboradores, exibir um indicador visual (icone de alerta) ao lado de colaboradores que possuem cargo mas nao possuem `sam_account_name` preenchido.
+#### 2. Recolocar as 3 solicitacoes na fila
 
-#### 3. Feedback explicito quando provisionamento e ignorado (provisionCargoAcessos.ts)
+Atualizar as 3 entradas com `status = 'pending'`, `error_code = null`, `retry_count = 0` para que voltem a ser entregues ao agente.
 
-Quando `sam` estiver vazio, em vez de silenciosamente pular a geracao de `iam_queue`, logar no console e retornar uma flag indicando que o provisionamento de diretorio foi ignorado. O chamador pode exibir um toast de aviso.
+#### 3. Voce precisa atualizar o agente PowerShell
 
-#### 4. Correcao imediata dos dados
+O script PowerShell no seu servidor precisa tratar os seguintes `action_type`:
 
-O usuario precisa editar o "Teste IAM 6" e preencher o campo "Nome de login AD" com o valor correto (ex: `teste.iam6`). Ao salvar, o sistema automaticamente gerara as entradas `assign_group` para o perfil vinculado ao cargo.
+- **`create_if_not_exists`**: Verificar se o usuario ja existe no AD (por `samAccountName`). Se existir, retornar sucesso. Se nao, criar.
+- **`assign_group`**: Chamar Microsoft Graph para adicionar o usuario ao grupo do Entra ID usando `groupId` do payload.
+- **`assign_license`**: Chamar Microsoft Graph para atribuir a licenca usando `skuId` do payload.
+- **`remove_group`**: Remover usuario do grupo no Entra ID.
+- **`remove_license`**: Remover licenca do usuario no Entra ID.
 
 ### Resumo de arquivos
 
 | Acao | Arquivo |
 |---|---|
-| Editar | `src/pages/colaboradores/ColaboradoresPage.tsx` — tornar sam_account_name obrigatorio quando cargo esta presente; alerta visual na listagem |
-| Editar | `src/lib/provisionCargoAcessos.ts` — retornar flag `skippedDirectory` quando sam vazio |
+| Editar | `supabase/functions/iam-agent-api/index.ts` — adicionar `AD_AGENT_ERROR` aos erros retentaveis |
+| Script SQL | Reset das 3 solicitacoes para `pending` |
 
