@@ -30,15 +30,12 @@ interface EntraGroup {
   displayName: string;
   description: string | null;
   onPremisesSyncEnabled: boolean | null;
-  mailEnabled: boolean;
-  securityEnabled: boolean;
-  groupTypes: string[];
 }
 
 async function fetchAllGroups(token: string): Promise<EntraGroup[]> {
   const headers = { Authorization: `Bearer ${token}` };
   const allGroups: EntraGroup[] = [];
-  let url: string | null = "https://graph.microsoft.com/v1.0/groups?$select=id,displayName,description,onPremisesSyncEnabled,mailEnabled,securityEnabled,groupTypes&$top=999";
+  let url: string | null = "https://graph.microsoft.com/v1.0/groups?$select=id,displayName,description,onPremisesSyncEnabled&$top=999";
 
   while (url) {
     const res = await fetch(url, { headers });
@@ -49,6 +46,7 @@ async function fetchAllGroups(token: string): Promise<EntraGroup[]> {
     const data = await res.json();
     if (data.value) {
       allGroups.push(...data.value);
+      console.log(`Fetched page with ${data.value.length} groups (total so far: ${allGroups.length})`);
     }
     url = data["@odata.nextLink"] || null;
   }
@@ -81,67 +79,44 @@ Deno.serve(async (req) => {
     console.log("Token acquired, fetching all groups from Entra ID...");
 
     const groups = await fetchAllGroups(token);
-    console.log(`Found ${groups.length} groups in Entra ID`);
+    const onPremCount = groups.filter(g => g.onPremisesSyncEnabled === true).length;
+    console.log(`Graph API returned ${groups.length} groups total (${onPremCount} on-premises, ${groups.length - onPremCount} cloud-only)`);
 
-    let created = 0;
-    let updated = 0;
-    let skipped = 0;
+    // Batch upsert in chunks of 500
+    const BATCH = 500;
+    let upserted = 0;
 
-    for (const group of groups) {
-      const isOnPrem = group.onPremisesSyncEnabled === true;
+    for (let i = 0; i < groups.length; i += BATCH) {
+      const batch = groups.slice(i, i + BATCH).map(g => ({
+        entra_id: g.id,
+        nome: g.displayName,
+        descricao: g.description || null,
+        on_premises_sync: g.onPremisesSyncEnabled === true,
+        updated_at: new Date().toISOString(),
+      }));
 
-      // Check if group already exists by entra_id
-      const { data: existing } = await supabase
+      const { error } = await supabase
         .from("entra_grupos")
-        .select("id, nome, descricao, on_premises_sync")
-        .eq("entra_id", group.id)
-        .maybeSingle();
+        .upsert(batch, { onConflict: "entra_id" });
 
-      if (existing) {
-        // Update if name, description or on_premises_sync changed
-        const needsUpdate =
-          existing.nome !== group.displayName ||
-          existing.descricao !== (group.description || null) ||
-          existing.on_premises_sync !== isOnPrem;
-
-        if (needsUpdate) {
-          await supabase
-            .from("entra_grupos")
-            .update({
-              nome: group.displayName,
-              descricao: group.description || null,
-              on_premises_sync: isOnPrem,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", existing.id);
-          updated++;
-        } else {
-          skipped++;
-        }
-      } else {
-        // Insert new group
-        await supabase.from("entra_grupos").insert({
-          entra_id: group.id,
-          nome: group.displayName,
-          descricao: group.description || null,
-          on_premises_sync: isOnPrem,
-        });
-        created++;
+      if (error) {
+        console.error(`Upsert batch ${i}-${i + batch.length} failed:`, error.message);
+        throw new Error(`Upsert failed: ${error.message}`);
       }
+
+      upserted += batch.length;
+      console.log(`Upserted batch ${Math.floor(i / BATCH) + 1}: ${upserted}/${groups.length}`);
     }
 
     const result = {
       success: true,
       total: groups.length,
-      created,
-      updated,
-      skipped,
-      onPremises: groups.filter(g => g.onPremisesSyncEnabled === true).length,
-      cloudOnly: groups.filter(g => g.onPremisesSyncEnabled !== true).length,
+      upserted,
+      onPremises: onPremCount,
+      cloudOnly: groups.length - onPremCount,
     };
 
     console.log(`Sync complete: ${JSON.stringify(result)}`);
-
     return new Response(JSON.stringify(result), { headers: corsHeaders });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro desconhecido";
