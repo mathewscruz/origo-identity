@@ -6,7 +6,7 @@ const corsHeaders = {
   "Content-Type": "application/json",
 };
 
-const RETRYABLE_ERRORS = ["user_not_found", "user_not_synced", "not_found_in_entra", "replication_pending"];
+const RETRYABLE_ERRORS = ["user_not_found", "user_not_synced", "not_found_in_entra", "replication_pending", "AD_AGENT_ERROR"];
 
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
