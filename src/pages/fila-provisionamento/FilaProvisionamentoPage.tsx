@@ -50,6 +50,7 @@ interface QueueItem {
 export default function FilaProvisionamentoPage() {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(false);
   const [busca, setBusca] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
   const [actionFilter, setActionFilter] = useState("todos");
