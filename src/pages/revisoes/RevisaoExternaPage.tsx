@@ -125,6 +125,7 @@ export default function RevisaoExternaPage() {
 
     toast({ title: "Revisão salva com sucesso" });
     setSaving(false);
+    if (revogados > 0) triggerEntraProcessing();
   };
 
   if (loading) return <div className="flex items-center justify-center min-h-screen"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
