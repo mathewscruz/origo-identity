@@ -10,9 +10,10 @@ export async function provisionCargoAcessos(
   colaboradorId: string,
   newCargoId: string | null,
   oldCargoId: string | null
-): Promise<{ provisioned: number; revoked: number }> {
+): Promise<{ provisioned: number; revoked: number; skippedDirectory: boolean }> {
   let revoked = 0;
   let provisioned = 0;
+  let skippedDirectory = false;
 
   // Get colaborador sam_account_name for iam_queue
   const { data: colab } = await (supabase as any)
