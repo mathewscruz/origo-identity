@@ -340,7 +340,7 @@ export default function ColaboradorDetalhePage() {
                         </td>
                         <td className="p-4 text-muted-foreground">{new Date(a.data_concessao).toLocaleDateString("pt-BR")}</td>
                         <td className="p-4">
-                          <Button variant="ghost" size="sm" className="h-7 text-destructive hover:text-destructive" onClick={() => handleRevogar(a.id)}>
+                          <Button variant="ghost" size="sm" className="h-7 text-destructive hover:text-destructive" onClick={() => handleRevogar(a.id, a.perfil_id)}>
                             <XCircle className="mr-1 h-3 w-3" /> Revogar
                           </Button>
                         </td>
