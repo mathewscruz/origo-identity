@@ -84,6 +84,23 @@ export default function PerfisAcessoPage() {
     try {
       const payload = { nome: form.nome.trim(), descricao: form.descricao.trim() || null, tipo: form.tipo as any, ativo: form.ativo };
       let perfilId = editingId;
+
+      // Capture old state BEFORE any changes (only for edits)
+      let oldGrupoIds: string[] = [];
+      let oldLicencaIds: string[] = [];
+      let oldAppIds: string[] = [];
+
+      if (editingId) {
+        const [oldG, oldL, oldA] = await Promise.all([
+          (supabase as any).from("perfil_grupos").select("grupo_id").eq("perfil_id", editingId),
+          (supabase as any).from("perfil_licencas").select("licenca_id").eq("perfil_id", editingId),
+          (supabase as any).from("perfil_aplicacoes").select("aplicacao_id").eq("perfil_id", editingId),
+        ]);
+        oldGrupoIds = (oldG.data ?? []).map((r: any) => r.grupo_id);
+        oldLicencaIds = (oldL.data ?? []).map((r: any) => r.licenca_id);
+        oldAppIds = (oldA.data ?? []).map((r: any) => r.aplicacao_id);
+      }
+
       if (editingId) {
         const { error } = await supabase.from("perfis_acesso").update(payload).eq("id", editingId);
         if (error) throw error;
@@ -109,6 +126,37 @@ export default function PerfisAcessoPage() {
       await (supabase as any).from("perfil_grupos").delete().eq("perfil_id", perfilId);
       if (form.grupo_ids.length > 0) {
         await (supabase as any).from("perfil_grupos").insert(form.grupo_ids.map(gid => ({ perfil_id: perfilId, grupo_id: gid })));
+      }
+
+      // --- Entra ID provisioning: calculate diff and generate queue entries ---
+      if (perfilId) {
+        const newGrupoIds = form.grupo_ids;
+        const newLicencaIds = form.licenca_ids;
+        const newAppIds = form.aplicacao_ids;
+
+        const diff = {
+          addedGrupoIds: newGrupoIds.filter(id => !oldGrupoIds.includes(id)),
+          removedGrupoIds: oldGrupoIds.filter(id => !newGrupoIds.includes(id)),
+          addedLicencaIds: newLicencaIds.filter(id => !oldLicencaIds.includes(id)),
+          removedLicencaIds: oldLicencaIds.filter(id => !newLicencaIds.includes(id)),
+          addedAppIds: newAppIds.filter(id => !oldAppIds.includes(id)),
+          removedAppIds: oldAppIds.filter(id => !newAppIds.includes(id)),
+        };
+
+        const hasDiff = Object.values(diff).some(arr => arr.length > 0);
+
+        if (hasDiff) {
+          try {
+            const colabs = await findAffectedCollaborators(perfilId);
+            if (colabs.length > 0) {
+              const queued = await generateEntraQueueForDiff(colabs, diff);
+              console.log(`[PerfisAcessoPage] Gerou ${queued} ações na fila para ${colabs.length} colaboradores`);
+              toast({ title: "Provisionamento", description: `${queued} ações geradas para ${colabs.length} colaborador(es)` });
+            }
+          } catch (provErr) {
+            console.error("[PerfisAcessoPage] Erro no provisionamento:", provErr);
+          }
+        }
       }
 
       toast({ title: editingId ? "Perfil atualizado" : "Perfil criado" });

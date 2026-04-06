@@ -390,6 +390,7 @@ Deno.serve(async (req) => {
 
         // Execute the action
         const result = await executeAction(token, userId, item.action_type, payload);
+        console.log(`[executeAction] item=${item.id} action=${item.action_type} success=${result.success} message="${result.message}"`);
 
         if (result.success) {
           await supabase.from("iam_queue").update({
