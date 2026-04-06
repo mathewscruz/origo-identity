@@ -20,6 +20,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { findAffectedCollaborators, generateEntraQueueForDiff } from "@/lib/entraQueueHelper";
 
 interface PerfilForm {
   nome: string;
