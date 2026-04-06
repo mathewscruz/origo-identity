@@ -350,6 +350,9 @@ export default function ColaboradoresPage() {
     queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
     queryClient.invalidateQueries({ queryKey: ["eventos_jml"] });
     setDialogOpen(false);
+
+    // Auto-process Entra ID queue
+    triggerEntraProcessing();
   }
 
   async function handleDelete() {
