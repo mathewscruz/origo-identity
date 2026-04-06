@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Pencil, XCircle, Plus } from "lucide-react";
 import { useColaborador, usePerfilAtribuicoes, useEventosJML, usePerfisAcesso } from "@/hooks/useOrigoData";
 import { provisionCargoAcessos } from "@/lib/provisionCargoAcessos";
+import { queueFullProfileActions } from "@/lib/entraQueueHelper";
 import { createEventoJML } from "@/lib/createEventoJML";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
