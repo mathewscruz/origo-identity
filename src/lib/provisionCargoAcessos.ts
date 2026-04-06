@@ -91,7 +91,7 @@ export async function provisionCargoAcessos(
  * Queue Entra ID group/license/app assignments for a profile
  */
 async function queueProfileAccess(
-  samAccountName: string,
+  identity: string,
   displayName: string,
   mail: string,
   perfilId: string,
