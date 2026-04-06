@@ -29,7 +29,7 @@ export default function RevisaoExternaPage() {
   useEffect(() => {
     if (!token) return;
     (async () => {
-      const { data: rev, error: revErr } = await supabase
+      const { data: rev, error: revErr } = await (supabase as any)
         .from("revisoes")
         .select("*, aplicacoes(nome)")
         .eq("token", token)
