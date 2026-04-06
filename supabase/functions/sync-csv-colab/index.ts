@@ -286,9 +286,11 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
     function buildColabData(row: CsvRow) {
       const statusMapped = STATUS_MAP[(row.status || "ativo").toLowerCase()] || "ativo";
+      const email = row.mail || "";
+      const samAccountName = email.includes("@") ? email.split("@")[0] : (row.employID || "").trim();
       return {
         nome: row.displayName,
-        email: row.mail || null,
+        email: email || null,
         matricula: row.employID.trim(),
         cpf: row.Cadastro_Pessoa_Fisica || null,
         empresa_id: empresaCache.get((row.company || "").toLowerCase()) || null,
@@ -301,6 +303,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         origem: "csv",
         ultima_importacao_id: jobId,
         import_hash: buildFingerprint(row),
+        sam_account_name: samAccountName,
       };
     }
 
