@@ -1,90 +1,81 @@
 
 
-## Validacao do Fluxo IGA — Gaps Identificados
+## Verificacao End-to-End do Fluxo IGA em Modo Simulacao
 
-Analisei todo o codigo dos modulos envolvidos. O fluxo conceitual esta correto, mas existem **6 lacunas tecnicas** que impedem o funcionamento completo.
-
----
-
-### Fluxo Esperado vs. Realidade
-
-```text
-SharePoint CSV → sync-sharepoint-csv → colaboradores → iam_queue (create) → AD
-                                                      → cargo_perfis → provisionCargoAcessos → iam_queue (assign_group/license) → Entra ID
-
-Terceiros → cadastro manual → iam_queue (create) → AD → provisionCargoAcessos → Entra ID
-```
+Analisei todos os modulos envolvidos. Identifiquei **8 problemas** que impedem o funcionamento completo.
 
 ---
 
-### Gap 1: sync-sharepoint-csv NAO gera iam_queue nem sam_account_name
+### Problemas Encontrados
 
-O `sync-sharepoint-csv` tem sua propria funcao `buildColabData` (linha 218-231) que **nao inclui `sam_account_name`** e **nao gera entradas na `iam_queue`**. Apenas o `sync-csv-colab` faz isso.
+#### 1. `sam_account_name` nao e persistido na tabela `colaboradores`
 
-**Correcao**: Alinhar `sync-sharepoint-csv` com `sync-csv-colab` — adicionar `sam_account_name` no `buildColabData` e gerar `iam_queue` entries para joiners, movers e leavers.
+A coluna `sam_account_name` nao existe na tabela `colaboradores` (conferido no schema). O campo e capturado no formulario mas **nunca e salvo** no banco — o `payload` de insert/update (linhas 149-161) nao inclui `sam_account_name`. Isso significa que ao editar um colaborador existente, o campo volta vazio e todos os payloads de `update`/`disable` vao com `samAccountName: ""`.
 
----
+**Correcao**: Adicionar coluna `sam_account_name text` na tabela `colaboradores` (migracao). Incluir no payload de insert/update. No `openEdit`, carregar o valor salvo.
 
-### Gap 2: Payload de create_if_not_exists com department/title/company = null
+#### 2. Edicao de colaborador nao carrega `sam_account_name`
 
-No `sync-csv-colab` (linhas 443-445), o payload de criacao envia `department: null`, `title: null`, `company: null` — apesar de ter esses dados no CSV. O `buildColabData` ja resolve os IDs de empresa/cargo/area, mas o payload do `iam_queue` nao usa os **nomes** dessas entidades.
+Na funcao `openEdit` (linha 133), `sam_account_name` e sempre inicializado como `""`. Mesmo que a coluna exista, o valor nao seria carregado porque o `mapped` nao inclui esse campo.
 
-**Correcao**: Resolver os nomes usando os caches (`empresaCache`, `cargoCache`, `areaCache`) e popular `department`, `title` e `company` com os valores textuais corretos.
+**Correcao**: Adicionar `sam_account_name` ao `mapped` e ao `openEdit`.
 
----
+#### 3. Exclusao de colaborador usa `matricula` como identidade AD
 
-### Gap 3: Movers (atualizacoes) NAO geram iam_queue
+Na funcao `handleDelete` (linha 356), o payload usa `samAccountName: deletingColab.matricula || deletingColab.email` — viola a regra de identidade unica. Deveria usar `sam_account_name`.
 
-Quando um colaborador ja existente muda de cargo/area/status na importacao CSV, o sistema atualiza o registro mas **nao gera nenhuma entrada na `iam_queue`** para o agente AD/Entra ID. Apenas eventos JML sao registrados.
+**Correcao**: Usar `sam_account_name` do colaborador.
 
-**Correcao**: Para cada `toUpdate`, comparar os campos alterados e gerar:
-- `action_type: "update"` com `changed_fields` e `new_values` quando cargo/area mudam
-- `action_type: "disable"` quando status muda para desligado/inativo
+#### 4. Terceiros: edicao nao gera `iam_queue` para disable/update
 
----
+Ao editar um terceiro e mudar `ativo` de true para false, **nenhuma solicitacao de desativacao e gerada** na `iam_queue`. O sistema apenas atualiza o registro.
 
-### Gap 4: Leavers NAO geram iam_queue (disable)
+**Correcao**: Detectar mudanca de `ativo` e gerar `iam_queue` com `action_type: "disable"` quando desativado.
 
-Colaboradores removidos do CSV sao deletados da tabela, mas **nenhuma solicitacao de desativacao e enviada ao AD**. O usuario continua ativo no AD.
+#### 5. Terceiros: exclusao nao gera `iam_queue`
 
-**Correcao**: Antes de deletar, buscar o `sam_account_name` dos leavers e gerar `iam_queue` com `action_type: "disable"` para cada um.
+`handleDelete` em `TerceirosPage.tsx` (linha 102) apenas deleta do banco sem gerar `iam_queue` para desativar no AD.
 
----
+**Correcao**: Antes de deletar, buscar `sam_account_name` e gerar `iam_queue` com `action_type: "disable"`.
 
-### Gap 5: Importacao NAO dispara provisionCargoAcessos
+#### 6. Terceiros: atribuicao de perfil nao gera `iam_queue`
 
-O fluxo `cargo → perfil → grupos/licencas` so e executado manualmente no `ColaboradoresPage`. Na importacao, mesmo que o colaborador tenha um cargo com perfis configurados, **nenhuma atribuicao de perfil e criada e nenhuma iam_queue de grupo/licenca e gerada**.
+Em `TerceiroDetalhePage.tsx`, `handleAtribuirPerfil` (linha 72) cria a atribuicao mas **nao gera entradas na `iam_queue`** para grupos/licencas do Entra ID. A funcao `provisionCargoAcessos` nao e chamada para terceiros.
 
-**Correcao**: Apos inserir novos colaboradores, chamar a logica equivalente ao `provisionCargoAcessos` dentro da Edge Function (usando service_role). Para movers com cargo alterado, revogar perfis antigos e atribuir novos.
+**Correcao**: Ao atribuir perfil, consultar `perfil_grupos` e `perfil_licencas` e gerar `iam_queue` entries para `assign_group`/`assign_license`. Ao revogar, gerar `remove_group`/`remove_license`.
 
----
+#### 7. Fila de Provisionamento nao mostra novos action_types
 
-### Gap 6: Falta mecanismo para detectar replicacao AD → Entra ID
+`FilaProvisionamentoPage.tsx` e `SolicitacaoDetalhePage.tsx` so mapeiam `create`, `update`, `disable`, `delete`. Faltam: `create_if_not_exists`, `assign_group`, `remove_group`, `assign_license`, `remove_license`.
 
-O fluxo assume que o agente AD cria o usuario e que um script separado replica para o Entra ID. Porem, **nao existe nenhum mecanismo no sistema para saber quando o usuario ja apareceu no Entra ID** e disparar a atribuicao de grupos/licencas.
+**Correcao**: Adicionar os novos tipos ao `actionConfig` em ambas as paginas.
 
-**Opcoes**:
-- **A) Provisionar imediatamente**: Gerar `assign_group`/`assign_license` logo apos o `create` e confiar que o agente PowerShell vai executar quando o usuario ja existir no Entra ID (com retry).
-- **B) Novo action_type "provision_access"**: O agente, apos confirmar criacao no AD, retorna status e o sistema gera automaticamente os acessos Entra ID.
+#### 8. Revisao Externa: revogacao nao gera `iam_queue`
 
-Recomendacao: **Opcao A** — mais simples. O agente faz retry ate o usuario aparecer no Entra ID.
+Em `RevisaoExternaPage.tsx` (linha 76-81), ao revogar um acesso, o sistema desativa a `perfil_atribuicoes` mas **nao gera `iam_queue`** para remover o grupo/licenca no Entra ID.
+
+**Correcao**: Apos revogar, consultar `perfil_grupos` e `perfil_licencas` do perfil e gerar entries `remove_group`/`remove_license`.
 
 ---
 
 ### Resumo de Alteracoes
 
-| Arquivo | O que corrigir |
+| Acao | Arquivo |
 |---|---|
-| `supabase/functions/sync-sharepoint-csv/index.ts` | Adicionar `sam_account_name` no buildColabData; gerar iam_queue para joiners, movers e leavers |
-| `supabase/functions/sync-csv-colab/index.ts` | Popular department/title/company no payload; gerar iam_queue para movers e leavers; disparar provisionamento de perfis/grupos/licencas para novos e movers |
-| `supabase/functions/iam-agent-api/index.ts` | Sem alteracoes necessarias (ja suporta todos os action_types) |
-| `src/lib/provisionCargoAcessos.ts` | Sem alteracoes (ja funciona corretamente quando chamado) |
+| Migracao | Adicionar `sam_account_name text` em `colaboradores` |
+| Editar | `src/pages/colaboradores/ColaboradoresPage.tsx` — persistir sam_account_name, carregar no edit, corrigir delete |
+| Editar | `src/pages/terceiros/TerceirosPage.tsx` — gerar iam_queue em disable/delete |
+| Editar | `src/pages/terceiros/TerceiroDetalhePage.tsx` — gerar iam_queue ao atribuir/revogar perfil |
+| Editar | `src/pages/fila-provisionamento/FilaProvisionamentoPage.tsx` — adicionar novos action_types |
+| Editar | `src/pages/fila-provisionamento/SolicitacaoDetalhePage.tsx` — adicionar novos action_types |
+| Editar | `src/pages/revisoes/RevisaoExternaPage.tsx` — gerar iam_queue ao revogar |
 
 ### Ordem de implementacao
 
-1. Corrigir payloads do `sync-csv-colab` (Gap 2)
-2. Adicionar iam_queue para movers e leavers em ambas edge functions (Gaps 3 e 4)
-3. Adicionar provisionamento de perfis na importacao (Gap 5)
-4. Alinhar `sync-sharepoint-csv` com todas as correcoes (Gap 1)
-5. Adotar estrategia de provisioning imediato para Entra ID (Gap 6)
+1. Migracao `sam_account_name` em `colaboradores`
+2. Corrigir `ColaboradoresPage.tsx` (persistir, carregar, delete)
+3. Corrigir `TerceirosPage.tsx` (disable/delete)
+4. Corrigir `TerceiroDetalhePage.tsx` (iam_queue para perfis)
+5. Corrigir `RevisaoExternaPage.tsx` (iam_queue ao revogar)
+6. Atualizar mapeamento de action_types na fila
 
