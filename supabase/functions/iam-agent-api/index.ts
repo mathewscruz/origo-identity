@@ -64,6 +64,7 @@ Deno.serve(async (req) => {
       .from("iam_queue")
       .select("*")
       .eq("status", "pending")
+      .in("action_type", AD_LOCAL_ACTION_TYPES)
       .or("next_retry_at.is.null,next_retry_at.lte." + new Date().toISOString())
       .order("created_at", { ascending: true })
       .limit(10);
