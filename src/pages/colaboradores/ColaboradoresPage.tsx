@@ -5,7 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Upload, Plus, Pencil, Trash2 } from "lucide-react";
+import { Search, Upload, Plus, Pencil, Trash2, AlertTriangle } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Link } from "react-router-dom";
 import ColaboradorActivityPopover from "@/components/ColaboradorActivityPopover";
 import { useColaboradores, useEmpresas, useAreas, useCargos, useLocalidades } from "@/hooks/useOrigoData";
@@ -145,6 +146,7 @@ export default function ColaboradoresPage() {
 
   async function handleSave() {
     if (!form.nome.trim()) { toast({ title: "Nome é obrigatório", variant: "destructive" }); return; }
+    if (!form.sam_account_name.trim() && form.cargo_id) { toast({ title: "Nome de login AD é obrigatório para provisionamento de acessos", description: "Preencha o campo 'Nome de login AD' quando um cargo está atribuído.", variant: "destructive" }); return; }
     if (!editingId && !form.sam_account_name.trim()) { toast({ title: "Nome de login AD é obrigatório para novos colaboradores", variant: "destructive" }); return; }
     setSaving(true);
     const payload: any = {
@@ -188,6 +190,9 @@ export default function ColaboradoresPage() {
       // 1. Provision cargo access profiles
       if (cargoChanged || !editingId || becameActive) {
         const result = await provisionCargoAcessos(colaboradorId, form.cargo_id || null, editingId ? (editingCargoId || null) : null);
+        if (result.skippedDirectory) {
+          toast({ title: "⚠️ Provisionamento de diretório ignorado", description: "O campo 'Nome de login AD' está vazio. Grupos e licenças não serão atribuídos no Entra ID.", variant: "destructive" });
+        }
         if (result.provisioned > 0 || result.revoked > 0) {
           toast({ title: `Acessos atualizados: ${result.provisioned} concedido(s), ${result.revoked} revogado(s)` });
         }
@@ -440,8 +445,20 @@ export default function ColaboradoresPage() {
                   {paginatedItems.map((c) => (
                     <tr key={c.id} className="border-b last:border-0 hover:bg-muted/50">
                       <td className="p-4">
-                        <div className="flex items-center">
+                        <div className="flex items-center gap-1">
                           <Link to={`/colaboradores/${c.id}`} className="font-medium text-primary hover:underline">{c.nome}</Link>
+                          {c.cargo_id && !c.sam_account_name && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <AlertTriangle className="h-4 w-4 text-warning shrink-0" />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Login AD ausente — provisionamento de acessos bloqueado</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
                           <ColaboradorActivityPopover colaboradorId={c.id} colaboradorNome={c.nome} />
                         </div>
                       </td>
@@ -508,7 +525,7 @@ export default function ColaboradoresPage() {
               <Input value={form.matricula} onChange={(e) => setForm({ ...form, matricula: e.target.value })} />
             </div>
             <div>
-              <Label>Nome de login AD {!editingId ? "*" : ""}</Label>
+              <Label>Nome de login AD {!editingId || form.cargo_id ? "*" : ""}</Label>
               <Input placeholder="ex: joao.silva" value={form.sam_account_name} onChange={(e) => setForm({ ...form, sam_account_name: e.target.value })} />
             </div>
             <div>

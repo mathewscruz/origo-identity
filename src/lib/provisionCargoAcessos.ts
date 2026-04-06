@@ -10,9 +10,10 @@ export async function provisionCargoAcessos(
   colaboradorId: string,
   newCargoId: string | null,
   oldCargoId: string | null
-): Promise<{ provisioned: number; revoked: number }> {
+): Promise<{ provisioned: number; revoked: number; skippedDirectory: boolean }> {
   let revoked = 0;
   let provisioned = 0;
+  let skippedDirectory = false;
 
   // Get colaborador sam_account_name for iam_queue
   const { data: colab } = await (supabase as any)
@@ -33,10 +34,12 @@ export async function provisionCargoAcessos(
       .eq("ativo", true);
 
     if (activeAssignments && activeAssignments.length > 0 && sam) {
-      // Get groups and licenses for revoked profiles
       for (const assignment of activeAssignments) {
         await queueProfileAccess(sam, colab?.nome || "", colab?.email || "", assignment.perfil_id, "remove");
       }
+    } else if (activeAssignments && activeAssignments.length > 0 && !sam) {
+      console.warn(`[provisionCargoAcessos] sam_account_name vazio para colaborador ${colaboradorId} — revogação de grupos/licenças no diretório ignorada`);
+      skippedDirectory = true;
     }
 
     const { data: revokedData } = await supabase
@@ -75,11 +78,14 @@ export async function provisionCargoAcessos(
         for (const cp of cargoPerfis) {
           await queueProfileAccess(sam, colab?.nome || "", colab?.email || "", cp.perfil_id, "add");
         }
+      } else {
+        console.warn(`[provisionCargoAcessos] sam_account_name vazio para colaborador ${colaboradorId} — atribuição de grupos/licenças no diretório ignorada`);
+        skippedDirectory = true;
       }
     }
   }
 
-  return { provisioned, revoked };
+  return { provisioned, revoked, skippedDirectory };
 }
 
 /**
