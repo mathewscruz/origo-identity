@@ -8,6 +8,49 @@ interface ColabIdentity {
   sam_account_name: string | null;
 }
 
+// ─── Resource IDs for a profile ───────────────────────────────────
+
+interface PerfilResources {
+  grupoIds: string[];
+  licencaIds: string[];
+  appIds: string[];
+}
+
+/**
+ * Fetches all grupo/licenca/app IDs linked to a perfil via separate queries
+ * (avoids nested joins that fail without FK).
+ */
+export async function getPerfilResourceIds(perfilId: string): Promise<PerfilResources> {
+  const [gRes, lRes, aRes] = await Promise.all([
+    (supabase as any).from("perfil_grupos").select("grupo_id").eq("perfil_id", perfilId),
+    (supabase as any).from("perfil_licencas").select("licenca_id").eq("perfil_id", perfilId),
+    (supabase as any).from("perfil_aplicacoes").select("aplicacao_id").eq("perfil_id", perfilId),
+  ]);
+  return {
+    grupoIds: (gRes.data ?? []).map((r: any) => r.grupo_id),
+    licencaIds: (lRes.data ?? []).map((r: any) => r.licenca_id),
+    appIds: (aRes.data ?? []).map((r: any) => r.aplicacao_id),
+  };
+}
+
+/**
+ * Merges resources from multiple profiles into a single set of unique IDs.
+ */
+export async function getMergedResourcesForPerfis(perfilIds: string[]): Promise<PerfilResources> {
+  const allG = new Set<string>();
+  const allL = new Set<string>();
+  const allA = new Set<string>();
+  for (const pid of perfilIds) {
+    const r = await getPerfilResourceIds(pid);
+    r.grupoIds.forEach(id => allG.add(id));
+    r.licencaIds.forEach(id => allL.add(id));
+    r.appIds.forEach(id => allA.add(id));
+  }
+  return { grupoIds: [...allG], licencaIds: [...allL], appIds: [...allA] };
+}
+
+// ─── Core: generate iam_queue entries from a diff ─────────────────
+
 /**
  * Generates iam_queue entries for a diff of groups/licenses/apps for a set of collaborators.
  * Uses email as primary identity, sam_account_name as fallback.
@@ -32,7 +75,7 @@ export async function generateEntraQueueForDiff(
     diff.addedAppIds.length + diff.removedAppIds.length;
   if (hasDiff === 0) return 0;
 
-  // Fetch metadata for referenced items
+  // Fetch metadata for referenced items (separate queries, no joins)
   const allGrupoIds = [...new Set([...diff.addedGrupoIds, ...diff.removedGrupoIds])];
   const allLicencaIds = [...new Set([...diff.addedLicencaIds, ...diff.removedLicencaIds])];
   const allAppIds = [...new Set([...diff.addedAppIds, ...diff.removedAppIds])];
@@ -144,6 +187,8 @@ export async function generateEntraQueueForDiff(
   return queueEntries.length;
 }
 
+// ─── Discover affected collaborators ──────────────────────────────
+
 /**
  * Finds all collaborators affected by a perfil change.
  * Looks in both perfil_atribuicoes (direct) AND cargo_perfis -> colaboradores (via cargo).
@@ -192,6 +237,46 @@ export async function findAffectedCollaborators(perfilId: string): Promise<Colab
   }));
 }
 
+// ─── High-level: queue assign/remove for entire profiles ──────────
+
+/**
+ * Queues assign or remove actions for a set of complete profiles for given collaborators.
+ * mode="assign" generates assign_* actions for all resources in those profiles.
+ * mode="remove" generates remove_* actions.
+ */
+export async function queueFullProfileActions(
+  colabs: ColabIdentity[],
+  perfilIds: string[],
+  mode: "assign" | "remove",
+  opts?: { triggerImmediately?: boolean }
+): Promise<number> {
+  if (colabs.length === 0 || perfilIds.length === 0) return 0;
+
+  const resources = await getMergedResourcesForPerfis(perfilIds);
+
+  const diff = mode === "assign"
+    ? {
+        addedGrupoIds: resources.grupoIds,
+        removedGrupoIds: [] as string[],
+        addedLicencaIds: resources.licencaIds,
+        removedLicencaIds: [] as string[],
+        addedAppIds: resources.appIds,
+        removedAppIds: [] as string[],
+      }
+    : {
+        addedGrupoIds: [] as string[],
+        removedGrupoIds: resources.grupoIds,
+        addedLicencaIds: [] as string[],
+        removedLicencaIds: resources.licencaIds,
+        addedAppIds: [] as string[],
+        removedAppIds: resources.appIds,
+      };
+
+  return generateEntraQueueForDiff(colabs, diff, opts);
+}
+
+// ─── High-level: reprovision cargo collaborators ──────────────────
+
 /**
  * For a cargo change: materializes perfil_atribuicoes and generates Entra queue entries.
  */
@@ -200,7 +285,6 @@ export async function reprovisionCargoCollaborators(
   addedPerfilIds: string[],
   removedPerfilIds: string[]
 ): Promise<{ queued: number; materialized: number; revoked: number }> {
-  // Get all active collaborators with this cargo
   const { data: colabs } = await supabase
     .from("colaboradores")
     .select("id, nome, email, sam_account_name")
@@ -214,7 +298,7 @@ export async function reprovisionCargoCollaborators(
   let revoked = 0;
   let totalQueued = 0;
 
-  // For each added perfil: create perfil_atribuicoes and queue Entra actions
+  // Added profiles: create perfil_atribuicoes + queue assign
   for (const perfilId of addedPerfilIds) {
     const inserts = activeColabs.map(c => ({
       perfil_id: perfilId,
@@ -224,26 +308,14 @@ export async function reprovisionCargoCollaborators(
     }));
     const { data: inserted } = await supabase.from("perfil_atribuicoes").insert(inserts).select("id");
     materialized += inserted?.length || 0;
+  }
 
-    // Get what this profile contains (groups, licenses, apps)
-    const [gruposRes, licencasRes, appsRes] = await Promise.all([
-      (supabase as any).from("perfil_grupos").select("grupo_id").eq("perfil_id", perfilId),
-      (supabase as any).from("perfil_licencas").select("licenca_id").eq("perfil_id", perfilId),
-      (supabase as any).from("perfil_aplicacoes").select("aplicacao_id").eq("perfil_id", perfilId),
-    ]);
-
-    const queued = await generateEntraQueueForDiff(activeColabs, {
-      addedGrupoIds: (gruposRes.data ?? []).map((g: any) => g.grupo_id),
-      removedGrupoIds: [],
-      addedLicencaIds: (licencasRes.data ?? []).map((l: any) => l.licenca_id),
-      removedLicencaIds: [],
-      addedAppIds: (appsRes.data ?? []).map((a: any) => a.aplicacao_id),
-      removedAppIds: [],
-    }, { triggerImmediately: false });
+  if (addedPerfilIds.length > 0) {
+    const queued = await queueFullProfileActions(activeColabs, addedPerfilIds, "assign", { triggerImmediately: false });
     totalQueued += queued;
   }
 
-  // For each removed perfil: revoke perfil_atribuicoes and queue Entra removals
+  // Removed profiles: revoke perfil_atribuicoes + queue remove
   for (const perfilId of removedPerfilIds) {
     const { data: revokedData } = await supabase
       .from("perfil_atribuicoes")
@@ -254,21 +326,10 @@ export async function reprovisionCargoCollaborators(
       .in("colaborador_id", activeColabs.map(c => c.id))
       .select("id");
     revoked += revokedData?.length || 0;
+  }
 
-    const [gruposRes, licencasRes, appsRes] = await Promise.all([
-      (supabase as any).from("perfil_grupos").select("grupo_id").eq("perfil_id", perfilId),
-      (supabase as any).from("perfil_licencas").select("licenca_id").eq("perfil_id", perfilId),
-      (supabase as any).from("perfil_aplicacoes").select("aplicacao_id").eq("perfil_id", perfilId),
-    ]);
-
-    const queued = await generateEntraQueueForDiff(activeColabs, {
-      addedGrupoIds: [],
-      removedGrupoIds: (gruposRes.data ?? []).map((g: any) => g.grupo_id),
-      addedLicencaIds: [],
-      removedLicencaIds: (licencasRes.data ?? []).map((l: any) => l.licenca_id),
-      addedAppIds: [],
-      removedAppIds: (appsRes.data ?? []).map((a: any) => a.aplicacao_id),
-    }, { triggerImmediately: false });
+  if (removedPerfilIds.length > 0) {
+    const queued = await queueFullProfileActions(activeColabs, removedPerfilIds, "remove", { triggerImmediately: false });
     totalQueued += queued;
   }
 
