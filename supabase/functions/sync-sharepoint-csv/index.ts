@@ -133,6 +133,63 @@ function buildFingerprint(row: CsvRow): string {
   ].join("|").toLowerCase();
 }
 
+function buildNameLookup(cache: Map<string, string>): Map<string, string> {
+  const reverse = new Map<string, string>();
+  for (const [name, id] of cache) reverse.set(id, name);
+  return reverse;
+}
+
+async function provisionCargoAcessosServer(
+  sb: any, colaboradorId: string, newCargoId: string | null, oldCargoId: string | null,
+  samAccountName: string, displayName: string, mail: string
+) {
+  if (oldCargoId) {
+    const { data: activeAssignments } = await sb.from("perfil_atribuicoes").select("perfil_id")
+      .eq("colaborador_id", colaboradorId).eq("origem", "cargo").eq("ativo", true);
+    if (activeAssignments && activeAssignments.length > 0 && samAccountName) {
+      for (const a of activeAssignments) await queueProfileAccess(sb, samAccountName, displayName, mail, a.perfil_id, "remove");
+    }
+    await sb.from("perfil_atribuicoes").update({ ativo: false, data_revogacao: new Date().toISOString() })
+      .eq("colaborador_id", colaboradorId).eq("origem", "cargo").eq("ativo", true);
+  }
+  if (newCargoId) {
+    const { data: cargoPerfis } = await sb.from("cargo_perfis").select("perfil_id").eq("cargo_id", newCargoId);
+    if (cargoPerfis && cargoPerfis.length > 0) {
+      await sb.from("perfil_atribuicoes").insert(cargoPerfis.map((cp: any) => ({
+        perfil_id: cp.perfil_id, colaborador_id: colaboradorId, origem: "cargo", ativo: true,
+      })));
+      if (samAccountName) {
+        for (const cp of cargoPerfis) await queueProfileAccess(sb, samAccountName, displayName, mail, cp.perfil_id, "add");
+      }
+    }
+  }
+}
+
+async function queueProfileAccess(sb: any, samAccountName: string, displayName: string, mail: string, perfilId: string, action: "add" | "remove") {
+  const { data: grupos } = await sb.from("perfil_grupos").select("grupo_id, entra_grupos(entra_id, nome)").eq("perfil_id", perfilId);
+  if (grupos) {
+    for (const g of grupos) {
+      if (!g.entra_grupos) continue;
+      await sb.from("iam_queue").insert({
+        action_type: action === "add" ? "assign_group" : "remove_group",
+        payload_json: { samAccountName, displayName, mail, groupId: g.entra_grupos.entra_id, groupName: g.entra_grupos.nome, action },
+        target_identity: samAccountName, requested_by: "importacao_sharepoint", status: "pending",
+      });
+    }
+  }
+  const { data: licencas } = await sb.from("perfil_licencas").select("licenca_id, entra_licencas(sku_id, nome)").eq("perfil_id", perfilId);
+  if (licencas) {
+    for (const l of licencas) {
+      if (!l.entra_licencas) continue;
+      await sb.from("iam_queue").insert({
+        action_type: action === "add" ? "assign_license" : "remove_license",
+        payload_json: { samAccountName, displayName, mail, skuId: l.entra_licencas.sku_id, licenseName: l.entra_licencas.nome, action },
+        target_identity: samAccountName, requested_by: "importacao_sharepoint", status: "pending",
+      });
+    }
+  }
+}
+
 // ── Incremental sync processing logic ──
 async function processCsvData(sb: any, csvText: string, filename: string) {
   const { data: job, error: jobErr } = await sb.from("sync_jobs")
@@ -147,13 +204,13 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     await sb.from("sync_jobs").update({ message: `Parsed ${totalRows} registros. Comparando...`, phase: "comparing", colab_total: totalRows }).eq("id", jobId);
 
     // ── Load existing CSV-origin records ──
-    const existingMap = new Map<string, { id: string; fingerprint: string }>();
+    const existingMap = new Map<string, { id: string; fingerprint: string; cargo_id: string | null; sam_account_name: string | null; status: string }>();
     let from = 0;
     while (true) {
-      const { data } = await sb.from("colaboradores").select("id, matricula, import_hash").eq("origem", "csv").range(from, from + 999);
+      const { data } = await sb.from("colaboradores").select("id, matricula, import_hash, cargo_id, sam_account_name, status").eq("origem", "csv").range(from, from + 999);
       if (!data || data.length === 0) break;
       data.forEach((c: any) => {
-        if (c.matricula) existingMap.set(c.matricula, { id: c.id, fingerprint: c.import_hash || "" });
+        if (c.matricula) existingMap.set(c.matricula, { id: c.id, fingerprint: c.import_hash || "", cargo_id: c.cargo_id, sam_account_name: c.sam_account_name, status: c.status });
       });
       if (data.length < 1000) break;
       from += 1000;
@@ -215,18 +272,27 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       if (data) data.forEach((l: any) => localCache.set(l.nome.toLowerCase(), l.id));
     }
 
+    // Build reverse lookups (id -> name)
+    const empresaNames = buildNameLookup(empresaCache);
+    const cargoNames = buildNameLookup(cargoCache);
+    const areaNames = buildNameLookup(areaCache);
+
     function buildColabData(row: CsvRow) {
+      const statusMapped = STATUS_MAP[(row.status || "ativo").toLowerCase()] || "ativo";
+      const email = row.mail || "";
+      const samAccountName = email.includes("@") ? email.split("@")[0] : (row.employID || "").trim();
       return {
-        nome: row.displayName, email: row.mail || null, matricula: row.employID.trim(),
+        nome: row.displayName, email: email || null, matricula: row.employID.trim(),
         cpf: row.Cadastro_Pessoa_Fisica || null,
         empresa_id: empresaCache.get((row.company || "").toLowerCase()) || null,
         cargo_id: cargoCache.get(((row.description || row.title || "").trim()).toLowerCase()) || null,
         area_id: areaCache.get((row.departmentNumber || "").toLowerCase()) || null,
         localidade_id: localCache.get((row.Base_Local || "").toLowerCase()) || null,
-        status: STATUS_MAP[(row.status || "ativo").toLowerCase()] || "ativo",
+        status: statusMapped,
         data_admissao: parseDate(row.Data_Admissao), data_desligamento: parseDate(row.Data_Rescisao),
         origem: "csv", ultima_importacao_id: jobId,
         import_hash: buildFingerprint(row),
+        sam_account_name: samAccountName,
       };
     }
 
@@ -234,7 +300,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     await sb.from("sync_jobs").update({ phase: "classifying", message: "Classificando mudanças...", colab_percent: 20 }).eq("id", jobId);
 
     const toInsert: any[] = [];
-    const toUpdate: { id: string; data: any }[] = [];
+    const toUpdate: { id: string; data: any; oldCargoId: string | null; oldStatus: string; oldSam: string | null }[] = [];
     const csvMatriculas = new Set<string>();
     let unchanged = 0;
 
@@ -247,7 +313,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       if (!existing) {
         toInsert.push(buildColabData(row));
       } else if (existing.fingerprint !== fp) {
-        toUpdate.push({ id: existing.id, data: buildColabData(row) });
+        toUpdate.push({ id: existing.id, data: buildColabData(row), oldCargoId: existing.cargo_id, oldStatus: existing.status, oldSam: existing.sam_account_name });
       } else {
         unchanged++;
       }
@@ -255,10 +321,12 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
     const leaverIds: string[] = [];
     const leaverMatriculas: string[] = [];
+    const leaverDetails: { id: string; sam: string | null; cargo_id: string | null }[] = [];
     for (const [mat, rec] of existingMap) {
       if (!csvMatriculas.has(mat)) {
         leaverIds.push(rec.id);
         leaverMatriculas.push(mat);
+        leaverDetails.push({ id: rec.id, sam: rec.sam_account_name, cargo_id: rec.cargo_id });
       }
     }
 
@@ -268,12 +336,19 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     await sb.from("sync_jobs").update({ phase: "inserting", message: `Inserindo ${toInsert.length} novos...`, colab_percent: 30 }).eq("id", jobId);
 
     let created = 0;
+    const insertedIds: { id: string; data: any }[] = [];
     if (toInsert.length > 0) {
       const insertChunks = chunk(toInsert, 500);
       for (let ci = 0; ci < insertChunks.length; ci++) {
         const { data: inserted, error: insErr } = await sb.from("colaboradores").insert(insertChunks[ci]).select("id");
         if (insErr) { console.error("Insert batch error:", insErr.message); continue; }
-        if (inserted) created += inserted.length;
+        if (inserted) {
+          created += inserted.length;
+          inserted.forEach((ins: any, idx: number) => {
+            const dataIdx = ci * 500 + idx;
+            if (dataIdx < toInsert.length) insertedIds.push({ id: ins.id, data: toInsert[dataIdx] });
+          });
+        }
         const pct = 30 + Math.round((ci + 1) / insertChunks.length * 20);
         await sb.from("sync_jobs").update({ colab_percent: pct, colab_created: created }).eq("id", jobId);
       }
@@ -289,10 +364,34 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       }
     }
 
-    // ── DELETE leavers ──
+    // ── Handle leavers: disable in AD BEFORE deleting ──
     if (leaverIds.length > 0) {
       await sb.from("sync_jobs").update({ phase: "removing", message: `Removendo ${leaverIds.length} ausentes...`, colab_percent: 75 }).eq("id", jobId);
+
+      // Generate iam_queue disable entries for leavers
+      const leaverIamEntries = leaverDetails.filter(l => l.sam).map(l => ({
+        action_type: "disable",
+        payload_json: {
+          samAccountName: l.sam, displayName: "", mail: "",
+          status: "disabled", status_anterior: "ativo", status_novo: "desligado",
+          changed_fields: ["status"], new_values: { status: "disabled" },
+        },
+        target_identity: l.sam, colaborador_id: l.id,
+        requested_by: "importacao_sharepoint", status: "pending",
+      }));
+      if (leaverIamEntries.length > 0) {
+        for (const batch of chunk(leaverIamEntries, 200)) await sb.from("iam_queue").insert(batch);
+      }
+
+      // Revoke access profiles for leavers
+      for (const l of leaverDetails) {
+        if (l.cargo_id && l.sam) await provisionCargoAcessosServer(sb, l.id, null, l.cargo_id, l.sam, "", "");
+      }
+
       for (const batch of chunk(leaverIds, 200)) {
+        await sb.from("perfil_atribuicoes").delete().in("colaborador_id", batch);
+        await sb.from("excecoes").delete().in("colaborador_id", batch);
+        await sb.from("revisao_itens").delete().in("colaborador_id", batch);
         await sb.from("colaboradores").delete().in("id", batch);
       }
     }
@@ -310,7 +409,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       }
     }
 
-    // ── Register JML events ──
+    // ── Register JML events + iam_queue ──
     await sb.from("sync_jobs").update({ phase: "events", message: "Registrando eventos JML...", colab_percent: 85 }).eq("id", jobId);
 
     if (leaverMatriculas.length > 0) {
@@ -324,12 +423,93 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         tipo: "joiner", colaborador_nome: c.nome || c.matricula, status: "pendente", origem: "importacao_csv", dados_depois: { matricula: c.matricula },
       }));
       for (const b of chunk(joinerEvents, 200)) await sb.from("eventos_jml").insert(b);
+
+      // iam_queue: create_if_not_exists with enriched payload
+      const iamEntries = toInsert.filter(c => c.sam_account_name).map(c => {
+        const nameParts = (c.nome || "").split(" ");
+        const givenName = nameParts[0] || "";
+        const surname = nameParts.slice(1).join(" ") || givenName;
+        return {
+          action_type: "create_if_not_exists",
+          payload_json: {
+            givenName, surname, displayName: c.nome,
+            samAccountName: c.sam_account_name,
+            userPrincipalName: `${c.sam_account_name}@ebessolar.local`,
+            mail: c.email,
+            department: c.area_id ? (areaNames.get(c.area_id) || null) : null,
+            title: c.cargo_id ? (cargoNames.get(c.cargo_id) || null) : null,
+            company: c.empresa_id ? (empresaNames.get(c.empresa_id) || null) : null,
+            telephoneNumber: null, manager: null, ouPath: "",
+          },
+          target_identity: c.sam_account_name,
+          requested_by: "importacao_sharepoint", status: "pending",
+        };
+      });
+      for (const b of chunk(iamEntries, 200)) await sb.from("iam_queue").insert(b);
+
+      // Provision access profiles for joiners
+      for (const ins of insertedIds) {
+        if (ins.data.cargo_id && ins.data.sam_account_name) {
+          await provisionCargoAcessosServer(sb, ins.id, ins.data.cargo_id, null, ins.data.sam_account_name, ins.data.nome || "", ins.data.email || "");
+        }
+      }
     }
     if (toUpdate.length > 0) {
       const moverEvents = toUpdate.map(u => ({
         tipo: "mover", colaborador_nome: u.data.nome || u.data.matricula, colaborador_id: u.id, status: "pendente", origem: "importacao_csv", dados_depois: { matricula: u.data.matricula },
       }));
       for (const b of chunk(moverEvents, 200)) await sb.from("eventos_jml").insert(b);
+
+      // iam_queue for movers
+      for (const item of toUpdate) {
+        const sam = item.data.sam_account_name || item.oldSam;
+        if (!sam) continue;
+
+        const newStatus = item.data.status;
+        const oldStatus = item.oldStatus;
+        const isDisabling = (newStatus === "desligado" || newStatus === "inativo") && oldStatus !== newStatus;
+
+        if (isDisabling) {
+          await sb.from("iam_queue").insert({
+            action_type: "disable",
+            payload_json: {
+              samAccountName: sam, mail: item.data.email || "", displayName: item.data.nome || "",
+              status: "disabled", status_anterior: oldStatus, status_novo: newStatus,
+              changed_fields: ["status"], new_values: { status: "disabled" },
+            },
+            target_identity: sam, colaborador_id: item.id,
+            requested_by: "importacao_sharepoint", status: "pending",
+          });
+          if (item.oldCargoId) {
+            await provisionCargoAcessosServer(sb, item.id, null, item.oldCargoId, sam, item.data.nome || "", item.data.email || "");
+          }
+        } else {
+          const changedFields: string[] = [];
+          const newValues: Record<string, string | null> = {};
+          if (item.data.cargo_id !== item.oldCargoId) {
+            changedFields.push("title");
+            newValues.title = item.data.cargo_id ? (cargoNames.get(item.data.cargo_id) || null) : null;
+          }
+          if (item.data.area_id) { changedFields.push("department"); newValues.department = areaNames.get(item.data.area_id) || null; }
+          if (item.data.empresa_id) { changedFields.push("company"); newValues.company = empresaNames.get(item.data.empresa_id) || null; }
+
+          if (changedFields.length > 0) {
+            await sb.from("iam_queue").insert({
+              action_type: "update",
+              payload_json: {
+                samAccountName: sam, mail: item.data.email || "", displayName: item.data.nome || "",
+                status: "enabled", changed_fields: changedFields, new_values: newValues,
+              },
+              target_identity: sam, colaborador_id: item.id,
+              requested_by: "importacao_sharepoint", status: "pending",
+            });
+          }
+
+          if (item.data.cargo_id !== item.oldCargoId) {
+            await provisionCargoAcessosServer(sb, item.id, item.data.cargo_id, item.oldCargoId, sam, item.data.nome || "", item.data.email || "");
+          }
+        }
+      }
     }
 
     if (leaverMatriculas.length > 0) {
