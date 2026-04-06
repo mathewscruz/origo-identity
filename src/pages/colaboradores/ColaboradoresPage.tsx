@@ -383,6 +383,7 @@ export default function ColaboradoresPage() {
     toast({ title: "Solicitação de exclusão enviada para processamento" });
     queryClient.invalidateQueries({ queryKey: ["colaboradores"] });
     setDeleteId(null);
+    triggerEntraProcessing();
   }
 
   return (
