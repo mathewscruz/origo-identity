@@ -8,6 +8,9 @@ const corsHeaders = {
 
 const RETRYABLE_ERRORS = ["user_not_found", "user_not_synced", "not_found_in_entra", "replication_pending", "AD_AGENT_ERROR"];
 
+// Only AD local action types — Entra ID actions are processed by process-iam-queue
+const AD_LOCAL_ACTION_TYPES = ["create", "create_if_not_exists", "update", "disable", "delete"];
+
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
@@ -61,6 +64,7 @@ Deno.serve(async (req) => {
       .from("iam_queue")
       .select("*")
       .eq("status", "pending")
+      .in("action_type", AD_LOCAL_ACTION_TYPES)
       .or("next_retry_at.is.null,next_retry_at.lte." + new Date().toISOString())
       .order("created_at", { ascending: true })
       .limit(10);

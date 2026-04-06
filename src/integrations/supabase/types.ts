@@ -61,6 +61,7 @@ export type Database = {
           aprovacao_necessaria: boolean
           created_at: string
           criticidade: Database["public"]["Enums"]["criticidade"]
+          default_app_role_id: string
           entra_id: string | null
           id: string
           integracao_ativa: boolean
@@ -73,6 +74,7 @@ export type Database = {
           aprovacao_necessaria?: boolean
           created_at?: string
           criticidade?: Database["public"]["Enums"]["criticidade"]
+          default_app_role_id?: string
           entra_id?: string | null
           id?: string
           integracao_ativa?: boolean
@@ -85,6 +87,7 @@ export type Database = {
           aprovacao_necessaria?: boolean
           created_at?: string
           criticidade?: Database["public"]["Enums"]["criticidade"]
+          default_app_role_id?: string
           entra_id?: string | null
           id?: string
           integracao_ativa?: boolean

@@ -26,6 +26,8 @@ const actionConfig: Record<string, string> = {
   remove_group: "Remoção de Grupo",
   assign_license: "Atribuição de Licença",
   remove_license: "Remoção de Licença",
+  assign_app: "Atribuição de App",
+  remove_app: "Remoção de App",
 };
 
 interface QueueItem {

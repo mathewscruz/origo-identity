@@ -4,13 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, RefreshCw } from "lucide-react";
+import { Search, RefreshCw, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import TablePagination, { usePagination } from "@/components/TablePagination";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { toast } from "sonner";
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   pending: { label: "Pendente", class: "bg-warning/15 text-warning border-warning/30" },
@@ -29,6 +30,8 @@ const actionConfig: Record<string, { label: string; class: string }> = {
   remove_group: { label: "Remover Grupo", class: "bg-muted text-muted-foreground border-muted" },
   assign_license: { label: "Atribuir Licença", class: "bg-primary/15 text-primary border-primary/30" },
   remove_license: { label: "Remover Licença", class: "bg-muted text-muted-foreground border-muted" },
+  assign_app: { label: "Atribuir App", class: "bg-primary/15 text-primary border-primary/30" },
+  remove_app: { label: "Remover App", class: "bg-muted text-muted-foreground border-muted" },
 };
 
 interface QueueItem {
@@ -47,6 +50,7 @@ interface QueueItem {
 export default function FilaProvisionamentoPage() {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(false);
   const [busca, setBusca] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
   const [actionFilter, setActionFilter] = useState("todos");
@@ -78,6 +82,27 @@ export default function FilaProvisionamentoPage() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
+  async function processEntraQueue() {
+    setProcessing(true);
+    try {
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/process-iam-queue`,
+        { method: "POST", headers: { "Content-Type": "application/json" } }
+      );
+      const data = await res.json();
+      if (data.error) {
+        toast.error(`Erro: ${data.error}`);
+      } else {
+        toast.success(`Processado: ${data.summary?.success || 0} sucesso, ${data.summary?.retries || 0} retries, ${data.summary?.failures || 0} falhas`);
+        loadData();
+      }
+    } catch (err) {
+      toast.error("Erro ao processar fila Entra ID");
+    }
+    setProcessing(false);
+  }
+
   const filtered = items.filter((item) => {
     if (busca) {
       const displayName = item.payload_json?.displayName || "";
@@ -106,9 +131,14 @@ export default function FilaProvisionamentoPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Fila de Provisionamento</h1>
           <p className="text-sm text-muted-foreground">Solicitações de criação, atualização e desativação de identidades</p>
         </div>
-        <Button variant="outline" onClick={loadData}>
-          <RefreshCw className="mr-1 h-4 w-4" />Atualizar
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={loadData}>
+            <RefreshCw className="mr-1 h-4 w-4" />Atualizar
+          </Button>
+          <Button onClick={processEntraQueue} disabled={processing}>
+            <Zap className="mr-1 h-4 w-4" />{processing ? "Processando..." : "Processar Fila Entra ID"}
+          </Button>
+        </div>
       </div>
 
       {/* Summary cards */}
