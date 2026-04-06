@@ -69,7 +69,7 @@ export default function IntegracoesPage() {
       } else {
         toast({
           title: "Grupos sincronizados",
-          description: `${body.total} grupos encontrados: ${body.created} novos, ${body.updated} atualizados, ${body.cloudOnly} cloud-only, ${body.onPremises} on-premises`,
+          description: `${body.total} grupos importados (${body.cloudOnly} cloud-only, ${body.onPremises} on-premises)`,
         });
       }
     } catch (err: unknown) {
