@@ -152,6 +152,7 @@ export default function ColaboradoresPage() {
       email: form.email.trim() || null,
       cpf: form.cpf.trim() || null,
       matricula: form.matricula.trim() || null,
+      sam_account_name: form.sam_account_name.trim() || null,
       status: form.status as any,
       empresa_id: form.empresa_id || null,
       area_id: form.area_id || null,
