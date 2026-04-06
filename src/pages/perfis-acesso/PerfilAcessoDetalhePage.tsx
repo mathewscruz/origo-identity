@@ -21,6 +21,7 @@ import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { provisionCargoAcessos } from "@/lib/provisionCargoAcessos";
+import { generateEntraQueueForDiff, findAffectedCollaborators } from "@/lib/entraQueueHelper";
 
 const origemColors: Record<string, string> = {
   regra: "bg-primary/15 text-primary border-primary/30",
@@ -115,79 +116,21 @@ export default function PerfilAcessoDetalhePage() {
 
       if (hasChanges) {
         try {
-          // Get collaborator IDs with active assignment (no FK join — separate queries)
-          const { data: atribuicoes } = await supabase
-            .from("perfil_atribuicoes")
-            .select("colaborador_id")
-            .eq("perfil_id", id!)
-            .eq("ativo", true);
+          // Find ALL affected collaborators: direct assignments + via cargo
+          const affectedColabs = await findAffectedCollaborators(id!);
 
-          const colabIds = (atribuicoes ?? []).map((a: any) => a.colaborador_id).filter(Boolean) as string[];
-          const uniqueColabIds = [...new Set(colabIds)];
+          if (affectedColabs.length > 0) {
+            const queued = await generateEntraQueueForDiff(affectedColabs, {
+              addedGrupoIds: addedGrupos,
+              removedGrupoIds: removedGrupos,
+              addedLicencaIds: addedLicencas,
+              removedLicencaIds: removedLicencas,
+              addedAppIds: addedApps,
+              removedAppIds: removedApps,
+            }, { triggerImmediately: false });
 
-          if (uniqueColabIds.length > 0) {
-            // Fetch collaborator data separately
-            const { data: colabsData } = await supabase
-              .from("colaboradores")
-              .select("id, nome, email, sam_account_name")
-              .in("id", uniqueColabIds);
-
-            const colabMap = new Map((colabsData ?? []).map((c: any) => [c.id, c]));
-            const queueEntries: any[] = [];
-
-            for (const colabId of uniqueColabIds) {
-              const colab = colabMap.get(colabId);
-              if (!colab) continue;
-
-              const base = {
-                target_identity: colab.sam_account_name || colab.email || "",
-                requested_by: "sistema",
-                colaborador_id: colabId,
-                status: "pending",
-              };
-
-              // Added groups
-              for (const gid of addedGrupos) {
-                const grp = (entraGrupos ?? []).find((g: any) => g.id === gid);
-                if (!grp) continue;
-                queueEntries.push({ ...base, action_type: "assign_group", payload_json: { displayName: colab.nome, mail: colab.email || "", groupId: grp.entra_id, groupName: grp.nome, onPremisesSync: grp.on_premises_sync || false } });
-              }
-              // Removed groups
-              for (const gid of removedGrupos) {
-                const grp = (entraGrupos ?? []).find((g: any) => g.id === gid) || (perfilGrupos ?? []).find((pg: any) => pg.grupo_id === gid)?.entra_grupos;
-                if (!grp) continue;
-                const entraId = grp.entra_id || grp.entra_id;
-                queueEntries.push({ ...base, action_type: "remove_group", payload_json: { displayName: colab.nome, mail: colab.email || "", groupId: entraId, groupName: grp.nome } });
-              }
-              // Added licenses
-              for (const lid of addedLicencas) {
-                const lic = (entraLicencas ?? []).find((l: any) => l.id === lid);
-                if (!lic) continue;
-                queueEntries.push({ ...base, action_type: "assign_license", payload_json: { displayName: colab.nome, mail: colab.email || "", skuId: lic.sku_id, licenseName: lic.nome } });
-              }
-              // Removed licenses
-              for (const lid of removedLicencas) {
-                const lic = (entraLicencas ?? []).find((l: any) => l.id === lid) || (perfilLicencas ?? []).find((pl: any) => pl.licenca_id === lid)?.entra_licencas;
-                if (!lic) continue;
-                queueEntries.push({ ...base, action_type: "remove_license", payload_json: { displayName: colab.nome, mail: colab.email || "", skuId: lic.sku_id, licenseName: lic.nome } });
-              }
-              // Added apps
-              for (const aid of addedApps) {
-                const app = (aplicacoes ?? []).find((a: any) => a.id === aid);
-                if (!app?.entra_id) continue;
-                queueEntries.push({ ...base, action_type: "assign_app", payload_json: { displayName: colab.nome, mail: colab.email || "", appId: app.entra_id, appName: app.nome, appRoleId: app.default_app_role_id || "00000000-0000-0000-0000-000000000000" } });
-              }
-              // Removed apps
-              for (const aid of removedApps) {
-                const app = (aplicacoes ?? []).find((a: any) => a.id === aid);
-                if (!app?.entra_id) continue;
-                queueEntries.push({ ...base, action_type: "remove_app", payload_json: { displayName: colab.nome, mail: colab.email || "", appId: app.entra_id, appName: app.nome } });
-              }
-            }
-
-            if (queueEntries.length > 0) {
-              await supabase.from("iam_queue" as any).insert(queueEntries);
-              toast({ title: `${queueEntries.length} ação(ões) gerada(s) para o Entra ID` });
+            if (queued > 0) {
+              toast({ title: `${queued} ação(ões) gerada(s) para o Entra ID` });
             }
           }
         } catch (err) {

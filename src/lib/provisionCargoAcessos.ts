@@ -15,13 +15,13 @@ export async function provisionCargoAcessos(
   let provisioned = 0;
   let skippedDirectory = false;
 
-  // Get colaborador sam_account_name for iam_queue
+  // Get colaborador data for iam_queue
   const { data: colab } = await (supabase as any)
     .from("colaboradores")
     .select("nome, email, sam_account_name")
     .eq("id", colaboradorId)
     .single();
-  const sam = (colab as any)?.sam_account_name || "";
+  const identity = (colab as any)?.email || (colab as any)?.sam_account_name || "";
 
   // Revoke old cargo-based assignments
   if (oldCargoId) {
@@ -32,12 +32,12 @@ export async function provisionCargoAcessos(
       .eq("origem", "cargo")
       .eq("ativo", true);
 
-    if (activeAssignments && activeAssignments.length > 0 && sam) {
+    if (activeAssignments && activeAssignments.length > 0 && identity) {
       for (const assignment of activeAssignments) {
-        await queueProfileAccess(sam, colab?.nome || "", colab?.email || "", assignment.perfil_id, "remove", colaboradorId);
+        await queueProfileAccess(identity, colab?.nome || "", colab?.email || "", assignment.perfil_id, "remove", colaboradorId);
       }
-    } else if (activeAssignments && activeAssignments.length > 0 && !sam) {
-      console.warn(`[provisionCargoAcessos] sam_account_name vazio para colaborador ${colaboradorId} — revogação de grupos/licenças no diretório ignorada`);
+    } else if (activeAssignments && activeAssignments.length > 0 && !identity) {
+      console.warn(`[provisionCargoAcessos] sem identidade (email/sam) para colaborador ${colaboradorId} — revogação ignorada`);
       skippedDirectory = true;
     }
 
@@ -73,12 +73,12 @@ export async function provisionCargoAcessos(
       provisioned = inserted?.length || 0;
 
       // Generate iam_queue for Entra ID provisioning
-      if (sam) {
+      if (identity) {
         for (const cp of cargoPerfis) {
-          await queueProfileAccess(sam, colab?.nome || "", colab?.email || "", cp.perfil_id, "add", colaboradorId);
+          await queueProfileAccess(identity, colab?.nome || "", colab?.email || "", cp.perfil_id, "add", colaboradorId);
         }
       } else {
-        console.warn(`[provisionCargoAcessos] sam_account_name vazio para colaborador ${colaboradorId} — atribuição de grupos/licenças no diretório ignorada`);
+        console.warn(`[provisionCargoAcessos] sem identidade (email/sam) para colaborador ${colaboradorId} — atribuição ignorada`);
         skippedDirectory = true;
       }
     }
@@ -91,7 +91,7 @@ export async function provisionCargoAcessos(
  * Queue Entra ID group/license/app assignments for a profile
  */
 async function queueProfileAccess(
-  samAccountName: string,
+  identity: string,
   displayName: string,
   mail: string,
   perfilId: string,
@@ -115,7 +115,7 @@ async function queueProfileAccess(
       const { error: insertErr } = await supabase.from("iam_queue" as any).insert({
         action_type: action === "add" ? "assign_group" : "remove_group",
         payload_json: {
-          samAccountName,
+          samAccountName: identity,
           displayName,
           mail,
           groupId: g.entra_grupos.entra_id,
@@ -123,7 +123,7 @@ async function queueProfileAccess(
           onPremisesSync: isOnPrem,
           action,
         },
-        target_identity: samAccountName,
+        target_identity: samAccountName: identity,
         colaborador_id: colaboradorId,
         requested_by: "sistema",
         status: isOnPrem ? "failed" : "pending",
@@ -153,14 +153,14 @@ async function queueProfileAccess(
       const { error: insertErr } = await supabase.from("iam_queue" as any).insert({
         action_type: action === "add" ? "assign_license" : "remove_license",
         payload_json: {
-          samAccountName,
+          samAccountName: identity,
           displayName,
           mail,
           skuId: l.entra_licencas.sku_id,
           licenseName: l.entra_licencas.nome,
           action,
         },
-        target_identity: samAccountName,
+        target_identity: samAccountName: identity,
         colaborador_id: colaboradorId,
         requested_by: "sistema",
         status: "pending",
@@ -187,7 +187,7 @@ async function queueProfileAccess(
       const { error: insertErr } = await supabase.from("iam_queue" as any).insert({
         action_type: action === "add" ? "assign_app" : "remove_app",
         payload_json: {
-          samAccountName,
+          samAccountName: identity,
           displayName,
           mail,
           appId: a.aplicacoes.entra_id,
@@ -195,7 +195,7 @@ async function queueProfileAccess(
           appRoleId: a.aplicacoes.default_app_role_id || "00000000-0000-0000-0000-000000000000",
           action,
         },
-        target_identity: samAccountName,
+        target_identity: samAccountName: identity,
         colaborador_id: colaboradorId,
         requested_by: "sistema",
         status: "pending",
