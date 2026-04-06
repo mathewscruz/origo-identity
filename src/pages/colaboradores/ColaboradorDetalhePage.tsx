@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
@@ -71,20 +72,88 @@ export default function ColaboradorDetalhePage() {
     });
     setSaving(false);
     if (error) { toast({ title: "Erro ao atribuir", description: error.message, variant: "destructive" }); return; }
+
+    // Generate iam_queue entries for the assigned profile
+    const sam = (pessoa as any)?.sam_account_name || "";
+    if (sam) {
+      const { data: grupos } = await (supabase as any).from("perfil_grupos").select("grupo_id, entra_grupos(entra_id, nome, on_premises_sync)").eq("perfil_id", selectedPerfilId);
+      for (const g of (grupos || [])) {
+        if (!g.entra_grupos) continue;
+        await supabase.from("iam_queue" as any).insert({
+          action_type: "assign_group",
+          payload_json: { samAccountName: sam, displayName: pessoa.nome, mail: pessoa.email || "", groupId: g.entra_grupos.entra_id, groupName: g.entra_grupos.nome, onPremisesSync: g.entra_grupos.on_premises_sync || false },
+          target_identity: sam, requested_by: profile?.email || "sistema", colaborador_id: id, status: "pending",
+        });
+      }
+      const { data: licencas } = await (supabase as any).from("perfil_licencas").select("licenca_id, entra_licencas(sku_id, nome)").eq("perfil_id", selectedPerfilId);
+      for (const l of (licencas || [])) {
+        if (!l.entra_licencas) continue;
+        await supabase.from("iam_queue" as any).insert({
+          action_type: "assign_license",
+          payload_json: { samAccountName: sam, displayName: pessoa.nome, mail: pessoa.email || "", skuId: l.entra_licencas.sku_id, licenseName: l.entra_licencas.nome },
+          target_identity: sam, requested_by: profile?.email || "sistema", colaborador_id: id, status: "pending",
+        });
+      }
+      const { data: apps } = await (supabase as any).from("perfil_aplicacoes").select("aplicacao_id, aplicacoes(entra_id, nome, default_app_role_id)").eq("perfil_id", selectedPerfilId);
+      for (const a of (apps || [])) {
+        if (!a.aplicacoes?.entra_id) continue;
+        await supabase.from("iam_queue" as any).insert({
+          action_type: "assign_app",
+          payload_json: { samAccountName: sam, displayName: pessoa.nome, mail: pessoa.email || "", appId: a.aplicacoes.entra_id, appName: a.aplicacoes.nome, appRoleId: a.aplicacoes.default_app_role_id || "00000000-0000-0000-0000-000000000000" },
+          target_identity: sam, requested_by: profile?.email || "sistema", colaborador_id: id, status: "pending",
+        });
+      }
+    }
+
     toast({ title: "Perfil atribuído com sucesso" });
     queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
     setAtribuirOpen(false);
     setSelectedPerfilId("");
+    triggerEntraProcessing();
   }
 
-  async function handleRevogar(atribuicaoId: string) {
+  async function handleRevogar(atribuicaoId: string, perfilId?: string) {
     const { error } = await supabase.from("perfil_atribuicoes").update({
       ativo: false,
       data_revogacao: new Date().toISOString(),
     }).eq("id", atribuicaoId);
     if (error) { toast({ title: "Erro ao revogar", description: error.message, variant: "destructive" }); return; }
+
+    // Generate iam_queue entries to remove access
+    const sam = (pessoa as any)?.sam_account_name || "";
+    if (sam && perfilId) {
+      const { data: grupos } = await (supabase as any).from("perfil_grupos").select("grupo_id, entra_grupos(entra_id, nome, on_premises_sync)").eq("perfil_id", perfilId);
+      for (const g of (grupos || [])) {
+        if (!g.entra_grupos) continue;
+        await supabase.from("iam_queue" as any).insert({
+          action_type: "remove_group",
+          payload_json: { samAccountName: sam, displayName: pessoa.nome, mail: pessoa.email || "", groupId: g.entra_grupos.entra_id, groupName: g.entra_grupos.nome, onPremisesSync: g.entra_grupos.on_premises_sync || false },
+          target_identity: sam, requested_by: profile?.email || "sistema", colaborador_id: id, status: "pending",
+        });
+      }
+      const { data: licencas } = await (supabase as any).from("perfil_licencas").select("licenca_id, entra_licencas(sku_id, nome)").eq("perfil_id", perfilId);
+      for (const l of (licencas || [])) {
+        if (!l.entra_licencas) continue;
+        await supabase.from("iam_queue" as any).insert({
+          action_type: "remove_license",
+          payload_json: { samAccountName: sam, displayName: pessoa.nome, mail: pessoa.email || "", skuId: l.entra_licencas.sku_id, licenseName: l.entra_licencas.nome },
+          target_identity: sam, requested_by: profile?.email || "sistema", colaborador_id: id, status: "pending",
+        });
+      }
+      const { data: apps } = await (supabase as any).from("perfil_aplicacoes").select("aplicacao_id, aplicacoes(entra_id, nome)").eq("perfil_id", perfilId);
+      for (const a of (apps || [])) {
+        if (!a.aplicacoes?.entra_id) continue;
+        await supabase.from("iam_queue" as any).insert({
+          action_type: "remove_app",
+          payload_json: { samAccountName: sam, displayName: pessoa.nome, mail: pessoa.email || "", appId: a.aplicacoes.entra_id, appName: a.aplicacoes.nome },
+          target_identity: sam, requested_by: profile?.email || "sistema", colaborador_id: id, status: "pending",
+        });
+      }
+    }
+
     toast({ title: "Acesso revogado" });
     queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
+    triggerEntraProcessing();
   }
 
   if (isLoading) return <div className="space-y-4 p-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}</div>;
@@ -122,6 +191,7 @@ export default function ColaboradorDetalhePage() {
             onValueChange={async (newStatus) => {
               const oldStatus = pessoa.status;
               const isManual = pessoa.origem === "manual";
+              const sam = (pessoa as any)?.sam_account_name || "";
               const { error } = await supabase.from("colaboradores").update({ status: newStatus as any }).eq("id", id!);
               if (error) { toast({ title: "Erro ao alterar status", description: error.message, variant: "destructive" }); return; }
               
@@ -130,13 +200,18 @@ export default function ColaboradorDetalhePage() {
                 await supabase.from("iam_queue" as any).insert({
                   action_type: "disable",
                   payload_json: {
-                    samAccountName: pessoa.matricula || pessoa.email,
+                    samAccountName: sam,
+                    mail: pessoa.email || null,
                     displayName: pessoa.nome,
-                    motivo: `Status alterado para ${newStatus}`,
-                    data_solicitacao: new Date().toISOString(),
+                    status: "disabled",
+                    status_anterior: oldStatus,
+                    status_novo: newStatus,
+                    changed_fields: ["status"],
+                    new_values: { status: "disabled" },
                   },
                   requested_by: profile?.email || "sistema",
                   colaborador_id: id,
+                  target_identity: sam || null,
                 });
                 toast({ title: "Solicitação de desativação enviada para processamento" });
 
@@ -156,14 +231,18 @@ export default function ColaboradorDetalhePage() {
                 await supabase.from("iam_queue" as any).insert({
                   action_type: "update",
                   payload_json: {
-                    samAccountName: pessoa.matricula || pessoa.email,
+                    samAccountName: sam,
+                    mail: pessoa.email || null,
                     displayName: pessoa.nome,
-                    action: "enable",
-                    motivo: "Usuário reativado",
-                    data_solicitacao: new Date().toISOString(),
+                    status: "enabled",
+                    status_anterior: oldStatus,
+                    status_novo: "ativo",
+                    changed_fields: ["status"],
+                    new_values: { status: "enabled" },
                   },
                   requested_by: profile?.email || "sistema",
                   colaborador_id: id,
+                  target_identity: sam || null,
                 });
                 toast({ title: "Solicitação de reativação enviada para processamento" });
 
@@ -184,6 +263,7 @@ export default function ColaboradorDetalhePage() {
               queryClient.invalidateQueries({ queryKey: ["colaborador", id] });
               queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
               queryClient.invalidateQueries({ queryKey: ["eventos_jml"] });
+              triggerEntraProcessing();
             }}
           >
             <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
@@ -271,7 +351,7 @@ export default function ColaboradorDetalhePage() {
                         </td>
                         <td className="p-4 text-muted-foreground">{new Date(a.data_concessao).toLocaleDateString("pt-BR")}</td>
                         <td className="p-4">
-                          <Button variant="ghost" size="sm" className="h-7 text-destructive hover:text-destructive" onClick={() => handleRevogar(a.id)}>
+                          <Button variant="ghost" size="sm" className="h-7 text-destructive hover:text-destructive" onClick={() => handleRevogar(a.id, a.perfil_id)}>
                             <XCircle className="mr-1 h-3 w-3" /> Revogar
                           </Button>
                         </td>

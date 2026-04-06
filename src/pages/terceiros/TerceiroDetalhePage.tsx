@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 
 const criticidadeConfig: Record<string, { label: string; class: string }> = {
   baixa: { label: "Baixa", class: "bg-muted text-muted-foreground" },
@@ -122,6 +123,7 @@ export default function TerceiroDetalhePage() {
     qc.invalidateQueries({ queryKey: ["terceiro_atribuicoes", id] });
     setAtribuirOpen(false);
     setSelectedPerfil("");
+    triggerEntraProcessing();
   };
 
   const handleRevogar = async (atribuicaoId: string, perfilId?: string) => {
@@ -132,6 +134,7 @@ export default function TerceiroDetalhePage() {
     }
     toast({ title: "Perfil revogado — solicitações de remoção enviadas" });
     qc.invalidateQueries({ queryKey: ["terceiro_atribuicoes", id] });
+    triggerEntraProcessing();
   };
 
   return (
