@@ -150,7 +150,8 @@ export default function TerceirosPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg"><DialogHeader><DialogTitle>{editing ? "Editar Terceiro" : "Novo Terceiro"}</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2"><Label>Nome completo</Label><Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Nome completo *</Label><Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Nome de login AD (samAccountName) *</Label><Input placeholder="ex: joao.silva" value={form.sam_account_name} onChange={(e) => setForm({ ...form, sam_account_name: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Email</Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
               <div className="space-y-2"><Label>Empresa</Label><Input value={form.empresa_terceira} onChange={(e) => setForm({ ...form, empresa_terceira: e.target.value })} /></div>
