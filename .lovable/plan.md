@@ -1,53 +1,48 @@
 
 
-## Plano: Gerar diff de mudancas ao editar perfil de acesso e reprovisionar no Entra ID
+## Plano: Corrigir o fluxo de diff do perfil de acesso que não gera entradas na fila
 
-### Problema
+### Causa raiz identificada
 
-Quando voce edita um perfil de acesso (adiciona ou remove grupos, licencas ou apps), o codigo atual em `PerfilAcessoDetalhePage.tsx` so gera entradas `assign_*` para o estado novo. Ele nunca gera entradas `remove_*` para os itens que foram removidos. Alem disso, re-envia assigns para itens que ja existiam, gerando trabalho desnecessario.
+A tabela `perfil_atribuicoes` **não tem foreign key** para `colaboradores`. Por isso, a query na linha 121:
 
-O sistema precisa calcular o **diff** entre o estado anterior e o novo, e gerar:
-- `remove_group` / `remove_license` / `remove_app` para itens removidos
-- `assign_group` / `assign_license` / `assign_app` apenas para itens adicionados
+```typescript
+.select("colaborador_id, colaboradores(nome, email, sam_account_name)")
+```
 
-### Correcao
+Retorna `colaboradores: null` para cada registro. Na linha 130, o código faz `if (!colab) continue;` — e pula todos os colaboradores. **Zero entradas são geradas na fila.**
+
+Além disso, mesmo que gerasse, a chamada `triggerEntraProcessing()` na linha 194 já está fora do bloco `if (hasChanges)`, o que está correto (force=true por padrão). Mas o problema principal é que nunca chega a inserir nada.
+
+### Correção
 
 **Arquivo:** `src/pages/perfis-acesso/PerfilAcessoDetalhePage.tsx`
 
-Na funcao `handleSaveEdit`, antes de fazer o delete+insert das tabelas de vinculo (`perfil_grupos`, `perfil_licencas`, `perfil_aplicacoes`), capturar o estado anterior (que ja esta disponivel em `perfilGrupos`, `perfilLicencas`, `perfilApps`).
+Substituir a query com join (que falha sem FK) por duas queries separadas:
 
-Depois de salvar, calcular:
-- **Grupos adicionados** = `editForm.grupo_ids` que nao estavam em `perfilGrupos`
-- **Grupos removidos** = IDs que estavam em `perfilGrupos` mas nao estao em `editForm.grupo_ids`
-- Mesma logica para licencas e apps
+1. Buscar `perfil_atribuicoes` filtrando por `perfil_id` e `ativo = true` para obter os `colaborador_id`s
+2. Buscar os dados dos colaboradores (`nome`, `email`, `sam_account_name`) separadamente pela lista de IDs
 
-Para cada colaborador com atribuicao ativa neste perfil:
-- Gerar `assign_group` apenas para grupos adicionados
-- Gerar `remove_group` apenas para grupos removidos
-- Idem para licencas e apps
+Isso elimina a dependência de foreign key e garante que os dados do colaborador são obtidos corretamente.
 
-Depois, chamar `triggerEntraProcessing()` para processar imediatamente.
-
-### Detalhes tecnicos
+### Detalhes técnicos
 
 ```text
-Antes (estado atual):
-editar perfil -> salva novos vinculos
--> gera assign_* para TODOS os itens novos (sem removes)
--> itens removidos ficam no Entra ID sem ser revogados
+Hoje:
+perfil_atribuicoes.select("colaborador_id, colaboradores(...)")
+→ colaboradores = null (sem FK)
+→ skip all
+→ 0 queue entries
 
 Depois:
-editar perfil -> captura estado anterior
--> salva novos vinculos
--> calcula diff (adicionados vs removidos)
--> gera assign_* so para adicionados
--> gera remove_* para removidos
--> triggerEntraProcessing() executa imediatamente
+1. perfil_atribuicoes.select("colaborador_id").eq("perfil_id", id).eq("ativo", true)
+2. colaboradores.select("id, nome, email, sam_account_name").in("id", colabIds)
+3. match por id → gera entries corretamente
 ```
 
 ### Resumo de arquivos
 
-| Acao | Arquivo |
+| Ação | Arquivo |
 |---|---|
-| Editar | `src/pages/perfis-acesso/PerfilAcessoDetalhePage.tsx` — calcular diff e gerar remove/assign corretos |
+| Editar | `src/pages/perfis-acesso/PerfilAcessoDetalhePage.tsx` — substituir join por queries separadas |
 
