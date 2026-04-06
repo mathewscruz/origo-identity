@@ -106,7 +106,6 @@ function parseCsv(text: string): CsvRow[] {
 
   const rows: CsvRow[] = [];
   let syntheticCount = 0;
-  // Track duplicate employIDs to add positional suffix
   const matCount = new Map<string, number>();
 
   for (let i = 1; i < lines.length; i++) {
@@ -129,7 +128,6 @@ function parseCsv(text: string): CsvRow[] {
       syntheticCount++;
     }
 
-    // Handle duplicate matriculas: add _ROW_N suffix for duplicates
     const baseMat = row["employID"].trim();
     const count = matCount.get(baseMat) || 0;
     matCount.set(baseMat, count + 1);
@@ -162,7 +160,6 @@ function chunk<T>(arr: T[], size: number): T[][] {
 
 const PLACEHOLDER_EMPRESA_ID = "00000000-0000-0000-0000-000000000000";
 
-/** Build a fingerprint string from a CSV row's key fields for change detection */
 function buildFingerprint(row: CsvRow): string {
   return [
     row.displayName || "",
@@ -178,6 +175,132 @@ function buildFingerprint(row: CsvRow): string {
   ].join("|").toLowerCase();
 }
 
+/** Build reverse lookup maps: id -> nome */
+function buildNameLookup(cache: Map<string, string>): Map<string, string> {
+  const reverse = new Map<string, string>();
+  for (const [name, id] of cache) {
+    reverse.set(id, name);
+  }
+  return reverse;
+}
+
+/** Provision cargo-based access profiles and queue Entra ID group/license assignments */
+async function provisionCargoAcessosServer(
+  sb: any,
+  colaboradorId: string,
+  newCargoId: string | null,
+  oldCargoId: string | null,
+  samAccountName: string,
+  displayName: string,
+  mail: string
+) {
+  // Revoke old cargo-based assignments
+  if (oldCargoId) {
+    const { data: activeAssignments } = await sb
+      .from("perfil_atribuicoes")
+      .select("perfil_id")
+      .eq("colaborador_id", colaboradorId)
+      .eq("origem", "cargo")
+      .eq("ativo", true);
+
+    if (activeAssignments && activeAssignments.length > 0 && samAccountName) {
+      for (const assignment of activeAssignments) {
+        await queueProfileAccess(sb, samAccountName, displayName, mail, assignment.perfil_id, "remove");
+      }
+    }
+
+    await sb
+      .from("perfil_atribuicoes")
+      .update({ ativo: false, data_revogacao: new Date().toISOString() })
+      .eq("colaborador_id", colaboradorId)
+      .eq("origem", "cargo")
+      .eq("ativo", true);
+  }
+
+  // Assign new cargo profiles
+  if (newCargoId) {
+    const { data: cargoPerfis } = await sb
+      .from("cargo_perfis")
+      .select("perfil_id")
+      .eq("cargo_id", newCargoId);
+
+    if (cargoPerfis && cargoPerfis.length > 0) {
+      const inserts = cargoPerfis.map((cp: any) => ({
+        perfil_id: cp.perfil_id,
+        colaborador_id: colaboradorId,
+        origem: "cargo",
+        ativo: true,
+      }));
+      await sb.from("perfil_atribuicoes").insert(inserts);
+
+      if (samAccountName) {
+        for (const cp of cargoPerfis) {
+          await queueProfileAccess(sb, samAccountName, displayName, mail, cp.perfil_id, "add");
+        }
+      }
+    }
+  }
+}
+
+async function queueProfileAccess(
+  sb: any,
+  samAccountName: string,
+  displayName: string,
+  mail: string,
+  perfilId: string,
+  action: "add" | "remove"
+) {
+  const { data: grupos } = await sb
+    .from("perfil_grupos")
+    .select("grupo_id, entra_grupos(entra_id, nome)")
+    .eq("perfil_id", perfilId);
+
+  if (grupos) {
+    for (const g of grupos) {
+      if (!g.entra_grupos) continue;
+      await sb.from("iam_queue").insert({
+        action_type: action === "add" ? "assign_group" : "remove_group",
+        payload_json: {
+          samAccountName,
+          displayName,
+          mail,
+          groupId: g.entra_grupos.entra_id,
+          groupName: g.entra_grupos.nome,
+          action,
+        },
+        target_identity: samAccountName,
+        requested_by: "importacao_csv",
+        status: "pending",
+      });
+    }
+  }
+
+  const { data: licencas } = await sb
+    .from("perfil_licencas")
+    .select("licenca_id, entra_licencas(sku_id, nome)")
+    .eq("perfil_id", perfilId);
+
+  if (licencas) {
+    for (const l of licencas) {
+      if (!l.entra_licencas) continue;
+      await sb.from("iam_queue").insert({
+        action_type: action === "add" ? "assign_license" : "remove_license",
+        payload_json: {
+          samAccountName,
+          displayName,
+          mail,
+          skuId: l.entra_licencas.sku_id,
+          licenseName: l.entra_licencas.nome,
+          action,
+        },
+        target_identity: samAccountName,
+        requested_by: "importacao_csv",
+        status: "pending",
+      });
+    }
+  }
+}
+
 async function processCsvData(sb: any, csvText: string, filename: string) {
   // ── 1. Create sync_job ──
   const { data: job, error: jobErr } = await sb
@@ -188,20 +311,20 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
   const jobId = job.id;
 
   try {
-    // ── 2. Parse CSV — ALL rows, with positional suffix for duplicates ──
+    // ── 2. Parse CSV ──
     const rows = parseCsv(csvText);
     const totalRows = rows.length;
 
     await sb.from("sync_jobs").update({ message: `Parsed ${totalRows} registros. Comparando...`, phase: "comparing", colab_total: totalRows }).eq("id", jobId);
 
-    // ── 3. Load existing CSV-origin records into a Map ──
-    const existingMap = new Map<string, { id: string; fingerprint: string }>();
+    // ── 3. Load existing CSV-origin records ──
+    const existingMap = new Map<string, { id: string; fingerprint: string; cargo_id: string | null; sam_account_name: string | null; status: string }>();
     let from = 0;
     const PAGE = 1000;
     while (true) {
       const { data } = await sb
         .from("colaboradores")
-        .select("id, matricula, nome, email, status, empresa_id, cargo_id, area_id, localidade_id, cpf, data_admissao, data_desligamento, import_hash")
+        .select("id, matricula, nome, email, status, empresa_id, cargo_id, area_id, localidade_id, cpf, data_admissao, data_desligamento, import_hash, sam_account_name")
         .eq("origem", "csv")
         .range(from, from + PAGE - 1);
       if (!data || data.length === 0) break;
@@ -209,7 +332,10 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         if (c.matricula) {
           existingMap.set(c.matricula, {
             id: c.id,
-            fingerprint: c.import_hash || "", // we store fingerprint in import_hash
+            fingerprint: c.import_hash || "",
+            cargo_id: c.cargo_id,
+            sam_account_name: c.sam_account_name,
+            status: c.status,
           });
         }
       });
@@ -284,6 +410,11 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
     console.log(`Lookups ready: ${empresaCache.size} empresas, ${cargoCache.size} cargos, ${areaCache.size} areas, ${localCache.size} locais`);
 
+    // Build reverse lookups (id -> name) for payload enrichment
+    const empresaNames = buildNameLookup(empresaCache);
+    const cargoNames = buildNameLookup(cargoCache);
+    const areaNames = buildNameLookup(areaCache);
+
     function buildColabData(row: CsvRow) {
       const statusMapped = STATUS_MAP[(row.status || "ativo").toLowerCase()] || "ativo";
       const email = row.mail || "";
@@ -307,11 +438,11 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       };
     }
 
-    // ── 5. Classify rows: insert / update / skip ──
+    // ── 5. Classify rows ──
     await sb.from("sync_jobs").update({ phase: "classifying", message: "Classificando mudanças...", colab_percent: 20 }).eq("id", jobId);
 
     const toInsert: any[] = [];
-    const toUpdate: { id: string; data: any }[] = [];
+    const toUpdate: { id: string; data: any; oldCargoId: string | null; oldStatus: string; oldSam: string | null }[] = [];
     const csvMatriculas = new Set<string>();
     let unchanged = 0;
 
@@ -322,13 +453,16 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       const existing = existingMap.get(mat);
 
       if (!existing) {
-        // New record
         toInsert.push(buildColabData(row));
       } else if (existing.fingerprint !== fp) {
-        // Changed record — update by existing id
-        toUpdate.push({ id: existing.id, data: buildColabData(row) });
+        toUpdate.push({
+          id: existing.id,
+          data: buildColabData(row),
+          oldCargoId: existing.cargo_id,
+          oldStatus: existing.status,
+          oldSam: existing.sam_account_name,
+        });
       } else {
-        // Unchanged — just update ultima_importacao_id
         unchanged++;
       }
     }
@@ -336,10 +470,12 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     // Leavers: matriculas in DB but not in CSV
     const leaverIds: string[] = [];
     const leaverMatriculas: string[] = [];
+    const leaverDetails: { id: string; sam: string | null; cargo_id: string | null }[] = [];
     for (const [mat, rec] of existingMap) {
       if (!csvMatriculas.has(mat)) {
         leaverIds.push(rec.id);
         leaverMatriculas.push(mat);
+        leaverDetails.push({ id: rec.id, sam: rec.sam_account_name, cargo_id: rec.cargo_id });
       }
     }
 
@@ -349,12 +485,22 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     await sb.from("sync_jobs").update({ phase: "inserting", message: `Inserindo ${toInsert.length} novos...`, colab_percent: 30 }).eq("id", jobId);
 
     let created = 0;
+    const insertedIds: { id: string; data: any }[] = [];
     if (toInsert.length > 0) {
       const insertChunks = chunk(toInsert, 500);
       for (let ci = 0; ci < insertChunks.length; ci++) {
         const { data: inserted, error: insErr } = await sb.from("colaboradores").insert(insertChunks[ci]).select("id");
         if (insErr) { console.error("Insert batch error:", insErr.message); continue; }
-        if (inserted) created += inserted.length;
+        if (inserted) {
+          created += inserted.length;
+          // Map inserted IDs back to data
+          inserted.forEach((ins: any, idx: number) => {
+            const dataIdx = ci * 500 + idx;
+            if (dataIdx < toInsert.length) {
+              insertedIds.push({ id: ins.id, data: toInsert[dataIdx] });
+            }
+          });
+        }
         const pct = 30 + Math.round((ci + 1) / insertChunks.length * 20);
         await sb.from("sync_jobs").update({ colab_percent: pct, colab_created: created, message: `Inseridos ${created}/${toInsert.length}...` }).eq("id", jobId);
       }
@@ -377,10 +523,46 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       }
     }
 
-    // ── 8. DELETE leavers ──
+    // ── 8. Handle leavers: disable in AD BEFORE deleting ──
     if (leaverIds.length > 0) {
       await sb.from("sync_jobs").update({ phase: "removing", message: `Removendo ${leaverIds.length} ausentes...`, colab_percent: 75 }).eq("id", jobId);
+
+      // Gap 4: Generate iam_queue disable entries for leavers
+      const leaverIamEntries = leaverDetails
+        .filter(l => l.sam)
+        .map(l => ({
+          action_type: "disable",
+          payload_json: {
+            samAccountName: l.sam,
+            displayName: "",
+            mail: "",
+            status: "disabled",
+            status_anterior: "ativo",
+            status_novo: "desligado",
+            changed_fields: ["status"],
+            new_values: { status: "disabled" },
+          },
+          target_identity: l.sam,
+          colaborador_id: l.id,
+          requested_by: "importacao_csv",
+          status: "pending",
+        }));
+      if (leaverIamEntries.length > 0) {
+        for (const batch of chunk(leaverIamEntries, 200)) await sb.from("iam_queue").insert(batch);
+      }
+
+      // Revoke access profiles for leavers before deleting
+      for (const l of leaverDetails) {
+        if (l.cargo_id && l.sam) {
+          await provisionCargoAcessosServer(sb, l.id, null, l.cargo_id, l.sam, "", "");
+        }
+      }
+
       for (const batch of chunk(leaverIds, 200)) {
+        // Clean up dependent tables first
+        await sb.from("perfil_atribuicoes").delete().in("colaborador_id", batch);
+        await sb.from("excecoes").delete().in("colaborador_id", batch);
+        await sb.from("revisao_itens").delete().in("colaborador_id", batch);
         const { error } = await sb.from("colaboradores").delete().in("id", batch);
         if (error) console.error("Delete batch error:", error.message);
       }
@@ -388,7 +570,6 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
     // ── 9. Update unchanged records' ultima_importacao_id ──
     if (unchanged > 0) {
-      // Batch update all records that were unchanged
       const unchangedMats: string[] = [];
       for (const row of rows) {
         const mat = row.employID.trim();
@@ -426,11 +607,14 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       }));
       for (const batch of chunk(joinerEvents, 200)) await sb.from("eventos_jml").insert(batch);
 
-      // Generate iam_queue entries for new colaboradores (create_if_not_exists)
+      // Gap 2: Generate iam_queue entries with enriched payloads
       const iamEntries = toInsert.filter(c => c.sam_account_name).map(c => {
         const nameParts = (c.nome || "").split(" ");
         const givenName = nameParts[0] || "";
         const surname = nameParts.slice(1).join(" ") || givenName;
+        const companyName = c.empresa_id ? (empresaNames.get(c.empresa_id) || null) : null;
+        const titleName = c.cargo_id ? (cargoNames.get(c.cargo_id) || null) : null;
+        const deptName = c.area_id ? (areaNames.get(c.area_id) || null) : null;
         return {
           action_type: "create_if_not_exists",
           payload_json: {
@@ -440,9 +624,9 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
             samAccountName: c.sam_account_name,
             userPrincipalName: `${c.sam_account_name}@ebessolar.local`,
             mail: c.email,
-            department: null,
-            title: null,
-            company: null,
+            department: deptName,
+            title: titleName,
+            company: companyName,
             telephoneNumber: null,
             manager: null,
             ouPath: "",
@@ -453,6 +637,16 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         };
       });
       for (const batch of chunk(iamEntries, 200)) await sb.from("iam_queue").insert(batch);
+
+      // Gap 5: Provision access profiles for new joiners (immediate - Gap 6 option A)
+      for (const ins of insertedIds) {
+        if (ins.data.cargo_id && ins.data.sam_account_name) {
+          await provisionCargoAcessosServer(
+            sb, ins.id, ins.data.cargo_id, null,
+            ins.data.sam_account_name, ins.data.nome || "", ins.data.email || ""
+          );
+        }
+      }
     }
 
     if (toUpdate.length > 0) {
@@ -465,6 +659,85 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         dados_depois: { matricula: u.data.matricula, nome: u.data.nome },
       }));
       for (const batch of chunk(moverEvents, 200)) await sb.from("eventos_jml").insert(batch);
+
+      // Gap 3: Generate iam_queue for movers
+      for (const item of toUpdate) {
+        const sam = item.data.sam_account_name || item.oldSam;
+        if (!sam) continue;
+
+        const newStatus = item.data.status;
+        const oldStatus = item.oldStatus;
+        const isDisabling = (newStatus === "desligado" || newStatus === "inativo") && oldStatus !== newStatus;
+
+        if (isDisabling) {
+          // Disable action
+          await sb.from("iam_queue").insert({
+            action_type: "disable",
+            payload_json: {
+              samAccountName: sam,
+              mail: item.data.email || "",
+              displayName: item.data.nome || "",
+              status: "disabled",
+              status_anterior: oldStatus,
+              status_novo: newStatus,
+              changed_fields: ["status"],
+              new_values: { status: "disabled" },
+            },
+            target_identity: sam,
+            colaborador_id: item.id,
+            requested_by: "importacao_csv",
+            status: "pending",
+          });
+
+          // Revoke access profiles on disable
+          if (item.oldCargoId) {
+            await provisionCargoAcessosServer(sb, item.id, null, item.oldCargoId, sam, item.data.nome || "", item.data.email || "");
+          }
+        } else {
+          // Build changed_fields for update
+          const changedFields: string[] = [];
+          const newValues: Record<string, string | null> = {};
+
+          if (item.data.cargo_id !== item.oldCargoId) {
+            changedFields.push("title");
+            newValues.title = item.data.cargo_id ? (cargoNames.get(item.data.cargo_id) || null) : null;
+          }
+          if (item.data.area_id) {
+            changedFields.push("department");
+            newValues.department = areaNames.get(item.data.area_id) || null;
+          }
+          if (item.data.empresa_id) {
+            changedFields.push("company");
+            newValues.company = empresaNames.get(item.data.empresa_id) || null;
+          }
+
+          if (changedFields.length > 0) {
+            await sb.from("iam_queue").insert({
+              action_type: "update",
+              payload_json: {
+                samAccountName: sam,
+                mail: item.data.email || "",
+                displayName: item.data.nome || "",
+                status: "enabled",
+                changed_fields: changedFields,
+                new_values: newValues,
+              },
+              target_identity: sam,
+              colaborador_id: item.id,
+              requested_by: "importacao_csv",
+              status: "pending",
+            });
+          }
+
+          // Gap 5: Re-provision profiles on cargo change
+          if (item.data.cargo_id !== item.oldCargoId) {
+            await provisionCargoAcessosServer(
+              sb, item.id, item.data.cargo_id, item.oldCargoId,
+              sam, item.data.nome || "", item.data.email || ""
+            );
+          }
+        }
+      }
     }
 
     // ── 11. Alert if leavers ──
