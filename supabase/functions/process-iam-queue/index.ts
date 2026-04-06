@@ -307,123 +307,127 @@ Deno.serve(async (req) => {
     const token = await getAzureToken(TENANT_ID, CLIENT_ID, CLIENT_SECRET);
     console.log("Azure token acquired");
 
-    // Fetch pending Entra ID items
-    const { data: items, error: fetchErr } = await supabase
-      .from("iam_queue")
-      .select("*")
-      .in("action_type", ENTRA_ACTION_TYPES)
-      .eq("status", "pending")
-      .or("next_retry_at.is.null,next_retry_at.lte." + new Date().toISOString())
-      .order("created_at", { ascending: true })
-      .limit(20);
+    // Process ALL pending Entra ID items in a loop
+    const allResults: { id: string; action: string; status: string; message: string }[] = [];
+    let totalProcessed = 0;
 
-    if (fetchErr) {
-      return jsonResponse({ error: fetchErr.message }, 500);
-    }
+    while (true) {
+      const { data: items, error: fetchErr } = await supabase
+        .from("iam_queue")
+        .select("*")
+        .in("action_type", ENTRA_ACTION_TYPES)
+        .eq("status", "pending")
+        .or("next_retry_at.is.null,next_retry_at.lte." + new Date().toISOString())
+        .order("created_at", { ascending: true })
+        .limit(50);
 
-    if (!items || items.length === 0) {
-      return jsonResponse({ success: true, processed: 0, message: "Nenhum item pendente na fila" });
-    }
-
-    console.log(`Processing ${items.length} Entra ID queue items...`);
-
-    const results: { id: string; action: string; status: string; message: string }[] = [];
-
-    for (const item of items) {
-      const payload = item.payload_json as Record<string, any>;
-
-      // Mark as processing
-      await supabase.from("iam_queue").update({ status: "processing" }).eq("id", item.id);
-
-      // Resolve user in Entra ID
-      const userId = await resolveUserId(token, payload);
-
-      if (!userId) {
-        // User not found — retry
-        const retryCount = (item.retry_count || 0) + 1;
-        const maxRetries = item.max_retries || 10;
-
-        if (retryCount >= maxRetries) {
-          await supabase.from("iam_queue").update({
-            status: "failed",
-            error_code: "user_not_found",
-            result_message: `Usuário não encontrado no Entra ID após ${maxRetries} tentativas (sam: ${payload.samAccountName}, mail: ${payload.mail})`,
-            processed_at: new Date().toISOString(),
-            processed_by: "lovable_cloud",
-          }).eq("id", item.id);
-
-          results.push({ id: item.id, action: item.action_type, status: "failed", message: "User not found - max retries exceeded" });
-        } else {
-          const nextRetry = calculateNextRetry(retryCount);
-          await supabase.from("iam_queue").update({
-            status: "pending",
-            retry_count: retryCount,
-            next_retry_at: nextRetry,
-            error_code: "user_not_found",
-            result_message: `Retry ${retryCount}/${maxRetries} — usuário não encontrado no Entra ID`,
-          }).eq("id", item.id);
-
-          results.push({ id: item.id, action: item.action_type, status: "retry", message: `Retry ${retryCount}/${maxRetries}` });
-        }
-        continue;
+      if (fetchErr) {
+        return jsonResponse({ error: fetchErr.message }, 500);
       }
 
-      // Execute the action
-      const result = await executeAction(token, userId, item.action_type, payload);
+      if (!items || items.length === 0) break;
 
-      if (result.success) {
-        await supabase.from("iam_queue").update({
-          status: "success",
-          processed_at: new Date().toISOString(),
-          processed_by: "lovable_cloud",
-          result_message: result.message,
-          error_code: null,
-        }).eq("id", item.id);
+      console.log(`Processing batch of ${items.length} Entra ID queue items...`);
 
-        results.push({ id: item.id, action: item.action_type, status: "success", message: result.message });
-      } else {
-        // Check if it's a non-retryable error (on-premises managed)
-        const isNonRetryable = result.message.includes("AD local") || result.message.includes("on-premises");
+      for (const item of items) {
+        const payload = item.payload_json as Record<string, any>;
 
-        const retryCount = (item.retry_count || 0) + 1;
-        const maxRetries = item.max_retries || 10;
+        // Mark as processing
+        await supabase.from("iam_queue").update({ status: "processing" }).eq("id", item.id);
 
-        if (!isNonRetryable && retryCount < maxRetries) {
-          const nextRetry = calculateNextRetry(retryCount);
+        // Resolve user in Entra ID
+        const userId = await resolveUserId(token, payload);
+
+        if (!userId) {
+          const retryCount = (item.retry_count || 0) + 1;
+          const maxRetries = item.max_retries || 10;
+
+          if (retryCount >= maxRetries) {
+            await supabase.from("iam_queue").update({
+              status: "failed",
+              error_code: "user_not_found",
+              result_message: `Usuário não encontrado no Entra ID após ${maxRetries} tentativas (sam: ${payload.samAccountName}, mail: ${payload.mail})`,
+              processed_at: new Date().toISOString(),
+              processed_by: "lovable_cloud",
+            }).eq("id", item.id);
+            allResults.push({ id: item.id, action: item.action_type, status: "failed", message: "User not found - max retries exceeded" });
+          } else {
+            const nextRetry = calculateNextRetry(retryCount);
+            await supabase.from("iam_queue").update({
+              status: "pending",
+              retry_count: retryCount,
+              next_retry_at: nextRetry,
+              error_code: "user_not_found",
+              result_message: `Retry ${retryCount}/${maxRetries} — usuário não encontrado no Entra ID`,
+            }).eq("id", item.id);
+            allResults.push({ id: item.id, action: item.action_type, status: "retry", message: `Retry ${retryCount}/${maxRetries}` });
+          }
+          continue;
+        }
+
+        // Execute the action
+        const result = await executeAction(token, userId, item.action_type, payload);
+
+        if (result.success) {
           await supabase.from("iam_queue").update({
-            status: "pending",
-            retry_count: retryCount,
-            next_retry_at: nextRetry,
-            error_code: "graph_api_error",
-            result_message: `Retry ${retryCount}/${maxRetries} — ${result.message}`,
-          }).eq("id", item.id);
-          results.push({ id: item.id, action: item.action_type, status: "retry", message: result.message });
-        } else {
-          await supabase.from("iam_queue").update({
-            status: "failed",
+            status: "success",
             processed_at: new Date().toISOString(),
             processed_by: "lovable_cloud",
             result_message: result.message,
-            error_code: "graph_api_error",
+            error_code: null,
           }).eq("id", item.id);
-          results.push({ id: item.id, action: item.action_type, status: "failed", message: result.message });
+          allResults.push({ id: item.id, action: item.action_type, status: "success", message: result.message });
+        } else {
+          const isNonRetryable = result.message.includes("AD local") || result.message.includes("on-premises");
+          const retryCount = (item.retry_count || 0) + 1;
+          const maxRetries = item.max_retries || 10;
+
+          if (!isNonRetryable && retryCount < maxRetries) {
+            const nextRetry = calculateNextRetry(retryCount);
+            await supabase.from("iam_queue").update({
+              status: "pending",
+              retry_count: retryCount,
+              next_retry_at: nextRetry,
+              error_code: "graph_api_error",
+              result_message: `Retry ${retryCount}/${maxRetries} — ${result.message}`,
+            }).eq("id", item.id);
+            allResults.push({ id: item.id, action: item.action_type, status: "retry", message: result.message });
+          } else {
+            await supabase.from("iam_queue").update({
+              status: "failed",
+              processed_at: new Date().toISOString(),
+              processed_by: "lovable_cloud",
+              result_message: result.message,
+              error_code: "graph_api_error",
+            }).eq("id", item.id);
+            allResults.push({ id: item.id, action: item.action_type, status: "failed", message: result.message });
+          }
         }
       }
+
+      totalProcessed += items.length;
+
+      // Safety: if batch was full, there might be more
+      if (items.length < 50) break;
+    }
+
+    if (totalProcessed === 0) {
+      return jsonResponse({ success: true, processed: 0, message: "Nenhum item pendente na fila" });
     }
 
     const summary = {
-      success: results.filter(r => r.status === "success").length,
-      retries: results.filter(r => r.status === "retry").length,
-      failures: results.filter(r => r.status === "failed").length,
+      success: allResults.filter(r => r.status === "success").length,
+      retries: allResults.filter(r => r.status === "retry").length,
+      failures: allResults.filter(r => r.status === "failed").length,
     };
 
     console.log(`Done: ${summary.success} success, ${summary.retries} retries, ${summary.failures} failures`);
 
     return jsonResponse({
       success: true,
-      processed: items.length,
+      processed: totalProcessed,
       summary,
-      results,
+      results: allResults,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro desconhecido";
