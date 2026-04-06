@@ -74,43 +74,22 @@ export default function ColaboradorDetalhePage() {
     setSaving(false);
     if (error) { toast({ title: "Erro ao atribuir", description: error.message, variant: "destructive" }); return; }
 
-    // Generate iam_queue entries for the assigned profile
-    const sam = (pessoa as any)?.sam_account_name || "";
-    if (sam) {
-      const { data: grupos } = await (supabase as any).from("perfil_grupos").select("grupo_id, entra_grupos(entra_id, nome, on_premises_sync)").eq("perfil_id", selectedPerfilId);
-      for (const g of (grupos || [])) {
-        if (!g.entra_grupos) continue;
-        await supabase.from("iam_queue" as any).insert({
-          action_type: "assign_group",
-          payload_json: { samAccountName: sam, displayName: pessoa.nome, mail: pessoa.email || "", groupId: g.entra_grupos.entra_id, groupName: g.entra_grupos.nome, onPremisesSync: g.entra_grupos.on_premises_sync || false },
-          target_identity: sam, requested_by: profile?.email || "sistema", colaborador_id: id, status: "pending",
-        });
-      }
-      const { data: licencas } = await (supabase as any).from("perfil_licencas").select("licenca_id, entra_licencas(sku_id, nome)").eq("perfil_id", selectedPerfilId);
-      for (const l of (licencas || [])) {
-        if (!l.entra_licencas) continue;
-        await supabase.from("iam_queue" as any).insert({
-          action_type: "assign_license",
-          payload_json: { samAccountName: sam, displayName: pessoa.nome, mail: pessoa.email || "", skuId: l.entra_licencas.sku_id, licenseName: l.entra_licencas.nome },
-          target_identity: sam, requested_by: profile?.email || "sistema", colaborador_id: id, status: "pending",
-        });
-      }
-      const { data: apps } = await (supabase as any).from("perfil_aplicacoes").select("aplicacao_id, aplicacoes(entra_id, nome, default_app_role_id)").eq("perfil_id", selectedPerfilId);
-      for (const a of (apps || [])) {
-        if (!a.aplicacoes?.entra_id) continue;
-        await supabase.from("iam_queue" as any).insert({
-          action_type: "assign_app",
-          payload_json: { samAccountName: sam, displayName: pessoa.nome, mail: pessoa.email || "", appId: a.aplicacoes.entra_id, appName: a.aplicacoes.nome, appRoleId: a.aplicacoes.default_app_role_id || "00000000-0000-0000-0000-000000000000" },
-          target_identity: sam, requested_by: profile?.email || "sistema", colaborador_id: id, status: "pending",
-        });
-      }
+    // Use central helper to queue Entra ID actions
+    const identity = (pessoa as any)?.email || (pessoa as any)?.sam_account_name || "";
+    if (identity) {
+      const colabIdentity = {
+        id: id!,
+        nome: pessoa.nome,
+        email: pessoa.email || null,
+        sam_account_name: (pessoa as any)?.sam_account_name || null,
+      };
+      await queueFullProfileActions([colabIdentity], [selectedPerfilId], "assign");
     }
 
     toast({ title: "Perfil atribuído com sucesso" });
     queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
     setAtribuirOpen(false);
     setSelectedPerfilId("");
-    triggerEntraProcessing();
   }
 
   async function handleRevogar(atribuicaoId: string, perfilId?: string) {
