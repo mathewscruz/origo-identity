@@ -37,6 +37,17 @@ Deno.serve(async (req) => {
 
   // GET /pending
   if (req.method === "GET" && path === "pending") {
+    // Check modo_operacao
+    const { data: modoParam } = await supabase
+      .from("parametros")
+      .select("valor")
+      .eq("chave", "modo_operacao")
+      .single();
+
+    if (modoParam?.valor === "simulacao") {
+      return jsonResponse({ success: true, count: 0, data: [], mode: "simulacao" });
+    }
+
     const { data, error } = await supabase
       .from("iam_queue")
       .select("*")
