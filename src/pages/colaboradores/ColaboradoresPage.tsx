@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { provisionCargoAcessos } from "@/lib/provisionCargoAcessos";
 import { createEventoJML } from "@/lib/createEventoJML";
+import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
