@@ -1,36 +1,110 @@
 
+## Plano: corrigir o erro de sincronização dos grupos
 
-## Plano: Corrigir sync-entra-groups para trazer todos os grupos
+### Diagnóstico validado
 
-### Diagnostico
+O problema não está mais na lógica de sincronização dos grupos em si.
 
-A tabela tem apenas 16 grupos e 0 on-premises. As permissoes Azure estao corretas (screenshot confirma `Group.Read.All`, `Group.ReadWrite.All`, `Directory.Read.All` com Admin Consent). O codigo de paginacao parece correto, entao o problema provavel e:
-
-1. **Timeout da Edge Function**: O upsert grupo-a-grupo (SELECT + INSERT/UPDATE para cada grupo) e muito lento. Se o Entra ID tem centenas de grupos, a funcao expira antes de terminar (limite de 60s em Edge Functions).
-2. **Erro silencioso**: Se a Graph API retorna corretamente mas o loop de insercao e interrompido por timeout, apenas os primeiros grupos sao salvos.
-
-### Correcoes
-
-#### 1. Usar upsert em batch (ao inves de 1 query por grupo)
-
-Substituir o loop individual `SELECT + INSERT/UPDATE` por um unico `upsert` em batch usando a chave `entra_id`. Isso reduz de ~3 queries por grupo para 1 query total.
+A função `sync-entra-groups` respondeu com sucesso quando chamada diretamente e retornou:
 
 ```text
-Antes: N grupos × 2-3 queries = centenas de queries (timeout)
-Depois: 1 fetch paginado + 1 upsert batch = 2-5 queries total
+total: 1712
+upserted: 1712
+onPremises: 268
+cloudOnly: 1444
 ```
 
-#### 2. Adicionar logging detalhado
+Ou seja: a integração com o Entra ID está funcionando e a função consegue buscar todos os grupos.
 
-Logar o numero de grupos recebidos da Graph API antes de iniciar o upsert, para confirmar que a API retorna todos.
+### Causa raiz
 
-#### 3. Processar em batches de 500
+O erro `Failed to fetch` no navegador é causado por CORS/preflight.
 
-Para evitar payloads muito grandes no upsert, processar em blocos de 500 grupos.
+Hoje o frontend envia estes headers ao chamar a função:
 
-### Resumo de arquivos
+```text
+apikey
+authorization
+content-type
+```
 
-| Acao | Arquivo |
+Mas a função `sync-entra-groups` responde com:
+
+```text
+Access-Control-Allow-Headers: authorization, content-type
+```
+
+Está faltando permitir `apikey` (e idealmente `x-client-info` também). Com isso, o navegador bloqueia a chamada antes mesmo da função processar a requisição.
+
+---
+
+## O que ajustar
+
+### 1. Corrigir CORS da função `sync-entra-groups`
+Arquivo:
+- `supabase/functions/sync-entra-groups/index.ts`
+
+Ajustar `corsHeaders` para incluir os mesmos headers aceitos nas outras funções que funcionam no browser, por exemplo:
+
+```text
+authorization, x-client-info, apikey, content-type
+```
+
+E garantir que:
+- o `OPTIONS` continue respondendo com esses headers;
+- todas as respostas de sucesso e erro retornem os mesmos headers.
+
+### 2. Padronizar com as outras funções já funcionais
+Usar o mesmo padrão de CORS já adotado em:
+- `supabase/functions/sync-sharepoint-csv/index.ts`
+- `supabase/functions/sync-csv-colab/index.ts`
+- `supabase/functions/send-review-email/index.ts`
+
+Assim evitamos divergência entre funções chamadas pela interface.
+
+### 3. Revisar a chamada no frontend
+Arquivo:
+- `src/pages/configuracoes/IntegracoesPage.tsx`
+
+Manter a chamada atual, mas validar se o tratamento de erro continua correto após o ajuste de CORS. Se necessário, melhorar a mensagem para exibir o erro retornado pela função em vez do genérico `Failed to fetch`.
+
+---
+
+## Resultado esperado após a correção
+
+Ao clicar em `Sincronizar Grupos do Entra ID`:
+
+```text
+Frontend -> preflight OPTIONS aprovado
+POST executado normalmente
+Função busca todos os grupos no Entra ID
+Batch upsert grava os grupos na base
+Toast mostra totais importados
+```
+
+Exemplo esperado no toast:
+
+```text
+1712 grupos importados (1444 cloud-only, 268 on-premises)
+```
+
+---
+
+## Arquivos envolvidos
+
+| Ação | Arquivo |
 |---|---|
-| Editar | `supabase/functions/sync-entra-groups/index.ts` — upsert em batch, logging |
+| Editar | `supabase/functions/sync-entra-groups/index.ts` |
+| Revisar | `src/pages/configuracoes/IntegracoesPage.tsx` |
 
+---
+
+## Observação técnica importante
+
+O teste direto na função já provou que:
+- as credenciais Azure estão válidas;
+- a paginação está funcionando;
+- o batch upsert está funcionando;
+- o problema atual é exclusivamente a chamada web bloqueada pelo navegador.
+
+Portanto, esta correção deve destravar o botão sem precisar alterar banco ou a lógica de busca dos grupos.
