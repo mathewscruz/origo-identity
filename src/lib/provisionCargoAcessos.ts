@@ -15,7 +15,7 @@ export async function provisionCargoAcessos(
   let provisioned = 0;
 
   // Get colaborador sam_account_name for iam_queue
-  const { data: colab } = await supabase
+  const { data: colab } = await (supabase as any)
     .from("colaboradores")
     .select("nome, email, sam_account_name")
     .eq("id", colaboradorId)
