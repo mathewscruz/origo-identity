@@ -100,30 +100,21 @@ export default function CargosPage() {
 
     toast({ title: editing ? "Cargo atualizado" : "Cargo criado" });
 
-    // Queue update requests for affected collaborators
-    if (editing && (toRemove.length > 0 || toAdd.length > 0)) {
+    // Reprovision collaborators when cargo_perfis changed
+    if (toRemove.length > 0 || toAdd.length > 0) {
       try {
-        const { data: affectedColabs } = await supabase
-          .from("colaboradores")
-          .select("id, nome, matricula, email")
-          .eq("cargo_id", cargoId);
-
-        if (affectedColabs && affectedColabs.length > 0) {
-          const queueItems = affectedColabs.map((c: any) => ({
-            action_type: "update",
-            payload_json: {
-              samAccountName: c.matricula || c.email || "",
-              displayName: c.nome,
-              changedFields: { cargo_atualizado: form.nome },
-            },
-            requested_by: "sistema",
-            colaborador_id: c.id,
-          }));
-          await (supabase as any).from("iam_queue").insert(queueItems);
-          toast({ title: `${queueItems.length} solicitação(ões) de atualização enviada(s)` });
+        const result = await reprovisionCargoCollaborators(cargoId, toAdd, toRemove);
+        if (result.queued > 0) {
+          toast({ title: `${result.queued} ação(ões) de provisionamento gerada(s)` });
+        }
+        if (result.materialized > 0) {
+          toast({ title: `${result.materialized} atribuição(ões) de perfil criada(s)` });
+        }
+        if (result.revoked > 0) {
+          toast({ title: `${result.revoked} atribuição(ões) de perfil revogada(s)` });
         }
       } catch (err) {
-        console.error("Queue insert error:", err);
+        console.error("Reprovision error:", err);
       }
     }
 

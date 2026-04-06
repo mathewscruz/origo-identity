@@ -73,12 +73,12 @@ export async function provisionCargoAcessos(
       provisioned = inserted?.length || 0;
 
       // Generate iam_queue for Entra ID provisioning
-      if (sam) {
+      if (identity) {
         for (const cp of cargoPerfis) {
-          await queueProfileAccess(sam, colab?.nome || "", colab?.email || "", cp.perfil_id, "add", colaboradorId);
+          await queueProfileAccess(identity, colab?.nome || "", colab?.email || "", cp.perfil_id, "add", colaboradorId);
         }
       } else {
-        console.warn(`[provisionCargoAcessos] sam_account_name vazio para colaborador ${colaboradorId} — atribuição de grupos/licenças no diretório ignorada`);
+        console.warn(`[provisionCargoAcessos] sem identidade (email/sam) para colaborador ${colaboradorId} — atribuição ignorada`);
         skippedDirectory = true;
       }
     }
