@@ -20,7 +20,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
-import { provisionCargoAcessos } from "@/lib/provisionCargoAcessos";
+// provisionCargoAcessos removed — now using central entraQueueHelper
 import { generateEntraQueueForDiff, findAffectedCollaborators } from "@/lib/entraQueueHelper";
 
 const origemColors: Record<string, string> = {
