@@ -134,6 +134,7 @@ export default function TerceiroDetalhePage() {
     }
     toast({ title: "Perfil revogado — solicitações de remoção enviadas" });
     qc.invalidateQueries({ queryKey: ["terceiro_atribuicoes", id] });
+    triggerEntraProcessing();
   };
 
   return (

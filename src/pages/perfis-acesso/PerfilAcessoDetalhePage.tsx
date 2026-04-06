@@ -160,6 +160,7 @@ export default function PerfilAcessoDetalhePage() {
       queryClient.invalidateQueries({ queryKey: ["perfil_grupos", id] });
       queryClient.invalidateQueries({ queryKey: ["perfis_acesso"] });
       setEditOpen(false);
+      triggerEntraProcessing();
     } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
     setSaving(false);
   };
