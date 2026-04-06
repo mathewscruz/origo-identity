@@ -115,7 +115,7 @@ async function queueProfileAccess(
       const { error: insertErr } = await supabase.from("iam_queue" as any).insert({
         action_type: action === "add" ? "assign_group" : "remove_group",
         payload_json: {
-          samAccountName,
+          samAccountName: identity,
           displayName,
           mail,
           groupId: g.entra_grupos.entra_id,
@@ -123,7 +123,7 @@ async function queueProfileAccess(
           onPremisesSync: isOnPrem,
           action,
         },
-        target_identity: samAccountName,
+        target_identity: samAccountName: identity,
         colaborador_id: colaboradorId,
         requested_by: "sistema",
         status: isOnPrem ? "failed" : "pending",
@@ -153,14 +153,14 @@ async function queueProfileAccess(
       const { error: insertErr } = await supabase.from("iam_queue" as any).insert({
         action_type: action === "add" ? "assign_license" : "remove_license",
         payload_json: {
-          samAccountName,
+          samAccountName: identity,
           displayName,
           mail,
           skuId: l.entra_licencas.sku_id,
           licenseName: l.entra_licencas.nome,
           action,
         },
-        target_identity: samAccountName,
+        target_identity: samAccountName: identity,
         colaborador_id: colaboradorId,
         requested_by: "sistema",
         status: "pending",
@@ -187,7 +187,7 @@ async function queueProfileAccess(
       const { error: insertErr } = await supabase.from("iam_queue" as any).insert({
         action_type: action === "add" ? "assign_app" : "remove_app",
         payload_json: {
-          samAccountName,
+          samAccountName: identity,
           displayName,
           mail,
           appId: a.aplicacoes.entra_id,
@@ -195,7 +195,7 @@ async function queueProfileAccess(
           appRoleId: a.aplicacoes.default_app_role_id || "00000000-0000-0000-0000-000000000000",
           action,
         },
-        target_identity: samAccountName,
+        target_identity: samAccountName: identity,
         colaborador_id: colaboradorId,
         requested_by: "sistema",
         status: "pending",
