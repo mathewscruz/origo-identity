@@ -190,6 +190,9 @@ export default function ColaboradoresPage() {
       // 1. Provision cargo access profiles
       if (cargoChanged || !editingId || becameActive) {
         const result = await provisionCargoAcessos(colaboradorId, form.cargo_id || null, editingId ? (editingCargoId || null) : null);
+        if (result.skippedDirectory) {
+          toast({ title: "⚠️ Provisionamento de diretório ignorado", description: "O campo 'Nome de login AD' está vazio. Grupos e licenças não serão atribuídos no Entra ID.", variant: "destructive" });
+        }
         if (result.provisioned > 0 || result.revoked > 0) {
           toast({ title: `Acessos atualizados: ${result.provisioned} concedido(s), ${result.revoked} revogado(s)` });
         }
