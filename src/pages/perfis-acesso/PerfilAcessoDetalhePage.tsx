@@ -142,7 +142,7 @@ export default function PerfilAcessoDetalhePage() {
               const base = {
                 target_identity: colab.sam_account_name || colab.email || "",
                 requested_by: "sistema",
-                colaborador_id: a.colaborador_id,
+                colaborador_id: colabId,
                 status: "pending",
               };
 
