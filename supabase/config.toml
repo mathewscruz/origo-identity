@@ -13,3 +13,6 @@ verify_jwt = false
 [functions.iam-agent-api]
 verify_jwt = false
 
+[functions.send-review-email]
+verify_jwt = false
+
