@@ -110,9 +110,14 @@ export default function FilaProvisionamentoPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Fila de Provisionamento</h1>
           <p className="text-sm text-muted-foreground">Solicitações de criação, atualização e desativação de identidades</p>
         </div>
-        <Button variant="outline" onClick={loadData}>
-          <RefreshCw className="mr-1 h-4 w-4" />Atualizar
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={loadData}>
+            <RefreshCw className="mr-1 h-4 w-4" />Atualizar
+          </Button>
+          <Button onClick={processEntraQueue} disabled={processing}>
+            <Zap className="mr-1 h-4 w-4" />{processing ? "Processando..." : "Processar Fila Entra ID"}
+          </Button>
+        </div>
       </div>
 
       {/* Summary cards */}
