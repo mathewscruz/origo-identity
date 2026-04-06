@@ -34,10 +34,12 @@ export async function provisionCargoAcessos(
       .eq("ativo", true);
 
     if (activeAssignments && activeAssignments.length > 0 && sam) {
-      // Get groups and licenses for revoked profiles
       for (const assignment of activeAssignments) {
         await queueProfileAccess(sam, colab?.nome || "", colab?.email || "", assignment.perfil_id, "remove");
       }
+    } else if (activeAssignments && activeAssignments.length > 0 && !sam) {
+      console.warn(`[provisionCargoAcessos] sam_account_name vazio para colaborador ${colaboradorId} — revogação de grupos/licenças no diretório ignorada`);
+      skippedDirectory = true;
     }
 
     const { data: revokedData } = await supabase
