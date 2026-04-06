@@ -1,0 +1,1 @@
+ALTER TABLE public.entra_grupos ADD COLUMN IF NOT EXISTS on_premises_sync boolean NOT NULL DEFAULT false;
