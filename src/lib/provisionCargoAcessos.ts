@@ -15,13 +15,13 @@ export async function provisionCargoAcessos(
   let provisioned = 0;
   let skippedDirectory = false;
 
-  // Get colaborador sam_account_name for iam_queue
+  // Get colaborador data for iam_queue
   const { data: colab } = await (supabase as any)
     .from("colaboradores")
     .select("nome, email, sam_account_name")
     .eq("id", colaboradorId)
     .single();
-  const sam = (colab as any)?.sam_account_name || "";
+  const identity = (colab as any)?.email || (colab as any)?.sam_account_name || "";
 
   // Revoke old cargo-based assignments
   if (oldCargoId) {
