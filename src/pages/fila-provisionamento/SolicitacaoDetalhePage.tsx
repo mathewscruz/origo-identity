@@ -39,6 +39,7 @@ interface QueueItem {
   result_message: string | null;
   correlation_id: string;
   colaborador_id: string | null;
+  error_code: string | null;
 }
 
 export default function SolicitacaoDetalhePage() {
@@ -110,22 +111,42 @@ export default function SolicitacaoDetalhePage() {
                 {item.processed_at ? format(new Date(item.processed_at), "dd/MM/yyyy HH:mm:ss", { locale: ptBR }) : "Aguardando processamento"}
               </p>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Status</p>
-              <Badge variant="outline" className={sCfg.class}>{sCfg.label}</Badge>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Correlation ID</p>
-              <p className="text-sm font-mono">{item.correlation_id}</p>
-            </div>
-            {item.colaborador_id && (
-              <div>
-                <p className="text-xs text-muted-foreground">Colaborador</p>
-                <Link to={`/colaboradores/${item.colaborador_id}`} className="text-sm text-primary hover:underline">
-                  Ver colaborador →
-                </Link>
-              </div>
-            )}
+             <div>
+               <p className="text-xs text-muted-foreground">Status</p>
+               <Badge variant="outline" className={sCfg.class}>{sCfg.label}</Badge>
+             </div>
+             <div>
+               <p className="text-xs text-muted-foreground">Retentativas</p>
+               <p className="text-sm font-medium">
+                 {(item as any).retry_count || 0} / {(item as any).max_retries || 10}
+               </p>
+             </div>
+             {(item as any).next_retry_at && (
+               <div>
+                 <p className="text-xs text-muted-foreground">Próxima Tentativa</p>
+                 <p className="text-sm font-medium">
+                   {format(new Date((item as any).next_retry_at), "dd/MM/yyyy HH:mm:ss", { locale: ptBR })}
+                 </p>
+               </div>
+             )}
+             {item.error_code && (
+               <div>
+                 <p className="text-xs text-muted-foreground">Código de Erro</p>
+                 <Badge variant="outline" className="bg-destructive/15 text-destructive border-destructive/30 font-mono">{item.error_code}</Badge>
+               </div>
+             )}
+             <div>
+               <p className="text-xs text-muted-foreground">Correlation ID</p>
+               <p className="text-sm font-mono">{item.correlation_id}</p>
+             </div>
+             {item.colaborador_id && (
+               <div>
+                 <p className="text-xs text-muted-foreground">Colaborador</p>
+                 <Link to={`/colaboradores/${item.colaborador_id}`} className="text-sm text-primary hover:underline">
+                   Ver colaborador →
+                 </Link>
+               </div>
+             )}
           </CardContent>
         </Card>
 

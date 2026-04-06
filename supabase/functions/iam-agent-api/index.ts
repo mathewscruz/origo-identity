@@ -6,6 +6,8 @@ const corsHeaders = {
   "Content-Type": "application/json",
 };
 
+const RETRYABLE_ERRORS = ["user_not_found", "user_not_synced", "not_found_in_entra", "replication_pending"];
+
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
@@ -16,6 +18,13 @@ function authorize(req: Request): boolean {
   const auth = req.headers.get("Authorization");
   if (!auth?.startsWith("Bearer ")) return false;
   return auth.slice(7) === expected;
+}
+
+function calculateNextRetry(retryCount: number): string {
+  // Exponential backoff: 5min, 10min, 20min, 40min, 80min, 160min...
+  const delayMinutes = 5 * Math.pow(2, retryCount);
+  const next = new Date(Date.now() + delayMinutes * 60 * 1000);
+  return next.toISOString();
 }
 
 Deno.serve(async (req) => {
@@ -52,6 +61,7 @@ Deno.serve(async (req) => {
       .from("iam_queue")
       .select("*")
       .eq("status", "pending")
+      .or("next_retry_at.is.null,next_retry_at.lte." + new Date().toISOString())
       .order("created_at", { ascending: true })
       .limit(10);
 
@@ -80,6 +90,46 @@ Deno.serve(async (req) => {
 
     if (!id || !status) {
       return jsonResponse({ error: "id and status are required" }, 400);
+    }
+
+    // Check if this is a retryable failure
+    if (status === "failed" && error_code && RETRYABLE_ERRORS.includes(error_code)) {
+      // Fetch current item to check retry_count and max_retries
+      const { data: currentItem } = await supabase
+        .from("iam_queue")
+        .select("retry_count, max_retries")
+        .eq("id", id)
+        .single();
+
+      if (currentItem && currentItem.retry_count < currentItem.max_retries) {
+        const newRetryCount = currentItem.retry_count + 1;
+        const nextRetryAt = calculateNextRetry(newRetryCount);
+
+        const { data, error: updateError } = await supabase
+          .from("iam_queue")
+          .update({
+            status: "pending",
+            retry_count: newRetryCount,
+            next_retry_at: nextRetryAt,
+            result_message: result_message || `Retry ${newRetryCount}/${currentItem.max_retries} — ${error_code}`,
+            error_code,
+            processed_by: processed_by || undefined,
+          })
+          .eq("id", id)
+          .select()
+          .single();
+
+        if (updateError) return jsonResponse({ error: updateError.message }, 500);
+        return jsonResponse({
+          success: true,
+          retried: true,
+          retry_count: newRetryCount,
+          max_retries: currentItem.max_retries,
+          next_retry_at: nextRetryAt,
+          data,
+        });
+      }
+      // max retries exceeded — fall through to normal failed update
     }
 
     const updatePayload: Record<string, unknown> = { status };

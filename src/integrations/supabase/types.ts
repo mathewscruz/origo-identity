@@ -712,6 +712,8 @@ export type Database = {
           created_at: string
           error_code: string | null
           id: string
+          max_retries: number
+          next_retry_at: string | null
           payload_json: Json
           processed_at: string | null
           processed_by: string | null
@@ -728,6 +730,8 @@ export type Database = {
           created_at?: string
           error_code?: string | null
           id?: string
+          max_retries?: number
+          next_retry_at?: string | null
           payload_json: Json
           processed_at?: string | null
           processed_by?: string | null
@@ -744,6 +748,8 @@ export type Database = {
           created_at?: string
           error_code?: string | null
           id?: string
+          max_retries?: number
+          next_retry_at?: string | null
           payload_json?: Json
           processed_at?: string | null
           processed_by?: string | null
