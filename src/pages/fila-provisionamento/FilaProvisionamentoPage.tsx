@@ -30,6 +30,8 @@ const actionConfig: Record<string, { label: string; class: string }> = {
   remove_group: { label: "Remover Grupo", class: "bg-muted text-muted-foreground border-muted" },
   assign_license: { label: "Atribuir Licença", class: "bg-primary/15 text-primary border-primary/30" },
   remove_license: { label: "Remover Licença", class: "bg-muted text-muted-foreground border-muted" },
+  assign_app: { label: "Atribuir App", class: "bg-primary/15 text-primary border-primary/30" },
+  remove_app: { label: "Remover App", class: "bg-muted text-muted-foreground border-muted" },
 };
 
 interface QueueItem {
