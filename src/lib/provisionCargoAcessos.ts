@@ -78,6 +78,9 @@ export async function provisionCargoAcessos(
         for (const cp of cargoPerfis) {
           await queueProfileAccess(sam, colab?.nome || "", colab?.email || "", cp.perfil_id, "add");
         }
+      } else {
+        console.warn(`[provisionCargoAcessos] sam_account_name vazio para colaborador ${colaboradorId} — atribuição de grupos/licenças no diretório ignorada`);
+        skippedDirectory = true;
       }
     }
   }
