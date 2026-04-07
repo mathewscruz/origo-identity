@@ -1,0 +1,1 @@
+UPDATE iam_queue SET status = 'pending', retry_count = 0, next_retry_at = NULL, error_code = NULL, result_message = NULL WHERE action_type IN ('assign_app', 'assign_license') AND status IN ('failed', 'cancelled');
