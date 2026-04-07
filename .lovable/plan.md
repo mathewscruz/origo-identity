@@ -1,33 +1,55 @@
 
 
-## Plano: Toasts no canto superior direito com animação
+## Plano: Adicionar toasts de confirmação, alertas e feedback em todo o sistema
 
-### Situação atual
+### Problema
 
-O sistema usa **dois sistemas de toast simultaneamente**:
-1. **Sonner** (`src/components/ui/sonner.tsx`) — posicionado no canto inferior direito por padrão
-2. **Radix Toast** (`src/components/ui/toaster.tsx` + `useToast`) — usado em ~30 arquivos, posicionado bottom-right em desktop
+Vários módulos executam ações sem dar feedback visual ao usuário. Falta confirmação ao sair do sistema, toasts em ações de marcar alertas como lidos, e módulos como Alertas e Matriz não têm nenhum feedback.
 
-Ambos precisam ser unificados no **canto superior direito** com animação suave.
+### Alterações
 
-### Solução
+**1. Confirmação de logout (`AppSidebar.tsx` e `PortalLayout.tsx`):**
+- Adicionar `AlertDialog` de confirmação antes de executar `signOut`
+- Texto: "Deseja realmente sair do sistema?"
+- Toast de sucesso após logout: "Sessão encerrada"
 
-**1. Configurar Sonner para top-right com animação (`sonner.tsx`):**
-- Adicionar `position="top-right"` e `richColors` ao componente `<Sonner>`
-- Ajustar estilos para combinar com o design system (bordas, sombras)
+**2. Alertas (`AlertasPage.tsx`) — sem nenhum toast atualmente:**
+- `marcarLido`: toast "Alerta marcado como lido"
+- `marcarTodosLidos`: toast "Todos os alertas marcados como lidos"
+- Tratar erros com toast destructive
 
-**2. Ajustar Radix Toast viewport para top-right (`toast.tsx`):**
-- Alterar o `ToastViewport` de `sm:bottom-0 sm:right-0 sm:top-auto` para `top-0 right-0`
-- Trocar animações de `slide-in-from-bottom` para `slide-in-from-top` / `slide-in-from-right`
+**3. Matriz (`MatrizPage.tsx`) — sem toasts:**
+- Verificar se há ações que precisam de feedback (exportação, filtros)
 
-**3. Adicionar toasts de feedback onde estão faltando:**
-- Revisar operações CRUD principais que ainda não exibem feedback (sucesso/erro)
-- Garantir que todas as ações de criar, editar, excluir, aprovar, rejeitar tenham toast
+**4. Páginas de detalhe — revisar feedback em ações:**
+- `ColaboradorDetalhePage.tsx`: já tem toasts, verificar cobertura completa
+- `TerceiroDetalhePage.tsx`: verificar ações sem feedback
+- `PerfilAcessoDetalhePage.tsx`: verificar ações sem feedback
+- `RevisaoDetalhePage.tsx`: verificar ações sem feedback
+- `EventoJMLDetalhePage.tsx`: verificar ações sem feedback
+- `SolicitacaoDetalhePage.tsx`: verificar ações sem feedback
+
+**5. Configurações — `AreasPage.tsx` e `LocalidadesPage.tsx`:**
+- Verificar se CRUD tem toasts (provavelmente faltam)
+
+**6. Auditoria (`AuditoriaPage.tsx`):**
+- Adicionar toast ao exportar dados
+
+**7. Padronização — usar `useToast` consistentemente:**
+- Garantir que todos os erros de operações async mostrem toast destructive
+- Garantir que todas as ações de salvar/criar/editar/excluir mostrem toast de sucesso
 
 ### Arquivos
 
 | Ação | Arquivo |
 |---|---|
-| Editar | `src/components/ui/sonner.tsx` — `position="top-right"`, `richColors`, animação |
-| Editar | `src/components/ui/toast.tsx` — viewport top-right, animações de entrada pela direita |
+| Editar | `src/components/AppSidebar.tsx` — dialog de confirmação de logout |
+| Editar | `src/pages/portal/PortalLayout.tsx` — dialog de confirmação de logout |
+| Editar | `src/pages/alertas/AlertasPage.tsx` — toasts em marcar lido/todos lidos |
+| Editar | `src/pages/configuracoes/AreasPage.tsx` — toasts CRUD se ausentes |
+| Editar | `src/pages/configuracoes/LocalidadesPage.tsx` — toasts CRUD se ausentes |
+| Editar | `src/pages/auditoria/AuditoriaPage.tsx` — toast de exportação |
+| Editar | `src/pages/revisoes/RevisaoDetalhePage.tsx` — toasts se ausentes |
+| Editar | `src/pages/eventos-jml/EventoJMLDetalhePage.tsx` — toasts se ausentes |
+| Editar | `src/pages/fila-provisionamento/SolicitacaoDetalhePage.tsx` — toasts se ausentes |
 
