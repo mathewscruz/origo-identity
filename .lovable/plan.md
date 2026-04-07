@@ -1,41 +1,43 @@
 
 
-## Plano: Alterar cor primária de azul para #16968D em todo o sistema
+## Analise: Fluxo de Convite de Usuarios Administradores
 
-### Conversão
+### Problema critico encontrado
 
-`#16968D` em HSL = `176 74% 34%`
+O fluxo atual de criacao de usuarios tem um **bug grave** que impede o uso em producao:
 
-### Alteração
+**`supabase.auth.signUp()` chamado do client-side desloga o admin atual.** Quando o admin cria um novo usuario via `signUp`, o Supabase automaticamente inicia uma sessao para o novo usuario, substituindo a sessao do admin logado. Isso causa:
 
-Trocar todas as referências à cor primária azul (`221 83% 53%`) pela nova cor teal `176 74% 34%` no arquivo `src/index.css`. Isso afeta automaticamente todos os botões, links, badges, sidebar highlights, rings, focus states e qualquer elemento que use `primary`, `ring`, `sidebar-primary` ou `sidebar-ring`.
+1. O admin e deslogado imediatamente apos criar o usuario
+2. O insert na tabela `user_roles` (linha 80) pode falhar porque a sessao agora pertence ao novo usuario, que nao tem role `admin`
+3. O novo usuario fica sem role atribuida
 
-### Variáveis a alterar
+### Correcao
 
-**Tema claro (:root):**
-- `--primary: 221 83% 53%` → `176 74% 34%`
-- `--ring: 221 83% 53%` → `176 74% 34%`
-- `--sidebar-primary: 221 83% 53%` → `176 74% 34%`
-- `--sidebar-ring: 221 83% 53%` → `176 74% 34%`
+Criar uma **Edge Function `admin-create-user`** que usa o `service_role_key` server-side para:
 
-**Tema escuro (.dark):**
-- `--primary: 221 83% 53%` → `176 74% 34%`
-- `--ring: 221 83% 53%` → `176 74% 34%`
-- `--sidebar-primary: 221 83% 53%` → `176 74% 34%`
-- `--sidebar-ring: 221 83% 53%` → `176 74% 34%`
+1. Criar o usuario via `supabase.auth.admin.createUser()` (nao afeta a sessao do admin)
+2. Inserir o role na tabela `user_roles` 
+3. Opcionalmente enviar email de convite com link de redefinicao de senha
 
-### Impacto
+**No frontend (`UsuariosPage.tsx`):** Substituir o `signUp` pelo fetch para a edge function.
 
-Como todo o sistema usa CSS variables via Tailwind (`bg-primary`, `text-primary`, `ring-primary`, etc.), a mudança em um único arquivo propaga automaticamente para:
-- Tela de login (botão "Entrar", links)
-- Sidebar (item ativo, hover)
-- Todos os botões primários em todos os módulos
-- Focus rings em inputs e selects
-- Badges e links com cor primária
+### Fluxo corrigido
+
+```text
+Admin clica "Novo Usuario"
+  → Frontend envia { email, nome, role, password } para edge function
+  → Edge function usa admin.createUser() (service_role)
+  → Edge function insere role em user_roles
+  → Retorna sucesso
+  → Admin permanece logado
+  → Novo usuario recebe email de confirmacao
+```
 
 ### Arquivos
 
-| Ação | Arquivo |
+| Acao | Arquivo |
 |---|---|
-| Editar | `src/index.css` — substituir 4 variáveis no tema claro + 4 no tema escuro |
+| Criar | `supabase/functions/admin-create-user/index.ts` — edge function com createUser + role insert |
+| Editar | `src/pages/admin/UsuariosPage.tsx` — substituir signUp por fetch na edge function |
 
