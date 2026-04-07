@@ -585,6 +585,21 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         }
       }
 
+      // Disable Entra ID accounts for leavers
+      const leaverEntraEntries = leaverDetails
+        .filter(l => l.sam)
+        .map(l => ({
+          action_type: "disable_entra",
+          payload_json: { samAccountName: l.sam, displayName: "", mail: "" },
+          target_identity: l.sam,
+          colaborador_id: l.id,
+          requested_by: "importacao_csv",
+          status: "pending",
+        }));
+      if (leaverEntraEntries.length > 0) {
+        for (const batch of chunk(leaverEntraEntries, 200)) await sb.from("iam_queue").insert(batch);
+      }
+
       for (const batch of chunk(leaverIds, 200)) {
         // Clean up dependent tables first
         await sb.from("perfil_atribuicoes").delete().in("colaborador_id", batch);
@@ -697,7 +712,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         const isDisabling = (newStatus === "desligado" || newStatus === "inativo") && oldStatus !== newStatus;
 
         if (isDisabling) {
-          // Disable action
+          // Disable action for AD
           await sb.from("iam_queue").insert({
             action_type: "disable",
             payload_json: {
@@ -716,10 +731,36 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
             status: "pending",
           });
 
-          // Revoke access profiles on disable
+          // Revoke cargo-based access profiles (removes groups/licenses/apps)
           if (item.oldCargoId) {
             await provisionCargoAcessosServer(sb, item.id, null, item.oldCargoId, sam, item.data.nome || "", item.data.email || "");
           }
+
+          // Also remove resources from non-cargo profiles (manual/exception)
+          const { data: otherAtribuicoes } = await sb.from("perfil_atribuicoes")
+            .select("perfil_id")
+            .eq("colaborador_id", item.id)
+            .eq("ativo", true)
+            .neq("origem", "cargo");
+          if (otherAtribuicoes && otherAtribuicoes.length > 0) {
+            for (const a of otherAtribuicoes) {
+              await queueProfileAccess(sb, sam, item.data.nome || "", item.data.email || "", a.perfil_id, "remove");
+            }
+          }
+
+          // Disable Entra ID account
+          await sb.from("iam_queue").insert({
+            action_type: "disable_entra",
+            payload_json: {
+              mail: item.data.email || "",
+              samAccountName: sam,
+              displayName: item.data.nome || "",
+            },
+            target_identity: sam,
+            colaborador_id: item.id,
+            requested_by: "importacao_csv",
+            status: "pending",
+          });
         } else {
           // Build changed_fields for update
           const changedFields: string[] = [];

@@ -10,6 +10,7 @@ const ENTRA_ACTION_TYPES = [
   "assign_group", "remove_group",
   "assign_license", "remove_license",
   "assign_app", "remove_app",
+  "disable_entra", "enable_entra",
 ];
 
 function jsonResponse(data: unknown, status = 200) {
@@ -394,6 +395,32 @@ async function executeAction(
         return { success: true, message: `Usuário não tinha acesso ao app ${payload.appName || appClientId}`, alreadyExists: true };
       }
       return { success: false, message: `Erro ao listar assignments do app` };
+    }
+
+    case "disable_entra": {
+      const res = await fetch(`${graphBase}/users/${userId}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ accountEnabled: false }),
+      });
+      if (res.status === 204 || res.ok) {
+        return { success: true, message: `Conta Entra ID desabilitada com sucesso` };
+      }
+      const errText = await res.text();
+      return { success: false, message: `Erro ao desabilitar conta Entra ID: ${errText}` };
+    }
+
+    case "enable_entra": {
+      const res = await fetch(`${graphBase}/users/${userId}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ accountEnabled: true }),
+      });
+      if (res.status === 204 || res.ok) {
+        return { success: true, message: `Conta Entra ID reabilitada com sucesso` };
+      }
+      const errText = await res.text();
+      return { success: false, message: `Erro ao reabilitar conta Entra ID: ${errText}` };
     }
 
     default:

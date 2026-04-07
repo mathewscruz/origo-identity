@@ -405,6 +405,17 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         if (l.cargo_id && l.sam) await provisionCargoAcessosServer(sb, l.id, null, l.cargo_id, l.sam, "", "");
       }
 
+      // Disable Entra ID accounts for leavers
+      const leaverEntraEntries = leaverDetails.filter(l => l.sam).map(l => ({
+        action_type: "disable_entra",
+        payload_json: { samAccountName: l.sam, displayName: "", mail: "" },
+        target_identity: l.sam, colaborador_id: l.id,
+        requested_by: "importacao_sharepoint", status: "pending",
+      }));
+      if (leaverEntraEntries.length > 0) {
+        for (const batch of chunk(leaverEntraEntries, 200)) await sb.from("iam_queue").insert(batch);
+      }
+
       for (const batch of chunk(leaverIds, 200)) {
         await sb.from("perfil_atribuicoes").delete().in("colaborador_id", batch);
         await sb.from("excecoes").delete().in("colaborador_id", batch);
@@ -500,6 +511,24 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
           if (item.oldCargoId) {
             await provisionCargoAcessosServer(sb, item.id, null, item.oldCargoId, sam, item.data.nome || "", item.data.email || "");
           }
+          // Also remove non-cargo profile resources
+          const { data: otherAtribuicoes } = await sb.from("perfil_atribuicoes")
+            .select("perfil_id")
+            .eq("colaborador_id", item.id)
+            .eq("ativo", true)
+            .neq("origem", "cargo");
+          if (otherAtribuicoes && otherAtribuicoes.length > 0) {
+            for (const a of otherAtribuicoes) {
+              await queueProfileAccess(sb, sam, item.data.nome || "", item.data.email || "", a.perfil_id, "remove");
+            }
+          }
+          // Disable Entra ID account
+          await sb.from("iam_queue").insert({
+            action_type: "disable_entra",
+            payload_json: { mail: item.data.email || "", samAccountName: sam, displayName: item.data.nome || "" },
+            target_identity: sam, colaborador_id: item.id,
+            requested_by: "importacao_sharepoint", status: "pending",
+          });
         } else {
           const changedFields: string[] = [];
           const newValues: Record<string, string | null> = {};
