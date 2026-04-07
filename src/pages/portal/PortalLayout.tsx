@@ -3,12 +3,15 @@ import { Outlet, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import logoImg from "@/assets/logo.png";
+import { toast } from "sonner";
 import type { User } from "@supabase/supabase-js";
 
 export default function PortalLayout() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [logoutOpen, setLogoutOpen] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -41,6 +44,13 @@ export default function PortalLayout() {
 
   if (!user) return null;
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    toast.success("Sessão encerrada com sucesso");
+    setLogoutOpen(false);
+    navigate("/portal/login", { replace: true });
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b bg-card">
@@ -54,10 +64,7 @@ export default function PortalLayout() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={async () => {
-                await supabase.auth.signOut();
-                navigate("/portal/login", { replace: true });
-              }}
+              onClick={() => setLogoutOpen(true)}
             >
               <LogOut className="mr-2 h-4 w-4" />
               Sair
@@ -68,6 +75,19 @@ export default function PortalLayout() {
       <main className="mx-auto max-w-5xl px-4 py-6">
         <Outlet />
       </main>
+
+      <AlertDialog open={logoutOpen} onOpenChange={setLogoutOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sair do portal</AlertDialogTitle>
+            <AlertDialogDescription>Deseja realmente encerrar sua sessão?</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleLogout}>Sair</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
