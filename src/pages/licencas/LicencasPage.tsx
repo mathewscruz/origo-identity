@@ -16,6 +16,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { logAuditoria } from "@/lib/auditLogger";
 
 type UnifiedLicense = {
   id: string;
@@ -121,10 +122,12 @@ export default function LicencasPage() {
     if (editing) {
       const { error } = await supabase.from("licencas").update(payload).eq("id", editing.id);
       if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+      await logAuditoria({ acao: "editar_licenca", entidade: "licencas", entidade_id: editing.id, resumo: `Editada: ${form.nome}` });
       toast({ title: "Licença atualizada" });
     } else {
-      const { error } = await supabase.from("licencas").insert(payload);
+      const { data, error } = await supabase.from("licencas").insert(payload).select("id").single();
       if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+      await logAuditoria({ acao: "criar_licenca", entidade: "licencas", entidade_id: data?.id, resumo: `Criada: ${form.nome}` });
       toast({ title: "Licença criada" });
     }
     qc.invalidateQueries({ queryKey: ["licencas"] });
@@ -135,6 +138,7 @@ export default function LicencasPage() {
     if (!deleteId) return;
     const { error } = await supabase.from("licencas").delete().eq("id", deleteId);
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+    await logAuditoria({ acao: "excluir_licenca", entidade: "licencas", entidade_id: deleteId });
     toast({ title: "Licença excluída" });
     qc.invalidateQueries({ queryKey: ["licencas"] });
     setDeleteId(null);

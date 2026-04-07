@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { logAuditoria } from "@/lib/auditLogger";
 
 const statusColors: Record<string, string> = {
   em_andamento: "bg-info/15 text-info border-info/30",
@@ -107,6 +108,7 @@ export default function RevisoesPage() {
       await supabase.functions.invoke("send-review-email", { body: { revisao_id: revisao.id } });
     }
 
+    await logAuditoria({ acao: "criar_revisao", entidade: "revisoes", entidade_id: revisao.id, resumo: `Campanha criada para ${app.nome}` });
     toast({ title: "Campanha criada", description: `Revisão para ${app.nome} criada com sucesso.` });
     qc.invalidateQueries({ queryKey: ["revisoes"] });
     setCreating(false);
