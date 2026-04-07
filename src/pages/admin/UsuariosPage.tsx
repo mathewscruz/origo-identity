@@ -71,8 +71,8 @@ export default function UsuariosPage() {
     } else {
       // Create via edge function — sends invite email
       const session = (await supabase.auth.getSession()).data.session;
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/admin-create-user`, {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const res = await fetch(`${supabaseUrl}/functions/v1/admin-create-user`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
