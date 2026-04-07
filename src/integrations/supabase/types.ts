@@ -1377,6 +1377,51 @@ export type Database = {
         }
         Relationships: []
       }
+      sod_conflitos: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          descricao: string | null
+          id: string
+          perfil_a_id: string
+          perfil_b_id: string
+          severidade: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          perfil_a_id: string
+          perfil_b_id: string
+          severidade?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          perfil_a_id?: string
+          perfil_b_id?: string
+          severidade?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sod_conflitos_perfil_a_fkey"
+            columns: ["perfil_a_id"]
+            isOneToOne: false
+            referencedRelation: "perfis_acesso"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sod_conflitos_perfil_b_fkey"
+            columns: ["perfil_b_id"]
+            isOneToOne: false
+            referencedRelation: "perfis_acesso"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sync_jobs: {
         Row: {
           apps_created: number | null
