@@ -88,6 +88,48 @@ async function resolveUserId(
   return { userId: null, resolvedBy: `not_found (email: ${email || "N/A"}, sam: ${samAccountName || "N/A"})` };
 }
 
+/**
+ * Resolve Service Principal Object ID. Tries direct lookup first (if entra_id is the SP Object ID),
+ * then falls back to filtering by appId (if entra_id is the Application/client ID).
+ */
+async function resolveServicePrincipal(
+  headers: Record<string, string>,
+  graphBase: string,
+  idValue: string,
+  context: string
+): Promise<string | null> {
+  // 1. Try direct lookup as SP Object ID
+  try {
+    const directRes = await fetch(`${graphBase}/servicePrincipals/${idValue}?$select=id,displayName`, { headers });
+    if (directRes.ok) {
+      const sp = await directRes.json();
+      console.log(`[${context}] Resolved SP by direct ID: ${idValue} → ${sp.displayName}`);
+      return sp.id;
+    }
+  } catch (e) {
+    console.warn(`[${context}] Direct SP lookup failed:`, e);
+  }
+
+  // 2. Fallback: filter by appId (Application/client ID)
+  try {
+    const filterRes = await fetch(
+      `${graphBase}/servicePrincipals?$filter=appId eq '${idValue}'&$select=id,displayName`,
+      { headers }
+    );
+    if (filterRes.ok) {
+      const data = await filterRes.json();
+      if (data.value && data.value.length > 0) {
+        console.log(`[${context}] Resolved SP by appId filter: ${idValue} → ${data.value[0].id} (${data.value[0].displayName})`);
+        return data.value[0].id;
+      }
+    }
+  } catch (e) {
+    console.warn(`[${context}] SP filter lookup failed:`, e);
+  }
+
+  return null;
+}
+
 async function executeAction(
   token: string,
   userId: string,
