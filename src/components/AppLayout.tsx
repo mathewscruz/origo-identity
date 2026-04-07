@@ -1,6 +1,7 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Outlet, useLocation } from "react-router-dom";
+// fade-in transition on route change
 import ModoOperacaoBanner from "@/components/ModoOperacaoBanner";
 import {
   Breadcrumb,
@@ -23,8 +24,6 @@ const routeLabels: Record<string, string> = {
   "/perfis-acesso": "Perfis de Acesso",
   "/excecoes": "Exceções",
   "/revisoes": "Revisões",
-  "/regras": "Motor de Regras",
-  "/regras/nova": "Nova Regra",
   "/matriz": "Matriz",
   "/licencas": "Licenças",
   "/sod": "SoD / Conflitos",
@@ -113,7 +112,7 @@ export default function AppLayout() {
             </div>
           </header>
           <main className="flex-1 overflow-auto p-6">
-            <div>
+            <div key={location.pathname} className="animate-fade-in">
               <Outlet />
             </div>
           </main>

@@ -31,7 +31,6 @@ const sidebarGroups = [
     { title: "Privilegiados", url: "/privilegiados", icon: Crown },
   ]},
   { label: "Controle", items: [
-    { title: "Motor de Regras", url: "/regras", icon: Cog },
     { title: "Matriz", url: "/matriz", icon: Grid3X3 },
     { title: "Licenças", url: "/licencas", icon: Key },
     { title: "Relatórios", url: "/relatorios", icon: BarChart3 },

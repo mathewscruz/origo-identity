@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Search } from "lucide-react";
 import { useAreas, useEmpresas } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
 import TablePagination, { usePagination } from "@/components/TablePagination";
@@ -25,10 +25,11 @@ export default function AreasPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState({ nome: "", empresa_id: "", ativo: true });
+  const [busca, setBusca] = useState("");
   const qc = useQueryClient();
   const { toast } = useToast();
 
-  const list = (areas ?? []) as any[];
+  const list = ((areas ?? []) as any[]).filter((a: any) => !busca || a.nome.toLowerCase().includes(busca.toLowerCase()));
   const { paginatedItems, safePage } = usePagination(list, page, 25);
 
   const openNew = () => { setEditing(null); setForm({ nome: "", empresa_id: "", ativo: true }); setDialogOpen(true); };
@@ -69,6 +70,10 @@ export default function AreasPage() {
         <Button size="sm" onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Área</Button>
       </CardHeader>
       <CardContent>
+        <div className="relative max-w-sm mb-4">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input placeholder="Buscar áreas..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
+        </div>
         {isLoading ? (
           <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
         ) : (

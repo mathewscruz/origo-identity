@@ -20,8 +20,6 @@ import ExcecoesPage from "./pages/excecoes/ExcecoesPage";
 import RevisoesPage from "./pages/revisoes/RevisoesPage";
 import RevisaoDetalhePage from "./pages/revisoes/RevisaoDetalhePage";
 import RevisaoExternaPage from "./pages/revisoes/RevisaoExternaPage";
-import RegrasPage from "./pages/regras/RegrasPage";
-import RegraEditorPage from "./pages/regras/RegraEditorPage";
 import MatrizPage from "./pages/matriz/MatrizPage";
 import LicencasPage from "./pages/licencas/LicencasPage";
 import AuditoriaPage from "./pages/auditoria/AuditoriaPage";
@@ -78,9 +76,6 @@ const App = () => (
               <Route path="/excecoes/:id" element={<PlaceholderPage title="Detalhe da Exceção" />} />
               <Route path="/revisoes" element={<RevisoesPage />} />
               <Route path="/revisoes/:id" element={<RevisaoDetalhePage />} />
-              <Route path="/regras" element={<RegrasPage />} />
-              <Route path="/regras/nova" element={<RegraEditorPage />} />
-              <Route path="/regras/:id/editar" element={<RegraEditorPage />} />
               <Route path="/matriz" element={<MatrizPage />} />
               <Route path="/licencas" element={<LicencasPage />} />
               <Route path="/licencas/:id" element={<PlaceholderPage title="Detalhe da Licença" />} />

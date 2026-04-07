@@ -38,7 +38,7 @@ export default function UsuariosPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editing, setEditing] = useState<any>(null);
-  const [form, setForm] = useState({ email: "", nome: "", password: "", role: "viewer", ativo: true });
+  const [form, setForm] = useState({ email: "", nome: "", role: "viewer", ativo: true });
   const [changingPwd, setChangingPwd] = useState<string | null>(null);
   const [newPwd, setNewPwd] = useState("");
   const qc = useQueryClient();
@@ -49,8 +49,8 @@ export default function UsuariosPage() {
 
   const isAdmin = myRole === "admin";
 
-  const openNew = () => { setEditing(null); setForm({ email: "", nome: "", password: "", role: "viewer", ativo: true }); setDialogOpen(true); };
-  const openEdit = (u: any) => { setEditing(u); setForm({ email: u.email, nome: u.nome, password: "", role: u.role || "viewer", ativo: u.ativo }); setDialogOpen(true); };
+  const openNew = () => { setEditing(null); setForm({ email: "", nome: "", role: "viewer", ativo: true }); setDialogOpen(true); };
+  const openEdit = (u: any) => { setEditing(u); setForm({ email: u.email, nome: u.nome, role: u.role || "viewer", ativo: u.ativo }); setDialogOpen(true); };
 
   const handleSave = async () => {
     if (!form.nome.trim() || !form.email.trim()) { toast({ title: "Nome e email obrigatórios", variant: "destructive" }); return; }
@@ -68,8 +68,7 @@ export default function UsuariosPage() {
       await logAuditoria({ acao: "editar_usuario", entidade: "profiles", entidade_id: editing.id, resumo: `Editado: ${form.nome}, role: ${form.role}` });
       toast({ title: "Usuário atualizado" });
     } else {
-      // Create via edge function (preserves admin session)
-      if (!form.password || form.password.length < 6) { toast({ title: "Senha deve ter no mínimo 6 caracteres", variant: "destructive" }); return; }
+      // Create via edge function — sends invite email
       const session = (await supabase.auth.getSession()).data.session;
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
       const res = await fetch(`https://${projectId}.supabase.co/functions/v1/admin-create-user`, {
@@ -78,12 +77,12 @@ export default function UsuariosPage() {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${session?.access_token}`,
         },
-        body: JSON.stringify({ email: form.email.trim(), nome: form.nome.trim(), password: form.password, role: form.role }),
+        body: JSON.stringify({ email: form.email.trim(), nome: form.nome.trim(), role: form.role }),
       });
       const result = await res.json();
-      if (!res.ok) { toast({ title: "Erro", description: result.error || "Falha ao criar usuário", variant: "destructive" }); return; }
-      await logAuditoria({ acao: "criar_usuario", entidade: "profiles", entidade_id: result.user_id, resumo: `Criado: ${form.nome} (${form.email}), role: ${form.role}` });
-      toast({ title: "Usuário criado com sucesso" });
+      if (!res.ok) { toast({ title: "Erro", description: result.error || "Falha ao convidar usuário", variant: "destructive" }); return; }
+      await logAuditoria({ acao: "criar_usuario", entidade: "profiles", entidade_id: result.user_id, resumo: `Convidado: ${form.nome} (${form.email}), role: ${form.role}` });
+      toast({ title: "Convite enviado", description: `${form.email} receberá um e-mail para definir sua senha.` });
     }
     qc.invalidateQueries({ queryKey: ["admin_profiles"] });
     setDialogOpen(false);
@@ -141,7 +140,7 @@ export default function UsuariosPage() {
           <div className="space-y-4">
             <div className="space-y-2"><Label>Nome</Label><Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} /></div>
             <div className="space-y-2"><Label>Email</Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} disabled={!!editing} /></div>
-            {!editing && <div className="space-y-2"><Label>Senha</Label><Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Mínimo 6 caracteres" /></div>}
+            {!editing && <p className="text-sm text-muted-foreground">O usuário receberá um e-mail para definir sua própria senha.</p>}
             <div className="space-y-2"><Label>Perfil</Label>
               <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>

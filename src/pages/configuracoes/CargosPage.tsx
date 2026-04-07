@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Search } from "lucide-react";
 import { useCargos, useAreas, usePerfisAcesso } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
 import TablePagination, { usePagination } from "@/components/TablePagination";
@@ -30,10 +30,11 @@ export default function CargosPage() {
   const [form, setForm] = useState({ nome: "", area_id: "", ativo: true });
   const [selectedPerfis, setSelectedPerfis] = useState<string[]>([]);
   const [cargoPerfisCurrent, setCargoPerfisCurrent] = useState<string[]>([]);
+  const [busca, setBusca] = useState("");
   const qc = useQueryClient();
   const { toast } = useToast();
 
-  const list = (cargos ?? []) as any[];
+  const list = ((cargos ?? []) as any[]).filter((c: any) => !busca || c.nome.toLowerCase().includes(busca.toLowerCase()));
   const { paginatedItems, safePage } = usePagination(list, page, 25);
 
   // Load cargo_perfis counts for display
@@ -143,6 +144,10 @@ export default function CargosPage() {
         <Button size="sm" onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Cargo</Button>
       </CardHeader>
       <CardContent>
+        <div className="relative max-w-sm mb-4">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input placeholder="Buscar cargos..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
+        </div>
         {isLoading ? (
           <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
         ) : (
