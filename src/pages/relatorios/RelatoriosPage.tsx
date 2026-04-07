@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { Download, Search, FileText, Users, ShieldAlert, UserX } from "lucide-react";
-import { TablePagination } from "@/components/TablePagination";
+import TablePagination from "@/components/TablePagination";
 
 function exportCsv(headers: string[], rows: string[][], filename: string) {
   const bom = "\uFEFF";
