@@ -74,6 +74,12 @@ export default function TerceirosPage() {
   const { toast } = useToast();
   const { profile } = useAuth();
 
+  // Auto-generate credentials when nome or empresa change
+  useEffect(() => {
+    const { sam, email } = generateTerceiroCredentials(form.nome, form.empresa_terceira);
+    setForm(prev => ({ ...prev, sam_account_name: sam, email: email }));
+  }, [form.nome, form.empresa_terceira]);
+
   const list = terceiros ?? [];
   const vencendo7d = list.filter((t: any) => { const d = diasRestantes(t.contrato_fim); return d >= 0 && d <= 7; }).length;
   const filtered = list.filter((t: any) => !busca || t.nome.toLowerCase().includes(busca.toLowerCase()));
