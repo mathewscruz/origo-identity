@@ -1,0 +1,1 @@
+ALTER TABLE public.terceiros ADD COLUMN ultima_revalidacao date;
