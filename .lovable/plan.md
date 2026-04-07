@@ -1,69 +1,37 @@
 
 
-## Auditoria End-to-End — Problemas Encontrados e Correções
+## Plano: Atribuição individual de Grupo, Licença e App ao colaborador
 
-Analisei todos os fluxos, telas, integrações e lógica do sistema. Abaixo os problemas reais encontrados, organizados por criticidade.
+### Situação atual
 
----
+A página `ColaboradorDetalhePage.tsx` permite apenas atribuir **Perfis de Acesso** completos. Não há opção de adicionar um grupo Entra, uma licença ou uma aplicação de forma individual. Toda individualidade precisa passar por um perfil, o que não atende cenários onde o colaborador precisa de um recurso pontual.
 
-### PROBLEMAS CRITICOS (fluxo quebrado)
+### O que será implementado
 
-**1. Solicitações aprovadas nao provisionam no Entra ID**
-Em `SolicitacoesPage.tsx`, quando uma solicitação é aprovada, cria-se o `perfil_atribuicoes` mas **nao** se gera nenhuma entrada na `iam_queue`. O colaborador recebe a atribuição no sistema mas nao ganha os grupos, licenças ou apps no Entra ID. Precisa chamar `queueFullProfileActions` após a aprovação, igual ao fluxo de `ColaboradorDetalhePage`.
+Na aba "Acessos Ativos", adicionar um dropdown no botão "Atribuir" com 4 opções:
+- **Atribuir Perfil** (existente)
+- **Adicionar Grupo** — seleciona um grupo da tabela `entra_grupos`
+- **Adicionar Licença** — seleciona uma licença da tabela `entra_licencas`
+- **Adicionar App** — seleciona uma app da tabela `aplicacoes`
 
-**2. Solicitações nao passam pelo Workflow multi-nivel**
-O sistema de workflow (`workflow_etapas`, `workflow_execucoes`) existe como módulo separado, mas as solicitações de acesso simplesmente sao aprovadas/rejeitadas diretamente sem verificar se há etapas de workflow configuradas. O fluxo correto seria: ao criar uma solicitação, verificar se existem `workflow_etapas` para `entidade_tipo = 'solicitacao'` e criar as `workflow_execucoes` correspondentes. Hoje os dois módulos sao independentes.
+Cada atribuição individual gera diretamente uma entrada na `iam_queue` com o `action_type` correspondente (`assign_group`, `assign_license`, `assign_app`) sem criar perfil_atribuicoes, pois são recursos avulsos.
 
-**3. Exceções aprovadas nao provisionam no Entra ID**
-Similar ao item 1: a `ExcecoesPage.tsx` usa `getPerfilResourceIds` e `generateEntraQueueForDiff` apenas para gerar a queue, mas preciso verificar se o colaborador é passado corretamente e se o fluxo está completo (preciso ler mais do arquivo para confirmar, mas a lógica de busca do colaborador pode estar incompleta para terceiros).
+Uma nova seção "Acessos Individuais" será exibida abaixo da tabela de perfis, listando as entradas da `iam_queue` desse colaborador com `action_type` de assign que não vieram de um perfil (filtrando por `requested_by = 'manual_individual'`). Isso permite visualizar e revogar recursos individuais.
 
----
+### Detalhes técnicos
 
-### PROBLEMAS DE INTEGRACAO
+**Dialog de atribuição individual:** 3 dialogs separados (ou um com tabs), cada um com um Select buscando dados dos hooks existentes (`useEntraGrupos`, `useEntraLicencas`, `useAplicacoes`).
 
-**4. Botao "Editar" no ColaboradorDetalhePage nao faz nada**
-O botao `<Button variant="outline" size="sm"><Pencil /> Editar</Button>` na página de detalhe do colaborador nao tem onClick — é puramente visual, nao abre dialog de edição.
+**Geração de queue:** Usa `generateEntraQueueForDiff` do `entraQueueHelper.ts` com o diff contendo apenas o recurso selecionado, marcando `requested_by: 'manual_individual'` para diferenciar de atribuições via perfil.
 
-**5. Botao "Importar Base" na ColaboradoresPage nao funciona**
-O botao existe mas nao tem onClick. Deveria redirecionar para a página de integrações ou abrir o fluxo de importação CSV.
+**Seção de visualização:** Query na `iam_queue` filtrando `colaborador_id = id` e `requested_by = 'manual_individual'` para listar recursos individuais com status e opção de revogar (gerando a ação inversa).
 
-**6. Revisao concluida nao revoga acessos automaticamente**
-Quando o owner marca "revogar" em itens de revisão na página externa, a revisão é concluída mas os `perfil_atribuicoes` correspondentes nao sao revogados automaticamente e nao se gera entrada na `iam_queue` para remover no Entra ID.
+**Revogação individual:** Ao clicar "Revogar" em um item individual, gera a ação inversa (`remove_group`, `remove_license`, `remove_app`) na `iam_queue`.
 
----
+### Arquivos
 
-### PROBLEMAS DE CONSISTENCIA
-
-**7. Auditoria ausente em alguns fluxos**
-- Atribuição/revogação de perfil a terceiros (TerceiroDetalhePage): sem `logAuditoria`
-- Renovação de contrato de terceiro: sem `logAuditoria`
-- Criação de regras SoD: auditoria presente, OK
-- Sync Entra (licenças, apps, grupos, roles): sem auditoria no frontend ao disparar sync
-
-**8. NotificacoesBell navega para `/configuracoes/alertas` mas referencia rota antiga**
-O "Ver todos os alertas" navega para `/configuracoes/alertas` — correto. Mas os alertas com `ref_url` podem apontar para rotas inexistentes dependendo do módulo.
-
-**9. RLS permite anon SELECT em quase todas as tabelas**
-Todas as tabelas permitem `anon` fazer SELECT. Isso significa que qualquer pessoa sem autenticação pode ler dados de colaboradores, auditoria, alertas, etc. Isso é um problema de segurança significativo para um sistema IAM.
-
----
-
-### PLANO DE CORREÇÕES
-
-| # | Ação | Arquivo |
-|---|---|---|
-| 1 | Adicionar `queueFullProfileActions` na aprovação de solicitações | `SolicitacoesPage.tsx` |
-| 2 | Integrar workflow_etapas na criação de solicitações | `SolicitacoesPage.tsx` |
-| 3 | Conectar botao "Editar" no detalhe do colaborador | `ColaboradorDetalhePage.tsx` |
-| 4 | Conectar botao "Importar Base" (redirecionar para integrações) | `ColaboradoresPage.tsx` |
-| 5 | Revogar perfil_atribuicoes quando revisão item marcado "revogar" | `RevisaoExternaPage.tsx` |
-| 6 | Adicionar logAuditoria nos fluxos de terceiros | `TerceiroDetalhePage.tsx` |
-| 7 | Remover RLS policies de anon SELECT nas tabelas sensíveis | Migration SQL |
-
-### Priorização
-
-Bloco 1 (fluxo quebrado): Itens 1, 2, 5 — provisionamento e revisão
-Bloco 2 (UX): Itens 3, 4 — botões sem ação
-Bloco 3 (segurança): Item 7 — RLS anon
-Bloco 4 (compliance): Item 6 — audit logs
+| Ação | Arquivo |
+|---|---|
+| Editar | `src/pages/colaboradores/ColaboradorDetalhePage.tsx` — dropdown, dialogs, seção individuais |
+| Editar | `src/hooks/useOrigoData.ts` — hook para buscar iam_queue por colaborador |
 
