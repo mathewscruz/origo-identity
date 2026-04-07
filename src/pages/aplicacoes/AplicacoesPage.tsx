@@ -16,6 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { logAuditoria } from "@/lib/auditLogger";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const criticidadeColors: Record<string, string> = {
@@ -72,11 +73,13 @@ export default function AplicacoesPage() {
     if (editing) {
       const { error } = await supabase.from("aplicacoes").update(payload).eq("id", editing.id);
       if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+      await logAuditoria({ acao: "editar_aplicacao", entidade: "aplicacoes", entidade_id: editing.id, resumo: `Editada: ${form.nome}` });
       toast({ title: "Aplicação atualizada" });
     } else {
       payload.origem = "manual";
-      const { error } = await supabase.from("aplicacoes").insert(payload);
+      const { data, error } = await supabase.from("aplicacoes").insert(payload).select("id").single();
       if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+      await logAuditoria({ acao: "criar_aplicacao", entidade: "aplicacoes", entidade_id: data?.id, resumo: `Criada: ${form.nome}` });
       toast({ title: "Aplicação criada" });
     }
     qc.invalidateQueries({ queryKey: ["aplicacoes"] });
@@ -85,8 +88,10 @@ export default function AplicacoesPage() {
 
   const handleDelete = async () => {
     if (!deleteId) return;
+    const deletingApp = allApps.find((a: any) => a.id === deleteId);
     const { error } = await supabase.from("aplicacoes").delete().eq("id", deleteId);
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+    await logAuditoria({ acao: "excluir_aplicacao", entidade: "aplicacoes", entidade_id: deleteId, resumo: `Excluída: ${(deletingApp as any)?.nome}` });
     toast({ title: "Aplicação excluída" });
     qc.invalidateQueries({ queryKey: ["aplicacoes"] });
     setDeleteId(null);
