@@ -112,8 +112,7 @@ export default function IntegracoesPage() {
         <CardHeader>
           <div className="flex items-center gap-3">
             <Cloud className="h-5 w-5 text-primary" />
-            <div><CardTitle className="text-base">Sincronização Automática — SharePoint</CardTitle><CardDescription>Rotina diária às 12:00 UTC (09:00 BRT) busca o CSV mais recente na pasta RH_COLAB</CardDescription></div>
-            <Badge className="ml-auto bg-primary/10 text-primary border-primary/30" variant="outline"><Clock className="mr-1 h-3 w-3" /> Diário</Badge>
+            <div><CardTitle className="text-base">Sincronização Manual — SharePoint</CardTitle><CardDescription>Busca o CSV mais recente na pasta RH_COLAB do SharePoint sob demanda</CardDescription></div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -121,10 +120,9 @@ export default function IntegracoesPage() {
             <p><strong>Site:</strong> origoenergia.sharepoint.com/sites/dataanalytics</p>
             <p><strong>Pasta:</strong> Shared Documents / RH_COLAB</p>
             <p><strong>Prefixo:</strong> <code className="text-xs bg-muted px-1 rounded">base_colab_</code></p>
-            <p><strong>Frequência:</strong> Todos os dias às 12:00 UTC (09:00 BRT)</p>
           </div>
           <Button onClick={handleSharePointSync} disabled={spSyncing}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${spSyncing ? "animate-spin" : ""}`} />{spSyncing ? "Buscando no SharePoint..." : "Executar Agora"}
+            <RefreshCw className={`mr-2 h-4 w-4 ${spSyncing ? "animate-spin" : ""}`} />{spSyncing ? "Buscando no SharePoint..." : "Buscar Dados do SharePoint"}
           </Button>
           {showCsvProgress && <CsvProgressPanel job={csvJob} />}
         </CardContent>
