@@ -122,6 +122,7 @@ const actionLabels: Record<string, string> = {
   remove_app: "App",
   disable_entra: "Desabilitar",
   enable_entra: "Habilitar",
+  update_entra: "Atualizar Entra",
   create: "Criar",
   update: "Atualizar",
   delete: "Excluir",

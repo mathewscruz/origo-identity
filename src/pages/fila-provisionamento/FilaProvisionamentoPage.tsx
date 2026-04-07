@@ -37,6 +37,7 @@ const actionConfig: Record<string, { label: string; class: string }> = {
   remove_app: { label: "Remover App", class: "bg-muted text-muted-foreground border-muted" },
   disable_entra: { label: "Desativar Entra", class: "bg-warning/15 text-warning border-warning/30" },
   enable_entra: { label: "Reativar Entra", class: "bg-success/15 text-success border-success/30" },
+  update_entra: { label: "Atualizar Entra", class: "bg-info/15 text-info border-info/30" },
 };
 
 // ---- JML configs ----
