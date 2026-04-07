@@ -412,7 +412,7 @@ export default function ColaboradorDetalhePage() {
                   ["Localidade", localidade],
                   ["Gestor", gestor],
                   ["Data admissão", pessoa.data_admissao ? new Date(pessoa.data_admissao).toLocaleDateString("pt-BR") : "—"],
-                  ["Origem", pessoa.origem || "—"],
+                  ["Origem", pessoa.origem === "csv" ? "CSV" : pessoa.origem === "entra_id" ? "Entra ID" : pessoa.origem === "manual" ? "Manual" : pessoa.origem || "—"],
                 ].map(([label, value]) => (
                   <div key={label}>
                     <p className="text-xs text-muted-foreground">{label}</p>
