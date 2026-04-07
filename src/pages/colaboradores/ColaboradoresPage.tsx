@@ -496,7 +496,7 @@ export default function ColaboradoresPage() {
                           c.origem === "csv" ? "bg-primary/10 text-primary border-primary/30" :
                           c.origem === "entra_id" ? "bg-info/10 text-info border-info/30" :
                           "bg-muted text-muted-foreground"
-                        }>{c.origem}</Badge>
+                        }>{c.origem === "csv" ? "CSV" : c.origem === "entra_id" ? "Entra ID" : c.origem === "manual" ? "Manual" : c.origem}</Badge>
                       </td>
                       <td className="p-4">
                         <Badge variant="outline" className={statusConfig[c.status]?.class || ""}>
