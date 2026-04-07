@@ -17,6 +17,11 @@ import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { queueFullProfileActions } from "@/lib/entraQueueHelper";
+import { createEventoJML } from "@/lib/createEventoJML";
+import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
+import { logAuditoria, logAlerta } from "@/lib/auditLogger";
 
 const criticidadeConfig: Record<string, { label: string; class: string }> = {
   baixa: { label: "Baixa", class: "bg-muted text-muted-foreground" },
@@ -48,6 +53,7 @@ export default function TerceirosPage() {
   const [form, setForm] = useState({ nome: "", email: "", empresa_terceira: "", contrato_inicio: "", contrato_fim: "", criticidade: "media", responsavel: "", ativo: true, sam_account_name: "" });
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { profile } = useAuth();
 
   const list = terceiros ?? [];
   const vencendo7d = list.filter((t: any) => { const d = diasRestantes(t.contrato_fim); return d >= 0 && d <= 7; }).length;
@@ -70,23 +76,72 @@ export default function TerceirosPage() {
 
       if (wasActive && nowInactive && form.sam_account_name.trim()) {
         const sam = form.sam_account_name.trim();
-        await supabase.from("iam_queue" as any).insert({
-          action_type: "disable",
-          payload_json: {
-            samAccountName: sam,
-            mail: form.email || null,
-            displayName: form.nome.trim(),
-            status: "disabled",
-            status_anterior: "ativo",
-            status_novo: "inativo",
-            changed_fields: ["status"],
-            new_values: { status: "disabled" },
-          },
-          target_identity: sam,
-          requested_by: "sistema",
-          status: "pending",
-        });
-        toast({ title: "Terceiro desativado — solicitação enviada para o AD" });
+        const terceiroId = editing.id;
+
+        // Get active perfil_atribuicoes and revoke
+        const { data: activeAtribuicoes } = await supabase.from("perfil_atribuicoes").select("perfil_id").eq("terceiro_id", terceiroId).eq("ativo", true);
+        const perfilIds = (activeAtribuicoes ?? []).map((a: any) => a.perfil_id).filter(Boolean);
+        if (perfilIds.length > 0) {
+          await supabase.from("perfil_atribuicoes").update({ ativo: false, data_revogacao: new Date().toISOString() }).eq("terceiro_id", terceiroId).eq("ativo", true);
+          const identity = form.email || sam;
+          if (identity) {
+            await queueFullProfileActions([{ id: terceiroId, nome: form.nome.trim(), email: form.email || null, sam_account_name: sam }], perfilIds, "remove", { triggerImmediately: false });
+          }
+        }
+
+        // Remove individual resources
+        const { data: individualItems } = await (supabase as any).from("iam_queue")
+          .select("action_type, payload_json, target_identity")
+          .eq("colaborador_id", terceiroId)
+          .eq("requested_by", "manual_individual").eq("status", "success")
+          .in("action_type", ["assign_group", "assign_license", "assign_app"]);
+        const individualSnapshot: any[] = [];
+        const reverseMap: Record<string, string> = { assign_group: "remove_group", assign_license: "remove_license", assign_app: "remove_app" };
+        for (const item of (individualItems ?? [])) {
+          individualSnapshot.push({ action_type: item.action_type, payload_json: item.payload_json, target_identity: item.target_identity });
+          await supabase.from("iam_queue" as any).insert({ action_type: reverseMap[item.action_type], payload_json: item.payload_json, requested_by: "sistema_desativacao", colaborador_id: terceiroId, target_identity: item.target_identity, status: "pending" });
+        }
+
+        // AD disable
+        await supabase.from("iam_queue" as any).insert({ action_type: "disable", payload_json: { samAccountName: sam, mail: form.email || null, displayName: form.nome.trim(), status: "disabled" }, target_identity: sam, requested_by: "sistema", status: "pending", colaborador_id: terceiroId });
+        // Entra disable
+        const entraId = form.email || sam;
+        await supabase.from("iam_queue" as any).insert({ action_type: "disable_entra", payload_json: { mail: form.email || null, samAccountName: sam, displayName: form.nome.trim() }, target_identity: entraId, requested_by: "sistema", status: "pending", colaborador_id: terceiroId });
+
+        await createEventoJML({ colaboradorId: terceiroId, colaboradorNome: form.nome.trim(), tipo: "leaver", dadosAntes: { status: "ativo", perfis: perfilIds, recursos_individuais: individualSnapshot }, dadosDepois: { status: "inativo" } });
+        await logAuditoria({ acao: "desativar_terceiro_inline", entidade: "terceiros", entidade_id: terceiroId, resumo: `Terceiro ${form.nome.trim()} desativado via edição`, operador: profile?.email });
+        triggerEntraProcessing(true);
+        toast({ title: "Terceiro desativado — remoções e desativação enviadas" });
+      } else if (!wasActive && !nowInactive && form.sam_account_name.trim()) {
+        // Reactivation via switch
+        const sam = form.sam_account_name.trim();
+        const terceiroId = editing.id;
+
+        // Enable AD + Entra
+        await supabase.from("iam_queue" as any).insert({ action_type: "update", payload_json: { samAccountName: sam, mail: form.email || null, displayName: form.nome.trim(), status: "enabled" }, target_identity: sam, requested_by: "sistema", status: "pending", colaborador_id: terceiroId });
+        const entraId = form.email || sam;
+        await supabase.from("iam_queue" as any).insert({ action_type: "enable_entra", payload_json: { mail: form.email || null, samAccountName: sam, displayName: form.nome.trim() }, target_identity: entraId, requested_by: "sistema", status: "pending", colaborador_id: terceiroId });
+
+        // Restore from last leaver event
+        const { data: lastLeaver } = await supabase.from("eventos_jml").select("dados_antes").eq("colaborador_id", terceiroId).eq("tipo", "leaver").order("created_at", { ascending: false }).limit(1);
+        const dadosAntes = lastLeaver?.[0]?.dados_antes as any;
+        const savedPerfis = dadosAntes?.perfis || [];
+        const savedIndividuals = dadosAntes?.recursos_individuais || [];
+
+        if (savedPerfis.length > 0) {
+          for (const perfilId of savedPerfis) {
+            await supabase.from("perfil_atribuicoes").insert({ perfil_id: perfilId, terceiro_id: terceiroId, origem: "manual", ativo: true });
+          }
+          await queueFullProfileActions([{ id: terceiroId, nome: form.nome.trim(), email: form.email || null, sam_account_name: sam }], savedPerfis, "assign", { triggerImmediately: false });
+        }
+        for (const item of savedIndividuals) {
+          await supabase.from("iam_queue" as any).insert({ action_type: item.action_type, payload_json: item.payload_json, requested_by: "manual_individual", colaborador_id: terceiroId, target_identity: item.target_identity, status: "pending" });
+        }
+
+        await createEventoJML({ colaboradorId: terceiroId, colaboradorNome: form.nome.trim(), tipo: "joiner", dadosAntes: { status: "inativo" }, dadosDepois: { status: "ativo", perfis_restaurados: savedPerfis.length, recursos_individuais_restaurados: savedIndividuals.length } });
+        await logAuditoria({ acao: "reativar_terceiro_inline", entidade: "terceiros", entidade_id: terceiroId, resumo: `Terceiro ${form.nome.trim()} reativado via edição`, operador: profile?.email });
+        triggerEntraProcessing(true);
+        toast({ title: "Terceiro reativado — perfis e recursos restaurados" });
       } else {
         toast({ title: "Terceiro atualizado" });
       }
