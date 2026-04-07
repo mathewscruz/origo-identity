@@ -6,11 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Upload, Plus, Pencil, Trash2, AlertTriangle } from "lucide-react";
+import { Search, Upload, Plus, Pencil, Trash2, AlertTriangle, MoreHorizontal, Shield, Key, Monitor } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Link } from "react-router-dom";
 import ColaboradorActivityPopover from "@/components/ColaboradorActivityPopover";
-import { useColaboradores, useEmpresas, useAreas, useCargos, useLocalidades } from "@/hooks/useOrigoData";
+import { useColaboradores, useEmpresas, useAreas, useCargos, useLocalidades, useEntraGrupos, useEntraLicencas, useAplicacoes } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
 import TablePagination, { usePagination } from "@/components/TablePagination";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -84,9 +85,17 @@ export default function ColaboradoresPage() {
   const { data: areas } = useAreas();
   const { data: cargos } = useCargos();
   const { data: localidades } = useLocalidades();
+  const { data: entraGrupos } = useEntraGrupos();
+  const { data: entraLicencas } = useEntraLicencas();
+  const { data: aplicacoes } = useAplicacoes();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { profile } = useAuth();
+
+  // Quick-assign individual resource state
+  const [quickAssignColab, setQuickAssignColab] = useState<any>(null);
+  const [quickAssignType, setQuickAssignType] = useState<"grupo" | "licenca" | "app" | null>(null);
+  const [quickAssignValue, setQuickAssignValue] = useState("");
 
   const mapped = (colaboradores ?? []).map((c: any) => ({
     id: c.id,
@@ -456,10 +465,13 @@ export default function ColaboradoresPage() {
                 </thead>
                 <tbody>
                   {paginatedItems.map((c) => (
-                    <tr key={c.id} className="border-b last:border-0 hover:bg-muted/50">
+                    <tr key={c.id} className="border-b last:border-0 hover:bg-muted/50 cursor-pointer" onClick={(e) => {
+                      const tag = (e.target as HTMLElement).closest("button, a, [role='menuitem']");
+                      if (!tag) navigate(`/colaboradores/${c.id}`);
+                    }}>
                       <td className="p-4">
                         <div className="flex items-center gap-1">
-                          <Link to={`/colaboradores/${c.id}`} className="font-medium text-primary hover:underline">{c.nome}</Link>
+                          <Link to={`/colaboradores/${c.id}`} className="font-medium text-primary hover:underline" onClick={(e) => e.stopPropagation()}>{c.nome}</Link>
                           {c.cargo_id && !c.sam_account_name && (
                             <TooltipProvider>
                               <Tooltip>
@@ -493,12 +505,35 @@ export default function ColaboradoresPage() {
                       </td>
                       <td className="p-4">
                         <div className="flex gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(c)}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openEdit(c); }}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteId(c.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => e.stopPropagation()}>
+                                <MoreHorizontal className="h-3.5 w-3.5" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => navigate(`/colaboradores/${c.id}`)}>
+                                <Search className="mr-2 h-4 w-4" />Ver Detalhes
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => { setQuickAssignColab(c); setQuickAssignType("grupo"); setQuickAssignValue(""); }}>
+                                <Shield className="mr-2 h-4 w-4" />Adicionar Grupo
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => { setQuickAssignColab(c); setQuickAssignType("licenca"); setQuickAssignValue(""); }}>
+                                <Key className="mr-2 h-4 w-4" />Adicionar Licença
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => { setQuickAssignColab(c); setQuickAssignType("app"); setQuickAssignValue(""); }}>
+                                <Monitor className="mr-2 h-4 w-4" />Adicionar App
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId(c.id)}>
+                                <Trash2 className="mr-2 h-4 w-4" />Excluir
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </td>
                     </tr>
@@ -611,6 +646,76 @@ export default function ColaboradoresPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialog Atribuição Individual Rápida */}
+      <Dialog open={!!quickAssignType} onOpenChange={(open) => { if (!open) { setQuickAssignType(null); setQuickAssignColab(null); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {quickAssignType === "grupo" && "Adicionar Grupo"}
+              {quickAssignType === "licenca" && "Adicionar Licença"}
+              {quickAssignType === "app" && "Adicionar Aplicação"}
+              {quickAssignColab && ` — ${quickAssignColab.nome}`}
+            </DialogTitle>
+          </DialogHeader>
+          <div>
+            <Label>{quickAssignType === "grupo" ? "Grupo Entra" : quickAssignType === "licenca" ? "Licença Entra" : "Aplicação"}</Label>
+            <Select value={quickAssignValue} onValueChange={setQuickAssignValue}>
+              <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+              <SelectContent>
+                {quickAssignType === "grupo" && (entraGrupos ?? []).map((g: any) => <SelectItem key={g.id} value={g.id}>{g.nome}</SelectItem>)}
+                {quickAssignType === "licenca" && (entraLicencas ?? []).map((l: any) => <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>)}
+                {quickAssignType === "app" && (aplicacoes ?? []).map((a: any) => <SelectItem key={a.id} value={a.id}>{a.nome}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setQuickAssignType(null); setQuickAssignColab(null); }}>Cancelar</Button>
+            <Button disabled={!quickAssignValue} onClick={async () => {
+              if (!quickAssignColab || !quickAssignValue || !quickAssignType) return;
+              const colab = quickAssignColab;
+              const identity = colab.email || colab.sam_account_name || "";
+              if (!identity) { toast({ title: "Colaborador sem email ou login AD", variant: "destructive" }); return; }
+
+              let actionType = "";
+              let payloadJson: any = { displayName: colab.nome, mail: colab.email || "" };
+
+              if (quickAssignType === "grupo") {
+                const grp = (entraGrupos ?? []).find((g: any) => g.id === quickAssignValue);
+                if (!grp) return;
+                actionType = "assign_group";
+                payloadJson = { ...payloadJson, groupId: grp.entra_id, groupName: grp.nome };
+              } else if (quickAssignType === "licenca") {
+                const lic = (entraLicencas ?? []).find((l: any) => l.id === quickAssignValue);
+                if (!lic) return;
+                actionType = "assign_license";
+                payloadJson = { ...payloadJson, skuId: lic.sku_id, licenseName: lic.nome };
+              } else {
+                const app = (aplicacoes ?? []).find((a: any) => a.id === quickAssignValue);
+                if (!app?.entra_id) { toast({ title: "Aplicação sem ID Entra", variant: "destructive" }); return; }
+                actionType = "assign_app";
+                payloadJson = { ...payloadJson, appId: app.entra_id, appName: app.nome, appRoleId: app.default_app_role_id || "00000000-0000-0000-0000-000000000000" };
+              }
+
+              const { error } = await supabase.from("iam_queue" as any).insert({
+                action_type: actionType,
+                payload_json: payloadJson,
+                target_identity: identity,
+                requested_by: "manual_individual",
+                colaborador_id: colab.id,
+                status: "pending",
+              });
+
+              if (error) { toast({ title: "Erro ao criar solicitação", description: error.message, variant: "destructive" }); return; }
+              toast({ title: `${quickAssignType === "grupo" ? "Grupo" : quickAssignType === "licenca" ? "Licença" : "App"} adicionado(a) à fila` });
+              setQuickAssignType(null);
+              setQuickAssignColab(null);
+              setQuickAssignValue("");
+              triggerEntraProcessing();
+            }}>Atribuir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
