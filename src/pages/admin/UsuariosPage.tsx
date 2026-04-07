@@ -68,19 +68,22 @@ export default function UsuariosPage() {
       await logAuditoria({ acao: "editar_usuario", entidade: "profiles", entidade_id: editing.id, resumo: `Editado: ${form.nome}, role: ${form.role}` });
       toast({ title: "Usuário atualizado" });
     } else {
-      // Create via signup
+      // Create via edge function (preserves admin session)
       if (!form.password || form.password.length < 6) { toast({ title: "Senha deve ter no mínimo 6 caracteres", variant: "destructive" }); return; }
-      const { data, error } = await supabase.auth.signUp({
-        email: form.email.trim(),
-        password: form.password,
-        options: { data: { nome: form.nome.trim() } },
+      const session = (await supabase.auth.getSession()).data.session;
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/admin-create-user`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ email: form.email.trim(), nome: form.nome.trim(), password: form.password, role: form.role }),
       });
-      if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
-      if (data.user) {
-        await (supabase as any).from("user_roles").insert({ user_id: data.user.id, role: form.role });
-      }
-      await logAuditoria({ acao: "criar_usuario", entidade: "profiles", entidade_id: data.user?.id, resumo: `Criado: ${form.nome} (${form.email}), role: ${form.role}` });
-      toast({ title: "Usuário criado", description: "Email de confirmação enviado." });
+      const result = await res.json();
+      if (!res.ok) { toast({ title: "Erro", description: result.error || "Falha ao criar usuário", variant: "destructive" }); return; }
+      await logAuditoria({ acao: "criar_usuario", entidade: "profiles", entidade_id: result.user_id, resumo: `Criado: ${form.nome} (${form.email}), role: ${form.role}` });
+      toast({ title: "Usuário criado com sucesso" });
     }
     qc.invalidateQueries({ queryKey: ["admin_profiles"] });
     setDialogOpen(false);
