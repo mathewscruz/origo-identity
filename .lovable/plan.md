@@ -1,105 +1,121 @@
 
 
-## Analise IAM/IGA — Lacunas, Melhorias e Inconsistencias
+## Plano: Implementar itens 3 a 10 do roadmap IAM/IGA
 
-### O que ja existe e funciona
-
-- Ciclo JML (Joiner/Mover/Leaver) com eventos e provisionamento
-- Perfis de Acesso com composicao (apps, grupos, licencas)
-- Motor de Regras (cargo → perfil)
-- Fila de Provisionamento (iam_queue) com integracao Entra ID
-- Revisoes de Acesso com pagina externa para owners
-- Excecoes de acesso com aprovacao
-- Importacao CSV e sync Azure
-- Auditoria e Alertas
+Os itens 1 (Dashboard dinâmico) e 2 (Matriz dinâmica) já foram implementados. Segue o plano para os próximos itens, organizados em ordem de prioridade.
 
 ---
 
-### PROBLEMAS E INCONSISTENCIAS CRITICAS
+### Item 3 — Segregation of Duties (SoD) / Conflitos de Acesso
 
-**1. Dashboard com dados ficticios (hardcoded)**
-O grafico "Acessos por Status" (Ativos: 842, Pendentes: 56, etc.) e o grafico "Eventos JML — Ultimas 8 Semanas" usam arrays estaticas. Nao refletem dados reais do banco.
+**Objetivo:** Impedir que um colaborador tenha dois perfis conflitantes simultaneamente.
 
-**2. Matriz Cargo x Acesso totalmente hardcoded**
-A pagina `MatrizPage.tsx` tem cargos, perfis e mapeamentos todos em constantes no codigo. Deveria ser gerada dinamicamente a partir das tabelas `cargos`, `perfis_acesso`, `cargo_perfis` e `regras`.
+**Migration:**
+- Criar tabela `sod_conflitos` com colunas: `id`, `perfil_a_id`, `perfil_b_id`, `descricao`, `severidade` (critico/alto), `ativo`, `created_at`
 
-**3. Terceiros sem integracao de provisionamento**
-Terceiros tem campo `sam_account_name` mas nao ha fluxo JML nem provisionamento automatico para eles. Nao geram eventos JML ao vencer contrato.
+**Nova página:** `src/pages/sod/SoDPage.tsx`
+- Listagem de regras SoD (Perfil A conflita com Perfil B)
+- CRUD para criar/editar/excluir conflitos usando comboboxes de perfis reais
+- Seção "Violações Atuais" — query que cruza `perfil_atribuicoes` ativas com `sod_conflitos` para detectar colaboradores que violam regras
+- Badge com contagem de violações
 
----
+**Validação automática:**
+- No fluxo de exceções (ao aprovar) e no motor de regras (ao executar), verificar conflitos SoD antes de conceder perfil
+- Gerar alerta automático quando violação é detectada
 
-### FUNCIONALIDADES QUE FALTAM (padrao IGA/IAM)
-
-**4. Self-Service / Portal do Colaborador**
-Funcionalidade essencial em IGA. O proprio usuario deveria poder:
-- Solicitar acesso a um perfil/aplicacao
-- Ver seus acessos atuais
-- Acompanhar status das solicitacoes
-
-**5. Workflow de Aprovacao multi-nivel**
-Hoje excecoes tem aprovacao simples. Falta um workflow configuravel:
-- Gestor direto → Owner do sistema → TI
-- Escalacao automatica por timeout
-- Delegacao de aprovacao
-
-**6. Segregation of Duties (SoD) / Conflitos de Acesso**
-Nao existe validacao de conflitos. Exemplo: um usuario nao deveria ter acesso a "Contas a Pagar" e "Aprovacao de Pagamentos" simultaneamente. Falta:
-- Tabela de regras SoD (perfil A conflita com perfil B)
-- Validacao automatica ao atribuir perfis
-- Alertas de violacao
-
-**7. Certificacao / Recertificacao periodica automatica**
-As revisoes existem mas nao ha agendamento automatico (cron). Deveria:
-- Criar campanhas de revisao automaticamente (ex: a cada 90 dias)
-- Notificar owners com prazo
-- Escalar se nao responder
-
-**8. Relatorios e Compliance**
-Nao existe modulo de relatorios. Para IGA e essencial:
-- Quem tem acesso a que (snapshot)
-- Historico de acessos concedidos/revogados
-- Relatorio de contas orfas (sem dono)
-- Relatorio de acessos excessivos
-- Exportacao para auditores
-
-**9. Contas Orfas / Orphan Accounts**
-Nao ha deteccao de contas no Entra ID que nao estao vinculadas a nenhum colaborador ativo no sistema.
-
-**10. Gestao de Senhas**
-Nao ha integracao para reset de senha, politicas de senha ou notificacao de senha expirada.
+**Sidebar e rotas:** Adicionar "SoD / Conflitos" no grupo Governança
 
 ---
 
-### MELHORIAS DE UX/UI
+### Item 4 — Relatórios e Compliance
 
-**11. Dashboard com dados reais**
-Substituir todos os dados hardcoded por queries reais: contagem de perfil_atribuicoes por status, eventos JML agrupados por semana, etc.
+**Nova página:** `src/pages/relatorios/RelatoriosPage.tsx`
+- Relatório "Quem tem acesso a quê" — lista todos colaboradores com seus perfis ativos, agrupados por aplicação
+- Relatório "Histórico de concessões/revogações" — query em `perfil_atribuicoes` com filtros de data
+- Relatório "Contas órfãs" (preview do item 5)
+- Relatório "Acessos excessivos" — colaboradores com mais de N perfis
+- Botão "Exportar CSV" para cada relatório
 
-**12. Matriz dinamica**
-Gerar a matriz Cargo x Perfil automaticamente a partir de `cargo_perfis` e `regra_condicoes`/`regra_resultados`.
-
-**13. Notificacoes in-app**
-O icone de sino no sidebar poderia mostrar um badge com contagem de alertas nao lidos e um dropdown com os ultimos alertas.
-
-**14. Expiração automatica de terceiros**
-Ao vencer o contrato, gerar evento JML tipo "leaver" automaticamente e desabilitar acessos.
+**Sidebar e rotas:** Adicionar "Relatórios" no grupo Controle
 
 ---
 
-### RECOMENDACAO DE PRIORIDADE
+### Item 5 — Contas Órfãs (Orphan Accounts)
 
-| Prioridade | Item | Impacto |
-|---|---|---|
-| 1 | Dashboard com dados reais | Credibilidade — dados ficticios desqualificam o sistema |
-| 2 | Matriz dinamica | Mesmo motivo — dados hardcoded |
-| 3 | SoD / Conflitos de Acesso | Compliance critico em IGA |
-| 4 | Relatorios e Compliance | Exigido por auditores |
-| 5 | Contas Orfas | Seguranca — detectar shadow IT |
-| 6 | Self-Service | Reduz carga operacional |
-| 7 | Workflow multi-nivel | Maturidade do processo |
-| 8 | Recertificacao automatica | Automacao de revisoes |
-| 9 | Expiracao de terceiros | Seguranca |
-| 10 | Notificacoes in-app | UX |
+**Integrado ao módulo de Relatórios** como uma aba/seção dedicada.
 
-Posso comecar implementando qualquer um desses itens. Recomendo iniciar pelos itens 1 e 2 (Dashboard e Matriz com dados reais) pois sao correcoes de inconsistencia, seguidos do item 3 (SoD) que e o diferencial mais importante para uma ferramenta IGA.
+**Lógica:** Comparar colaboradores com `entra_id` preenchido contra a lista de `colaboradores` ativos. Identificar `entra_id` que não correspondem a nenhum colaborador ativo.
+
+**Ação:** Botão para gerar alerta ou marcar para revisão.
+
+---
+
+### Item 6 — Self-Service / Portal do Colaborador
+
+**Migration:**
+- Criar tabela `solicitacoes_acesso`: `id`, `solicitante_id`, `colaborador_id`, `perfil_id`, `justificativa`, `status` (pendente/aprovada/rejeitada), `aprovador`, `data_decisao`, `created_at`
+
+**Nova página:** `src/pages/self-service/SelfServicePage.tsx`
+- Colaborador vê seus perfis ativos atuais
+- Pode solicitar acesso a um novo perfil (combobox com perfis disponíveis + justificativa)
+- Acompanha status das solicitações pendentes
+
+**Painel admin:** Seção na sidebar para gestores aprovarem/rejeitarem solicitações
+
+---
+
+### Item 7 — Workflow de Aprovação Multi-nível
+
+**Migration:**
+- Criar tabela `workflow_etapas`: `id`, `entidade_tipo` (excecao/solicitacao), `ordem`, `aprovador_tipo` (gestor/owner/ti), `timeout_horas`
+- Criar tabela `workflow_execucoes`: `id`, `entidade_id`, `etapa_id`, `aprovador`, `status`, `data_decisao`, `comentario`
+
+**Lógica:** Quando uma exceção ou solicitação é criada, o sistema gera as etapas do workflow. Cada aprovação avança para a próxima etapa. Timeout gera escalação.
+
+---
+
+### Item 8 — Recertificação Automática
+
+**Lógica:** Criar um parâmetro em `parametros` (ex: `revisao_periodicidade_dias = 90`). Uma Edge Function agendada via pg_cron verifica aplicações que não tiveram revisão nos últimos N dias e cria campanhas automaticamente.
+
+---
+
+### Item 9 — Expiração Automática de Terceiros
+
+**Edge Function agendada:** Verificar terceiros com `contrato_fim < hoje` e `ativo = true`. Para cada um:
+- Criar evento JML tipo "leaver"
+- Desativar perfil_atribuicoes
+- Gerar alerta
+
+---
+
+### Item 10 — Notificações In-App
+
+**Melhorar sidebar:** O ícone de sino mostra badge com contagem de alertas não lidos. Ao clicar, dropdown com os 10 últimos alertas. Clicar em um alerta marca como lido e navega para o ref_url.
+
+---
+
+### Recomendação de implementação por mensagem
+
+Dado o tamanho, recomendo implementar por blocos:
+
+**Bloco A (esta implementação):** Itens 3 + 4 + 5 — SoD, Relatórios e Contas Órfãs
+- São os mais impactantes para compliance
+- Compartilham lógica (queries em perfil_atribuicoes e colaboradores)
+
+**Bloco B (próxima):** Itens 6 + 7 — Self-Service e Workflow
+
+**Bloco C (depois):** Itens 8 + 9 + 10 — Recertificação, Expiração, Notificações
+
+### Arquivos — Bloco A
+
+| Ação | Arquivo |
+|---|---|
+| Migration | Criar tabela `sod_conflitos` |
+| Criar | `src/pages/sod/SoDPage.tsx` — CRUD de conflitos + detecção de violações |
+| Criar | `src/pages/relatorios/RelatoriosPage.tsx` — relatórios com export CSV |
+| Editar | `src/App.tsx` — rotas para SoD e Relatórios |
+| Editar | `src/components/AppSidebar.tsx` — novos itens no menu |
+| Editar | `src/hooks/useOrigoData.ts` — hooks para sod_conflitos |
+| Editar | `src/lib/auditLogger.ts` — audit log para SoD |
 
