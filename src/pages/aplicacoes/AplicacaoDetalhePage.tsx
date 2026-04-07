@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, CheckCircle, ExternalLink, Globe, Cloud, Users, Shield, Layers } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import AppIcon from "@/components/AppIcon";
 
 const criticidadeColors: Record<string, string> = {
   baixa: "bg-muted text-muted-foreground",
@@ -102,6 +103,7 @@ export default function AplicacaoDetalhePage() {
           <div className="flex items-start justify-between">
             <div className="space-y-3">
               <div className="flex items-center gap-3">
+                <AppIcon url={app.url} origem={app.origem} size={32} />
                 <h1 className="text-2xl font-semibold">{app.nome}</h1>
                 <Badge variant="outline" className={criticidadeColors[app.criticidade]}>{app.criticidade}</Badge>
                 {(app as any).origem === "azure" ? (
