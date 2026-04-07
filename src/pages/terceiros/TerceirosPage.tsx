@@ -17,6 +17,11 @@ import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { queueFullProfileActions } from "@/lib/entraQueueHelper";
+import { createEventoJML } from "@/lib/createEventoJML";
+import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
+import { logAuditoria, logAlerta } from "@/lib/auditLogger";
 
 const criticidadeConfig: Record<string, { label: string; class: string }> = {
   baixa: { label: "Baixa", class: "bg-muted text-muted-foreground" },
