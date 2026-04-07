@@ -1,58 +1,49 @@
 
 
-## Status da lista — O que falta implementar
+## Plano: Módulo de Acessos Privilegiados (PAM)
 
-### Ja implementados (10 de 14)
+### Objetivo
 
-| # | Item | Status |
-|---|---|---|
-| 1 | Dashboard com dados reais | Feito |
-| 2 | Matriz dinamica | Feito |
-| 4 | Self-Service / Solicitacoes | Feito |
-| 5 | Workflow multi-nivel | Feito |
-| 6 | SoD / Conflitos | Feito |
-| 7 | Recertificacao automatica | Feito (Edge Function) |
-| 8 | Relatorios e Compliance | Feito |
-| 9 | Contas Orfas | Feito (aba em Relatorios) |
-| 11 | Dashboard dados reais (duplicado do 1) | Feito |
-| 12 | Matriz dinamica (duplicado do 2) | Feito |
-| 13 | Notificacoes in-app | Feito |
-| 14 | Expiracao de terceiros | Feito (na Edge Function auto-recertification) |
+Criar um módulo que sincroniza as Directory Roles (funções administrativas) do Microsoft Entra ID e lista todos os usuários com acessos privilegiados, replicando a visão "Funções e administradores" do Azure portal.
 
-### Faltam implementar (2 itens)
+### Abordagem
 
-**Item 3 — Terceiros sem integracao de provisionamento no frontend**
+**Edge Function `sync-entra-roles`:** Usa a Microsoft Graph API para buscar todas as directory roles ativas e seus membros:
+- `GET /directoryRoles` — lista roles ativas no tenant
+- `GET /directoryRoles/{id}/members` — lista membros de cada role
+- Cruza membros com a tabela `colaboradores` (por `entra_id` ou `email`) para vincular identidades
 
-A Edge Function `auto-recertification` ja faz a expiracao automatica no backend, porem no frontend (pagina de terceiros) nao ha:
-- Botao para gerar evento JML manualmente ao desligar um terceiro
-- Disparo automatico de provisionamento (revogar grupos/licencas/apps via `iam_queue`) quando o terceiro e desativado pela UI
-- Criacao de evento JML tipo "leaver" ao desativar
+**Migration — duas tabelas:**
+- `entra_roles`: `id`, `role_id` (entra), `nome`, `descricao`, `is_privileged`, `template_id`, `updated_at`
+- `entra_role_members`: `id`, `role_id` (FK entra_roles), `user_entra_id`, `user_display_name`, `user_email`, `colaborador_id` (FK nullable), `updated_at`
 
-**Plano:**
-- Editar `TerceiroDetalhePage.tsx` — ao desativar um terceiro, criar evento JML "leaver", revogar `perfil_atribuicoes` ativas e gerar entradas `remove_group`/`remove_license`/`remove_app` na `iam_queue` (usando `entraQueueHelper`)
-- Adicionar botao "Desligar Terceiro" que executa esse fluxo completo
+**Página `PrivilegiadosPage.tsx`:**
+- Header com contadores: Total de roles, Privilegiadas, Total de atribuições, Usuários únicos
+- Busca por nome de role ou descrição
+- Tabela com colunas: Função, Descrição, Privilegiado (badge), Atribuições (contagem), Tipo
+- Clicar numa role expande/abre dialog mostrando todos os membros com link para o colaborador quando vinculado
+- Botão "Sincronizar com Entra ID" para disparar a Edge Function
+- Filtro por "Apenas privilegiadas"
 
----
+**Detecção de privilegiado:** A Graph API retorna `isBuiltIn` e o `roleTemplateId`. Roles como Global Administrator, Privileged Role Administrator, etc. são marcadas automaticamente como privilegiadas baseado numa lista conhecida de `roleTemplateId` de alto risco.
 
-**Item 10 — Gestao de Senhas**
+**Alertas:** Ao sincronizar, gerar alertas para:
+- Roles privilegiadas com mais de N membros (ex: Global Admin com >3 membros)
+- Membros privilegiados que não estão vinculados a nenhum colaborador ativo
 
-Integracao com Microsoft Graph API para:
-- Reset de senha de usuarios no Entra ID
-- Visualizar data da ultima troca de senha
-- Notificar sobre senhas proximas de expirar
+### Integração com sidebar e rotas
 
-**Plano:**
-- Criar Edge Function `reset-entra-password` que chama Graph API `PATCH /users/{id}` com `passwordProfile`
-- Adicionar botao "Resetar Senha" na pagina de detalhe do colaborador (`ColaboradorDetalhePage.tsx`)
-- Adicionar coluna "Ultima troca de senha" nos dados do colaborador (via sync do Entra)
-
----
+- Adicionar "Privilegiados" no grupo "Governança" com ícone `Crown`
+- Rota `/privilegiados`
 
 ### Arquivos
 
-| Acao | Arquivo |
+| Ação | Arquivo |
 |---|---|
-| Editar | `src/pages/terceiros/TerceiroDetalhePage.tsx` — fluxo de desligamento com JML + provisioning |
-| Criar | `supabase/functions/reset-entra-password/index.ts` — reset de senha via Graph API |
-| Editar | `src/pages/colaboradores/ColaboradorDetalhePage.tsx` — botao resetar senha |
+| Migration | Criar tabelas `entra_roles` e `entra_role_members` com RLS |
+| Criar | `supabase/functions/sync-entra-roles/index.ts` — sync via Graph API |
+| Criar | `src/pages/privilegiados/PrivilegiadosPage.tsx` — listagem e detalhes |
+| Editar | `src/App.tsx` — rota `/privilegiados` |
+| Editar | `src/components/AppSidebar.tsx` — item no grupo Governança |
+| Editar | `src/components/AppLayout.tsx` — breadcrumb label |
 
