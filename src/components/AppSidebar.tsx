@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Users, UserCheck, GitPullRequest, AppWindow, Shield,
-  AlertTriangle, ClipboardCheck, Cog, Grid3X3, Key, FileText, Bell, Settings, LogOut, UsersRound, ListOrdered, ShieldAlert, BarChart3,
+  AlertTriangle, ClipboardCheck, Cog, Grid3X3, Key, FileText, Bell, Settings, LogOut, UsersRound, ListOrdered, ShieldAlert, BarChart3, HandHelping, GitBranch,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -16,6 +16,7 @@ const sidebarGroups = [
   { label: "Operação", items: [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
     { title: "Fila de Provisionamento", url: "/fila-provisionamento", icon: ListOrdered },
+    { title: "Solicitações", url: "/solicitacoes", icon: HandHelping },
   ]},
   { label: "Identidades", items: [
     { title: "Colaboradores", url: "/colaboradores", icon: Users },
@@ -36,6 +37,7 @@ const sidebarGroups = [
     { title: "Relatórios", url: "/relatorios", icon: BarChart3 },
   ]},
   { label: "Sistema", items: [
+    { title: "Workflow", url: "/workflow", icon: GitBranch },
     { title: "Configurações", url: "/configuracoes", icon: Settings },
     { title: "Usuários", url: "/admin/usuarios", icon: UsersRound },
   ]},
