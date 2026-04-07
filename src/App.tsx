@@ -44,6 +44,9 @@ import FilaProvisionamentoPage from "./pages/fila-provisionamento/FilaProvisiona
 import SolicitacaoDetalhePage from "./pages/fila-provisionamento/SolicitacaoDetalhePage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import NotFound from "./pages/NotFound";
+import PortalLayout from "./pages/portal/PortalLayout";
+import PortalLoginPage from "./pages/portal/PortalLoginPage";
+import PortalSolicitacoesPage from "./pages/portal/PortalSolicitacoesPage";
 
 const queryClient = new QueryClient();
 
@@ -58,6 +61,10 @@ const App = () => (
             <Route path="/login" element={<LoginPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/revisao-externa/:token" element={<RevisaoExternaPage />} />
+            <Route path="/portal/login" element={<PortalLoginPage />} />
+            <Route path="/portal" element={<PortalLayout />}>
+              <Route index element={<PortalSolicitacoesPage />} />
+            </Route>
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/fila-provisionamento" element={<FilaProvisionamentoPage />} />
