@@ -33,10 +33,6 @@ const sidebarGroups = [
     { title: "Matriz", url: "/matriz", icon: Grid3X3 },
     { title: "Licenças", url: "/licencas", icon: Key },
   ]},
-  { label: "Auditoria", items: [
-    { title: "Auditoria", url: "/auditoria", icon: FileText },
-    { title: "Alertas", url: "/alertas", icon: Bell },
-  ]},
   { label: "Sistema", items: [
     { title: "Configurações", url: "/configuracoes", icon: Settings },
     { title: "Usuários", url: "/admin/usuarios", icon: UsersRound },

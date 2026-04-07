@@ -30,14 +30,8 @@ export default function AuditoriaPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Auditoria</h1>
-          <p className="text-sm text-muted-foreground">Logs completos com evidências e relatórios</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline"><Download className="mr-1 h-4 w-4" />Exportar CSV</Button>
-        </div>
+      <div className="flex items-center justify-end">
+        <Button variant="outline"><Download className="mr-1 h-4 w-4" />Exportar CSV</Button>
       </div>
 
       <div className="flex flex-wrap gap-2">

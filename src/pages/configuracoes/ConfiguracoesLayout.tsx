@@ -1,6 +1,6 @@
 import { Outlet, useLocation } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
-import { Briefcase, Building2, MapPin, Network, Users, Sliders, Cloud } from "lucide-react";
+import { Briefcase, Building2, MapPin, Network, Users, Sliders, Cloud, FileText, Bell } from "lucide-react";
 
 const subNav = [
   { title: "Cargos", url: "/configuracoes/cargos", icon: Briefcase },
@@ -10,6 +10,8 @@ const subNav = [
   { title: "Operadores", url: "/configuracoes/operadores", icon: Users },
   { title: "Parâmetros", url: "/configuracoes/parametros", icon: Sliders },
   { title: "Integrações", url: "/configuracoes/integracoes", icon: Cloud },
+  { title: "Auditoria", url: "/configuracoes/auditoria", icon: FileText },
+  { title: "Alertas", url: "/configuracoes/alertas", icon: Bell },
 ];
 
 export default function ConfiguracoesLayout() {
