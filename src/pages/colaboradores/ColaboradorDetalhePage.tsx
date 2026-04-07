@@ -18,6 +18,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
+import { logAuditoria, logAlerta } from "@/lib/auditLogger";
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
@@ -87,6 +88,7 @@ export default function ColaboradorDetalhePage() {
     }
 
     toast({ title: "Perfil atribuído com sucesso" });
+    await logAuditoria({ acao: "atribuir_perfil", entidade: "perfil_atribuicoes", entidade_id: id!, resumo: `Perfil atribuído manualmente a ${pessoa.nome}`, operador: profile?.email });
     queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
     setAtribuirOpen(false);
     setSelectedPerfilId("");
@@ -112,6 +114,7 @@ export default function ColaboradorDetalhePage() {
     }
 
     toast({ title: "Acesso revogado" });
+    await logAuditoria({ acao: "revogar_perfil", entidade: "perfil_atribuicoes", entidade_id: id!, resumo: `Perfil revogado de ${pessoa.nome}`, operador: profile?.email });
     queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
   }
 
@@ -153,6 +156,10 @@ export default function ColaboradorDetalhePage() {
               const sam = (pessoa as any)?.sam_account_name || "";
               const { error } = await supabase.from("colaboradores").update({ status: newStatus as any }).eq("id", id!);
               if (error) { toast({ title: "Erro ao alterar status", description: error.message, variant: "destructive" }); return; }
+              await logAuditoria({ acao: "alterar_status_colaborador", entidade: "colaboradores", entidade_id: id!, resumo: `Status: ${oldStatus} → ${newStatus} — ${pessoa.nome}`, operador: profile?.email });
+              if (oldStatus === "ativo" && newStatus !== "ativo") {
+                await logAlerta({ titulo: "Colaborador desabilitado", mensagem: `${pessoa.nome} teve o status alterado para ${newStatus}`, severidade: "aviso", tipo: "colaborador_desabilitado", ref_url: `/colaboradores/${id}` });
+              }
               
               // Queue disable request
               if (oldStatus === "ativo" && newStatus !== "ativo") {
