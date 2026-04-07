@@ -1,0 +1,1 @@
+DELETE FROM public.aplicacoes WHERE origem != 'azure' OR origem IS NULL;
