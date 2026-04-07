@@ -1,25 +1,46 @@
 
 
-## Plano: Adicionar campo de senha e auto-confirmação na criação de usuário
+## Plano: Ordenar itens selecionados no topo + Corrigir sync de Privilegiados
 
-### Alterações
+### 1. Itens selecionados no topo em listas de multi-seleção
 
-**1. Edge Function `admin-create-user/index.ts`:**
-- Trocar `inviteUserByEmail` por `admin.createUser()` com `email_confirm: true` (auto-confirma o e-mail)
-- Aceitar campo `password` no body (obrigatório, mínimo 6 caracteres)
-- O usuário poderá logar imediatamente com email + senha definida pelo admin
+Em todas as listas com Checkbox de multi-seleção, ordenar para que os itens marcados apareçam primeiro. Aplicar `.sort()` antes do `.map()`, comparando se o item está na lista de selecionados.
 
-**2. Frontend `UsuariosPage.tsx`:**
-- Adicionar campo `senha` ao state do form (apenas para criação, não edição)
-- Adicionar `<Input type="password">` no dialog de novo usuário
-- Validar mínimo 6 caracteres antes de enviar
-- Enviar `password` no payload da edge function
-- Atualizar mensagem de sucesso para "Usuário criado com sucesso"
+**Arquivos afetados:**
+
+| Arquivo | Listas |
+|---|---|
+| `PerfisAcessoPage.tsx` | aplicacoes, licenças, grupos (3 listas com `form.*_ids`) |
+| `PerfilAcessoDetalhePage.tsx` | aplicacoes, licenças, grupos (3 listas com `editForm.*_ids`) |
+| `CargosPage.tsx` | perfis de acesso (1 lista com `selectedPerfis`) |
+
+**Padrão de ordenação:**
+```text
+// Antes do .map(), adicionar .sort():
+.filter(...)
+.sort((a, b) => {
+  const aSelected = ids.includes(a.id) ? 0 : 1;
+  const bSelected = ids.includes(b.id) ? 0 : 1;
+  return aSelected - bSelected;
+})
+.map(...)
+```
+
+### 2. Corrigir erro na sincronização de Privilegiados
+
+A Edge Function `sync-entra-roles` está dando timeout. O problema é que ela faz muitas chamadas sequenciais ao banco (upsert role, select id, delete members, insert members) para cada role, sem batch.
+
+**Correção em `supabase/functions/sync-entra-roles/index.ts`:**
+- Reduzir chamadas usando batch inserts para members (insert array em vez de loop)
+- Usar `returning: "minimal"` nas operações de insert para reduzir payload
+- Adicionar timeout handling e logging para identificar gargalos
 
 ### Arquivos
 
 | Ação | Arquivo |
 |---|---|
-| Editar | `supabase/functions/admin-create-user/index.ts` — `createUser` com `email_confirm: true` + senha |
-| Editar | `src/pages/admin/UsuariosPage.tsx` — campo senha no form de criação |
+| Editar | `src/pages/perfis-acesso/PerfisAcessoPage.tsx` — sort selecionados no topo (3 listas) |
+| Editar | `src/pages/perfis-acesso/PerfilAcessoDetalhePage.tsx` — sort selecionados no topo (3 listas) |
+| Editar | `src/pages/configuracoes/CargosPage.tsx` — sort perfis selecionados no topo |
+| Editar | `supabase/functions/sync-entra-roles/index.ts` — batch inserts + otimizar performance |
 
