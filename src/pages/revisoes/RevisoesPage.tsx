@@ -2,8 +2,9 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Plus, Loader2 } from "lucide-react";
+import { Plus, Loader2, Search } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
 import { Link } from "react-router-dom";
 import { useRevisoes, useAplicacoes } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -28,12 +29,23 @@ export default function RevisoesPage() {
   const [pageSize, setPageSize] = useState(25);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedApp, setSelectedApp] = useState("");
+  const [dataLimite, setDataLimite] = useState("");
   const [creating, setCreating] = useState(false);
+  const [search, setSearch] = useState("");
   const qc = useQueryClient();
   const { toast } = useToast();
 
   const list = (revisoes ?? []) as any[];
-  const { paginatedItems, safePage } = usePagination(list, page, pageSize);
+  const filtered = list.filter((r: any) => {
+    if (!search) return true;
+    const s = search.toLowerCase();
+    return (r.nome || "").toLowerCase().includes(s) || (r.responsavel || "").toLowerCase().includes(s);
+  });
+  const { paginatedItems, safePage } = usePagination(filtered, page, pageSize);
+
+  const emAndamento = list.filter((r: any) => r.status === "em_andamento").length;
+  const concluidas = list.filter((r: any) => r.status === "concluida").length;
+  const canceladas = list.filter((r: any) => r.status === "cancelada").length;
 
   const handleNovaCampanha = async () => {
     if (!selectedApp) return;
@@ -44,13 +56,13 @@ export default function RevisoesPage() {
 
     const token = crypto.randomUUID();
 
-    // Create revisao
     const { data: revisao, error } = await (supabase as any)
       .from("revisoes")
       .insert({
         nome: `Revisão — ${app.nome}`,
         status: "em_andamento",
         data_inicio: new Date().toISOString(),
+        data_fim: dataLimite || null,
         responsavel: app.owner || "—",
         aplicacao_id: selectedApp,
         owner_email: app.owner || null,
@@ -62,7 +74,6 @@ export default function RevisoesPage() {
 
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); setCreating(false); return; }
 
-    // Find all users with active access to this app via perfil_aplicacoes -> perfil_atribuicoes
     const { data: perfilApps } = await supabase
       .from("perfil_aplicacoes")
       .select("perfil_id, perfis_acesso(nome)")
@@ -91,7 +102,6 @@ export default function RevisoesPage() {
       }
     }
 
-    // Call send-review-email edge function
     const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
     if (projectId) {
       await supabase.functions.invoke("send-review-email", { body: { revisao_id: revisao.id } });
@@ -102,6 +112,7 @@ export default function RevisoesPage() {
     setCreating(false);
     setDialogOpen(false);
     setSelectedApp("");
+    setDataLimite("");
   };
 
   return (
@@ -113,6 +124,33 @@ export default function RevisoesPage() {
         </div>
         <Button onClick={() => setDialogOpen(true)}><Plus className="mr-1 h-4 w-4" />Nova Campanha</Button>
       </div>
+
+      {/* Counters */}
+      <div className="grid grid-cols-4 gap-4">
+        <Card><CardContent className="pt-5 pb-4 text-center">
+          <p className="text-2xl font-bold">{list.length}</p>
+          <p className="text-xs text-muted-foreground">Total</p>
+        </CardContent></Card>
+        <Card><CardContent className="pt-5 pb-4 text-center">
+          <p className="text-2xl font-bold text-info">{emAndamento}</p>
+          <p className="text-xs text-muted-foreground">Em andamento</p>
+        </CardContent></Card>
+        <Card><CardContent className="pt-5 pb-4 text-center">
+          <p className="text-2xl font-bold text-success">{concluidas}</p>
+          <p className="text-xs text-muted-foreground">Concluídas</p>
+        </CardContent></Card>
+        <Card><CardContent className="pt-5 pb-4 text-center">
+          <p className="text-2xl font-bold text-destructive">{canceladas}</p>
+          <p className="text-xs text-muted-foreground">Canceladas</p>
+        </CardContent></Card>
+      </div>
+
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input placeholder="Buscar por nome ou responsável..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="pl-9" />
+      </div>
+
       <Card><CardContent className="p-0">
         {isLoading ? (
           <div className="p-4 space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
@@ -139,7 +177,7 @@ export default function RevisoesPage() {
           </tbody></table>
         )}
       </CardContent></Card>
-      <TablePagination totalItems={list.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
+      <TablePagination totalItems={filtered.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
@@ -155,6 +193,10 @@ export default function RevisoesPage() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Data Limite (opcional)</Label>
+              <Input type="date" value={dataLimite} onChange={(e) => setDataLimite(e.target.value)} />
             </div>
             {selectedApp && (
               <p className="text-xs text-muted-foreground">
