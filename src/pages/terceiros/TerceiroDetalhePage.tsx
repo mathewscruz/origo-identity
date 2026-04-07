@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Pencil, RefreshCw, Plus, X, UserX } from "lucide-react";
+import { ArrowLeft, Pencil, RefreshCw, Plus, X, UserX, RotateCcw } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -343,9 +343,13 @@ export default function TerceiroDetalhePage() {
           <p className="text-sm text-muted-foreground">{terceiro.empresa_terceira} · Responsável: {terceiro.responsavel || "—"}</p>
         </div>
         <div className="flex gap-2">
-          {terceiro.ativo && (
+          {terceiro.ativo ? (
             <Button variant="destructive" size="sm" onClick={() => setDesligarOpen(true)}>
               <UserX className="mr-1 h-3 w-3" /> Desligar Terceiro
+            </Button>
+          ) : (
+            <Button size="sm" onClick={handleReativar} disabled={reativando}>
+              <RotateCcw className="mr-1 h-3 w-3" /> {reativando ? "Reativando..." : "Reativar Terceiro"}
             </Button>
           )}
           <Button variant="outline" size="sm"><Pencil className="mr-1 h-3 w-3" /> Editar</Button>
