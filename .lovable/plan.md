@@ -1,55 +1,41 @@
 
 
-## Plano: Formatar todos os status sem capitalização no sistema
+## Plano: Alterar cor primária de azul para #16968D em todo o sistema
 
-### Problema
+### Conversão
 
-Vários módulos exibem valores de status crus do banco (ex: `pendente`, `executado`, `pending`, `success`, `failed`, `em_andamento`, `ativa`, `inativa`) sem formatação — tudo em minúsculas ou com underscores.
+`#16968D` em HSL = `176 74% 34%`
 
-### Locais afetados
+### Alteração
 
-| Arquivo | Campo | Valores crus exibidos |
-|---|---|---|
-| `Dashboard.tsx` (linha 236) | `item.status` (iam_queue) | `pending`, `processing`, `success`, `failed` |
-| `EventoJMLDetalhePage.tsx` (linhas 47, 103) | `evento.status`, `a.status` (ações) | `pendente`, `executado`, `erro` |
-| `EventosJMLPage.tsx` (linha 95) | `ev.status` | `pendente`, `executado`, `erro` |
-| `FilaProvisionamentoPage.tsx` (linha 354) | `ev.status` (aba JML) | `pendente`, `executado`, `erro` |
-| `ExcecoesPage.tsx` (linha 267) | `ex.status` | `pendente`, `aprovada`, `rejeitada`, `expirada` |
-| `RevisoesPage.tsx` (linha 168) | `r.status` | `em_andamento`, `concluida` (usa `.replace(/_/g, " ")` mas sem capitalização) |
-| `RevisaoDetalhePage.tsx` (linha 47) | `revisao.status` | Mesmo problema |
-| `RegrasPage.tsx` (linha 59) | `regra.status` | `ativa`, `inativa` |
-| `ColaboradorDetalhePage.tsx` (linha 533) | `item.status` (individuais) | `pending`, `success`, `failed` |
-| `ColaboradorDetalhePage.tsx` (linha 570) | `ev.status` (timeline JML) | `pendente`, `executado`, `erro` |
-| `AplicacaoDetalhePage.tsx` (linha 170) | `c.colaboradores.status` | `ativo`, `inativo`, `desligado` |
+Trocar todas as referências à cor primária azul (`221 83% 53%`) pela nova cor teal `176 74% 34%` no arquivo `src/index.css`. Isso afeta automaticamente todos os botões, links, badges, sidebar highlights, rings, focus states e qualquer elemento que use `primary`, `ring`, `sidebar-primary` ou `sidebar-ring`.
 
-### Correção
+### Variáveis a alterar
 
-Adicionar mapas de labels formatados em cada arquivo afetado:
+**Tema claro (:root):**
+- `--primary: 221 83% 53%` → `176 74% 34%`
+- `--ring: 221 83% 53%` → `176 74% 34%`
+- `--sidebar-primary: 221 83% 53%` → `176 74% 34%`
+- `--sidebar-ring: 221 83% 53%` → `176 74% 34%`
 
-**Status IAM Queue:** `pending` → "Pendente", `processing` → "Processando", `success` → "Concluído", `failed` → "Falhou"
+**Tema escuro (.dark):**
+- `--primary: 221 83% 53%` → `176 74% 34%`
+- `--ring: 221 83% 53%` → `176 74% 34%`
+- `--sidebar-primary: 221 83% 53%` → `176 74% 34%`
+- `--sidebar-ring: 221 83% 53%` → `176 74% 34%`
 
-**Status Eventos JML:** `pendente` → "Pendente", `executado` → "Executado", `erro` → "Erro"
+### Impacto
 
-**Status Exceções:** `pendente` → "Pendente", `aprovada` → "Aprovada", `rejeitada` → "Rejeitada", `expirada` → "Expirada"
-
-**Status Revisões:** `em_andamento` → "Em Andamento", `concluida` → "Concluída"
-
-**Status Regras:** `ativa` → "Ativa", `inativa` → "Inativa"
-
-**Status Colaboradores:** `ativo` → "Ativo", `inativo` → "Inativo", `desligado` → "Desligado", `afastado` → "Afastado"
+Como todo o sistema usa CSS variables via Tailwind (`bg-primary`, `text-primary`, `ring-primary`, etc.), a mudança em um único arquivo propaga automaticamente para:
+- Tela de login (botão "Entrar", links)
+- Sidebar (item ativo, hover)
+- Todos os botões primários em todos os módulos
+- Focus rings em inputs e selects
+- Badges e links com cor primária
 
 ### Arquivos
 
 | Ação | Arquivo |
 |---|---|
-| Editar | `src/pages/Dashboard.tsx` — label map para status da fila |
-| Editar | `src/pages/eventos-jml/EventoJMLDetalhePage.tsx` — labels para evento e ações |
-| Editar | `src/pages/eventos-jml/EventosJMLPage.tsx` — labels para status JML |
-| Editar | `src/pages/fila-provisionamento/FilaProvisionamentoPage.tsx` — labels na aba JML |
-| Editar | `src/pages/excecoes/ExcecoesPage.tsx` — labels para exceções |
-| Editar | `src/pages/revisoes/RevisoesPage.tsx` — labels capitalizados para revisões |
-| Editar | `src/pages/revisoes/RevisaoDetalhePage.tsx` — label capitalizado |
-| Editar | `src/pages/regras/RegrasPage.tsx` — labels para regras |
-| Editar | `src/pages/colaboradores/ColaboradorDetalhePage.tsx` — labels nas seções individuais e JML |
-| Editar | `src/pages/aplicacoes/AplicacaoDetalhePage.tsx` — label para status do colaborador |
+| Editar | `src/index.css` — substituir 4 variáveis no tema claro + 4 no tema escuro |
 
