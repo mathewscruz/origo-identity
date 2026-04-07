@@ -264,7 +264,7 @@ export default function ColaboradorDetalhePage() {
   const area = (pessoa.areas as any)?.nome || "—";
   const empresa = (pessoa.empresas as any)?.nome || "—";
   const localidade = (pessoa.localidades as any)?.nome || "—";
-  const gestor = (pessoa.gestor as any)?.nome || "—";
+  const gestor = (pessoa as any)?.gestor?.nome || "—";
   const sc = statusConfig[pessoa.status] || { label: pessoa.status, class: "" };
 
   const getPerfilApps = (a: any) => {

@@ -66,10 +66,19 @@ export function useColaborador(id: string | undefined) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("colaboradores")
-        .select("*, cargos(nome), areas(nome), empresas(nome), localidades(nome), gestor:colaboradores!colaboradores_gestor_id_fkey(nome)")
+        .select("*, cargos(nome), areas(nome), empresas(nome), localidades(nome)")
         .eq("id", id!)
         .single();
       if (error) throw error;
+      // Fetch gestor name separately to avoid self-join issues
+      if (data?.gestor_id) {
+        const { data: gestorData } = await supabase
+          .from("colaboradores")
+          .select("nome")
+          .eq("id", data.gestor_id)
+          .single();
+        (data as any).gestor = gestorData || null;
+      }
       return data;
     },
   });
