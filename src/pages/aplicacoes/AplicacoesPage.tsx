@@ -200,7 +200,7 @@ export default function AplicacoesPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b text-left text-muted-foreground">
-                <th className="p-4 font-medium">Nome</th><th className="p-4 font-medium">Origem</th><th className="p-4 font-medium">Criticidade</th><th className="p-4 font-medium">Autenticação</th>
+                <th className="p-4 font-medium">Nome</th><th className="p-4 font-medium">Origem</th><th className="p-4 font-medium">Autenticação</th>
                 <th className="p-4 font-medium">Owner</th><th className="p-4 font-medium">Aprovação</th><th className="p-4 font-medium">Integração</th><th className="p-4 font-medium w-20">Ações</th>
               </tr></thead>
               <tbody>
@@ -219,7 +219,6 @@ export default function AplicacoesPage() {
                         <Badge variant="outline" className="bg-muted text-muted-foreground"><Globe className="h-3 w-3 mr-1" />Manual</Badge>
                       )}
                     </td>
-                    <td className="p-4"><Badge variant="outline" className={criticidadeColors[app.criticidade]}>{app.criticidade}</Badge></td>
                     <td className="p-4"><Badge variant="outline">{app.tipo_auth || "—"}</Badge></td>
                     <td className="p-4 text-muted-foreground">{app.owner || <span className="text-warning">Sem owner</span>}</td>
                     <td className="p-4">

@@ -37,29 +37,26 @@ Deno.serve(async (req) => {
     }
 
     // Parse body
-    const { email, nome, password, role } = await req.json();
-    if (!email || !nome || !password || password.length < 6) {
-      return new Response(JSON.stringify({ error: "Email, nome e senha (min 6 chars) são obrigatórios" }), { status: 400, headers: corsHeaders });
+    const { email, nome, role } = await req.json();
+    if (!email || !nome) {
+      return new Response(JSON.stringify({ error: "Email e nome são obrigatórios" }), { status: 400, headers: corsHeaders });
     }
     if (!["admin", "operador", "viewer"].includes(role)) {
       return new Response(JSON.stringify({ error: "Role inválido" }), { status: 400, headers: corsHeaders });
     }
 
-    // Use service_role to create user without affecting caller session
+    // Use service_role to invite user (sends email with link to set password)
     const adminClient = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { data: newUser, error: createErr } = await adminClient.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: { nome },
+    const { data: newUser, error: inviteErr } = await adminClient.auth.admin.inviteUserByEmail(email, {
+      data: { nome },
     });
 
-    if (createErr) {
-      return new Response(JSON.stringify({ error: createErr.message }), { status: 400, headers: corsHeaders });
+    if (inviteErr) {
+      return new Response(JSON.stringify({ error: inviteErr.message }), { status: 400, headers: corsHeaders });
     }
 
     // Insert role
@@ -70,7 +67,7 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ 
       success: true, 
       user_id: newUser?.user?.id,
-      message: `Usuário ${nome} criado com sucesso` 
+      message: `Convite enviado para ${email}. O usuário receberá um e-mail para definir sua senha.` 
     }), { headers: corsHeaders });
 
   } catch (err) {
