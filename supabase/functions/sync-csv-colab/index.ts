@@ -442,10 +442,48 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     const cargoNames = buildNameLookup(cargoCache);
     const areaNames = buildNameLookup(areaCache);
 
+    // ── Load existing emails for corporate email generation ──
+    const existingEmails = new Set<string>();
+    let emailFrom = 0;
+    while (true) {
+      const { data: emailData } = await sb
+        .from("colaboradores")
+        .select("email")
+        .not("email", "is", null)
+        .range(emailFrom, emailFrom + PAGE - 1);
+      if (!emailData || emailData.length === 0) break;
+      emailData.forEach((c: any) => {
+        if (c.email) existingEmails.add(c.email.toLowerCase());
+      });
+      if (emailData.length < PAGE) break;
+      emailFrom += PAGE;
+    }
+    console.log(`Loaded ${existingEmails.size} existing emails for dedup`);
+
     function buildColabData(row: CsvRow) {
       const statusMapped = STATUS_MAP[(row.status || "ativo").toLowerCase()] || "ativo";
-      const email = row.mail || "";
-      const samAccountName = email.includes("@") ? email.split("@")[0] : (row.employID || "").trim();
+      let email = row.mail || "";
+      let samAccountName = email.includes("@") ? email.split("@")[0] : (row.employID || "").trim();
+
+      // Generate corporate email if not @origoenergia.com.br
+      if (email && !email.toLowerCase().endsWith("@origoenergia.com.br")) {
+        const generated = generateOrigoEmail(row.displayName || "", existingEmails);
+        if (generated) {
+          email = generated;
+          samAccountName = generated.split("@")[0];
+          existingEmails.add(generated.toLowerCase());
+          console.log(`Generated corporate email for "${row.displayName}": ${generated}`);
+        }
+      } else if (!email && row.displayName) {
+        const generated = generateOrigoEmail(row.displayName, existingEmails);
+        if (generated) {
+          email = generated;
+          samAccountName = generated.split("@")[0];
+          existingEmails.add(generated.toLowerCase());
+          console.log(`Generated corporate email (no original) for "${row.displayName}": ${generated}`);
+        }
+      }
+
       return {
         nome: row.displayName,
         email: email || null,
