@@ -64,8 +64,8 @@ export default function LoginPage() {
     setLoading(false);
   };
 
-  const titles = { login: "Entrar no Órigo", forgot: "Redefinir Senha", signup: "Criar Conta" };
-  const descs = { login: "Acesse o sistema de gestão de identidades", forgot: "Informe seu email para receber o link", signup: "Preencha os dados para criar sua conta" };
+  const titles = { login: "Access & Identity", forgot: "Redefinir Senha", signup: "Criar Conta" };
+  const descs = { login: "Insira suas credenciais abaixo", forgot: "Informe seu email para receber o link", signup: "Preencha os dados para criar sua conta" };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
