@@ -26,6 +26,7 @@ Deno.serve(async (req) => {
   const results = {
     revisoes_criadas: 0,
     terceiros_expirados: 0,
+    terceiros_revalidados: 0,
     errors: [] as string[],
   };
 
