@@ -300,13 +300,37 @@ async function executeAction(
 
     case "assign_app": {
       const appClientId = payload.appId;
-      const appRoleId = payload.appRoleId || "00000000-0000-0000-0000-000000000000";
+      let appRoleId = payload.appRoleId || "00000000-0000-0000-0000-000000000000";
       if (!appClientId) return { success: false, message: "appId ausente no payload" };
 
       const spObjectId = await resolveServicePrincipal(headers, graphBase, appClientId, "assign_app");
 
       if (!spObjectId) {
         return { success: false, message: `Service Principal não encontrado para appId ${appClientId}. Verifique se o app está registrado no Entra ID.` };
+      }
+
+      // Resolve real default appRoleId from the SP if using the placeholder
+      if (appRoleId === "00000000-0000-0000-0000-000000000000") {
+        try {
+          const spDetailRes = await fetch(`${graphBase}/servicePrincipals/${spObjectId}?$select=appRoles`, { headers });
+          if (spDetailRes.ok) {
+            const spDetail = await spDetailRes.json();
+            const roles = spDetail.appRoles || [];
+            // Find "Default Access" or "User" role, or use the first available, or keep placeholder
+            const defaultRole = roles.find((r: any) => r.displayName === "Default Access" || r.value === "User" || r.isEnabled);
+            if (defaultRole) {
+              console.log(`[assign_app] Using real appRoleId: ${defaultRole.id} (${defaultRole.displayName}) instead of placeholder`);
+              appRoleId = defaultRole.id;
+            } else if (roles.length === 0) {
+              // No app roles defined — use the default access GUID which means "default access" for apps without explicit roles
+              console.log(`[assign_app] No appRoles defined on SP, keeping default 00000000...`);
+            }
+          } else {
+            await spDetailRes.text(); // consume body
+          }
+        } catch (e) {
+          console.warn(`[assign_app] Error fetching appRoles:`, e);
+        }
       }
 
       const res = await fetch(`${graphBase}/servicePrincipals/${spObjectId}/appRoleAssignedTo`, {
