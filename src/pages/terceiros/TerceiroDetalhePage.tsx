@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Pencil, RefreshCw, Plus, X } from "lucide-react";
+import { ArrowLeft, Pencil, RefreshCw, Plus, X, UserX } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
+import { queueFullProfileActions } from "@/lib/entraQueueHelper";
+import { createEventoJML } from "@/lib/createEventoJML";
+import { logAuditoria, logAlerta } from "@/lib/auditLogger";
 
 const criticidadeConfig: Record<string, { label: string; class: string }> = {
   baixa: { label: "Baixa", class: "bg-muted text-muted-foreground" },
@@ -44,9 +48,12 @@ export default function TerceiroDetalhePage() {
   const { data: terceiro, isLoading } = useTerceiro(id);
   const [renovarOpen, setRenovarOpen] = useState(false);
   const [atribuirOpen, setAtribuirOpen] = useState(false);
+  const [desligarOpen, setDesligarOpen] = useState(false);
+  const [desligando, setDesligando] = useState(false);
   const [selectedPerfil, setSelectedPerfil] = useState("");
   const { data: perfisAcesso } = usePerfisAcesso();
   const { toast } = useToast();
+  const { profile } = useAuth();
   const qc = useQueryClient();
 
   const { data: atribuicoes } = useQuery({
@@ -137,6 +144,75 @@ export default function TerceiroDetalhePage() {
     triggerEntraProcessing();
   };
 
+  const handleDesligar = async () => {
+    if (!id || !terceiro) return;
+    setDesligando(true);
+    try {
+      // 1. Deactivate terceiro
+      await supabase.from("terceiros").update({ ativo: false }).eq("id", id);
+
+      // 2. Get active atribuicoes and revoke them
+      const activeAtribuicoes = atribuicoes || [];
+      const perfilIds = activeAtribuicoes.map((a: any) => a.perfil_id).filter(Boolean);
+
+      if (perfilIds.length > 0) {
+        // Revoke all perfil_atribuicoes
+        await supabase.from("perfil_atribuicoes")
+          .update({ ativo: false, data_revogacao: new Date().toISOString() })
+          .eq("terceiro_id", id)
+          .eq("ativo", true);
+
+        // Queue removal of all Entra ID resources
+        const identity = terceiro.email || sam;
+        if (identity) {
+          const terceiroIdentity = {
+            id: id,
+            nome: terceiro.nome,
+            email: terceiro.email || null,
+            sam_account_name: sam || null,
+          };
+          await queueFullProfileActions([terceiroIdentity], perfilIds, "remove", { triggerImmediately: false });
+        }
+      }
+
+      // 3. Create JML leaver event
+      await createEventoJML({
+        colaboradorId: id,
+        colaboradorNome: terceiro.nome,
+        tipo: "leaver",
+        dadosAntes: { status: "ativo", perfis: perfilIds.length },
+        dadosDepois: { status: "inativo", motivo: "desligamento_terceiro" },
+      });
+
+      // 4. Audit + alert
+      await logAuditoria({
+        acao: "desligar_terceiro",
+        entidade: "terceiros",
+        entidade_id: id,
+        resumo: `Terceiro ${terceiro.nome} desligado — ${perfilIds.length} perfis revogados`,
+        operador: profile?.email,
+      });
+      await logAlerta({
+        titulo: "Terceiro desligado",
+        mensagem: `${terceiro.nome} (${terceiro.empresa_terceira}) foi desligado. ${perfilIds.length} perfis revogados.`,
+        severidade: "aviso",
+        tipo: "terceiro_desligado",
+        ref_url: `/terceiros/${id}`,
+      });
+
+      if (perfilIds.length > 0) triggerEntraProcessing(true);
+
+      toast({ title: "Terceiro desligado", description: `${perfilIds.length} perfis revogados e remoções enviadas para processamento.` });
+      qc.invalidateQueries({ queryKey: ["terceiro", id] });
+      qc.invalidateQueries({ queryKey: ["terceiro_atribuicoes", id] });
+    } catch (err: any) {
+      toast({ title: "Erro ao desligar", description: err.message, variant: "destructive" });
+    } finally {
+      setDesligando(false);
+      setDesligarOpen(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -150,6 +226,11 @@ export default function TerceiroDetalhePage() {
           <p className="text-sm text-muted-foreground">{terceiro.empresa_terceira} · Responsável: {terceiro.responsavel || "—"}</p>
         </div>
         <div className="flex gap-2">
+          {terceiro.ativo && (
+            <Button variant="destructive" size="sm" onClick={() => setDesligarOpen(true)}>
+              <UserX className="mr-1 h-3 w-3" /> Desligar Terceiro
+            </Button>
+          )}
           <Button variant="outline" size="sm"><Pencil className="mr-1 h-3 w-3" /> Editar</Button>
           <Button size="sm" onClick={() => setRenovarOpen(true)}><RefreshCw className="mr-1 h-3 w-3" /> Renovar Contrato</Button>
         </div>
@@ -297,6 +378,28 @@ export default function TerceiroDetalhePage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setAtribuirOpen(false)}>Cancelar</Button>
             <Button onClick={handleAtribuirPerfil} disabled={!selectedPerfil}>Atribuir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Desligar Terceiro */}
+      <Dialog open={desligarOpen} onOpenChange={setDesligarOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Desligar Terceiro</DialogTitle>
+            <DialogDescription>
+              Ao desligar <strong>{terceiro.nome}</strong>, todos os perfis de acesso serão revogados e as remoções de grupos, licenças e aplicativos serão enviadas para processamento no Entra ID.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2 text-sm text-muted-foreground">
+            <p><strong>Perfis ativos:</strong> {atribuicoes?.length || 0}</p>
+            <p><strong>Empresa:</strong> {terceiro.empresa_terceira || "—"}</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDesligarOpen(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDesligar} disabled={desligando}>
+              {desligando ? "Processando..." : "Confirmar Desligamento"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
