@@ -1,36 +1,41 @@
 
 
-## Plano: Corrigir resolução de Service Principal para apps
+## Plano: Corrigir atribuição de apps — função não foi deployada + resolução de ID incompleta
 
-### Causa raiz
+### Diagnóstico
 
-O campo `entra_id` na tabela `aplicacoes` armazena o **Object ID do Service Principal** (como vem da sincronização do Entra ID), mas a Edge Function trata esse valor como **Application (client) ID** e tenta resolvê-lo com `$filter=appId eq '...'`, que não retorna resultados.
+**Problema 1 — A Edge Function NÃO foi redeployada.** Os logs mostram que a função `resolveServicePrincipal` nunca é chamada (nenhum log "Resolved SP" ou "Direct SP" aparece). A versão em produção ainda usa o código antigo que faz apenas um tipo de lookup.
 
-A correção é usar uma estratégia de resolução dupla:
-1. Primeiro, tentar usar o `entra_id` diretamente como Object ID do Service Principal (verificando com `GET /servicePrincipals/{id}`)
-2. Se falhar, fazer fallback para `$filter=appId eq '...'` (caso algum app tenha o client ID)
+**Problema 2 — O `entra_id` pode ser um terceiro tipo de ID.** No Microsoft Graph, existem 3 identificadores:
+- **Application Object ID** (`/applications/{id}`)
+- **Application Client ID** (`appId`)  
+- **Service Principal Object ID** (`/servicePrincipals/{id}`)
 
-### Alteração
+A resolução atual tenta SP Object ID e appId, mas ignora Application Object ID. Se os apps foram importados do endpoint `/applications`, o `entra_id` não será encontrado em nenhuma das duas buscas.
+
+### O que será feito
 
 **Arquivo:** `supabase/functions/process-iam-queue/index.ts`
 
-No `assign_app` e `remove_app`, substituir a lógica de resolução:
+1. Adicionar uma **terceira estratégia de resolução**: buscar via `/applications/{id}` para obter o `appId` real, e então usar esse `appId` para encontrar o Service Principal
+2. Adicionar **logging detalhado** em cada etapa de resolução para diagnosticar exatamente o que está falhando
+3. **Consumir response bodies** nas falhas para evitar resource leaks no Deno
+4. **Redeployar** a Edge Function (desta vez com confirmação de que o deploy foi efetivo)
 
 ```text
-Antes:
-  GET /servicePrincipals?$filter=appId eq '{id}' → não encontra → falha
-
-Depois:
-  GET /servicePrincipals/{id} → se 200, usar diretamente como SP Object ID
-  senão → GET /servicePrincipals?$filter=appId eq '{id}' → fallback
+Resolução em 3 etapas:
+1. GET /servicePrincipals/{id} → se 200, é o SP Object ID
+2. GET /servicePrincipals?$filter=appId eq '{id}' → se encontra, é o Application Client ID
+3. GET /applications/{id} → pega o appId real → GET /servicePrincipals?$filter=appId eq '{appId}'
 ```
 
-Isso cobre os dois cenários: apps importados (cujo `entra_id` é o Object ID do SP) e apps cadastrados manualmente (cujo `entra_id` pode ser o Application client ID).
+5. Resetar os itens falhados na `iam_queue` para `pending` para reprocessamento
 
 ### Arquivos
 
 | Ação | Arquivo |
 |---|---|
-| Editar | `supabase/functions/process-iam-queue/index.ts` — resolução dupla do SP ID |
-| Deploy | Redeploy da Edge Function |
+| Editar | `supabase/functions/process-iam-queue/index.ts` — resolução tripla + logging |
+| Deploy | Redeploy forçado da Edge Function |
+| SQL | Reset itens `assign_app` falhados para `pending` |
 
