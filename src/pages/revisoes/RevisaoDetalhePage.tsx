@@ -44,7 +44,7 @@ export default function RevisaoDetalhePage() {
         <div className="flex-1">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold tracking-tight">{revisao.nome}</h1>
-            <Badge variant="outline" className={isConcluida ? "bg-success/15 text-success border-success/30" : "bg-info/15 text-info border-info/30"}>{revisao.status.replace(/_/g, " ")}</Badge>
+            <Badge variant="outline" className={isConcluida ? "bg-success/15 text-success border-success/30" : "bg-info/15 text-info border-info/30"}>{({ em_andamento: "Em Andamento", concluida: "Concluída", cancelada: "Cancelada" } as Record<string, string>)[revisao.status] || revisao.status}</Badge>
           </div>
           <p className="text-sm text-muted-foreground">Responsável: {revisao.responsavel} · {revisao.data_inicio ? new Date(revisao.data_inicio).toLocaleDateString("pt-BR") : ""} → {revisao.data_fim ? new Date(revisao.data_fim).toLocaleDateString("pt-BR") : "sem prazo"}</p>
         </div>

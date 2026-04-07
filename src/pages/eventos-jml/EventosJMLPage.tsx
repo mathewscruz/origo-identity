@@ -92,7 +92,7 @@ export default function EventosJMLPage() {
                       <tr key={ev.id} className="border-b last:border-0 hover:bg-muted/50">
                         <td className="p-4"><Badge className={`${tipoColors[ev.tipo]} text-[10px] uppercase`}>{ev.tipo.charAt(0)}</Badge></td>
                         <td className="p-4"><Link to={`/eventos-jml/${ev.id}`} className="font-medium text-primary hover:underline">{ev.colaborador_nome || "Desconhecido"}</Link></td>
-                        <td className="p-4"><Badge variant="outline" className={statusColors[ev.status] || ""}>{ev.status}</Badge></td>
+                        <td className="p-4"><Badge variant="outline" className={statusColors[ev.status] || ""}>{({ pendente: "Pendente", quarentena: "Quarentena", executando: "Executando", executado: "Executado", erro: "Erro", cancelado: "Cancelado" } as Record<string, string>)[ev.status] || ev.status}</Badge></td>
                         <td className="p-4 text-muted-foreground">{ev.tentativas}/{ev.max_tentativas}</td>
                         <td className="p-4 text-muted-foreground text-xs">{new Date(ev.created_at).toLocaleDateString("pt-BR")}</td>
                       </tr>

@@ -167,7 +167,7 @@ export default function AplicacaoDetalhePage() {
                         <td className="p-4 text-muted-foreground">{c.colaboradores.email || "—"}</td>
                         <td className="p-4 text-muted-foreground">{c.colaboradores.cargos?.nome || "—"}</td>
                         <td className="p-4"><Badge variant="outline">{(c as any).perfis_acesso?.nome || "—"}</Badge></td>
-                        <td className="p-4"><Badge variant={c.colaboradores.status === "ativo" ? "outline" : "destructive"} className={c.colaboradores.status === "ativo" ? "bg-success/15 text-success border-success/30" : ""}>{c.colaboradores.status}</Badge></td>
+                        <td className="p-4"><Badge variant={c.colaboradores.status === "ativo" ? "outline" : "destructive"} className={c.colaboradores.status === "ativo" ? "bg-success/15 text-success border-success/30" : ""}>{({ ativo: "Ativo", inativo: "Inativo", ferias: "Férias", afastado: "Afastado", desligado: "Desligado" } as Record<string, string>)[c.colaboradores.status] || c.colaboradores.status}</Badge></td>
                       </tr>
                     ))}
                   </tbody>

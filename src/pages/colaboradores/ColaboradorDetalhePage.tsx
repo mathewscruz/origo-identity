@@ -530,7 +530,7 @@ export default function ColaboradorDetalhePage() {
                           </td>
                           <td className="p-4 font-medium">{getResourceName(item)}</td>
                           <td className="p-4">
-                            <Badge variant="outline" className={statusClass}>{item.status}</Badge>
+                            <Badge variant="outline" className={statusClass}>{({ pending: "Pendente", processing: "Processando", success: "Concluído", failed: "Falhou" } as Record<string, string>)[item.status] || item.status}</Badge>
                           </td>
                           <td className="p-4 text-muted-foreground">{new Date(item.created_at).toLocaleDateString("pt-BR")}</td>
                           <td className="p-4">
@@ -567,7 +567,7 @@ export default function ColaboradorDetalhePage() {
                         <div>
                           <div className="flex items-center gap-2 mb-1">
                             <Badge className={`${tipoJMLColors[ev.tipo]} text-[10px] uppercase`}>{ev.tipo}</Badge>
-                            <Badge variant="outline" className="text-[10px]">{ev.status}</Badge>
+                            <Badge variant="outline" className="text-[10px]">{({ pendente: "Pendente", quarentena: "Quarentena", executando: "Executando", executado: "Executado", erro: "Erro", cancelado: "Cancelado" } as Record<string, string>)[ev.status] || ev.status}</Badge>
                           </div>
                           <p className="text-sm">
                             {ev.dados_depois ? JSON.stringify(ev.dados_depois) : ev.dados_antes ? JSON.stringify(ev.dados_antes) : "Evento processado"}

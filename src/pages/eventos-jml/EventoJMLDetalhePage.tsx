@@ -44,7 +44,7 @@ export default function EventoJMLDetalhePage() {
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold tracking-tight">Evento #{evento.id.slice(0, 8)}</h1>
             <Badge className={`${tipoColors[evento.tipo]} text-[10px] uppercase`}>{evento.tipo.charAt(0)}</Badge>
-            <Badge variant="outline" className={statusColors[evento.status] || ""}>{evento.status}</Badge>
+            <Badge variant="outline" className={statusColors[evento.status] || ""}>{({ pendente: "Pendente", quarentena: "Quarentena", executando: "Executando", executado: "Executado", erro: "Erro", cancelado: "Cancelado" } as Record<string, string>)[evento.status] || evento.status}</Badge>
           </div>
           <p className="text-sm text-muted-foreground">{evento.colaborador_nome || "Desconhecido"} · {new Date(evento.created_at).toLocaleDateString("pt-BR")}</p>
         </div>
@@ -100,7 +100,7 @@ export default function EventoJMLDetalhePage() {
                   <tr key={a.id} className="border-b last:border-0">
                     <td className="p-4 font-medium">{a.descricao}</td>
                     <td className="p-4 text-muted-foreground">{a.aplicacao || "—"}</td>
-                    <td className="p-4"><Badge variant="outline" className={statusColors[a.status] || ""}>{a.status}</Badge></td>
+                    <td className="p-4"><Badge variant="outline" className={statusColors[a.status] || ""}>{({ pendente: "Pendente", executado: "Executado", erro: "Erro" } as Record<string, string>)[a.status] || a.status}</Badge></td>
                   </tr>
                 ))}
               </tbody>
