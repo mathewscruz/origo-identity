@@ -13,7 +13,7 @@ import { toast } from "@/hooks/use-toast";
 import { logAuditoria } from "@/lib/auditLogger";
 import { useAuth } from "@/contexts/AuthContext";
 import { queueFullProfileActions } from "@/lib/entraQueueHelper";
-import { HandHelping, Plus, Search, Clock, CheckCircle2, XCircle, Send } from "lucide-react";
+import { HandHelping, Plus, Search, Clock, CheckCircle2, XCircle, Send, ExternalLink } from "lucide-react";
 
 export default function SolicitacoesPage() {
   const { profile } = useAuth();
