@@ -231,6 +231,17 @@ export default function ColaboradoresPage() {
           colaborador_id: colaboradorId,
           target_identity: sam || null,
         });
+        // Also disable in Entra ID simultaneously
+        const entraIdentityDisable = form.email.trim() || sam;
+        if (entraIdentityDisable) {
+          await supabase.from("iam_queue" as any).insert({
+            action_type: "disable_entra",
+            payload_json: { mail: form.email.trim() || null, samAccountName: sam, displayName: form.nome.trim() },
+            requested_by: profile?.email || "sistema",
+            colaborador_id: colaboradorId,
+            target_identity: entraIdentityDisable,
+          });
+        }
         toast({ title: "Solicitação de desativação enviada para processamento" });
       } else if (becameActive) {
         const sam = form.sam_account_name.trim();
@@ -250,6 +261,17 @@ export default function ColaboradoresPage() {
           colaborador_id: colaboradorId,
           target_identity: sam || null,
         });
+        // Also enable in Entra ID simultaneously
+        const entraIdentity = form.email.trim() || sam;
+        if (entraIdentity) {
+          await supabase.from("iam_queue" as any).insert({
+            action_type: "enable_entra",
+            payload_json: { mail: form.email.trim() || null, samAccountName: sam, displayName: form.nome.trim() },
+            requested_by: profile?.email || "sistema",
+            colaborador_id: colaboradorId,
+            target_identity: entraIdentity,
+          });
+        }
         toast({ title: "Solicitação de reativação enviada para processamento" });
 
         // Re-provision cargo access
@@ -310,6 +332,24 @@ export default function ColaboradoresPage() {
           colaborador_id: colaboradorId,
           target_identity: sam || null,
         });
+        // Also update Entra ID simultaneously
+        const entraIdentityUpdate = form.email.trim() || sam;
+        if (entraIdentityUpdate) {
+          await supabase.from("iam_queue" as any).insert({
+            action_type: "update_entra",
+            payload_json: {
+              mail: form.email.trim() || null,
+              samAccountName: sam,
+              displayName: form.nome.trim(),
+              department: newValues.department || null,
+              jobTitle: newValues.title || null,
+              companyName: getNameById(empresas, form.empresa_id) || null,
+            },
+            requested_by: profile?.email || "sistema",
+            colaborador_id: colaboradorId,
+            target_identity: entraIdentityUpdate,
+          });
+        }
         toast({ title: "Solicitação de atualização enviada para processamento" });
       }
 

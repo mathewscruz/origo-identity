@@ -11,6 +11,7 @@ const ENTRA_ACTION_TYPES = [
   "assign_license", "remove_license",
   "assign_app", "remove_app",
   "disable_entra", "enable_entra",
+  "update_entra",
 ];
 
 function jsonResponse(data: unknown, status = 200) {
@@ -421,6 +422,29 @@ async function executeAction(
       }
       const errText = await res.text();
       return { success: false, message: `Erro ao reabilitar conta Entra ID: ${errText}` };
+    }
+
+    case "update_entra": {
+      const updateBody: Record<string, string> = {};
+      if (payload.department) updateBody.department = payload.department;
+      if (payload.jobTitle) updateBody.jobTitle = payload.jobTitle;
+      if (payload.companyName) updateBody.companyName = payload.companyName;
+      if (payload.displayName) updateBody.displayName = payload.displayName;
+
+      if (Object.keys(updateBody).length === 0) {
+        return { success: true, message: "Nenhum atributo para atualizar no Entra ID" };
+      }
+
+      const res = await fetch(`${graphBase}/users/${userId}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(updateBody),
+      });
+      if (res.status === 204 || res.ok) {
+        return { success: true, message: `Atributos atualizados no Entra ID: ${Object.keys(updateBody).join(", ")}` };
+      }
+      const errText = await res.text();
+      return { success: false, message: `Erro ao atualizar Entra ID: ${errText}` };
     }
 
     default:
