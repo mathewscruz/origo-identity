@@ -233,7 +233,7 @@ export default function Dashboard() {
                         {item.target_identity || "—"}
                       </Link>
                     </td>
-                    <td className="py-3"><Badge variant="outline" className={statusColors[item.status] || ""}>{item.status}</Badge></td>
+                    <td className="py-3"><Badge variant="outline" className={statusColors[item.status] || ""}>{({ pending: "Pendente", processing: "Processando", success: "Concluído", failed: "Falhou" } as Record<string, string>)[item.status] || item.status}</Badge></td>
                     <td className="py-3 text-muted-foreground">{new Date(item.created_at).toLocaleDateString("pt-BR")}</td>
                   </tr>
                 ))}

@@ -56,7 +56,7 @@ export default function RegrasPage() {
                     <tr key={regra.id} className="border-b last:border-0 hover:bg-muted/50">
                       <td className="p-4"><Link to={`/regras/${regra.id}/editar`} className="font-medium text-primary hover:underline">{regra.nome}</Link></td>
                       <td className="p-4"><Badge variant="outline">{regra.prioridade}</Badge></td>
-                      <td className="p-4"><Badge variant={regra.status === "ativa" ? "default" : "secondary"}>{regra.status}</Badge></td>
+                      <td className="p-4"><Badge variant={regra.status === "ativa" ? "default" : "secondary"}>{({ ativa: "Ativa", inativa: "Inativa", rascunho: "Rascunho" } as Record<string, string>)[regra.status] || regra.status}</Badge></td>
                       <td className="p-4 text-muted-foreground">{regra.criado_por || "—"}</td>
                       <td className="p-4">
                         <div className="flex gap-1">

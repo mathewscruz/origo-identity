@@ -264,7 +264,7 @@ export default function ExcecoesPage() {
                       <td className="p-4 text-muted-foreground text-xs max-w-[200px] truncate" title={ex.justificativa}>{ex.justificativa}</td>
                       <td className="p-4">
                         <Badge variant="outline" className={statusColors[ex._expired ? "expirada" : ex.status]}>
-                          {ex._expired ? "expirada" : ex.status}
+                          {({ pendente: "Pendente", aprovada: "Aprovada", rejeitada: "Rejeitada", expirada: "Expirada" } as Record<string, string>)[ex._expired ? "expirada" : ex.status] || ex.status}
                         </Badge>
                       </td>
                       <td className="p-4 text-muted-foreground text-xs">{new Date(ex.created_at).toLocaleDateString("pt-BR")}</td>

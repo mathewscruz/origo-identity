@@ -165,7 +165,7 @@ export default function RevisoesPage() {
             {paginatedItems.map((r: any) => (
               <tr key={r.id} className="border-b last:border-0 hover:bg-muted/50">
                 <td className="p-4"><Link to={`/revisoes/${r.id}`} className="font-medium text-primary hover:underline">{r.nome}</Link></td>
-                <td className="p-4"><Badge variant="outline" className={statusColors[r.status] || ""}>{r.status.replace(/_/g, " ")}</Badge></td>
+                <td className="p-4"><Badge variant="outline" className={statusColors[r.status] || ""}>{({ em_andamento: "Em Andamento", concluida: "Concluída", cancelada: "Cancelada" } as Record<string, string>)[r.status] || r.status}</Badge></td>
                 <td className="p-4 min-w-[150px]">
                   <div className="flex items-center gap-2">
                     <Progress value={r.total_itens > 0 ? (r.itens_revisados / r.total_itens) * 100 : 0} className="h-2 flex-1" />
