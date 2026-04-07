@@ -154,6 +154,28 @@ async function executeAction(
       const skuId = payload.skuId;
       if (!skuId) return { success: false, message: "skuId ausente no payload" };
 
+      // Ensure usageLocation is set before assigning license
+      try {
+        const locRes = await fetch(`${graphBase}/users/${userId}?$select=usageLocation`, { headers });
+        if (locRes.ok) {
+          const locData = await locRes.json();
+          if (!locData.usageLocation) {
+            console.log(`[assign_license] Setting usageLocation=BR for user ${userId}`);
+            const patchRes = await fetch(`${graphBase}/users/${userId}`, {
+              method: "PATCH",
+              headers,
+              body: JSON.stringify({ usageLocation: "BR" }),
+            });
+            if (!patchRes.ok && patchRes.status !== 204) {
+              const patchErr = await patchRes.text();
+              console.warn(`[assign_license] Failed to set usageLocation: ${patchErr}`);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(`[assign_license] Error checking usageLocation:`, e);
+      }
+
       const res = await fetch(`${graphBase}/users/${userId}/assignLicense`, {
         method: "POST",
         headers,
@@ -194,63 +216,104 @@ async function executeAction(
     }
 
     case "assign_app": {
-      const appId = payload.appId;
+      const appClientId = payload.appId;
       const appRoleId = payload.appRoleId || "00000000-0000-0000-0000-000000000000";
-      if (!appId) return { success: false, message: "appId ausente no payload" };
+      if (!appClientId) return { success: false, message: "appId ausente no payload" };
 
-      const res = await fetch(`${graphBase}/servicePrincipals/${appId}/appRoleAssignedTo`, {
+      // Resolve Service Principal Object ID from Application (client) ID
+      let spObjectId: string | null = null;
+      try {
+        const spRes = await fetch(
+          `${graphBase}/servicePrincipals?$filter=appId eq '${appClientId}'&$select=id,displayName`,
+          { headers }
+        );
+        if (spRes.ok) {
+          const spData = await spRes.json();
+          if (spData.value && spData.value.length > 0) {
+            spObjectId = spData.value[0].id;
+            console.log(`[assign_app] Resolved SP: appId=${appClientId} → spId=${spObjectId} (${spData.value[0].displayName})`);
+          }
+        }
+      } catch (e) {
+        console.warn(`[assign_app] Error resolving SP:`, e);
+      }
+
+      if (!spObjectId) {
+        return { success: false, message: `Service Principal não encontrado para appId ${appClientId}. Verifique se o app está registrado no Entra ID.` };
+      }
+
+      const res = await fetch(`${graphBase}/servicePrincipals/${spObjectId}/appRoleAssignedTo`, {
         method: "POST",
         headers,
         body: JSON.stringify({
           principalId: userId,
-          resourceId: appId,
+          resourceId: spObjectId,
           appRoleId: appRoleId,
         }),
       });
 
       if (res.ok || res.status === 201) {
-        return { success: true, message: `App ${payload.appName || appId} atribuído com sucesso` };
+        return { success: true, message: `App ${payload.appName || appClientId} atribuído com sucesso` };
       }
       const err = await res.json().catch(() => ({}));
       if (err?.error?.message?.includes("already exists")) {
-        return { success: true, message: `App ${payload.appName || appId} já atribuído`, alreadyExists: true };
+        return { success: true, message: `App ${payload.appName || appClientId} já atribuído`, alreadyExists: true };
       }
       return { success: false, message: `Erro ao atribuir app: ${err?.error?.message || res.status}` };
     }
 
     case "remove_app": {
-      const appId = payload.appId;
+      const appClientId = payload.appId;
       const assignmentId = payload.assignmentId;
-      if (!appId) return { success: false, message: "appId ausente no payload" };
+      if (!appClientId) return { success: false, message: "appId ausente no payload" };
+
+      // Resolve Service Principal Object ID from Application (client) ID
+      let spObjectId: string | null = null;
+      try {
+        const spRes = await fetch(
+          `${graphBase}/servicePrincipals?$filter=appId eq '${appClientId}'&$select=id`,
+          { headers }
+        );
+        if (spRes.ok) {
+          const spData = await spRes.json();
+          if (spData.value && spData.value.length > 0) {
+            spObjectId = spData.value[0].id;
+          }
+        }
+      } catch { /* skip */ }
+
+      if (!spObjectId) {
+        return { success: false, message: `Service Principal não encontrado para appId ${appClientId}` };
+      }
 
       if (assignmentId) {
-        const res = await fetch(`${graphBase}/servicePrincipals/${appId}/appRoleAssignedTo/${assignmentId}`, {
+        const res = await fetch(`${graphBase}/servicePrincipals/${spObjectId}/appRoleAssignedTo/${assignmentId}`, {
           method: "DELETE",
           headers,
         });
         if (res.status === 204 || res.ok) {
-          return { success: true, message: `App ${payload.appName || appId} removido com sucesso` };
+          return { success: true, message: `App ${payload.appName || appClientId} removido com sucesso` };
         }
         const errText = await res.text();
         return { success: false, message: `Erro ao remover app: ${errText}` };
       }
 
       const listRes = await fetch(
-        `${graphBase}/servicePrincipals/${appId}/appRoleAssignedTo?$filter=principalId eq '${userId}'`,
+        `${graphBase}/servicePrincipals/${spObjectId}/appRoleAssignedTo?$filter=principalId eq '${userId}'`,
         { headers }
       );
       if (listRes.ok) {
         const listData = await listRes.json();
         if (listData.value && listData.value.length > 0) {
           for (const assignment of listData.value) {
-            await fetch(`${graphBase}/servicePrincipals/${appId}/appRoleAssignedTo/${assignment.id}`, {
+            await fetch(`${graphBase}/servicePrincipals/${spObjectId}/appRoleAssignedTo/${assignment.id}`, {
               method: "DELETE",
               headers,
             });
           }
-          return { success: true, message: `App ${payload.appName || appId} removido com sucesso` };
+          return { success: true, message: `App ${payload.appName || appClientId} removido com sucesso` };
         }
-        return { success: true, message: `Usuário não tinha acesso ao app ${payload.appName || appId}`, alreadyExists: true };
+        return { success: true, message: `Usuário não tinha acesso ao app ${payload.appName || appClientId}`, alreadyExists: true };
       }
       return { success: false, message: `Erro ao listar assignments do app` };
     }
