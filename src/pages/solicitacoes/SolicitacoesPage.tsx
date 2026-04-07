@@ -13,13 +13,16 @@ import { toast } from "@/hooks/use-toast";
 import { logAuditoria } from "@/lib/auditLogger";
 import { useAuth } from "@/contexts/AuthContext";
 import { queueFullProfileActions } from "@/lib/entraQueueHelper";
-import { HandHelping, Plus, Search, Clock, CheckCircle2, XCircle, Send, ExternalLink } from "lucide-react";
+import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
+import { HandHelping, Plus, Search, Clock, CheckCircle2, XCircle, Send, ExternalLink, AppWindow, Users } from "lucide-react";
 
 export default function SolicitacoesPage() {
   const { profile } = useAuth();
   const [solicitacoes, setSolicitacoes] = useState<any[]>([]);
   const [perfis, setPerfis] = useState<any[]>([]);
   const [colaboradores, setColaboradores] = useState<any[]>([]);
+  const [aplicacoes, setAplicacoes] = useState<any[]>([]);
+  const [grupos, setGrupos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [decisionDialog, setDecisionDialog] = useState<any>(null);
@@ -38,14 +41,18 @@ export default function SolicitacoesPage() {
 
   const fetchData = async () => {
     setLoading(true);
-    const [{ data: s }, { data: p }, { data: c }] = await Promise.all([
+    const [{ data: s }, { data: p }, { data: c }, { data: apps }, { data: grps }] = await Promise.all([
       supabase.from("solicitacoes_acesso").select("*").order("created_at", { ascending: false }),
       supabase.from("perfis_acesso").select("id, nome, tipo").eq("ativo", true).order("nome"),
-      supabase.from("colaboradores").select("id, nome, email").eq("status", "ativo").order("nome"),
+      supabase.from("colaboradores").select("id, nome, email, sam_account_name, entra_id").eq("status", "ativo").order("nome"),
+      supabase.from("aplicacoes").select("id, nome, entra_id").order("nome"),
+      supabase.from("entra_grupos").select("id, nome, entra_id").order("nome"),
     ]);
     setSolicitacoes(s || []);
     setPerfis(p || []);
     setColaboradores(c || []);
+    setAplicacoes(apps || []);
+    setGrupos(grps || []);
     setLoading(false);
   };
 
@@ -53,6 +60,42 @@ export default function SolicitacoesPage() {
 
   const colabMap = new Map(colaboradores.map(c => [c.id, c]));
   const perfilMap = new Map(perfis.map(p => [p.id, p]));
+  const appMap = new Map(aplicacoes.map(a => [a.id, a]));
+  const grupoMap = new Map(grupos.map(g => [g.id, g]));
+
+  const getItensSolicitados = (s: any) => {
+    const appIds = Array.isArray(s.aplicacoes_ids) ? s.aplicacoes_ids : [];
+    const grpIds = Array.isArray(s.grupos_ids) ? s.grupos_ids : [];
+    if (appIds.length === 0 && grpIds.length === 0 && s.perfil_id) {
+      return perfilMap.get(s.perfil_id)?.nome || "—";
+    }
+    const items: string[] = [];
+    appIds.forEach((id: string) => items.push(appMap.get(id)?.nome || id));
+    grpIds.forEach((id: string) => items.push(grupoMap.get(id)?.nome || id));
+    return items.join(", ") || "—";
+  };
+
+  const renderItensBadges = (s: any) => {
+    const appIds = Array.isArray(s.aplicacoes_ids) ? s.aplicacoes_ids : [];
+    const grpIds = Array.isArray(s.grupos_ids) ? s.grupos_ids : [];
+    if (appIds.length === 0 && grpIds.length === 0) {
+      return <span>{perfilMap.get(s.perfil_id)?.nome || "—"}</span>;
+    }
+    return (
+      <div className="flex flex-wrap gap-1">
+        {appIds.map((id: string) => (
+          <Badge key={id} variant="outline" className="text-xs">
+            <AppWindow className="mr-1 h-3 w-3" />{appMap.get(id)?.nome || id}
+          </Badge>
+        ))}
+        {grpIds.map((id: string) => (
+          <Badge key={id} variant="secondary" className="text-xs">
+            <Users className="mr-1 h-3 w-3" />{grupoMap.get(id)?.nome || id}
+          </Badge>
+        ))}
+      </div>
+    );
+  };
 
   const handleSubmit = async () => {
     if (!solicitanteId || !perfilId || !justificativa.trim()) {
@@ -60,7 +103,6 @@ export default function SolicitacoesPage() {
       return;
     }
 
-    // Check if workflow etapas exist for solicitacao
     const { data: etapas } = await supabase
       .from("workflow_etapas")
       .select("*")
@@ -80,7 +122,6 @@ export default function SolicitacoesPage() {
       return;
     }
 
-    // Create workflow_execucoes for each etapa
     if (etapas && etapas.length > 0 && inserted?.id) {
       const execucoes = etapas.map((et: any) => ({
         entidade_id: inserted.id,
@@ -127,38 +168,81 @@ export default function SolicitacoesPage() {
       return;
     }
 
-    // If approved, create perfil_atribuicao AND provision in Entra ID
     if (decisao === "aprovada") {
-      await supabase.from("perfil_atribuicoes").insert({
-        colaborador_id: decisionDialog.solicitante_id,
-        perfil_id: decisionDialog.perfil_id,
-        origem: "solicitacao",
-        ativo: true,
-      } as any);
+      const colab = colabMap.get(decisionDialog.solicitante_id);
+      const appIds = Array.isArray(decisionDialog.aplicacoes_ids) ? decisionDialog.aplicacoes_ids : [];
+      const grpIds = Array.isArray(decisionDialog.grupos_ids) ? decisionDialog.grupos_ids : [];
 
-      // Queue Entra ID provisioning
-      const { data: colab } = await supabase
-        .from("colaboradores")
-        .select("id, nome, email, sam_account_name")
-        .eq("id", decisionDialog.solicitante_id)
-        .single();
-      if (colab && (colab.email || colab.sam_account_name)) {
-        await queueFullProfileActions(
-          [{ id: colab.id, nome: colab.nome, email: colab.email, sam_account_name: colab.sam_account_name }],
-          [decisionDialog.perfil_id],
-          "assign"
-        );
+      // Legacy: perfil-based approval
+      if (decisionDialog.perfil_id && appIds.length === 0 && grpIds.length === 0) {
+        await supabase.from("perfil_atribuicoes").insert({
+          colaborador_id: decisionDialog.solicitante_id,
+          perfil_id: decisionDialog.perfil_id,
+          origem: "solicitacao",
+          ativo: true,
+        } as any);
+
+        if (colab && (colab.email || colab.sam_account_name)) {
+          await queueFullProfileActions(
+            [{ id: colab.id, nome: colab.nome, email: colab.email, sam_account_name: colab.sam_account_name }],
+            [decisionDialog.perfil_id],
+            "assign"
+          );
+        }
+      }
+
+      // Apps/Groups provisioning
+      if (colab && (colab.email || colab.sam_account_name || colab.entra_id)) {
+        const targetIdentity = colab.entra_id || colab.email || colab.sam_account_name;
+        const queueItems: any[] = [];
+
+        for (const appId of appIds) {
+          const app = appMap.get(appId);
+          queueItems.push({
+            action_type: "assign_app",
+            colaborador_id: colab.id,
+            target_identity: targetIdentity,
+            status: "pending",
+            payload_json: {
+              app_id: app?.entra_id || appId,
+              app_name: app?.nome || appId,
+              reason: "solicitacao_portal",
+            },
+            requested_by: profile?.email || "portal",
+          });
+        }
+
+        for (const grpId of grpIds) {
+          const grp = grupoMap.get(grpId);
+          queueItems.push({
+            action_type: "assign_group",
+            colaborador_id: colab.id,
+            target_identity: targetIdentity,
+            status: "pending",
+            payload_json: {
+              group_id: grp?.entra_id || grpId,
+              group_name: grp?.nome || grpId,
+              reason: "solicitacao_portal",
+            },
+            requested_by: profile?.email || "portal",
+          });
+        }
+
+        if (queueItems.length > 0) {
+          await supabase.from("iam_queue").insert(queueItems);
+          triggerEntraProcessing();
+        }
       }
     }
 
     const colabNome = colabMap.get(decisionDialog.solicitante_id)?.nome || "—";
-    const perfilNome = perfilMap.get(decisionDialog.perfil_id)?.nome || "—";
+    const itensDesc = getItensSolicitados(decisionDialog);
 
     await logAuditoria({
       acao: decisao === "aprovada" ? "aprovar" : "rejeitar",
       entidade: "solicitacao_acesso",
       entidade_id: decisionDialog.id,
-      resumo: `Solicitação ${decisao}: ${colabNome} → ${perfilNome}`,
+      resumo: `Solicitação ${decisao}: ${colabNome} → ${itensDesc}`,
       operador: profile?.email || "sistema",
       detalhes: { comentario },
     });
@@ -177,8 +261,8 @@ export default function SolicitacoesPage() {
     if (!busca) return true;
     const q = busca.toLowerCase();
     const cNome = colabMap.get(s.solicitante_id)?.nome?.toLowerCase() || "";
-    const pNome = perfilMap.get(s.perfil_id)?.nome?.toLowerCase() || "";
-    return cNome.includes(q) || pNome.includes(q) || (s.justificativa || "").toLowerCase().includes(q);
+    const itens = getItensSolicitados(s).toLowerCase();
+    return cNome.includes(q) || itens.includes(q) || (s.justificativa || "").toLowerCase().includes(q);
   });
 
   const statusBadge = (status: string) => {
@@ -241,7 +325,7 @@ export default function SolicitacoesPage() {
             <Table>
               <TableHeader><TableRow>
                 <TableHead>Solicitante</TableHead>
-                <TableHead>Perfil Solicitado</TableHead>
+                <TableHead>Itens Solicitados</TableHead>
                 <TableHead>Justificativa</TableHead>
                 <TableHead>Data</TableHead>
                 <TableHead>Status</TableHead>
@@ -255,7 +339,7 @@ export default function SolicitacoesPage() {
                 ) : filtered(pendentes).map(s => (
                   <TableRow key={s.id}>
                     <TableCell className="font-medium">{colabMap.get(s.solicitante_id)?.nome || "—"}</TableCell>
-                    <TableCell>{perfilMap.get(s.perfil_id)?.nome || "—"}</TableCell>
+                    <TableCell className="max-w-[250px]">{renderItensBadges(s)}</TableCell>
                     <TableCell className="max-w-[200px] truncate text-muted-foreground">{s.justificativa}</TableCell>
                     <TableCell>{new Date(s.created_at).toLocaleDateString("pt-BR")}</TableCell>
                     <TableCell>{statusBadge(s.status)}</TableCell>
@@ -277,7 +361,7 @@ export default function SolicitacoesPage() {
             <Table>
               <TableHeader><TableRow>
                 <TableHead>Solicitante</TableHead>
-                <TableHead>Perfil</TableHead>
+                <TableHead>Itens Solicitados</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Aprovador</TableHead>
                 <TableHead>Comentário</TableHead>
@@ -289,7 +373,7 @@ export default function SolicitacoesPage() {
                 ) : filtered(decididas).map(s => (
                   <TableRow key={s.id}>
                     <TableCell className="font-medium">{colabMap.get(s.solicitante_id)?.nome || "—"}</TableCell>
-                    <TableCell>{perfilMap.get(s.perfil_id)?.nome || "—"}</TableCell>
+                    <TableCell className="max-w-[250px]">{renderItensBadges(s)}</TableCell>
                     <TableCell>{statusBadge(s.status)}</TableCell>
                     <TableCell>{s.aprovador || "—"}</TableCell>
                     <TableCell className="max-w-[200px] truncate text-muted-foreground">{s.comentario || "—"}</TableCell>
@@ -353,7 +437,8 @@ export default function SolicitacoesPage() {
             <div className="space-y-4">
               <div className="rounded-lg border p-3 space-y-1 text-sm">
                 <p><strong>Solicitante:</strong> {colabMap.get(decisionDialog.solicitante_id)?.nome || "—"}</p>
-                <p><strong>Perfil:</strong> {perfilMap.get(decisionDialog.perfil_id)?.nome || "—"}</p>
+                <p><strong>Itens:</strong></p>
+                <div className="ml-2">{renderItensBadges(decisionDialog)}</div>
                 <p><strong>Justificativa:</strong> {decisionDialog.justificativa}</p>
               </div>
               <div>

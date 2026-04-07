@@ -1505,39 +1505,45 @@ export type Database = {
       }
       solicitacoes_acesso: {
         Row: {
+          aplicacoes_ids: Json
           aprovador: string | null
           comentario: string | null
           created_at: string
           data_decisao: string | null
+          grupos_ids: Json
           id: string
           justificativa: string
-          perfil_id: string
+          perfil_id: string | null
           solicitante_id: string
           status: string
           updated_at: string
           user_id: string | null
         }
         Insert: {
+          aplicacoes_ids?: Json
           aprovador?: string | null
           comentario?: string | null
           created_at?: string
           data_decisao?: string | null
+          grupos_ids?: Json
           id?: string
           justificativa: string
-          perfil_id: string
+          perfil_id?: string | null
           solicitante_id: string
           status?: string
           updated_at?: string
           user_id?: string | null
         }
         Update: {
+          aplicacoes_ids?: Json
           aprovador?: string | null
           comentario?: string | null
           created_at?: string
           data_decisao?: string | null
+          grupos_ids?: Json
           id?: string
           justificativa?: string
-          perfil_id?: string
+          perfil_id?: string | null
           solicitante_id?: string
           status?: string
           updated_at?: string

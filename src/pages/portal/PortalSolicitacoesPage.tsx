@@ -1,26 +1,32 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/hooks/use-toast";
-import { Plus, Clock, CheckCircle2, XCircle, Send, FileText } from "lucide-react";
+import { Plus, Clock, CheckCircle2, XCircle, Send, FileText, AppWindow, Users } from "lucide-react";
 import { format } from "date-fns";
 
 export default function PortalSolicitacoesPage() {
   const [solicitacoes, setSolicitacoes] = useState<any[]>([]);
-  const [perfis, setPerfis] = useState<any[]>([]);
+  const [aplicacoes, setAplicacoes] = useState<any[]>([]);
+  const [grupos, setGrupos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [perfilId, setPerfilId] = useState("");
+  const [selectedApps, setSelectedApps] = useState<string[]>([]);
+  const [selectedGrupos, setSelectedGrupos] = useState<string[]>([]);
   const [justificativa, setJustificativa] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [buscaApp, setBuscaApp] = useState("");
+  const [buscaGrupo, setBuscaGrupo] = useState("");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -32,25 +38,39 @@ export default function PortalSolicitacoesPage() {
   }, []);
 
   useEffect(() => {
-    if (userId) {
-      fetchData();
-    }
+    if (userId) fetchData();
   }, [userId]);
 
   async function fetchData() {
     setLoading(true);
-    const [solRes, perfRes] = await Promise.all([
+    const [solRes, appRes, grpRes] = await Promise.all([
       supabase
         .from("solicitacoes_acesso")
-        .select("*, perfis_acesso:perfil_id(nome), colaboradores:solicitante_id(nome)")
+        .select("*")
         .eq("user_id", userId!)
         .order("created_at", { ascending: false }),
-      supabase.from("perfis_acesso").select("id, nome").eq("ativo", true).order("nome"),
+      supabase.from("aplicacoes").select("id, nome").order("nome"),
+      supabase.from("entra_grupos").select("id, nome").order("nome"),
     ]);
     setSolicitacoes(solRes.data ?? []);
-    setPerfis(perfRes.data ?? []);
+    setAplicacoes(appRes.data ?? []);
+    setGrupos(grpRes.data ?? []);
     setLoading(false);
   }
+
+  // Build maps for display
+  const appMap = new Map(aplicacoes.map(a => [a.id, a.nome]));
+  const grupoMap = new Map(grupos.map(g => [g.id, g.nome]));
+
+  const getItensSolicitados = (s: any) => {
+    const items: string[] = [];
+    const appIds = Array.isArray(s.aplicacoes_ids) ? s.aplicacoes_ids : [];
+    const grpIds = Array.isArray(s.grupos_ids) ? s.grupos_ids : [];
+    appIds.forEach((id: string) => items.push(`📱 ${appMap.get(id) || id}`));
+    grpIds.forEach((id: string) => items.push(`👥 ${grupoMap.get(id) || id}`));
+    if (items.length === 0 && s.perfil_id) return "Perfil de acesso";
+    return items.join(", ") || "—";
+  };
 
   const statusBadge = (status: string) => {
     const map: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -63,15 +83,26 @@ export default function PortalSolicitacoesPage() {
     return <Badge variant={info.variant}>{info.label}</Badge>;
   };
 
+  const toggleApp = (id: string) => {
+    setSelectedApps(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const toggleGrupo = (id: string) => {
+    setSelectedGrupos(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
   const handleSubmit = async () => {
-    if (!perfilId || !justificativa.trim()) {
-      toast({ title: "Preencha todos os campos", variant: "destructive" });
+    if (selectedApps.length === 0 && selectedGrupos.length === 0) {
+      toast({ title: "Selecione ao menos uma aplicação ou grupo", variant: "destructive" });
+      return;
+    }
+    if (!justificativa.trim()) {
+      toast({ title: "Preencha a justificativa", variant: "destructive" });
       return;
     }
 
     setSubmitting(true);
 
-    // Find colaborador by user email
     let solicitanteId: string | null = null;
     if (userEmail) {
       const { data: colab } = await supabase
@@ -83,14 +114,16 @@ export default function PortalSolicitacoesPage() {
     }
 
     if (!solicitanteId) {
-      toast({ title: "Erro", description: "Não foi possível encontrar seu cadastro de colaborador. Verifique se seu e-mail está vinculado.", variant: "destructive" });
+      toast({ title: "Erro", description: "Não foi possível encontrar seu cadastro de colaborador.", variant: "destructive" });
       setSubmitting(false);
       return;
     }
 
     const { error } = await supabase.from("solicitacoes_acesso").insert({
       solicitante_id: solicitanteId,
-      perfil_id: perfilId,
+      perfil_id: null,
+      aplicacoes_ids: selectedApps,
+      grupos_ids: selectedGrupos,
       justificativa: justificativa.trim(),
       status: "pendente",
       user_id: userId,
@@ -101,8 +134,11 @@ export default function PortalSolicitacoesPage() {
     } else {
       toast({ title: "Solicitação enviada com sucesso!" });
       setDialogOpen(false);
-      setPerfilId("");
+      setSelectedApps([]);
+      setSelectedGrupos([]);
       setJustificativa("");
+      setBuscaApp("");
+      setBuscaGrupo("");
       fetchData();
     }
     setSubmitting(false);
@@ -114,6 +150,23 @@ export default function PortalSolicitacoesPage() {
     aprovadas: solicitacoes.filter(s => s.status === "aprovada").length,
     rejeitadas: solicitacoes.filter(s => s.status === "rejeitada").length,
   };
+
+  // Sort: selected items first
+  const filteredApps = aplicacoes
+    .filter(a => !buscaApp || a.nome.toLowerCase().includes(buscaApp.toLowerCase()))
+    .sort((a, b) => {
+      const aS = selectedApps.includes(a.id) ? 0 : 1;
+      const bS = selectedApps.includes(b.id) ? 0 : 1;
+      return aS - bS || a.nome.localeCompare(b.nome);
+    });
+
+  const filteredGrupos = grupos
+    .filter(g => !buscaGrupo || g.nome.toLowerCase().includes(buscaGrupo.toLowerCase()))
+    .sort((a, b) => {
+      const aS = selectedGrupos.includes(a.id) ? 0 : 1;
+      const bS = selectedGrupos.includes(b.id) ? 0 : 1;
+      return aS - bS || a.nome.localeCompare(b.nome);
+    });
 
   return (
     <div className="space-y-6">
@@ -183,7 +236,7 @@ export default function PortalSolicitacoesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Perfil Solicitado</TableHead>
+                  <TableHead>Itens Solicitados</TableHead>
                   <TableHead>Justificativa</TableHead>
                   <TableHead>Data</TableHead>
                   <TableHead>Status</TableHead>
@@ -193,8 +246,24 @@ export default function PortalSolicitacoesPage() {
               <TableBody>
                 {solicitacoes.map((s) => (
                   <TableRow key={s.id}>
-                    <TableCell className="font-medium">
-                      {(s as any).perfis_acesso?.nome || "—"}
+                    <TableCell className="font-medium max-w-xs">
+                      <div className="flex flex-wrap gap-1">
+                        {(Array.isArray(s.aplicacoes_ids) ? s.aplicacoes_ids : []).map((id: string) => (
+                          <Badge key={id} variant="outline" className="text-xs">
+                            <AppWindow className="mr-1 h-3 w-3" />
+                            {appMap.get(id) || id}
+                          </Badge>
+                        ))}
+                        {(Array.isArray(s.grupos_ids) ? s.grupos_ids : []).map((id: string) => (
+                          <Badge key={id} variant="secondary" className="text-xs">
+                            <Users className="mr-1 h-3 w-3" />
+                            {grupoMap.get(id) || id}
+                          </Badge>
+                        ))}
+                        {!(s.aplicacoes_ids?.length || s.grupos_ids?.length) && s.perfil_id && (
+                          <span className="text-muted-foreground">Perfil de acesso</span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="max-w-xs truncate">{s.justificativa}</TableCell>
                     <TableCell>{format(new Date(s.created_at), "dd/MM/yyyy HH:mm")}</TableCell>
@@ -210,24 +279,70 @@ export default function PortalSolicitacoesPage() {
 
       {/* New Request Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Nova Solicitação de Acesso</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {/* Aplicações */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Perfil de Acesso</label>
-              <Select value={perfilId} onValueChange={setPerfilId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione o perfil desejado" />
-                </SelectTrigger>
-                <SelectContent>
-                  {perfis.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <label className="text-sm font-medium flex items-center gap-2">
+                <AppWindow className="h-4 w-4" /> Aplicações
+                {selectedApps.length > 0 && (
+                  <Badge variant="secondary" className="text-xs">{selectedApps.length} selecionada(s)</Badge>
+                )}
+              </label>
+              <Input
+                placeholder="Buscar aplicação..."
+                value={buscaApp}
+                onChange={(e) => setBuscaApp(e.target.value)}
+              />
+              <ScrollArea className="h-40 rounded-md border p-2">
+                {filteredApps.map((a) => (
+                  <label key={a.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
+                    <Checkbox
+                      checked={selectedApps.includes(a.id)}
+                      onCheckedChange={() => toggleApp(a.id)}
+                    />
+                    <span className="text-sm">{a.nome}</span>
+                  </label>
+                ))}
+                {filteredApps.length === 0 && (
+                  <p className="text-sm text-muted-foreground py-2 text-center">Nenhuma aplicação encontrada</p>
+                )}
+              </ScrollArea>
             </div>
+
+            {/* Grupos */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-2">
+                <Users className="h-4 w-4" /> Grupos
+                {selectedGrupos.length > 0 && (
+                  <Badge variant="secondary" className="text-xs">{selectedGrupos.length} selecionado(s)</Badge>
+                )}
+              </label>
+              <Input
+                placeholder="Buscar grupo..."
+                value={buscaGrupo}
+                onChange={(e) => setBuscaGrupo(e.target.value)}
+              />
+              <ScrollArea className="h-40 rounded-md border p-2">
+                {filteredGrupos.map((g) => (
+                  <label key={g.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
+                    <Checkbox
+                      checked={selectedGrupos.includes(g.id)}
+                      onCheckedChange={() => toggleGrupo(g.id)}
+                    />
+                    <span className="text-sm">{g.nome}</span>
+                  </label>
+                ))}
+                {filteredGrupos.length === 0 && (
+                  <p className="text-sm text-muted-foreground py-2 text-center">Nenhum grupo encontrado</p>
+                )}
+              </ScrollArea>
+            </div>
+
+            {/* Justificativa */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Justificativa</label>
               <Textarea
