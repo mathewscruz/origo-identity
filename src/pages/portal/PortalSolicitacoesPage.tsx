@@ -237,10 +237,10 @@ export default function PortalSolicitacoesPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Itens Solicitados</TableHead>
-                  <TableHead>Justificativa</TableHead>
-                  <TableHead>Data</TableHead>
+                  <TableHead className="hidden md:table-cell">Justificativa</TableHead>
+                  <TableHead className="hidden sm:table-cell">Data</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Comentário</TableHead>
+                  <TableHead className="hidden lg:table-cell">Comentário</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -265,10 +265,10 @@ export default function PortalSolicitacoesPage() {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="max-w-xs truncate">{s.justificativa}</TableCell>
-                    <TableCell>{format(new Date(s.created_at), "dd/MM/yyyy HH:mm")}</TableCell>
+                    <TableCell className="max-w-xs truncate hidden md:table-cell">{s.justificativa}</TableCell>
+                    <TableCell className="hidden sm:table-cell">{format(new Date(s.created_at), "dd/MM/yyyy HH:mm")}</TableCell>
                     <TableCell>{statusBadge(s.status)}</TableCell>
-                    <TableCell className="max-w-xs truncate">{s.comentario || "—"}</TableCell>
+                    <TableCell className="max-w-xs truncate hidden lg:table-cell">{s.comentario || "—"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

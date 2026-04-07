@@ -204,11 +204,11 @@ export default function LicencasPage() {
         ) : (
           <table className="w-full text-sm"><thead><tr className="border-b text-left text-muted-foreground">
             <th className="p-4 font-medium">Nome</th>
-            <th className="p-4 font-medium">Origem</th>
-            <th className="p-4 font-medium">Total</th>
-            <th className="p-4 font-medium">Em uso</th>
+            <th className="p-4 font-medium hidden md:table-cell">Origem</th>
+            <th className="p-4 font-medium hidden sm:table-cell">Total</th>
+            <th className="p-4 font-medium hidden sm:table-cell">Em uso</th>
             <th className="p-4 font-medium min-w-[180px]">Disponibilidade</th>
-            <th className="p-4 font-medium">Tipo</th>
+            <th className="p-4 font-medium hidden lg:table-cell">Tipo</th>
             <th className="p-4 font-medium w-20">Ações</th>
           </tr></thead><tbody>
             {paginatedItems.map((l: UnifiedLicense) => {
@@ -217,17 +217,17 @@ export default function LicencasPage() {
               return (
                 <tr key={`${l.origem}-${l.id}`} className="border-b last:border-0 hover:bg-muted/50">
                   <td className="p-4 font-medium text-primary">{l.nome}</td>
-                  <td className="p-4">
+                  <td className="p-4 hidden md:table-cell">
                     {l.origem === "microsoft" ? (
                       <Badge className="bg-blue-600 hover:bg-blue-700 text-white border-0">Microsoft</Badge>
                     ) : (
                       <Badge variant="outline">Externa</Badge>
                     )}
                   </td>
-                  <td className="p-4 text-muted-foreground">{l.total}</td>
-                  <td className="p-4 text-muted-foreground">{l.em_uso}</td>
+                  <td className="p-4 text-muted-foreground hidden sm:table-cell">{l.total}</td>
+                  <td className="p-4 text-muted-foreground hidden sm:table-cell">{l.em_uso}</td>
                   <td className="p-4"><div className="flex items-center gap-2"><Progress value={pct} className={`h-2 flex-1 ${pct >= 90 ? "[&>div]:bg-destructive" : pct >= 75 ? "[&>div]:bg-warning" : ""}`} /><span className={`text-xs font-medium ${pct >= 90 ? "text-destructive" : "text-muted-foreground"}`}>{disp} disp.</span></div></td>
-                  <td className="p-4 text-muted-foreground text-xs">{l.tipo || "—"}</td>
+                  <td className="p-4 text-muted-foreground text-xs hidden lg:table-cell">{l.tipo || "—"}</td>
                   <td className="p-4">
                     {l.origem === "externa" ? (
                       <div className="flex gap-1">

@@ -101,7 +101,7 @@ export default function PrivilegiadosPage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total de Roles</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{totalRoles}</div></CardContent></Card>
         <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Privilegiadas</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold text-amber-500">{privilegedRoles}</div></CardContent></Card>
         <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total de Atribuições</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{totalAssignments}</div></CardContent></Card>

@@ -172,7 +172,7 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-7">
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-7">
         <Card className="lg:col-span-4">
           <CardHeader><CardTitle className="text-base">Provisionamento — Últimas 8 Semanas</CardTitle></CardHeader>
           <CardContent>

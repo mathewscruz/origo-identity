@@ -450,7 +450,7 @@ export default function ColaboradoresPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Colaboradores</h1>
           <p className="text-sm text-muted-foreground">Gestão de funcionários internos</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => navigate("/configuracoes/integracoes")}><Upload className="mr-1 h-4 w-4" />Importar Base</Button>
           <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Colaborador</Button>
         </div>
@@ -494,11 +494,11 @@ export default function ColaboradoresPage() {
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">
                     <th className="p-4 font-medium">Nome</th>
-                    <th className="p-4 font-medium">Email</th>
-                    <th className="p-4 font-medium">CPF</th>
+                    <th className="p-4 font-medium hidden md:table-cell">Email</th>
+                    <th className="p-4 font-medium hidden lg:table-cell">CPF</th>
                     <th className="p-4 font-medium">Cargo</th>
-                    <th className="p-4 font-medium">Área</th>
-                    <th className="p-4 font-medium">Origem</th>
+                    <th className="p-4 font-medium hidden lg:table-cell">Área</th>
+                    <th className="p-4 font-medium hidden lg:table-cell">Origem</th>
                     <th className="p-4 font-medium">Status</th>
                     <th className="p-4 font-medium">Ações</th>
                   </tr>
@@ -527,11 +527,11 @@ export default function ColaboradoresPage() {
                           <ColaboradorActivityPopover colaboradorId={c.id} colaboradorNome={c.nome} />
                         </div>
                       </td>
-                      <td className="p-4 text-muted-foreground">{c.email}</td>
-                      <td className="p-4 text-muted-foreground font-mono text-xs">{c.cpf}</td>
+                      <td className="p-4 text-muted-foreground hidden md:table-cell">{c.email}</td>
+                      <td className="p-4 text-muted-foreground font-mono text-xs hidden lg:table-cell">{c.cpf}</td>
                       <td className="p-4 text-muted-foreground">{c.cargo}</td>
-                      <td className="p-4 text-muted-foreground">{c.area}</td>
-                      <td className="p-4">
+                      <td className="p-4 text-muted-foreground hidden lg:table-cell">{c.area}</td>
+                      <td className="p-4 hidden lg:table-cell">
                         <Badge variant="outline" className={
                           c.origem === "csv" ? "bg-primary/10 text-primary border-primary/30" :
                           c.origem === "entra_id" ? "bg-info/10 text-info border-info/30" :
