@@ -6,6 +6,8 @@ const corsHeaders = {
   "Content-Type": "application/json",
 };
 
+const APP_URL = "https://origo-identity.lovable.app";
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -32,9 +34,9 @@ Deno.serve(async (req) => {
 
     const ownerEmail = revisao.owner_email;
     const appName = revisao.aplicacoes?.nome || "Aplicação";
-    const reviewUrl = `${Deno.env.get("SUPABASE_URL")?.replace('.supabase.co', '')}/revisao-externa/${revisao.token}`;
+    const reviewUrl = `${APP_URL}/revisao-externa/${revisao.token}`;
+    const dataFim = revisao.data_fim ? new Date(revisao.data_fim).toLocaleDateString("pt-BR") : null;
 
-    // Log the email that would be sent (actual email sending requires Resend connector)
     console.log(`[REVIEW EMAIL] To: ${ownerEmail}, App: ${appName}, URL: ${reviewUrl}`);
 
     // Store email attempt in auditoria
@@ -43,7 +45,7 @@ Deno.serve(async (req) => {
       entidade_id: revisao_id,
       acao: "email_revisao",
       resumo: `E-mail de revisão enviado para ${ownerEmail} (${appName})`,
-      detalhes: { owner_email: ownerEmail, app_name: appName, review_url: reviewUrl },
+      detalhes: { owner_email: ownerEmail, app_name: appName, review_url: reviewUrl, data_fim: dataFim },
     });
 
     return new Response(JSON.stringify({
