@@ -1,0 +1,226 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+/**
+ * auto-recertification: Checks applications that haven't been reviewed
+ * in the configured period and auto-creates review campaigns.
+ * 
+ * Also checks for expired third-party contracts and deactivates them.
+ * 
+ * Triggered manually or via pg_cron.
+ */
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+  const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const sb = createClient(SUPABASE_URL, SERVICE_KEY);
+
+  const results = {
+    revisoes_criadas: 0,
+    terceiros_expirados: 0,
+    errors: [] as string[],
+  };
+
+  try {
+    // ─── PART 1: Auto-Recertification ───
+
+    // Get configured period (default 90 days)
+    const { data: param } = await sb
+      .from("parametros")
+      .select("valor")
+      .eq("chave", "revisao_periodicidade_dias")
+      .single();
+    
+    const periodDays = parseInt(param?.valor || "90") || 90;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - periodDays);
+    const cutoffISO = cutoff.toISOString();
+
+    // Get all applications with owners
+    const { data: apps } = await sb
+      .from("aplicacoes")
+      .select("id, nome, owner")
+      .not("owner", "is", null);
+
+    if (apps && apps.length > 0) {
+      for (const app of apps) {
+        // Check if there's a recent review for this app
+        const { data: recentReview } = await sb
+          .from("revisoes")
+          .select("id, created_at")
+          .ilike("nome", `%${app.nome}%`)
+          .gte("created_at", cutoffISO)
+          .limit(1);
+
+        if (recentReview && recentReview.length > 0) continue; // Already has recent review
+
+        // Get collaborators with active access to profiles linked to this app
+        const { data: perfilApps } = await sb
+          .from("perfil_aplicacoes")
+          .select("perfil_id")
+          .eq("aplicacao_id", app.id);
+
+        if (!perfilApps || perfilApps.length === 0) continue;
+
+        const perfilIds = perfilApps.map((pa: any) => pa.perfil_id);
+
+        const { data: atribuicoes } = await sb
+          .from("perfil_atribuicoes")
+          .select("colaborador_id, perfil_id")
+          .eq("ativo", true)
+          .in("perfil_id", perfilIds);
+
+        if (!atribuicoes || atribuicoes.length === 0) continue;
+
+        // Get colaborador names
+        const colabIds = [...new Set(atribuicoes.map((a: any) => a.colaborador_id).filter(Boolean))];
+        const colabMap = new Map<string, string>();
+        for (let i = 0; i < colabIds.length; i += 50) {
+          const { data: colabs } = await sb
+            .from("colaboradores")
+            .select("id, nome")
+            .in("id", colabIds.slice(i, i + 50));
+          colabs?.forEach((c: any) => colabMap.set(c.id, c.nome));
+        }
+
+        // Get perfil names
+        const perfilMap = new Map<string, string>();
+        const { data: perfisData } = await sb
+          .from("perfis_acesso")
+          .select("id, nome")
+          .in("id", perfilIds);
+        perfisData?.forEach((p: any) => perfilMap.set(p.id, p.nome));
+
+        // Create review
+        const hoje = new Date().toISOString().split("T")[0];
+        const dataLimite = new Date();
+        dataLimite.setDate(dataLimite.getDate() + 14); // 14 days to complete
+
+        const { data: revisao, error: revError } = await sb
+          .from("revisoes")
+          .insert({
+            nome: `Recertificação — ${app.nome}`,
+            descricao: `Revisão automática de acessos à aplicação ${app.nome}. Período: ${periodDays} dias.`,
+            responsavel: app.owner,
+            status: "em_andamento",
+            data_inicio: hoje,
+            data_fim: dataLimite.toISOString().split("T")[0],
+            total_itens: atribuicoes.length,
+            itens_revisados: 0,
+          })
+          .select("id")
+          .single();
+
+        if (revError) {
+          results.errors.push(`Erro ao criar revisão para ${app.nome}: ${revError.message}`);
+          continue;
+        }
+
+        // Create review items
+        const itens = atribuicoes.map((a: any) => ({
+          revisao_id: revisao.id,
+          colaborador_id: a.colaborador_id,
+          colaborador_nome: colabMap.get(a.colaborador_id) || "—",
+          perfil_id: a.perfil_id,
+          perfil_nome: perfilMap.get(a.perfil_id) || "—",
+        }));
+
+        const { error: itensError } = await sb.from("revisao_itens").insert(itens);
+        if (itensError) {
+          results.errors.push(`Erro ao criar itens para ${app.nome}: ${itensError.message}`);
+        }
+
+        // Create alert
+        await sb.from("alertas").insert({
+          titulo: `Recertificação automática criada: ${app.nome}`,
+          mensagem: `${atribuicoes.length} acessos para revisar. Prazo: ${dataLimite.toLocaleDateString("pt-BR")}.`,
+          severidade: "info",
+          tipo: "recertificacao",
+          ref_url: `/revisoes/${revisao.id}`,
+          ref_id: revisao.id,
+          ref_tipo: "revisao",
+        });
+
+        results.revisoes_criadas++;
+        console.log(`Auto-recertification created for ${app.nome}: ${atribuicoes.length} items`);
+      }
+    }
+
+    // ─── PART 2: Third-party Expiration ───
+
+    const hoje = new Date().toISOString().split("T")[0];
+    const { data: terceirosExpirados } = await sb
+      .from("terceiros")
+      .select("id, nome, email, contrato_fim")
+      .eq("ativo", true)
+      .not("contrato_fim", "is", null)
+      .lte("contrato_fim", hoje);
+
+    if (terceirosExpirados && terceirosExpirados.length > 0) {
+      for (const terceiro of terceirosExpirados) {
+        // Deactivate
+        await sb.from("terceiros").update({ ativo: false }).eq("id", terceiro.id);
+
+        // Revoke all active access
+        await sb
+          .from("perfil_atribuicoes")
+          .update({ ativo: false, data_revogacao: new Date().toISOString() })
+          .eq("terceiro_id", terceiro.id)
+          .eq("ativo", true);
+
+        // Create JML leaver event
+        await sb.from("eventos_jml").insert({
+          tipo: "leaver",
+          colaborador_nome: terceiro.nome,
+          status: "executado",
+          origem: "auto_expiracao",
+          dados_antes: { nome: terceiro.nome, email: terceiro.email, contrato_fim: terceiro.contrato_fim },
+          dados_depois: { ativo: false },
+        });
+
+        // Create alert
+        await sb.from("alertas").insert({
+          titulo: `Terceiro expirado: ${terceiro.nome}`,
+          mensagem: `Contrato encerrado em ${terceiro.contrato_fim}. Acessos revogados automaticamente.`,
+          severidade: "aviso",
+          tipo: "terceiro_expirado",
+          ref_url: `/terceiros/${terceiro.id}`,
+          ref_id: terceiro.id,
+          ref_tipo: "terceiro",
+        });
+
+        // Audit
+        await sb.from("auditoria").insert({
+          entidade: "terceiro",
+          acao: "expirar",
+          entidade_id: terceiro.id,
+          resumo: `Terceiro ${terceiro.nome} expirado automaticamente. Acessos revogados.`,
+          operador: "sistema",
+        });
+
+        results.terceiros_expirados++;
+        console.log(`Third-party expired: ${terceiro.nome}`);
+      }
+    }
+
+    return new Response(JSON.stringify(results), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Erro desconhecido";
+    console.error("auto-recertification error:", msg);
+    return new Response(JSON.stringify({ error: msg }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});
