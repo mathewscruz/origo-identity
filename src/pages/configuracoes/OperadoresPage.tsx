@@ -74,13 +74,13 @@ export default function OperadoresPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="border-b text-left text-muted-foreground">
-                  <th className="pb-2 font-medium">Nome</th><th className="pb-2 font-medium">Email</th><th className="pb-2 font-medium">Status</th><th className="pb-2 font-medium w-20">Ações</th>
+                  <th className="pb-2 font-medium">Nome</th><th className="pb-2 font-medium hidden md:table-cell">Email</th><th className="pb-2 font-medium">Status</th><th className="pb-2 font-medium w-20">Ações</th>
                 </tr></thead>
                 <tbody>
                   {paginatedItems.map((op: any) => (
                     <tr key={op.id} className="border-b last:border-0 hover:bg-muted/50">
                       <td className="py-3 font-medium">{op.nome}</td>
-                      <td className="py-3 text-muted-foreground">{op.email}</td>
+                      <td className="py-3 text-muted-foreground hidden md:table-cell">{op.email}</td>
                       <td className="py-3"><Badge variant={op.ativo ? "default" : "secondary"}>{op.ativo ? "Ativo" : "Inativo"}</Badge></td>
                       <td className="py-3"><div className="flex gap-1">
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(op)}><Pencil className="h-3 w-3" /></Button>

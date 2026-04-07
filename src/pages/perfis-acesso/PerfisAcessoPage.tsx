@@ -252,7 +252,7 @@ export default function PerfisAcessoPage() {
       </div>
 
       {/* Header counters */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card><CardContent className="pt-4 flex items-center gap-3">
           <Shield className="h-5 w-5 text-muted-foreground" />
           <div><p className="text-xs text-muted-foreground">Total</p><p className="text-lg font-semibold">{totalPerfis}</p></div>
@@ -302,11 +302,11 @@ export default function PerfisAcessoPage() {
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">
                     <th className="p-4 font-medium">Nome</th>
-                    <th className="p-4 font-medium">Tipo</th>
-                    <th className="p-4 font-medium text-center">Pessoas</th>
-                    <th className="p-4 font-medium text-center">Apps</th>
-                    <th className="p-4 font-medium text-center">Licenças</th>
-                    <th className="p-4 font-medium text-center">Grupos</th>
+                    <th className="p-4 font-medium hidden md:table-cell">Tipo</th>
+                    <th className="p-4 font-medium text-center hidden sm:table-cell">Pessoas</th>
+                    <th className="p-4 font-medium text-center hidden sm:table-cell">Apps</th>
+                    <th className="p-4 font-medium text-center hidden lg:table-cell">Licenças</th>
+                    <th className="p-4 font-medium text-center hidden lg:table-cell">Grupos</th>
                     <th className="p-4 font-medium">Status</th>
                     <th className="p-4 font-medium w-20">Ações</th>
                   </tr>
@@ -323,11 +323,11 @@ export default function PerfisAcessoPage() {
                           <Link to={`/perfis-acesso/${p.id}`} className="font-medium text-primary hover:underline">{p.nome}</Link>
                           {p.descricao && <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-xs">{p.descricao}</p>}
                         </td>
-                        <td className="p-4"><Badge variant="outline">{p.tipo}</Badge></td>
-                        <td className="p-4 text-center"><span className="font-medium">{pessoasCount}</span></td>
-                        <td className="p-4 text-center"><span className="font-medium">{apps.length}</span></td>
-                        <td className="p-4 text-center"><span className="font-medium">{licCount}</span></td>
-                        <td className="p-4 text-center"><span className="font-medium">{grpCount}</span></td>
+                        <td className="p-4 hidden md:table-cell"><Badge variant="outline">{p.tipo}</Badge></td>
+                        <td className="p-4 text-center hidden sm:table-cell"><span className="font-medium">{pessoasCount}</span></td>
+                        <td className="p-4 text-center hidden sm:table-cell"><span className="font-medium">{apps.length}</span></td>
+                        <td className="p-4 text-center hidden lg:table-cell"><span className="font-medium">{licCount}</span></td>
+                        <td className="p-4 text-center hidden lg:table-cell"><span className="font-medium">{grpCount}</span></td>
                         <td className="p-4"><Badge variant={p.ativo ? "default" : "secondary"}>{p.ativo ? "Ativo" : "Inativo"}</Badge></td>
                         <td className="p-4">
                           <div className="flex gap-1">

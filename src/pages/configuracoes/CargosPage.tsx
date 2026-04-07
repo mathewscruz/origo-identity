@@ -156,8 +156,8 @@ export default function CargosPage() {
               <table className="w-full text-sm">
                 <thead><tr className="border-b text-left text-muted-foreground">
                   <th className="pb-2 font-medium">Nome</th>
-                  <th className="pb-2 font-medium">Área</th>
-                  <th className="pb-2 font-medium">Perfis</th>
+                  <th className="pb-2 font-medium hidden md:table-cell">Área</th>
+                  <th className="pb-2 font-medium hidden sm:table-cell">Perfis</th>
                   <th className="pb-2 font-medium">Status</th>
                   <th className="pb-2 font-medium w-20">Ações</th>
                 </tr></thead>
@@ -165,8 +165,8 @@ export default function CargosPage() {
                   {paginatedItems.map((cargo: any) => (
                     <tr key={cargo.id} className="border-b last:border-0 hover:bg-muted/50">
                       <td className="py-3 font-medium">{cargo.nome}</td>
-                      <td className="py-3 text-muted-foreground">{cargo.areas?.nome || "—"}</td>
-                      <td className="py-3">
+                      <td className="py-3 text-muted-foreground hidden md:table-cell">{cargo.areas?.nome || "—"}</td>
+                      <td className="py-3 hidden sm:table-cell">
                         <Badge variant="outline">{cargoPerfisMap[cargo.id] || 0} perfis</Badge>
                       </td>
                       <td className="py-3"><Badge variant={cargo.ativo ? "default" : "secondary"}>{cargo.ativo ? "Ativo" : "Inativo"}</Badge></td>

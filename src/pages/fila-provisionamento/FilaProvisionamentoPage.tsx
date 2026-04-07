@@ -181,7 +181,7 @@ export default function FilaProvisionamentoPage() {
           <p className="text-sm text-muted-foreground">Provisionamento de identidades e ciclo de vida JML</p>
         </div>
         {mainTab === "provisionamento" && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={loadData}><RefreshCw className="mr-1 h-4 w-4" />Atualizar</Button>
             <Button onClick={processEntraQueue} disabled={processing}>
               <Zap className="mr-1 h-4 w-4" />{processing ? "Processando..." : "Processar Fila Entra ID"}
@@ -201,7 +201,7 @@ export default function FilaProvisionamentoPage() {
 
         {/* ===================== TAB: Provisionamento ===================== */}
         <TabsContent value="provisionamento" className="mt-4 space-y-4">
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {Object.entries(counts).map(([key, count]) => {
               const cfg = statusConfig[key];
               return (
@@ -257,15 +257,15 @@ export default function FilaProvisionamentoPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b text-left text-muted-foreground">
-                        <th className="p-4 font-medium">Correlation ID</th>
+                        <th className="p-4 font-medium hidden lg:table-cell">Correlation ID</th>
                         <th className="p-4 font-medium">Ação</th>
                         <th className="p-4 font-medium">Usuário</th>
                         <th className="p-4 font-medium">Status</th>
-                        <th className="p-4 font-medium">Solicitante</th>
-                        <th className="p-4 font-medium">Solicitado em</th>
-                        <th className="p-4 font-medium">Processado em</th>
-                        <th className="p-4 font-medium">Retries</th>
-                        <th className="p-4 font-medium">Resultado</th>
+                        <th className="p-4 font-medium hidden md:table-cell">Solicitante</th>
+                        <th className="p-4 font-medium hidden md:table-cell">Solicitado em</th>
+                        <th className="p-4 font-medium hidden lg:table-cell">Processado em</th>
+                        <th className="p-4 font-medium hidden lg:table-cell">Retries</th>
+                        <th className="p-4 font-medium hidden lg:table-cell">Resultado</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -275,7 +275,7 @@ export default function FilaProvisionamentoPage() {
                         const displayName = item.payload_json?.displayName || item.payload_json?.samAccountName || "—";
                         return (
                           <tr key={item.id} className="border-b last:border-0 hover:bg-muted/50">
-                            <td className="p-4">
+                            <td className="p-4 hidden lg:table-cell">
                               <Link to={`/fila-provisionamento/${item.id}`} className="font-mono text-xs text-primary hover:underline">
                                 {item.correlation_id.slice(0, 8)}...
                               </Link>
@@ -283,15 +283,15 @@ export default function FilaProvisionamentoPage() {
                             <td className="p-4"><Badge variant="outline" className={aCfg.class}>{aCfg.label}</Badge></td>
                             <td className="p-4 font-medium">{displayName}</td>
                             <td className="p-4"><Badge variant="outline" className={sCfg.class}>{sCfg.label}</Badge></td>
-                            <td className="p-4 text-muted-foreground text-xs">{item.requested_by || "—"}</td>
-                            <td className="p-4 text-muted-foreground text-xs">{format(new Date(item.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}</td>
-                            <td className="p-4 text-muted-foreground text-xs">{item.processed_at ? format(new Date(item.processed_at), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "—"}</td>
-                            <td className="p-4 text-xs text-muted-foreground">
+                            <td className="p-4 text-muted-foreground text-xs hidden md:table-cell">{item.requested_by || "—"}</td>
+                            <td className="p-4 text-muted-foreground text-xs hidden md:table-cell">{format(new Date(item.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}</td>
+                            <td className="p-4 text-muted-foreground text-xs hidden lg:table-cell">{item.processed_at ? format(new Date(item.processed_at), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "—"}</td>
+                            <td className="p-4 text-xs text-muted-foreground hidden lg:table-cell">
                               {item.retry_count > 0 ? (
                                 <Badge variant="outline" className="bg-warning/15 text-warning border-warning/30">{item.retry_count}/{item.max_retries || 10}</Badge>
                               ) : "—"}
                             </td>
-                            <td className="p-4 text-xs text-muted-foreground max-w-[200px] truncate">{item.result_message || "—"}</td>
+                            <td className="p-4 text-xs text-muted-foreground max-w-[200px] truncate hidden lg:table-cell">{item.result_message || "—"}</td>
                           </tr>
                         );
                       })}

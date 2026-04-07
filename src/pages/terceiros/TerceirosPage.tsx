@@ -234,7 +234,7 @@ export default function TerceirosPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div><h1 className="text-2xl font-semibold tracking-tight">Terceiros</h1><p className="text-sm text-muted-foreground">Ciclo de vida de terceiros com controle de contrato</p></div>
         <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Terceiro</Button>
       </div>
@@ -249,15 +249,15 @@ export default function TerceirosPage() {
       <Card><CardContent className="p-0">
         {isLoading ? <div className="p-4 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div> : (
           <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left text-muted-foreground">
-            <th className="p-4 font-medium">Nome</th><th className="p-4 font-medium">Empresa</th><th className="p-4 font-medium">Responsável</th>
-            <th className="p-4 font-medium">Criticidade</th><th className="p-4 font-medium">Fim Contrato</th><th className="p-4 font-medium">Status</th><th className="p-4 font-medium w-20">Ações</th>
+            <th className="p-4 font-medium">Nome</th><th className="p-4 font-medium hidden md:table-cell">Empresa</th><th className="p-4 font-medium hidden lg:table-cell">Responsável</th>
+            <th className="p-4 font-medium hidden md:table-cell">Criticidade</th><th className="p-4 font-medium">Fim Contrato</th><th className="p-4 font-medium">Status</th><th className="p-4 font-medium w-20">Ações</th>
           </tr></thead><tbody>
             {paginatedItems.map((t: any) => (
               <tr key={t.id} className="border-b last:border-0 hover:bg-muted/50">
                 <td className="p-4"><Link to={`/terceiros/${t.id}`} className="font-medium text-primary hover:underline">{t.nome}</Link></td>
-                <td className="p-4 text-muted-foreground">{t.empresa_terceira || "—"}</td>
-                <td className="p-4 text-muted-foreground">{t.responsavel || "—"}</td>
-                <td className="p-4"><Badge variant="outline" className={criticidadeConfig[t.criticidade]?.class || ""}>{criticidadeConfig[t.criticidade]?.label || t.criticidade}</Badge></td>
+                <td className="p-4 text-muted-foreground hidden md:table-cell">{t.empresa_terceira || "—"}</td>
+                <td className="p-4 text-muted-foreground hidden lg:table-cell">{t.responsavel || "—"}</td>
+                <td className="p-4 hidden md:table-cell"><Badge variant="outline" className={criticidadeConfig[t.criticidade]?.class || ""}>{criticidadeConfig[t.criticidade]?.label || t.criticidade}</Badge></td>
                 <td className="p-4">{fimContratoDisplay(t.contrato_fim)}</td>
                 <td className="p-4"><Badge variant={t.ativo ? "default" : "secondary"}>{t.ativo ? "Ativo" : "Inativo"}</Badge></td>
                 <td className="p-4"><div className="flex gap-1">

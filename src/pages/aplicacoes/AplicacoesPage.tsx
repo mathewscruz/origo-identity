@@ -200,8 +200,8 @@ export default function AplicacoesPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b text-left text-muted-foreground">
-                <th className="p-4 font-medium">Nome</th><th className="p-4 font-medium">Origem</th><th className="p-4 font-medium">Autenticação</th>
-                <th className="p-4 font-medium">Owner</th><th className="p-4 font-medium">Aprovação</th><th className="p-4 font-medium">Integração</th><th className="p-4 font-medium w-20">Ações</th>
+                <th className="p-4 font-medium">Nome</th><th className="p-4 font-medium hidden md:table-cell">Origem</th><th className="p-4 font-medium hidden lg:table-cell">Autenticação</th>
+                <th className="p-4 font-medium hidden md:table-cell">Owner</th><th className="p-4 font-medium hidden lg:table-cell">Aprovação</th><th className="p-4 font-medium hidden lg:table-cell">Integração</th><th className="p-4 font-medium w-20">Ações</th>
               </tr></thead>
               <tbody>
                 {paginatedItems.map((app: any) => (
@@ -212,22 +212,22 @@ export default function AplicacoesPage() {
                         {app.nome}
                       </div>
                     </td>
-                    <td className="p-4">
+                    <td className="p-4 hidden md:table-cell">
                       {(app as any).origem === "azure" ? (
                         <Badge variant="outline" className="bg-info/15 text-info border-info/30"><Cloud className="h-3 w-3 mr-1" />Azure</Badge>
                       ) : (
                         <Badge variant="outline" className="bg-muted text-muted-foreground"><Globe className="h-3 w-3 mr-1" />Manual</Badge>
                       )}
                     </td>
-                    <td className="p-4"><Badge variant="outline">{app.tipo_auth || "—"}</Badge></td>
-                    <td className="p-4 text-muted-foreground">{app.owner || <span className="text-warning">Sem owner</span>}</td>
-                    <td className="p-4">
+                    <td className="p-4 hidden lg:table-cell"><Badge variant="outline">{app.tipo_auth || "—"}</Badge></td>
+                    <td className="p-4 text-muted-foreground hidden md:table-cell">{app.owner || <span className="text-warning">Sem owner</span>}</td>
+                    <td className="p-4 hidden lg:table-cell">
                       {app.aprovacao_necessaria ? (
                         <Tooltip><TooltipTrigger><CheckCircle className="h-4 w-4 text-success" /></TooltipTrigger>
                         <TooltipContent>Requer aprovação para concessão</TooltipContent></Tooltip>
                       ) : <span className="text-muted-foreground">—</span>}
                     </td>
-                    <td className="p-4">{app.integracao_ativa ? <Badge variant="outline" className="bg-success/15 text-success border-success/30">Ativa</Badge> : <Badge variant="outline" className="bg-muted text-muted-foreground">Inativa</Badge>}</td>
+                    <td className="p-4 hidden lg:table-cell">{app.integracao_ativa ? <Badge variant="outline" className="bg-success/15 text-success border-success/30">Ativa</Badge> : <Badge variant="outline" className="bg-muted text-muted-foreground">Inativa</Badge>}</td>
                     <td className="p-4"><div className="flex gap-1">
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => openEdit(app, e)}><Pencil className="h-3 w-3" /></Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteId(app.id); }}><Trash2 className="h-3 w-3" /></Button>

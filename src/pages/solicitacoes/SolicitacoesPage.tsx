@@ -284,7 +284,7 @@ export default function SolicitacoesPage() {
           <h1 className="text-2xl font-bold text-foreground">Solicitações de Acesso</h1>
           <p className="text-muted-foreground">Self-Service — solicite e gerencie acessos</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" asChild>
             <a href="/portal" target="_blank" rel="noopener noreferrer">
               <ExternalLink className="mr-2 h-4 w-4" />Portal Externo
@@ -326,8 +326,8 @@ export default function SolicitacoesPage() {
               <TableHeader><TableRow>
                 <TableHead>Solicitante</TableHead>
                 <TableHead>Itens Solicitados</TableHead>
-                <TableHead>Justificativa</TableHead>
-                <TableHead>Data</TableHead>
+                <TableHead className="hidden md:table-cell">Justificativa</TableHead>
+                <TableHead className="hidden sm:table-cell">Data</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-32">Ações</TableHead>
               </TableRow></TableHeader>
@@ -340,8 +340,8 @@ export default function SolicitacoesPage() {
                   <TableRow key={s.id}>
                     <TableCell className="font-medium">{colabMap.get(s.solicitante_id)?.nome || "—"}</TableCell>
                     <TableCell className="max-w-[250px]">{renderItensBadges(s)}</TableCell>
-                    <TableCell className="max-w-[200px] truncate text-muted-foreground">{s.justificativa}</TableCell>
-                    <TableCell>{new Date(s.created_at).toLocaleDateString("pt-BR")}</TableCell>
+                    <TableCell className="max-w-[200px] truncate text-muted-foreground hidden md:table-cell">{s.justificativa}</TableCell>
+                    <TableCell className="hidden sm:table-cell">{new Date(s.created_at).toLocaleDateString("pt-BR")}</TableCell>
                     <TableCell>{statusBadge(s.status)}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
@@ -363,9 +363,9 @@ export default function SolicitacoesPage() {
                 <TableHead>Solicitante</TableHead>
                 <TableHead>Itens Solicitados</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Aprovador</TableHead>
-                <TableHead>Comentário</TableHead>
-                <TableHead>Decisão em</TableHead>
+                <TableHead className="hidden md:table-cell">Aprovador</TableHead>
+                <TableHead className="hidden lg:table-cell">Comentário</TableHead>
+                <TableHead className="hidden sm:table-cell">Decisão em</TableHead>
               </TableRow></TableHeader>
               <TableBody>
                 {filtered(decididas).length === 0 ? (
@@ -375,9 +375,9 @@ export default function SolicitacoesPage() {
                     <TableCell className="font-medium">{colabMap.get(s.solicitante_id)?.nome || "—"}</TableCell>
                     <TableCell className="max-w-[250px]">{renderItensBadges(s)}</TableCell>
                     <TableCell>{statusBadge(s.status)}</TableCell>
-                    <TableCell>{s.aprovador || "—"}</TableCell>
-                    <TableCell className="max-w-[200px] truncate text-muted-foreground">{s.comentario || "—"}</TableCell>
-                    <TableCell>{s.data_decisao ? new Date(s.data_decisao).toLocaleDateString("pt-BR") : "—"}</TableCell>
+                    <TableCell className="hidden md:table-cell">{s.aprovador || "—"}</TableCell>
+                    <TableCell className="max-w-[200px] truncate text-muted-foreground hidden lg:table-cell">{s.comentario || "—"}</TableCell>
+                    <TableCell className="hidden sm:table-cell">{s.data_decisao ? new Date(s.data_decisao).toLocaleDateString("pt-BR") : "—"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
