@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, RefreshCw, Zap } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Search, RefreshCw, Zap, AlertTriangle } from "lucide-react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,7 +13,9 @@ import TablePagination, { usePagination } from "@/components/TablePagination";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
+import { useEventosJML } from "@/hooks/useOrigoData";
 
+// ---- Provisionamento configs ----
 const statusConfig: Record<string, { label: string; class: string }> = {
   pending: { label: "Pendente", class: "bg-warning/15 text-warning border-warning/30" },
   processing: { label: "Processando", class: "bg-info/15 text-info border-info/30" },
@@ -32,6 +35,23 @@ const actionConfig: Record<string, { label: string; class: string }> = {
   remove_license: { label: "Remover Licença", class: "bg-muted text-muted-foreground border-muted" },
   assign_app: { label: "Atribuir App", class: "bg-primary/15 text-primary border-primary/30" },
   remove_app: { label: "Remover App", class: "bg-muted text-muted-foreground border-muted" },
+  disable_entra: { label: "Desativar Entra", class: "bg-warning/15 text-warning border-warning/30" },
+  enable_entra: { label: "Reativar Entra", class: "bg-success/15 text-success border-success/30" },
+};
+
+// ---- JML configs ----
+const tipoColors: Record<string, string> = {
+  joiner: "bg-success text-success-foreground",
+  mover: "bg-info text-info-foreground",
+  leaver: "bg-destructive text-destructive-foreground",
+};
+const jmlStatusColors: Record<string, string> = {
+  pendente: "bg-warning/15 text-warning border-warning/30",
+  executando: "bg-info/15 text-info border-info/30",
+  executado: "bg-success/15 text-success border-success/30",
+  erro: "bg-destructive/15 text-destructive border-destructive/30",
+  cancelado: "bg-muted text-muted-foreground",
+  quarentena: "bg-warning/15 text-warning border-warning/30",
 };
 
 interface QueueItem {
@@ -45,9 +65,23 @@ interface QueueItem {
   result_message: string | null;
   correlation_id: string;
   colaborador_id: string | null;
+  retry_count: number;
+  max_retries: number;
 }
 
+type JmlTabKey = "pendentes" | "quarentena" | "executados" | "erros" | "todos";
+const jmlTabFilters: Record<JmlTabKey, (e: { status: string }) => boolean> = {
+  pendentes: (e) => ["pendente", "executando"].includes(e.status),
+  quarentena: (e) => e.status === "quarentena",
+  executados: (e) => e.status === "executado",
+  erros: (e) => e.status === "erro",
+  todos: () => true,
+};
+
 export default function FilaProvisionamentoPage() {
+  const [mainTab, setMainTab] = useState("provisionamento");
+
+  // ---- Provisionamento state ----
   const [items, setItems] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -56,6 +90,13 @@ export default function FilaProvisionamentoPage() {
   const [actionFilter, setActionFilter] = useState("todos");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+
+  // ---- JML state ----
+  const [jmlTab, setJmlTab] = useState<JmlTabKey>("pendentes");
+  const [jmlBusca, setJmlBusca] = useState("");
+  const [jmlPage, setJmlPage] = useState(1);
+  const [jmlPageSize, setJmlPageSize] = useState(25);
+  const { data: eventos, isLoading: jmlLoading } = useEventosJML();
 
   async function loadData() {
     setLoading(true);
@@ -70,15 +111,10 @@ export default function FilaProvisionamentoPage() {
 
   useEffect(() => {
     loadData();
-
-    // Realtime subscription
     const channel = supabase
       .channel("iam_queue_changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "iam_queue" }, () => {
-        loadData();
-      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "iam_queue" }, () => { loadData(); })
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, []);
 
@@ -110,6 +146,7 @@ export default function FilaProvisionamentoPage() {
     setProcessing(false);
   }
 
+  // ---- Provisionamento filtered ----
   const filtered = items.filter((item) => {
     if (busca) {
       const displayName = item.payload_json?.displayName || "";
@@ -121,9 +158,7 @@ export default function FilaProvisionamentoPage() {
     if (actionFilter !== "todos" && item.action_type !== actionFilter) return false;
     return true;
   });
-
   const { paginatedItems, safePage } = usePagination(filtered, page, pageSize);
-
   const counts = {
     pending: items.filter(i => i.status === "pending").length,
     processing: items.filter(i => i.status === "processing").length,
@@ -131,136 +166,207 @@ export default function FilaProvisionamentoPage() {
     failed: items.filter(i => i.status === "failed").length,
   };
 
+  // ---- JML filtered ----
+  const jmlList = (eventos ?? []) as any[];
+  const quarentenaCount = jmlList.filter(jmlTabFilters.quarentena).length;
+  const jmlFiltered = jmlList.filter(jmlTabFilters[jmlTab]).filter((e) => !jmlBusca || (e.colaborador_nome || "").toLowerCase().includes(jmlBusca.toLowerCase()));
+  const { paginatedItems: jmlPaginated, safePage: jmlSafePage } = usePagination(jmlFiltered, jmlPage, jmlPageSize);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Fila de Provisionamento</h1>
-          <p className="text-sm text-muted-foreground">Solicitações de criação, atualização e desativação de identidades</p>
+          <p className="text-sm text-muted-foreground">Provisionamento de identidades e ciclo de vida JML</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={loadData}>
-            <RefreshCw className="mr-1 h-4 w-4" />Atualizar
-          </Button>
-          <Button onClick={processEntraQueue} disabled={processing}>
-            <Zap className="mr-1 h-4 w-4" />{processing ? "Processando..." : "Processar Fila Entra ID"}
-          </Button>
-        </div>
+        {mainTab === "provisionamento" && (
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={loadData}><RefreshCw className="mr-1 h-4 w-4" />Atualizar</Button>
+            <Button onClick={processEntraQueue} disabled={processing}>
+              <Zap className="mr-1 h-4 w-4" />{processing ? "Processando..." : "Processar Fila Entra ID"}
+            </Button>
+          </div>
+        )}
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-4">
-        {Object.entries(counts).map(([key, count]) => {
-          const cfg = statusConfig[key];
-          return (
-            <Card key={key} className="cursor-pointer hover:border-primary/50 transition-colors" onClick={() => { setStatusFilter(key); setPage(1); }}>
-              <CardContent className="pt-4 pb-4">
-                <p className="text-xs text-muted-foreground">{cfg.label}</p>
-                <p className="text-2xl font-semibold">{count}</p>
+      <Tabs value={mainTab} onValueChange={setMainTab}>
+        <TabsList>
+          <TabsTrigger value="provisionamento">Fila de Provisionamento ({items.length})</TabsTrigger>
+          <TabsTrigger value="eventos-jml">
+            Eventos JML ({jmlList.length})
+            {quarentenaCount > 0 && <Badge variant="destructive" className="ml-2 h-5 px-1.5 text-[10px]">{quarentenaCount}</Badge>}
+          </TabsTrigger>
+        </TabsList>
+
+        {/* ===================== TAB: Provisionamento ===================== */}
+        <TabsContent value="provisionamento" className="mt-4 space-y-4">
+          <div className="grid grid-cols-4 gap-4">
+            {Object.entries(counts).map(([key, count]) => {
+              const cfg = statusConfig[key];
+              return (
+                <Card key={key} className="cursor-pointer hover:border-primary/50 transition-colors" onClick={() => { setStatusFilter(key); setPage(1); }}>
+                  <CardContent className="pt-4 pb-4">
+                    <p className="text-xs text-muted-foreground">{cfg.label}</p>
+                    <p className="text-2xl font-semibold">{count}</p>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input placeholder="Buscar por nome, matrícula ou correlation ID..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
+            </div>
+            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
+              <SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos status</SelectItem>
+                <SelectItem value="pending">Pendente</SelectItem>
+                <SelectItem value="processing">Processando</SelectItem>
+                <SelectItem value="success">Concluído</SelectItem>
+                <SelectItem value="failed">Falhou</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={actionFilter} onValueChange={(v) => { setActionFilter(v); setPage(1); }}>
+              <SelectTrigger className="w-[160px]"><SelectValue placeholder="Ação" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todas ações</SelectItem>
+                <SelectItem value="create">Criação</SelectItem>
+                <SelectItem value="update">Atualização</SelectItem>
+                <SelectItem value="disable">Desativação</SelectItem>
+                <SelectItem value="delete">Exclusão</SelectItem>
+                <SelectItem value="assign_group">Atribuir Grupo</SelectItem>
+                <SelectItem value="remove_group">Remover Grupo</SelectItem>
+                <SelectItem value="assign_license">Atribuir Licença</SelectItem>
+                <SelectItem value="remove_license">Remover Licença</SelectItem>
+                <SelectItem value="assign_app">Atribuir App</SelectItem>
+                <SelectItem value="remove_app">Remover App</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Card>
+            <CardContent className="p-0">
+              {loading ? (
+                <div className="p-4 space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-muted-foreground">
+                        <th className="p-4 font-medium">Correlation ID</th>
+                        <th className="p-4 font-medium">Ação</th>
+                        <th className="p-4 font-medium">Usuário</th>
+                        <th className="p-4 font-medium">Status</th>
+                        <th className="p-4 font-medium">Solicitante</th>
+                        <th className="p-4 font-medium">Solicitado em</th>
+                        <th className="p-4 font-medium">Processado em</th>
+                        <th className="p-4 font-medium">Retries</th>
+                        <th className="p-4 font-medium">Resultado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedItems.map((item) => {
+                        const aCfg = actionConfig[item.action_type] || { label: item.action_type, class: "" };
+                        const sCfg = statusConfig[item.status] || { label: item.status, class: "" };
+                        const displayName = item.payload_json?.displayName || item.payload_json?.samAccountName || "—";
+                        return (
+                          <tr key={item.id} className="border-b last:border-0 hover:bg-muted/50">
+                            <td className="p-4">
+                              <Link to={`/fila-provisionamento/${item.id}`} className="font-mono text-xs text-primary hover:underline">
+                                {item.correlation_id.slice(0, 8)}...
+                              </Link>
+                            </td>
+                            <td className="p-4"><Badge variant="outline" className={aCfg.class}>{aCfg.label}</Badge></td>
+                            <td className="p-4 font-medium">{displayName}</td>
+                            <td className="p-4"><Badge variant="outline" className={sCfg.class}>{sCfg.label}</Badge></td>
+                            <td className="p-4 text-muted-foreground text-xs">{item.requested_by || "—"}</td>
+                            <td className="p-4 text-muted-foreground text-xs">{format(new Date(item.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}</td>
+                            <td className="p-4 text-muted-foreground text-xs">{item.processed_at ? format(new Date(item.processed_at), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "—"}</td>
+                            <td className="p-4 text-xs text-muted-foreground">
+                              {item.retry_count > 0 ? (
+                                <Badge variant="outline" className="bg-warning/15 text-warning border-warning/30">{item.retry_count}/{item.max_retries || 10}</Badge>
+                              ) : "—"}
+                            </td>
+                            <td className="p-4 text-xs text-muted-foreground max-w-[200px] truncate">{item.result_message || "—"}</td>
+                          </tr>
+                        );
+                      })}
+                      {paginatedItems.length === 0 && (
+                        <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">Nenhuma solicitação encontrada.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          <TablePagination totalItems={filtered.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
+        </TabsContent>
+
+        {/* ===================== TAB: Eventos JML ===================== */}
+        <TabsContent value="eventos-jml" className="mt-4 space-y-4">
+          {quarentenaCount > 0 && (
+            <Card className="border-warning/30 bg-warning/5">
+              <CardContent className="flex items-center gap-3 py-3">
+                <AlertTriangle className="h-4 w-4 text-warning" />
+                <span className="text-sm font-medium text-warning">{quarentenaCount} evento(s) em quarentena aguardando decisão</span>
               </CardContent>
             </Card>
-          );
-        })}
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-wrap gap-2">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Buscar por nome, matrícula ou correlation ID..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
-        </div>
-        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
-          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todos status</SelectItem>
-            <SelectItem value="pending">Pendente</SelectItem>
-            <SelectItem value="processing">Processando</SelectItem>
-            <SelectItem value="success">Concluído</SelectItem>
-            <SelectItem value="failed">Falhou</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={actionFilter} onValueChange={(v) => { setActionFilter(v); setPage(1); }}>
-          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Ação" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todas ações</SelectItem>
-            <SelectItem value="create">Criação</SelectItem>
-            <SelectItem value="update">Atualização</SelectItem>
-            <SelectItem value="disable">Desativação</SelectItem>
-            <SelectItem value="delete">Exclusão</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Table */}
-      <Card>
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="p-4 space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th className="p-4 font-medium">Correlation ID</th>
-                    <th className="p-4 font-medium">Ação</th>
-                    <th className="p-4 font-medium">Usuário</th>
-                    <th className="p-4 font-medium">Status</th>
-                    <th className="p-4 font-medium">Solicitante</th>
-                    <th className="p-4 font-medium">Solicitado em</th>
-                    <th className="p-4 font-medium">Processado em</th>
-                     <th className="p-4 font-medium">Retries</th>
-                     <th className="p-4 font-medium">Resultado</th>
-                   </tr>
-                 </thead>
-                <tbody>
-                  {paginatedItems.map((item) => {
-                    const aCfg = actionConfig[item.action_type] || { label: item.action_type, class: "" };
-                    const sCfg = statusConfig[item.status] || { label: item.status, class: "" };
-                    const displayName = item.payload_json?.displayName || item.payload_json?.samAccountName || "—";
-                    return (
-                      <tr key={item.id} className="border-b last:border-0 hover:bg-muted/50">
-                        <td className="p-4">
-                          <Link to={`/fila-provisionamento/${item.id}`} className="font-mono text-xs text-primary hover:underline">
-                            {item.correlation_id.slice(0, 8)}...
-                          </Link>
-                        </td>
-                        <td className="p-4">
-                          <Badge variant="outline" className={aCfg.class}>{aCfg.label}</Badge>
-                        </td>
-                        <td className="p-4 font-medium">{displayName}</td>
-                        <td className="p-4">
-                          <Badge variant="outline" className={sCfg.class}>{sCfg.label}</Badge>
-                        </td>
-                        <td className="p-4 text-muted-foreground text-xs">{item.requested_by || "—"}</td>
-                        <td className="p-4 text-muted-foreground text-xs">
-                          {format(new Date(item.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
-                        </td>
-                        <td className="p-4 text-muted-foreground text-xs">
-                          {item.processed_at ? format(new Date(item.processed_at), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "—"}
-                        </td>
-                        <td className="p-4 text-xs text-muted-foreground">
-                          {(item as any).retry_count > 0 ? (
-                            <Badge variant="outline" className="bg-warning/15 text-warning border-warning/30">
-                              {(item as any).retry_count}/{(item as any).max_retries || 10}
-                            </Badge>
-                          ) : "—"}
-                        </td>
-                        <td className="p-4 text-xs text-muted-foreground max-w-[200px] truncate">
-                          {item.result_message || "—"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {paginatedItems.length === 0 && (
-                    <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">Nenhuma solicitação encontrada.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
           )}
-        </CardContent>
-      </Card>
-      <TablePagination totalItems={filtered.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
+
+          <Tabs value={jmlTab} onValueChange={(v) => { setJmlTab(v as JmlTabKey); setJmlPage(1); }}>
+            <div className="flex items-center justify-between">
+              <TabsList>
+                <TabsTrigger value="pendentes">Pendentes ({jmlList.filter(jmlTabFilters.pendentes).length})</TabsTrigger>
+                <TabsTrigger value="quarentena">Quarentena ({quarentenaCount})</TabsTrigger>
+                <TabsTrigger value="executados">Executados ({jmlList.filter(jmlTabFilters.executados).length})</TabsTrigger>
+                <TabsTrigger value="erros">Erros ({jmlList.filter(jmlTabFilters.erros).length})</TabsTrigger>
+                <TabsTrigger value="todos">Todos ({jmlList.length})</TabsTrigger>
+              </TabsList>
+              <div className="relative max-w-xs">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input placeholder="Buscar pessoa..." className="pl-9" value={jmlBusca} onChange={(e) => { setJmlBusca(e.target.value); setJmlPage(1); }} />
+              </div>
+            </div>
+
+            {(["pendentes", "quarentena", "executados", "erros", "todos"] as JmlTabKey[]).map((t) => (
+              <TabsContent key={t} value={t} className="mt-4">
+                <Card><CardContent className="p-0">
+                  {jmlLoading ? (
+                    <div className="p-4 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead><tr className="border-b text-left text-muted-foreground">
+                        <th className="p-4 font-medium">Tipo</th>
+                        <th className="p-4 font-medium">Pessoa</th>
+                        <th className="p-4 font-medium">Status</th>
+                        <th className="p-4 font-medium">Tentativas</th>
+                        <th className="p-4 font-medium">Data</th>
+                      </tr></thead>
+                      <tbody>
+                        {jmlPaginated.map((ev: any) => (
+                          <tr key={ev.id} className="border-b last:border-0 hover:bg-muted/50">
+                            <td className="p-4"><Badge className={`${tipoColors[ev.tipo]} text-[10px] uppercase`}>{ev.tipo.charAt(0)}</Badge></td>
+                            <td className="p-4"><Link to={`/eventos-jml/${ev.id}`} className="font-medium text-primary hover:underline">{ev.colaborador_nome || "Desconhecido"}</Link></td>
+                            <td className="p-4"><Badge variant="outline" className={jmlStatusColors[ev.status] || ""}>{ev.status}</Badge></td>
+                            <td className="p-4 text-muted-foreground">{ev.tentativas}/{ev.max_tentativas}</td>
+                            <td className="p-4 text-muted-foreground text-xs">{new Date(ev.created_at).toLocaleDateString("pt-BR")}</td>
+                          </tr>
+                        ))}
+                        {jmlPaginated.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-muted-foreground">Nenhum evento.</td></tr>}
+                      </tbody>
+                    </table>
+                  )}
+                </CardContent></Card>
+                <TablePagination totalItems={jmlFiltered.length} pageSize={jmlPageSize} currentPage={jmlSafePage} onPageChange={setJmlPage} onPageSizeChange={(s) => { setJmlPageSize(s); setJmlPage(1); }} />
+              </TabsContent>
+            ))}
+          </Tabs>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
