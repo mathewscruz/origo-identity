@@ -1,56 +1,48 @@
 
 
-## Plano: Exceções como bypass de desativação (férias, afastamento, etc.)
+## Plano: Gerar e-mail corporativo Órigo para colaboradores com e-mail genérico
 
-### Situação atual
+### Problema
 
-O módulo de Exceções trata apenas de **concessão de perfis de acesso extras**. Não existe mecanismo para impedir que o sistema desative um usuário que está em férias/afastamento mas precisa permanecer ativo por algum motivo justificado.
+Colaboradores importados via CSV podem vir com e-mails genéricos (ex: `joao@gmail.com`, sem domínio `@origoenergia.com.br`). O sistema precisa detectar esses casos e gerar automaticamente o e-mail corporativo no padrão `nome.sobrenome@origoenergia.com.br`, validando unicidade.
 
-### Solução
+### Lógica de geração
 
-Adicionar um **tipo de exceção** ao módulo. Além de "Concessão de Acesso" (comportamento atual), haverá "Manter Ativo" — uma exceção que, enquanto aprovada e dentro da validade, impede o sistema de desativar/revogar acessos do colaborador.
+```text
+1. Detectar se o e-mail do CSV NÃO é @origoenergia.com.br
+2. Extrair nome completo (displayName): "João Carlos Silva"
+3. Gerar: joao.silva@origoenergia.com.br (primeiro.último)
+4. Verificar no banco se já existe colaborador com esse e-mail
+5. Se existir duplicata: joao.carlos@origoenergia.com.br (primeiro.meio)
+6. Se ainda existir: joao.carlos.silva@origoenergia.com.br (completo)
+7. Atualizar sam_account_name para o prefixo do e-mail gerado
+```
+
+### Normalização
+
+- Converter para minúsculas
+- Remover acentos (João → joao, André → andre)
+- Tratar nomes compostos com preposições (da, de, do, dos, das) — ignorar na composição
 
 ### Alterações
 
-**1. Migração — coluna `tipo_excecao` na tabela `excecoes`:**
-```sql
-ALTER TABLE excecoes ADD COLUMN tipo_excecao text NOT NULL DEFAULT 'acesso';
-```
-Valores: `acesso` (concessão de perfil, padrão atual) | `manter_ativo` (bypass de desativação).
+**1. `supabase/functions/sync-csv-colab/index.ts` — função `buildColabData`:**
 
-**2. `ExcecoesPage.tsx` — formulário e listagem:**
-- Adicionar Select de "Tipo de Exceção" no dialog de criação com duas opções: "Concessão de Acesso" e "Manter Ativo"
-- Quando tipo = `manter_ativo`, tornar o campo "Perfil" opcional/oculto (não se trata de conceder perfil, mas de manter o usuário ativo)
-- Exibir coluna "Tipo" na tabela com Badge diferenciado
-- Na aprovação de tipo `manter_ativo`, não provisionar perfil — apenas registrar a exceção aprovada
+Adicionar função `generateOrigoEmail(displayName, existingEmails)`:
+- Recebe o nome completo e um Set de e-mails já existentes no banco
+- Retorna o e-mail corporativo gerado
+- Antes do loop de classificação, carregar todos os e-mails existentes de colaboradores num Set
+- Na função `buildColabData`, se `row.mail` não termina com `@origoenergia.com.br`, chamar `generateOrigoEmail` e usar o resultado como `email` e derivar o `sam_account_name` dele
+- Adicionar cada e-mail gerado ao Set para evitar colisão entre registros do mesmo CSV
 
-**3. `ColaboradorDetalhePage.tsx` — checagem antes de desativar:**
-- Antes de executar o fluxo de desativação (linha 304-361), consultar `excecoes` para verificar se existe exceção `manter_ativo` aprovada, dentro da validade, para aquele `colaborador_id`
-- Se existir, exibir toast de alerta informando que há uma exceção ativa e bloquear a desativação
-- Mostrar badge "Exceção Ativa" na ficha do colaborador quando houver exceção vigente
+**2. `src/pages/colaboradores/ColaboradoresPage.tsx` — indicador visual:**
 
-**4. `TerceiroDetalhePage.tsx` — mesma checagem:**
-- Aplicar a mesma lógica de verificação de exceção antes de desativar terceiros (se `colaborador_id` for compartilhado ou se precisar adicionar `terceiro_id` à tabela de exceções)
-
-### Fluxo
-
-```text
-Admin cria exceção tipo "Manter Ativo" para João (férias mas precisa acessar)
-  → Exceção fica pendente
-  → Admin/aprovador aprova
-  → Exceção fica com status "aprovada" + validade (ex: 30 dias)
-  → Alguém tenta mudar status de João para "férias"
-  → Sistema consulta excecoes WHERE colaborador_id = João AND tipo_excecao = 'manter_ativo' AND status = 'aprovada' AND validade >= hoje
-  → Encontra exceção → bloqueia desativação + exibe toast
-  → Após validade expirar → exceção vira "expirada" → desativação volta a funcionar normalmente
-```
+Adicionar ícone/badge na listagem para sinalizar colaboradores cujo e-mail foi gerado automaticamente (quando o e-mail original do CSV difere do e-mail no banco)
 
 ### Arquivos
 
 | Ação | Arquivo |
 |---|---|
-| Migração | Adicionar coluna `tipo_excecao` à tabela `excecoes` |
-| Editar | `src/pages/excecoes/ExcecoesPage.tsx` — tipo de exceção no form, coluna na tabela, lógica de aprovação condicional |
-| Editar | `src/pages/colaboradores/ColaboradorDetalhePage.tsx` — checagem de exceção ativa antes de desativar |
-| Editar | `src/pages/terceiros/TerceiroDetalhePage.tsx` — mesma checagem de exceção |
+| Editar | `supabase/functions/sync-csv-colab/index.ts` — lógica de geração de e-mail corporativo |
+| Editar | `src/pages/colaboradores/ColaboradoresPage.tsx` — indicador visual (opcional) |
 
