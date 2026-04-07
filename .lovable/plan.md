@@ -1,49 +1,69 @@
 
 
-## Plano: Corrigir sincronização para trazer apenas os 498 apps empresariais reais
+## Plano: Melhorias no módulo de Perfis de Acesso
 
-### Causa raiz
+### Problemas e inconsistências encontrados
 
-A Edge Function busca **todos os Service Principals** com a tag `WindowsAzureActiveDirectoryIntegratedApp`, sem filtrar por tipo. Isso inclui:
-- Apps Microsoft internos/first-party (Office 365, Azure AD, etc.)
-- Service Principals do tipo `ManagedIdentity` e `Legacy`
-- Apps que não aparecem na view "Aplicativos Empresariais" do Azure
+**1. Código duplicado entre PerfisAcessoPage e PerfilAcessoDetalhePage**
+O formulário de edição existe em DOIS lugares com lógica quase idêntica (sync de apps/licenças/grupos, cálculo de diff, provisionamento). Qualquer correção futura precisa ser feita em dois arquivos. A página de detalhe não tem busca nas listas de apps/licenças/grupos no dialog de edição (a listagem tem, o detalhe não).
 
-O portal Azure filtra automaticamente por `servicePrincipalType eq 'Application'` e exclui apps first-party da Microsoft (tenant `f8cdef31-a31e-4b4a-93e4-5f571e91255a`).
+**2. Tabela "Composição" é redundante**
+A aba "Composição" na página de detalhe permite adicionar itens manuais (grupo, role, permissão, licença) de forma textual livre — mas o perfil JÁ tem abas estruturadas de Aplicações, Licenças e Grupos com dados reais do Entra ID. A composição era útil antes dessas abas existirem, agora gera confusão.
 
-### Correções
+**3. Exclusão de perfil não faz cleanup no Entra ID**
+Ao excluir um perfil (`handleDelete`), o sistema deleta o registro mas NÃO remove os grupos/licenças/apps dos colaboradores que tinham esse perfil. Ficam recursos órfãos no Entra ID.
 
-**Arquivo:** `supabase/functions/sync-entra-apps/index.ts`
+**4. Listagem não mostra informações suficientes**
+A tabela mostra apenas Nome, Aplicações, Tipo e Status. Falta: quantidade de pessoas atribuídas, quantidade de licenças/grupos, e cargos vinculados.
 
-1. Adicionar filtro `servicePrincipalType eq 'Application'` na query do Graph API
-2. Excluir apps cujo `appOwnerOrganizationId` seja o tenant da Microsoft (`f8cdef31-a31e-4b4a-93e4-5f571e91255a`)
-3. Incluir `appOwnerOrganizationId` no `$select` para poder filtrar
+**5. Falta filtro por tipo e status na listagem**
+Só existe busca por nome. Não há filtros por tipo (funcional/técnico/privilegiado) ou status (ativo/inativo).
 
-Query corrigida:
-```
-/servicePrincipals?$filter=tags/any(t: t eq 'WindowsAzureActiveDirectoryIntegratedApp') and servicePrincipalType eq 'Application'&$select=id,displayName,appId,servicePrincipalType,appOwnerOrganizationId&$top=999
-```
+**6. Pessoa na aba "Pessoas" não é clicável**
+O nome do colaborador na aba Pessoas do detalhe não tem link para `/colaboradores/:id`.
 
-E no código, após o fetch, filtrar client-side os apps da Microsoft:
-```typescript
-const filtered = servicePrincipals.filter(sp => 
-  sp.appOwnerOrganizationId !== 'f8cdef31-a31e-4b4a-93e4-5f571e91255a'
-);
-```
+**7. PerfisAcessoPage não chama triggerEntraProcessing após gerar a fila**
+A `PerfisAcessoPage` gera entradas na `iam_queue` via `generateEntraQueueForDiff` (que por padrão chama `triggerEntraProcessing`), mas a `PerfilAcessoDetalhePage` chama `triggerEntraProcessing()` explicitamente depois E passa `triggerImmediately: false`. Inconsistência: na listagem o trigger é automático, no detalhe é manual — abordagens diferentes para o mesmo resultado.
 
-**Limpeza do banco:** Executar SQL para remover os apps Azure que foram importados indevidamente (os que não existem mais após o filtro correto). A Edge Function fará isso automaticamente: apps com `origem = 'azure'` cujo `entra_id` não está na lista filtrada serão removidos (soft-delete ou hard-delete).
+### Melhorias propostas
 
-### Lógica de limpeza na Edge Function
+#### A. Remover aba "Composição" (redundante)
+- Remover a aba, o dialog e as funções `handleAddComp`/`handleDeleteComp`
+- Remover o card contador "Composição" no header
+- Simplifica a interface e elimina confusão
 
-Após o sync, adicionar um passo final:
-- Coletar todos os `entra_id` dos SPs filtrados
-- Buscar no banco todos os apps com `origem = 'azure'`
-- Deletar os que têm `entra_id` ausente na lista do Azure (foram importados por engano)
-- Isso alinhará o número no sistema com o Azure (≈498)
+#### B. Adicionar busca nas listas do dialog de edição (PerfilAcessoDetalhePage)
+- As listas de apps, licenças e grupos no dialog de edição da página de detalhe não têm campo de busca (a da listagem tem)
+- Adicionar Input de busca em cada aba do dialog
 
-### Arquivos
+#### C. Melhorar a listagem com mais colunas e filtros
+- Adicionar colunas: "Pessoas" (contagem), "Licenças" (contagem), "Grupos" (contagem)
+- Adicionar filtros por Tipo e Status
+- Adicionar contadores no header (Total, Ativos, Privilegiados)
+
+#### D. Tornar nomes de pessoas clicáveis
+- Na aba "Pessoas" do detalhe, fazer o nome do colaborador ser um link para `/colaboradores/:id`
+
+#### E. Cleanup no Entra ID ao excluir perfil
+- Antes de deletar, buscar colaboradores afetados e gerar ações de `remove` na `iam_queue`
+- Exibir confirmação com a quantidade de pessoas impactadas
+
+#### F. Mostrar cargos vinculados no detalhe
+- Adicionar uma aba ou seção "Cargos" mostrando quais cargos estão vinculados a este perfil (via `cargo_perfis`)
+- Link para a página de configuração de cargos
+
+### Arquivos a alterar
 
 | Ação | Arquivo |
 |---|---|
-| Editar | `supabase/functions/sync-entra-apps/index.ts` — filtro + limpeza |
+| Editar | `src/pages/perfis-acesso/PerfisAcessoPage.tsx` — filtros, colunas extras, cleanup ao excluir |
+| Editar | `src/pages/perfis-acesso/PerfilAcessoDetalhePage.tsx` — remover composição, busca no dialog, aba cargos, links nas pessoas |
+
+### Ordem de implementação
+
+1. Remover composição e adicionar aba Cargos no detalhe
+2. Adicionar busca no dialog de edição do detalhe
+3. Tornar nomes de pessoas clicáveis
+4. Melhorar listagem (filtros, colunas, contadores)
+5. Adicionar cleanup de Entra ID ao excluir perfil
 
