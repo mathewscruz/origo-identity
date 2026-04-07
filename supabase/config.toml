@@ -22,3 +22,6 @@ verify_jwt = false
 [functions.sync-entra-groups]
 verify_jwt = false
 
+[functions.sync-entra-apps]
+verify_jwt = false
+

@@ -66,9 +66,11 @@ export type Database = {
           id: string
           integracao_ativa: boolean
           nome: string
+          origem: string
           owner: string | null
           tipo_auth: string | null
           updated_at: string
+          url: string | null
         }
         Insert: {
           aprovacao_necessaria?: boolean
@@ -79,9 +81,11 @@ export type Database = {
           id?: string
           integracao_ativa?: boolean
           nome: string
+          origem?: string
           owner?: string | null
           tipo_auth?: string | null
           updated_at?: string
+          url?: string | null
         }
         Update: {
           aprovacao_necessaria?: boolean
@@ -92,9 +96,11 @@ export type Database = {
           id?: string
           integracao_ativa?: boolean
           nome?: string
+          origem?: string
           owner?: string | null
           tipo_auth?: string | null
           updated_at?: string
+          url?: string | null
         }
         Relationships: []
       }
