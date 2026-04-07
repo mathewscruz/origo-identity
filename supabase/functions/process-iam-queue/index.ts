@@ -262,23 +262,7 @@ async function executeAction(
       const appRoleId = payload.appRoleId || "00000000-0000-0000-0000-000000000000";
       if (!appClientId) return { success: false, message: "appId ausente no payload" };
 
-      // Resolve Service Principal Object ID from Application (client) ID
-      let spObjectId: string | null = null;
-      try {
-        const spRes = await fetch(
-          `${graphBase}/servicePrincipals?$filter=appId eq '${appClientId}'&$select=id,displayName`,
-          { headers }
-        );
-        if (spRes.ok) {
-          const spData = await spRes.json();
-          if (spData.value && spData.value.length > 0) {
-            spObjectId = spData.value[0].id;
-            console.log(`[assign_app] Resolved SP: appId=${appClientId} → spId=${spObjectId} (${spData.value[0].displayName})`);
-          }
-        }
-      } catch (e) {
-        console.warn(`[assign_app] Error resolving SP:`, e);
-      }
+      const spObjectId = await resolveServicePrincipal(headers, graphBase, appClientId, "assign_app");
 
       if (!spObjectId) {
         return { success: false, message: `Service Principal não encontrado para appId ${appClientId}. Verifique se o app está registrado no Entra ID.` };
