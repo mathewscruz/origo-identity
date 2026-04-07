@@ -1,58 +1,48 @@
 
 
-## Plano: 5 ajustes no sistema
+## Plano: Sincronização simultânea AD + Entra ID para usuários existentes
 
-### 1. Transição visual suave entre telas
+### Situação atual
 
-Adicionar animação de fade-in no container principal (`<Outlet />`) do `AppLayout.tsx`. Usar a classe `animate-fade-in` já existente no Tailwind config para que toda troca de rota tenha uma transição suave.
+O sistema já envia ações para AD e Entra ID simultaneamente para **ativação/desativação** (ex: `disable` + `disable_entra`, `update` + `enable_entra`). Porém há uma lacuna:
 
-### 2. Campo de busca em Áreas e Cargos
+**Alterações de área/cargo:** Quando muda departamento ou cargo de um colaborador, apenas um `update` (AD) é enviado. Não há ação correspondente no Entra ID para atualizar os atributos `department`/`jobTitle` diretamente via Graph API.
 
-**AreasPage.tsx:** Adicionar state `busca` e um `Input` com ícone `Search` acima da tabela. Filtrar a lista por `nome` antes da paginação.
+### O que precisa mudar
 
-**CargosPage.tsx:** Mesmo padrão — state `busca`, input com `Search`, filtro por nome.
+**1. Criar ação `update_entra`** — nova action_type no `process-iam-queue` que usa `PATCH /users/{id}` na Graph API para atualizar atributos como `department`, `jobTitle`, `companyName` diretamente no Entra ID, sem depender da replicação do AD local.
 
-### 3. Remover coluna "Criticidade" da tabela de Aplicações
+**2. Enfileirar `update_entra` junto com `update` (AD)** em todos os pontos onde alterações de atributos ocorrem para usuários existentes:
+- `ColaboradoresPage.tsx` — edição de cargo/área
+- `ColaboradorDetalhePage.tsx` — edição via dialog
+- `TerceirosPage.tsx` — edição
+- `TerceiroDetalhePage.tsx` — edição
 
-**AplicacoesPage.tsx:**
-- Remover o `<th>` de "Criticidade" (linha 203)
-- Remover o `<td>` com o Badge de criticidade (linha 222)
-- Manter o filtro de criticidade e os cards de estatísticas (são úteis), remover apenas a coluna da tabela
+**3. Para criação de novos usuários:** manter comportamento atual — o sistema cria no AD e as ações Entra usam o mecanismo de retry com backoff exponencial (5min, 10min, 20min...) até o usuário ser replicado. Nenhuma mudança necessária aqui.
 
-### 4. Convite por e-mail ao criar usuário
+### Detalhes técnicos
 
-Atualmente a Edge Function `admin-create-user` usa `email_confirm: true`, o que auto-confirma o usuário sem enviar nenhum e-mail. O usuário recebe a senha definida pelo admin.
+**Nova action `update_entra` no `process-iam-queue`:**
+```text
+case "update_entra":
+  PATCH /users/{userId}
+  body: { department, jobTitle, companyName } (campos do payload)
+```
 
-**Correção:** Alterar para usar `adminClient.auth.admin.inviteUserByEmail()` em vez de `createUser`. Isso envia automaticamente um e-mail de convite com link para definir senha. Remover o campo "senha" do formulário no frontend, já que o usuário definirá a própria senha pelo link.
+**Pontos de enfileiramento (somente para edições, não criação):**
+Após cada `action_type: "update"` (AD), inserir também um `action_type: "update_entra"` com os mesmos campos alterados, usando `email || sam` como `target_identity`.
 
-**admin-create-user/index.ts:**
-- Substituir `createUser` por `inviteUserByEmail(email, { data: { nome }, redirectTo: APP_URL })`
-- Remover validação de `password`
-
-**UsuariosPage.tsx:**
-- Remover campo "Senha" do dialog de criação
-- Atualizar payload para não enviar `password`
-
-### 5. Remover Motor de Regras
-
-**App.tsx:** Remover imports de `RegrasPage` e `RegraEditorPage`, e as 3 rotas `/regras*`.
-
-**AppSidebar.tsx:** Remover o item `{ title: "Motor de Regras", url: "/regras", icon: Cog }` do grupo "Controle".
-
-**AppLayout.tsx:** Remover as entradas `/regras` e `/regras/nova` do `routeLabels`.
-
-Os arquivos `src/pages/regras/RegrasPage.tsx` e `src/pages/regras/RegraEditorPage.tsx` ficam no repositório mas inacessíveis (sem rota).
+**Registrar nos labels da UI:** Adicionar `update_entra` nos mapas de labels em `Dashboard.tsx`, `FilaProvisionamentoPage.tsx` e `ColaboradorDetalhePage.tsx`.
 
 ### Arquivos
 
 | Ação | Arquivo |
 |---|---|
-| Editar | `src/components/AppLayout.tsx` — animação fade-in no Outlet + remover labels regras |
-| Editar | `src/pages/configuracoes/AreasPage.tsx` — campo de busca |
-| Editar | `src/pages/configuracoes/CargosPage.tsx` — campo de busca |
-| Editar | `src/pages/aplicacoes/AplicacoesPage.tsx` — remover coluna Criticidade |
-| Editar | `supabase/functions/admin-create-user/index.ts` — trocar createUser por inviteUserByEmail |
-| Editar | `src/pages/admin/UsuariosPage.tsx` — remover campo senha |
-| Editar | `src/App.tsx` — remover rotas regras |
-| Editar | `src/components/AppSidebar.tsx` — remover item Motor de Regras |
+| Editar | `supabase/functions/process-iam-queue/index.ts` — adicionar `update_entra` ao `ENTRA_ACTION_TYPES` e implementar o case |
+| Editar | `src/pages/colaboradores/ColaboradoresPage.tsx` — enfileirar `update_entra` junto com `update` em edições |
+| Editar | `src/pages/colaboradores/ColaboradorDetalhePage.tsx` — enfileirar `update_entra` em ativação/desativação |
+| Editar | `src/pages/terceiros/TerceirosPage.tsx` — enfileirar `update_entra` em edições e ativação/desativação |
+| Editar | `src/pages/terceiros/TerceiroDetalhePage.tsx` — enfileirar `update_entra` em edições |
+| Editar | `src/pages/fila-provisionamento/FilaProvisionamentoPage.tsx` — label para `update_entra` |
+| Editar | `src/pages/Dashboard.tsx` — label para `update_entra` |
 
