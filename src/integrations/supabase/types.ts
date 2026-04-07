@@ -744,6 +744,7 @@ export type Database = {
           perfil_solicitado: string | null
           solicitante: string
           status: Database["public"]["Enums"]["status_excecao"]
+          tipo_excecao: string
           updated_at: string
           validade: string | null
         }
@@ -759,6 +760,7 @@ export type Database = {
           perfil_solicitado?: string | null
           solicitante: string
           status?: Database["public"]["Enums"]["status_excecao"]
+          tipo_excecao?: string
           updated_at?: string
           validade?: string | null
         }
@@ -774,6 +776,7 @@ export type Database = {
           perfil_solicitado?: string | null
           solicitante?: string
           status?: Database["public"]["Enums"]["status_excecao"]
+          tipo_excecao?: string
           updated_at?: string
           validade?: string | null
         }

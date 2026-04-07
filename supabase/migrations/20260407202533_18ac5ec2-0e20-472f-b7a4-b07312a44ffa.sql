@@ -1,0 +1,1 @@
+ALTER TABLE public.excecoes ADD COLUMN tipo_excecao text NOT NULL DEFAULT 'acesso';
