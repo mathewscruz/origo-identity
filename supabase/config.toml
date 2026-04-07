@@ -25,3 +25,6 @@ verify_jwt = false
 [functions.sync-entra-apps]
 verify_jwt = false
 
+[functions.sync-entra-licencas]
+verify_jwt = false
+
