@@ -50,6 +50,7 @@ export default function TerceiroDetalhePage() {
   const [atribuirOpen, setAtribuirOpen] = useState(false);
   const [desligarOpen, setDesligarOpen] = useState(false);
   const [desligando, setDesligando] = useState(false);
+  const [reativando, setReativando] = useState(false);
   const [selectedPerfil, setSelectedPerfil] = useState("");
   const { data: perfisAcesso } = usePerfisAcesso();
   const { toast } = useToast();
