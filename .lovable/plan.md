@@ -1,48 +1,25 @@
 
 
-## Plano: Sincronização simultânea AD + Entra ID para usuários existentes
+## Plano: Adicionar campo de senha e auto-confirmação na criação de usuário
 
-### Situação atual
+### Alterações
 
-O sistema já envia ações para AD e Entra ID simultaneamente para **ativação/desativação** (ex: `disable` + `disable_entra`, `update` + `enable_entra`). Porém há uma lacuna:
+**1. Edge Function `admin-create-user/index.ts`:**
+- Trocar `inviteUserByEmail` por `admin.createUser()` com `email_confirm: true` (auto-confirma o e-mail)
+- Aceitar campo `password` no body (obrigatório, mínimo 6 caracteres)
+- O usuário poderá logar imediatamente com email + senha definida pelo admin
 
-**Alterações de área/cargo:** Quando muda departamento ou cargo de um colaborador, apenas um `update` (AD) é enviado. Não há ação correspondente no Entra ID para atualizar os atributos `department`/`jobTitle` diretamente via Graph API.
-
-### O que precisa mudar
-
-**1. Criar ação `update_entra`** — nova action_type no `process-iam-queue` que usa `PATCH /users/{id}` na Graph API para atualizar atributos como `department`, `jobTitle`, `companyName` diretamente no Entra ID, sem depender da replicação do AD local.
-
-**2. Enfileirar `update_entra` junto com `update` (AD)** em todos os pontos onde alterações de atributos ocorrem para usuários existentes:
-- `ColaboradoresPage.tsx` — edição de cargo/área
-- `ColaboradorDetalhePage.tsx` — edição via dialog
-- `TerceirosPage.tsx` — edição
-- `TerceiroDetalhePage.tsx` — edição
-
-**3. Para criação de novos usuários:** manter comportamento atual — o sistema cria no AD e as ações Entra usam o mecanismo de retry com backoff exponencial (5min, 10min, 20min...) até o usuário ser replicado. Nenhuma mudança necessária aqui.
-
-### Detalhes técnicos
-
-**Nova action `update_entra` no `process-iam-queue`:**
-```text
-case "update_entra":
-  PATCH /users/{userId}
-  body: { department, jobTitle, companyName } (campos do payload)
-```
-
-**Pontos de enfileiramento (somente para edições, não criação):**
-Após cada `action_type: "update"` (AD), inserir também um `action_type: "update_entra"` com os mesmos campos alterados, usando `email || sam` como `target_identity`.
-
-**Registrar nos labels da UI:** Adicionar `update_entra` nos mapas de labels em `Dashboard.tsx`, `FilaProvisionamentoPage.tsx` e `ColaboradorDetalhePage.tsx`.
+**2. Frontend `UsuariosPage.tsx`:**
+- Adicionar campo `senha` ao state do form (apenas para criação, não edição)
+- Adicionar `<Input type="password">` no dialog de novo usuário
+- Validar mínimo 6 caracteres antes de enviar
+- Enviar `password` no payload da edge function
+- Atualizar mensagem de sucesso para "Usuário criado com sucesso"
 
 ### Arquivos
 
 | Ação | Arquivo |
 |---|---|
-| Editar | `supabase/functions/process-iam-queue/index.ts` — adicionar `update_entra` ao `ENTRA_ACTION_TYPES` e implementar o case |
-| Editar | `src/pages/colaboradores/ColaboradoresPage.tsx` — enfileirar `update_entra` junto com `update` em edições |
-| Editar | `src/pages/colaboradores/ColaboradorDetalhePage.tsx` — enfileirar `update_entra` em ativação/desativação |
-| Editar | `src/pages/terceiros/TerceirosPage.tsx` — enfileirar `update_entra` em edições e ativação/desativação |
-| Editar | `src/pages/terceiros/TerceiroDetalhePage.tsx` — enfileirar `update_entra` em edições |
-| Editar | `src/pages/fila-provisionamento/FilaProvisionamentoPage.tsx` — label para `update_entra` |
-| Editar | `src/pages/Dashboard.tsx` — label para `update_entra` |
+| Editar | `supabase/functions/admin-create-user/index.ts` — `createUser` com `email_confirm: true` + senha |
+| Editar | `src/pages/admin/UsuariosPage.tsx` — campo senha no form de criação |
 
