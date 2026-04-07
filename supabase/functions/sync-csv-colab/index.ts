@@ -328,6 +328,74 @@ async function queueProfileAccess(
   }
 }
 
+const PREPOSITIONS = new Set(["de", "da", "do", "dos", "das", "e", "del", "di"]);
+
+function normalizeNamePart(str: string): string {
+  return str
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z]/g, "");
+}
+
+function generateOrigoEmail(displayName: string, existingEmails: Set<string>): string | null {
+  if (!displayName || !displayName.trim()) return null;
+
+  const parts = displayName
+    .trim()
+    .split(/\s+/)
+    .map(normalizeNamePart)
+    .filter((p) => p.length > 0 && !PREPOSITIONS.has(p));
+
+  if (parts.length === 0) return null;
+
+  const domain = "@origoenergia.com.br";
+  const first = parts[0];
+
+  // Single name — just use it
+  if (parts.length === 1) {
+    const candidate = `${first}${domain}`;
+    if (!existingEmails.has(candidate)) return candidate;
+    // Add numeric suffix
+    for (let i = 2; i <= 99; i++) {
+      const c = `${first}${i}${domain}`;
+      if (!existingEmails.has(c)) return c;
+    }
+    return null;
+  }
+
+  const last = parts[parts.length - 1];
+  const middles = parts.slice(1, -1);
+
+  // Try 1: first.last
+  const try1 = `${first}.${last}${domain}`;
+  if (!existingEmails.has(try1)) return try1;
+
+  // Try 2: first.middle (use first middle name)
+  if (middles.length > 0) {
+    const try2 = `${first}.${middles[0]}${domain}`;
+    if (!existingEmails.has(try2)) return try2;
+  }
+
+  // Try 3: first.middle.last
+  if (middles.length > 0) {
+    const try3 = `${first}.${middles[0]}.${last}${domain}`;
+    if (!existingEmails.has(try3)) return try3;
+  }
+
+  // Try 4: all parts joined
+  const tryFull = parts.join(".") + domain;
+  if (!existingEmails.has(tryFull)) return tryFull;
+
+  // Try 5: numeric suffix on first.last
+  for (let i = 2; i <= 99; i++) {
+    const c = `${first}.${last}${i}${domain}`;
+    if (!existingEmails.has(c)) return c;
+  }
+
+  return null;
+}
+
 async function processCsvData(sb: any, csvText: string, filename: string) {
   // ── 1. Create sync_job ──
   const { data: job, error: jobErr } = await sb
@@ -442,10 +510,48 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     const cargoNames = buildNameLookup(cargoCache);
     const areaNames = buildNameLookup(areaCache);
 
+    // ── Load existing emails for corporate email generation ──
+    const existingEmails = new Set<string>();
+    let emailFrom = 0;
+    while (true) {
+      const { data: emailData } = await sb
+        .from("colaboradores")
+        .select("email")
+        .not("email", "is", null)
+        .range(emailFrom, emailFrom + PAGE - 1);
+      if (!emailData || emailData.length === 0) break;
+      emailData.forEach((c: any) => {
+        if (c.email) existingEmails.add(c.email.toLowerCase());
+      });
+      if (emailData.length < PAGE) break;
+      emailFrom += PAGE;
+    }
+    console.log(`Loaded ${existingEmails.size} existing emails for dedup`);
+
     function buildColabData(row: CsvRow) {
       const statusMapped = STATUS_MAP[(row.status || "ativo").toLowerCase()] || "ativo";
-      const email = row.mail || "";
-      const samAccountName = email.includes("@") ? email.split("@")[0] : (row.employID || "").trim();
+      let email = row.mail || "";
+      let samAccountName = email.includes("@") ? email.split("@")[0] : (row.employID || "").trim();
+
+      // Generate corporate email if not @origoenergia.com.br
+      if (email && !email.toLowerCase().endsWith("@origoenergia.com.br")) {
+        const generated = generateOrigoEmail(row.displayName || "", existingEmails);
+        if (generated) {
+          email = generated;
+          samAccountName = generated.split("@")[0];
+          existingEmails.add(generated.toLowerCase());
+          console.log(`Generated corporate email for "${row.displayName}": ${generated}`);
+        }
+      } else if (!email && row.displayName) {
+        const generated = generateOrigoEmail(row.displayName, existingEmails);
+        if (generated) {
+          email = generated;
+          samAccountName = generated.split("@")[0];
+          existingEmails.add(generated.toLowerCase());
+          console.log(`Generated corporate email (no original) for "${row.displayName}": ${generated}`);
+        }
+      }
+
       return {
         nome: row.displayName,
         email: email || null,
