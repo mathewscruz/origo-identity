@@ -320,6 +320,28 @@ export default function ColaboradorDetalhePage() {
                   await queueFullProfileActions([getColabIdentity()], activePerfilIds, "remove", { triggerImmediately: false });
                 }
 
+                // Also remove individually assigned resources
+                const { data: individualItems } = await (supabase as any).from("iam_queue")
+                  .select("action_type, payload_json, target_identity")
+                  .eq("colaborador_id", id!)
+                  .eq("requested_by", "manual_individual")
+                  .eq("status", "success")
+                  .in("action_type", ["assign_group", "assign_license", "assign_app"]);
+
+                const individualSnapshot: any[] = [];
+                const reverseMap: Record<string, string> = { assign_group: "remove_group", assign_license: "remove_license", assign_app: "remove_app" };
+                for (const item of (individualItems ?? [])) {
+                  individualSnapshot.push({ action_type: item.action_type, payload_json: item.payload_json, target_identity: item.target_identity });
+                  await supabase.from("iam_queue" as any).insert({
+                    action_type: reverseMap[item.action_type],
+                    payload_json: item.payload_json,
+                    requested_by: "sistema_desativacao",
+                    colaborador_id: id,
+                    target_identity: item.target_identity,
+                    status: "pending",
+                  });
+                }
+
                 if (pessoa.email || sam) {
                   await supabase.from("iam_queue" as any).insert({
                     action_type: "disable_entra",
@@ -332,9 +354,11 @@ export default function ColaboradorDetalhePage() {
 
                 toast({ title: "Solicitação de desativação enviada para processamento" });
 
-                if (isManual) {
-                  await createEventoJML({ colaboradorId: id!, colaboradorNome: pessoa.nome, tipo: "leaver", dadosAntes: { status: oldStatus }, dadosDepois: { status: newStatus } });
-                }
+                await createEventoJML({
+                  colaboradorId: id!, colaboradorNome: pessoa.nome, tipo: "leaver",
+                  dadosAntes: { status: oldStatus, perfis: activePerfilIds, recursos_individuais: individualSnapshot },
+                  dadosDepois: { status: newStatus },
+                });
               }
 
               if (oldStatus !== "ativo" && newStatus === "ativo") {
@@ -358,12 +382,39 @@ export default function ColaboradorDetalhePage() {
 
                 toast({ title: "Solicitação de reativação enviada para processamento" });
 
-                if (isManual && pessoa.cargo_id) {
+                // Re-provision cargo-based profiles (always, not just manual)
+                if (pessoa.cargo_id) {
                   await provisionCargoAcessos(id!, pessoa.cargo_id, null);
                 }
-                if (isManual) {
-                  await createEventoJML({ colaboradorId: id!, colaboradorNome: pessoa.nome, tipo: "joiner", dadosAntes: { status: oldStatus }, dadosDepois: { status: newStatus } });
+
+                // Restore individually assigned resources from last leaver event
+                const { data: lastLeaver } = await supabase
+                  .from("eventos_jml")
+                  .select("dados_antes")
+                  .eq("colaborador_id", id!)
+                  .eq("tipo", "leaver")
+                  .order("created_at", { ascending: false })
+                  .limit(1);
+
+                const savedIndividuals = (lastLeaver?.[0]?.dados_antes as any)?.recursos_individuais || [];
+                for (const item of savedIndividuals) {
+                  await supabase.from("iam_queue" as any).insert({
+                    action_type: item.action_type,
+                    payload_json: item.payload_json,
+                    requested_by: "manual_individual",
+                    colaborador_id: id,
+                    target_identity: item.target_identity,
+                    status: "pending",
+                  });
                 }
+
+                await createEventoJML({
+                  colaboradorId: id!, colaboradorNome: pessoa.nome, tipo: "joiner",
+                  dadosAntes: { status: oldStatus },
+                  dadosDepois: { status: newStatus, recursos_individuais_restaurados: savedIndividuals.length },
+                });
+
+                await logAlerta({ titulo: "Colaborador reativado", mensagem: `${pessoa.nome} foi reativado`, severidade: "info", tipo: "colaborador_reativado", ref_url: `/colaboradores/${id}` });
               }
               
               queryClient.invalidateQueries({ queryKey: ["colaborador", id] });
