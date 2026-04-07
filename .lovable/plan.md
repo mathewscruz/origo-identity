@@ -1,79 +1,58 @@
 
 
-## Plano: Fluxo completo de Desativação e Reativação (Colaboradores + Terceiros)
+## Plano: 5 ajustes no sistema
 
-### Problemas encontrados
+### 1. Transição visual suave entre telas
 
-**Colaborador — Desativação:**
-- Remove recursos de perfis (grupos/licenças/apps via `queueFullProfileActions`)
-- Envia `disable` (AD) + `disable_entra`
-- **NAO remove** recursos individuais (atribuídos via `manual_individual`)
+Adicionar animação de fade-in no container principal (`<Outlet />`) do `AppLayout.tsx`. Usar a classe `animate-fade-in` já existente no Tailwind config para que toda troca de rota tenha uma transição suave.
 
-**Colaborador — Reativação:**
-- Envia `enable_entra` + `update` (AD)
-- Re-provisiona perfis via `provisionCargoAcessos` mas **somente se manual + tem cargo**
-- **NAO re-provisiona** recursos individuais removidos
+### 2. Campo de busca em Áreas e Cargos
 
-**Terceiro — Desativação (botão "Desligar"):**
-- Revoga perfil_atribuicoes e remove recursos via `queueFullProfileActions`
-- **NAO envia** `disable_entra` nem `disable` (AD)
-- **NAO remove** recursos individuais
+**AreasPage.tsx:** Adicionar state `busca` e um `Input` com ícone `Search` acima da tabela. Filtrar a lista por `nome` antes da paginação.
 
-**Terceiro — Reativação:**
-- **NAO existe** — não há botão "Reativar" quando `ativo = false`
+**CargosPage.tsx:** Mesmo padrão — state `busca`, input com `Search`, filtro por nome.
 
-**TerceirosPage.tsx (edição inline via Switch "Ativo"):**
-- Desativar: envia `disable` AD mas **NAO remove** grupos/licenças/apps nem `disable_entra`
-- Reativar: **nada acontece**
+### 3. Remover coluna "Criticidade" da tabela de Aplicações
 
----
+**AplicacoesPage.tsx:**
+- Remover o `<th>` de "Criticidade" (linha 203)
+- Remover o `<td>` com o Badge de criticidade (linha 222)
+- Manter o filtro de criticidade e os cards de estatísticas (são úteis), remover apenas a coluna da tabela
 
-### Correções
+### 4. Convite por e-mail ao criar usuário
 
-**1. Colaborador — Desativação completa:**
-- Além dos recursos de perfil, buscar também itens individuais da `iam_queue` com `requested_by = 'manual_individual'` e `status = 'success'` para gerar ações de remoção inversa
-- Salvar os IDs dos recursos individuais removidos em `payload_json` do evento JML para poder restaurá-los na reativação
+Atualmente a Edge Function `admin-create-user` usa `email_confirm: true`, o que auto-confirma o usuário sem enviar nenhum e-mail. O usuário recebe a senha definida pelo admin.
 
-**2. Colaborador — Reativação completa:**
-- Sempre chamar `provisionCargoAcessos` se houver `cargo_id` (não apenas se `isManual`)
-- Buscar recursos individuais que foram removidos na desativação (do evento JML leaver mais recente) e re-atribuí-los
+**Correção:** Alterar para usar `adminClient.auth.admin.inviteUserByEmail()` em vez de `createUser`. Isso envia automaticamente um e-mail de convite com link para definir senha. Remover o campo "senha" do formulário no frontend, já que o usuário definirá a própria senha pelo link.
 
-**3. Terceiro — Desativação completa (TerceiroDetalhePage):**
-- Adicionar `disable` (AD) + `disable_entra` ao fluxo de `handleDesligar`
-- Buscar e remover recursos individuais
+**admin-create-user/index.ts:**
+- Substituir `createUser` por `inviteUserByEmail(email, { data: { nome }, redirectTo: APP_URL })`
+- Remover validação de `password`
 
-**4. Terceiro — Reativação (TerceiroDetalhePage):**
-- Adicionar botão "Reativar Terceiro" quando `ativo = false`
-- Fluxo: atualizar `ativo = true`, enviar `enable_entra`, re-provisionar perfis e recursos individuais salvos, criar evento JML "joiner"
+**UsuariosPage.tsx:**
+- Remover campo "Senha" do dialog de criação
+- Atualizar payload para não enviar `password`
 
-**5. TerceirosPage.tsx (edição inline):**
-- Desativar via Switch: alinhar com o fluxo completo (remover recursos + disable_entra)
-- Reativar via Switch: alinhar com reativação completa
+### 5. Remover Motor de Regras
 
----
+**App.tsx:** Remover imports de `RegrasPage` e `RegraEditorPage`, e as 3 rotas `/regras*`.
 
-### Detalhes de implementação
+**AppSidebar.tsx:** Remover o item `{ title: "Motor de Regras", url: "/regras", icon: Cog }` do grupo "Controle".
 
-**Armazenamento de recursos para restauração:**
-No momento da desativação, gravar no `dados_antes` do evento JML leaver a lista de recursos individuais ativos (`action_type`, `payload_json`, `target_identity`). Na reativação, ler esse evento e re-criar as ações de `assign`.
+**AppLayout.tsx:** Remover as entradas `/regras` e `/regras/nova` do `routeLabels`.
 
-**Fluxo de reativação (ambos):**
-```text
-Reativar →
-  1. Update status para ativo
-  2. Enviar enable_entra + update (AD)
-  3. Re-provisionar perfis do cargo (provisionCargoAcessos)
-  4. Buscar último evento JML leaver e restaurar recursos individuais
-  5. Criar evento JML joiner
-  6. Audit log + alerta
-  7. triggerEntraProcessing()
-```
+Os arquivos `src/pages/regras/RegrasPage.tsx` e `src/pages/regras/RegraEditorPage.tsx` ficam no repositório mas inacessíveis (sem rota).
 
 ### Arquivos
 
 | Ação | Arquivo |
 |---|---|
-| Editar | `src/pages/colaboradores/ColaboradorDetalhePage.tsx` — desativação: incluir individuais + salvar no JML; reativação: restaurar individuais |
-| Editar | `src/pages/terceiros/TerceiroDetalhePage.tsx` — desativação: AD + Entra + individuais; adicionar botão e fluxo de reativação |
-| Editar | `src/pages/terceiros/TerceirosPage.tsx` — alinhar Switch ativo/inativo com fluxo completo |
+| Editar | `src/components/AppLayout.tsx` — animação fade-in no Outlet + remover labels regras |
+| Editar | `src/pages/configuracoes/AreasPage.tsx` — campo de busca |
+| Editar | `src/pages/configuracoes/CargosPage.tsx` — campo de busca |
+| Editar | `src/pages/aplicacoes/AplicacoesPage.tsx` — remover coluna Criticidade |
+| Editar | `supabase/functions/admin-create-user/index.ts` — trocar createUser por inviteUserByEmail |
+| Editar | `src/pages/admin/UsuariosPage.tsx` — remover campo senha |
+| Editar | `src/App.tsx` — remover rotas regras |
+| Editar | `src/components/AppSidebar.tsx` — remover item Motor de Regras |
 
