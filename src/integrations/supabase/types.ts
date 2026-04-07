@@ -1422,6 +1422,60 @@ export type Database = {
           },
         ]
       }
+      solicitacoes_acesso: {
+        Row: {
+          aprovador: string | null
+          comentario: string | null
+          created_at: string
+          data_decisao: string | null
+          id: string
+          justificativa: string
+          perfil_id: string
+          solicitante_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          aprovador?: string | null
+          comentario?: string | null
+          created_at?: string
+          data_decisao?: string | null
+          id?: string
+          justificativa: string
+          perfil_id: string
+          solicitante_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          aprovador?: string | null
+          comentario?: string | null
+          created_at?: string
+          data_decisao?: string | null
+          id?: string
+          justificativa?: string
+          perfil_id?: string
+          solicitante_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "solicitacoes_acesso_perfil_fkey"
+            columns: ["perfil_id"]
+            isOneToOne: false
+            referencedRelation: "perfis_acesso"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "solicitacoes_acesso_solicitante_fkey"
+            columns: ["solicitante_id"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sync_jobs: {
         Row: {
           apps_created: number | null
@@ -1559,6 +1613,80 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      workflow_etapas: {
+        Row: {
+          aprovador_tipo: string
+          ativo: boolean
+          created_at: string
+          entidade_tipo: string
+          id: string
+          ordem: number
+          timeout_horas: number
+        }
+        Insert: {
+          aprovador_tipo?: string
+          ativo?: boolean
+          created_at?: string
+          entidade_tipo?: string
+          id?: string
+          ordem?: number
+          timeout_horas?: number
+        }
+        Update: {
+          aprovador_tipo?: string
+          ativo?: boolean
+          created_at?: string
+          entidade_tipo?: string
+          id?: string
+          ordem?: number
+          timeout_horas?: number
+        }
+        Relationships: []
+      }
+      workflow_execucoes: {
+        Row: {
+          aprovador: string | null
+          comentario: string | null
+          created_at: string
+          data_decisao: string | null
+          entidade_id: string
+          entidade_tipo: string
+          etapa_id: string
+          id: string
+          status: string
+        }
+        Insert: {
+          aprovador?: string | null
+          comentario?: string | null
+          created_at?: string
+          data_decisao?: string | null
+          entidade_id: string
+          entidade_tipo?: string
+          etapa_id: string
+          id?: string
+          status?: string
+        }
+        Update: {
+          aprovador?: string | null
+          comentario?: string | null
+          created_at?: string
+          data_decisao?: string | null
+          entidade_id?: string
+          entidade_tipo?: string
+          etapa_id?: string
+          id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_execucoes_etapa_fkey"
+            columns: ["etapa_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_etapas"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
