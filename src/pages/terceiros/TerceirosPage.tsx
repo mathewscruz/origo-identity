@@ -34,6 +34,23 @@ const criticidadeConfig: Record<string, { label: string; class: string }> = {
 
 function diasRestantes(dataFim: string | null): number { if (!dataFim) return 999; return Math.ceil((new Date(dataFim).getTime() - Date.now()) / (1000 * 60 * 60 * 24)); }
 
+function normalize(str: string): string {
+  return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function generateTerceiroCredentials(nome: string, empresaTerceira: string): { sam: string; email: string } {
+  if (!nome.trim() || !empresaTerceira.trim()) return { sam: "", email: "" };
+  const prepositions = new Set(["de", "da", "do", "dos", "das", "e"]);
+  const parts = normalize(nome).split(/\s+/).filter(p => !prepositions.has(p) && p.length > 0);
+  if (parts.length === 0) return { sam: "", email: "" };
+  const first = parts[0];
+  const last = parts.length > 1 ? parts[parts.length - 1] : first;
+  const companyFirst = normalize(empresaTerceira).split(/\s+/).filter(p => p.length > 0)[0] || "";
+  const sam = `${first}.${last}_${companyFirst}`;
+  const email = `${sam}@parceiroorigo.com.br`;
+  return { sam, email };
+}
+
 function fimContratoDisplay(dataFim: string | null) {
   if (!dataFim) return <span className="text-muted-foreground">—</span>;
   const dias = diasRestantes(dataFim);
