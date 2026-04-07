@@ -298,6 +298,27 @@ export default function ColaboradorDetalhePage() {
               const oldStatus = pessoa.status;
               const isManual = pessoa.origem === "manual";
               const sam = (pessoa as any)?.sam_account_name || "";
+
+              // Check for active "manter_ativo" exception before deactivating
+              if (oldStatus === "ativo" && newStatus !== "ativo") {
+                const today = new Date().toISOString().slice(0, 10);
+                const { data: activeExcecoes } = await (supabase as any).from("excecoes")
+                  .select("id, justificativa, validade, solicitante")
+                  .eq("colaborador_id", id!)
+                  .eq("tipo_excecao", "manter_ativo")
+                  .eq("status", "aprovada")
+                  .gte("validade", today);
+                if (activeExcecoes && activeExcecoes.length > 0) {
+                  const exc = activeExcecoes[0];
+                  toast({
+                    title: "Exceção ativa impede desativação",
+                    description: `Existe uma exceção "Manter Ativo" aprovada até ${new Date(exc.validade).toLocaleDateString("pt-BR")} (Solicitante: ${exc.solicitante}). Remova ou aguarde a expiração da exceção para desativar este colaborador.`,
+                    variant: "destructive",
+                  });
+                  return;
+                }
+              }
+
               const { error } = await supabase.from("colaboradores").update({ status: newStatus as any }).eq("id", id!);
               if (error) { toast({ title: "Erro ao alterar status", description: error.message, variant: "destructive" }); return; }
               await logAuditoria({ acao: "alterar_status_colaborador", entidade: "colaboradores", entidade_id: id!, resumo: `Status: ${oldStatus} → ${newStatus} — ${pessoa.nome}`, operador: profile?.email });
