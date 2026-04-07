@@ -13,7 +13,7 @@ import { toast } from "@/hooks/use-toast";
 import { logAuditoria } from "@/lib/auditLogger";
 import { useAuth } from "@/contexts/AuthContext";
 import { queueFullProfileActions } from "@/lib/entraQueueHelper";
-import { HandHelping, Plus, Search, Clock, CheckCircle2, XCircle, Send } from "lucide-react";
+import { HandHelping, Plus, Search, Clock, CheckCircle2, XCircle, Send, ExternalLink } from "lucide-react";
 
 export default function SolicitacoesPage() {
   const { profile } = useAuth();
@@ -200,7 +200,14 @@ export default function SolicitacoesPage() {
           <h1 className="text-2xl font-bold text-foreground">Solicitações de Acesso</h1>
           <p className="text-muted-foreground">Self-Service — solicite e gerencie acessos</p>
         </div>
-        <Button onClick={() => setDialogOpen(true)}><Plus className="mr-2 h-4 w-4" />Nova Solicitação</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <a href="https://iam.origoenergia.com.br/solicitacoes" target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="mr-2 h-4 w-4" />Portal Externo
+            </a>
+          </Button>
+          <Button onClick={() => setDialogOpen(true)}><Plus className="mr-2 h-4 w-4" />Nova Solicitação</Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
