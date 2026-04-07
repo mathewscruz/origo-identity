@@ -18,6 +18,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { logAuditoria } from "@/lib/auditLogger";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import AppIcon from "@/components/AppIcon";
 
 const criticidadeColors: Record<string, string> = {
   baixa: "bg-muted text-muted-foreground",
@@ -205,7 +206,12 @@ export default function AplicacoesPage() {
               <tbody>
                 {paginatedItems.map((app: any) => (
                   <tr key={app.id} className="border-b last:border-0 hover:bg-muted/50 cursor-pointer" onClick={() => navigate(`/aplicacoes/${app.id}`)}>
-                    <td className="p-4 font-medium text-primary hover:underline">{app.nome}</td>
+                    <td className="p-4 font-medium text-primary hover:underline">
+                      <div className="flex items-center gap-2">
+                        <AppIcon url={app.url} origem={app.origem} size={20} />
+                        {app.nome}
+                      </div>
+                    </td>
                     <td className="p-4">
                       {(app as any).origem === "azure" ? (
                         <Badge variant="outline" className="bg-info/15 text-info border-info/30"><Cloud className="h-3 w-3 mr-1" />Azure</Badge>
