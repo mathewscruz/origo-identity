@@ -87,6 +87,9 @@ function AppBreadcrumb() {
 }
 
 export default function AppLayout() {
+  const { profile } = useAuth();
+  const initials = profile?.nome ? profile.nome.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase() : "??";
+
   return (
     <SidebarProvider>
       <div className="flex min-h-screen w-full">
@@ -97,16 +100,9 @@ export default function AppLayout() {
             <SidebarTrigger />
             <AppBreadcrumb />
             <div className="ml-auto flex items-center gap-2">
-              <Button variant="ghost" size="icon" className="relative" asChild>
-                <Link to="/alertas">
-                  <Bell className="h-4 w-4" />
-                  <Badge className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full p-0 text-[10px]">
-                    3
-                  </Badge>
-                </Link>
-              </Button>
+              <NotificacoesBell />
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-                SA
+                {initials}
               </div>
             </div>
           </header>
