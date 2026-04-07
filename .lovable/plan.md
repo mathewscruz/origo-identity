@@ -1,20 +1,15 @@
 
 
-## Plano: Atualizar favicon e título do sistema
+## Plano: Atualizar textos da tela de login
 
-### Alterações
+Alteração simples nos textos do modo "login" em `src/pages/auth/LoginPage.tsx`:
 
-1. **Favicon** — Copiar `src/assets/logo.png` para `public/favicon.png`, remover `public/favicon.ico` se existir, e atualizar `index.html` com `<link rel="icon" href="/favicon.png">`
+- Título: "Entrar no Órigo" → **"Access & Identity"**
+- Descrição: "Acesse o sistema de gestão de identidades" → **"Insira suas credenciais abaixo"**
 
-2. **Título** — Alterar o `<title>` e meta tags em `index.html` de "Órigo Identity — IGA/IAM" para "Órigo Access & Identity"
-
-3. **Sidebar** — Alterar o texto "Access & Identity" para "Órigo Access & Identity" em `AppSidebar.tsx`
-
-### Arquivos
+### Arquivo
 
 | Ação | Arquivo |
 |---|---|
-| Copiar | `src/assets/logo.png` → `public/favicon.png` |
-| Editar | `index.html` — favicon + título |
-| Editar | `src/components/AppSidebar.tsx` — texto da sidebar |
+| Editar | `src/pages/auth/LoginPage.tsx` — alterar `titles.login` e `descs.login` |
 
