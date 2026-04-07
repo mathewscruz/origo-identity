@@ -34,3 +34,6 @@ verify_jwt = false
 [functions.sync-entra-roles]
 verify_jwt = false
 
+[functions.admin-create-user]
+verify_jwt = false
+
