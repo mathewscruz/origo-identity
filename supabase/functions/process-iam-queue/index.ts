@@ -89,8 +89,10 @@ async function resolveUserId(
 }
 
 /**
- * Resolve Service Principal Object ID. Tries direct lookup first (if entra_id is the SP Object ID),
- * then falls back to filtering by appId (if entra_id is the Application/client ID).
+ * Resolve Service Principal Object ID using 3 strategies:
+ * 1. Direct SP lookup (entra_id = SP Object ID)
+ * 2. Filter by appId (entra_id = Application Client ID)
+ * 3. Application Object ID lookup → extract appId → filter SP by appId
  */
 async function resolveServicePrincipal(
   headers: Record<string, string>,
@@ -98,35 +100,74 @@ async function resolveServicePrincipal(
   idValue: string,
   context: string
 ): Promise<string | null> {
+  console.log(`[${context}] Resolving SP for ID: ${idValue}`);
+
   // 1. Try direct lookup as SP Object ID
   try {
-    const directRes = await fetch(`${graphBase}/servicePrincipals/${idValue}?$select=id,displayName`, { headers });
+    const directRes = await fetch(`${graphBase}/servicePrincipals/${idValue}?$select=id,displayName,appId`, { headers });
     if (directRes.ok) {
       const sp = await directRes.json();
-      console.log(`[${context}] Resolved SP by direct ID: ${idValue} → ${sp.displayName}`);
+      console.log(`[${context}] ✅ Strategy 1 - Direct SP lookup succeeded: ${idValue} → ${sp.displayName} (appId: ${sp.appId})`);
       return sp.id;
     }
+    const errText = await directRes.text();
+    console.log(`[${context}] Strategy 1 - Direct SP lookup failed (${directRes.status}): ${errText.substring(0, 200)}`);
   } catch (e) {
-    console.warn(`[${context}] Direct SP lookup failed:`, e);
+    console.warn(`[${context}] Strategy 1 - Direct SP lookup error:`, e);
   }
 
   // 2. Fallback: filter by appId (Application/client ID)
   try {
     const filterRes = await fetch(
-      `${graphBase}/servicePrincipals?$filter=appId eq '${idValue}'&$select=id,displayName`,
+      `${graphBase}/servicePrincipals?$filter=appId eq '${idValue}'&$select=id,displayName,appId`,
       { headers }
     );
     if (filterRes.ok) {
       const data = await filterRes.json();
       if (data.value && data.value.length > 0) {
-        console.log(`[${context}] Resolved SP by appId filter: ${idValue} → ${data.value[0].id} (${data.value[0].displayName})`);
+        console.log(`[${context}] ✅ Strategy 2 - appId filter succeeded: ${idValue} → SP ${data.value[0].id} (${data.value[0].displayName})`);
         return data.value[0].id;
       }
+      console.log(`[${context}] Strategy 2 - appId filter returned 0 results`);
+    } else {
+      const errText = await filterRes.text();
+      console.log(`[${context}] Strategy 2 - appId filter failed (${filterRes.status}): ${errText.substring(0, 200)}`);
     }
   } catch (e) {
-    console.warn(`[${context}] SP filter lookup failed:`, e);
+    console.warn(`[${context}] Strategy 2 - appId filter error:`, e);
   }
 
+  // 3. Try as Application Object ID → get real appId → find SP
+  try {
+    const appRes = await fetch(`${graphBase}/applications/${idValue}?$select=id,appId,displayName`, { headers });
+    if (appRes.ok) {
+      const app = await appRes.json();
+      console.log(`[${context}] Strategy 3 - Found Application: ${app.displayName} (appId: ${app.appId})`);
+      // Now find the SP using the real appId
+      const spRes = await fetch(
+        `${graphBase}/servicePrincipals?$filter=appId eq '${app.appId}'&$select=id,displayName`,
+        { headers }
+      );
+      if (spRes.ok) {
+        const spData = await spRes.json();
+        if (spData.value && spData.value.length > 0) {
+          console.log(`[${context}] ✅ Strategy 3 - App→SP resolved: ${app.appId} → SP ${spData.value[0].id} (${spData.value[0].displayName})`);
+          return spData.value[0].id;
+        }
+        console.log(`[${context}] Strategy 3 - App found but no SP for appId ${app.appId}`);
+      } else {
+        const errText = await spRes.text();
+        console.log(`[${context}] Strategy 3 - SP filter after app lookup failed (${spRes.status}): ${errText.substring(0, 200)}`);
+      }
+    } else {
+      const errText = await appRes.text();
+      console.log(`[${context}] Strategy 3 - Application lookup failed (${appRes.status}): ${errText.substring(0, 200)}`);
+    }
+  } catch (e) {
+    console.warn(`[${context}] Strategy 3 - Application lookup error:`, e);
+  }
+
+  console.error(`[${context}] ❌ All 3 strategies failed for ID: ${idValue}`);
   return null;
 }
 
