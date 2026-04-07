@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Download, Search, Eye } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuditoria } from "@/hooks/useOrigoData";
+import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import TablePagination, { usePagination } from "@/components/TablePagination";
 
@@ -31,7 +32,17 @@ export default function AuditoriaPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-end">
-        <Button variant="outline"><Download className="mr-1 h-4 w-4" />Exportar CSV</Button>
+        <Button variant="outline" onClick={() => {
+          if (!list.length) { toast.warning("Nenhum registro para exportar"); return; }
+          const headers = ["Timestamp", "Operador", "Ação", "Entidade", "Resumo", "IP"];
+          const rows = list.map((a: any) => [new Date(a.timestamp).toLocaleString("pt-BR"), a.operador || "", a.acao, a.entidade, a.resumo || "", a.ip || ""]);
+          const csv = [headers.join(";"), ...rows.map(r => r.map((c: string) => `"${c}"`).join(";"))].join("\n");
+          const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a"); a.href = url; a.download = `auditoria_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+          URL.revokeObjectURL(url);
+          toast.success("Exportação CSV concluída");
+        }}><Download className="mr-1 h-4 w-4" />Exportar CSV</Button>
       </div>
 
       <div className="flex flex-wrap gap-2">

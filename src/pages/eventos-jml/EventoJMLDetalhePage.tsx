@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, Check, RefreshCw, Trash2 } from "lucide-react";
 import { useEventoJML, useEventoJMLAcoes, useEventoJMLAprovacoes } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 const tipoColors: Record<string, string> = {
   joiner: "bg-success text-success-foreground",
@@ -27,6 +30,31 @@ export default function EventoJMLDetalhePage() {
   const { data: evento, isLoading } = useEventoJML(id);
   const { data: acoes } = useEventoJMLAcoes(id);
   const { data: aprovacoes } = useEventoJMLAprovacoes(id);
+  const qc = useQueryClient();
+
+  const handleCancelar = async () => {
+    if (!id) return;
+    const { error } = await supabase.from("eventos_jml").update({ status: "cancelado" as any }).eq("id", id);
+    if (error) { toast.error("Erro ao cancelar evento", { description: error.message }); return; }
+    toast.success("Evento cancelado com sucesso");
+    qc.invalidateQueries({ queryKey: ["evento_jml", id] });
+  };
+
+  const handleReprocessar = async () => {
+    if (!id) return;
+    const { error } = await supabase.from("eventos_jml").update({ status: "pendente" as any, tentativas: 0 }).eq("id", id);
+    if (error) { toast.error("Erro ao reprocessar", { description: error.message }); return; }
+    toast.success("Evento enviado para reprocessamento");
+    qc.invalidateQueries({ queryKey: ["evento_jml", id] });
+  };
+
+  const handleAprovar = async () => {
+    if (!id) return;
+    const { error } = await supabase.from("eventos_jml").update({ status: "executando" as any }).eq("id", id);
+    if (error) { toast.error("Erro ao aprovar evento", { description: error.message }); return; }
+    toast.success("Evento aprovado e enviado para execução");
+    qc.invalidateQueries({ queryKey: ["evento_jml", id] });
+  };
 
   if (isLoading) return <div className="space-y-4 p-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}</div>;
   if (!evento) return <div className="p-8 text-center text-muted-foreground">Evento não encontrado.</div>;
@@ -49,9 +77,9 @@ export default function EventoJMLDetalhePage() {
           <p className="text-sm text-muted-foreground">{evento.colaborador_nome || "Desconhecido"} · {new Date(evento.created_at).toLocaleDateString("pt-BR")}</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm"><Trash2 className="mr-1 h-3 w-3" />Cancelar</Button>
-          <Button variant="outline" size="sm"><RefreshCw className="mr-1 h-3 w-3" />Reprocessar</Button>
-          <Button size="sm"><Check className="mr-1 h-3 w-3" />Aprovar</Button>
+          <Button variant="outline" size="sm" onClick={handleCancelar}><Trash2 className="mr-1 h-3 w-3" />Cancelar</Button>
+          <Button variant="outline" size="sm" onClick={handleReprocessar}><RefreshCw className="mr-1 h-3 w-3" />Reprocessar</Button>
+          <Button size="sm" onClick={handleAprovar}><Check className="mr-1 h-3 w-3" />Aprovar</Button>
         </div>
       </div>
 

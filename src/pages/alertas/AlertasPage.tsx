@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import TablePagination, { usePagination } from "@/components/TablePagination";
+import { toast } from "sonner";
 
 const severidadeColors: Record<string, string> = {
   info: "bg-info/15 text-info border-info/30",
@@ -30,14 +31,24 @@ export default function AlertasPage() {
   const { paginatedItems, safePage } = usePagination(filtered, page, pageSize);
 
   const marcarLido = async (id: string) => {
-    await supabase.from("alertas").update({ lido: true }).eq("id", id);
+    const { error } = await supabase.from("alertas").update({ lido: true }).eq("id", id);
+    if (error) {
+      toast.error("Erro ao marcar alerta como lido", { description: error.message });
+      return;
+    }
+    toast.success("Alerta marcado como lido");
     queryClient.invalidateQueries({ queryKey: ["alertas"] });
   };
 
   const marcarTodosLidos = async () => {
     const ids = naoLidos.map((a) => a.id);
     if (ids.length > 0) {
-      await supabase.from("alertas").update({ lido: true }).in("id", ids);
+      const { error } = await supabase.from("alertas").update({ lido: true }).in("id", ids);
+      if (error) {
+        toast.error("Erro ao marcar alertas", { description: error.message });
+        return;
+      }
+      toast.success(`${ids.length} alerta(s) marcado(s) como lido(s)`);
       queryClient.invalidateQueries({ queryKey: ["alertas"] });
     }
   };
