@@ -85,9 +85,17 @@ export default function ColaboradoresPage() {
   const { data: areas } = useAreas();
   const { data: cargos } = useCargos();
   const { data: localidades } = useLocalidades();
+  const { data: entraGrupos } = useEntraGrupos();
+  const { data: entraLicencas } = useEntraLicencas();
+  const { data: aplicacoes } = useAplicacoes();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { profile } = useAuth();
+
+  // Quick-assign individual resource state
+  const [quickAssignColab, setQuickAssignColab] = useState<any>(null);
+  const [quickAssignType, setQuickAssignType] = useState<"grupo" | "licenca" | "app" | null>(null);
+  const [quickAssignValue, setQuickAssignValue] = useState("");
 
   const mapped = (colaboradores ?? []).map((c: any) => ({
     id: c.id,
