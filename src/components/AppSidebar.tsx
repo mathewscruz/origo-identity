@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Users, UserCheck, GitPullRequest, AppWindow, Shield,
-  AlertTriangle, ClipboardCheck, Cog, Grid3X3, Key, FileText, Bell, Settings, LogOut, UsersRound, ListOrdered, ShieldAlert, BarChart3,
+  AlertTriangle, ClipboardCheck, Cog, Grid3X3, Key, FileText, Bell, Settings, LogOut, UsersRound, ListOrdered, ShieldAlert, BarChart3, HandHelping, GitBranch,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
