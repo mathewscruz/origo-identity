@@ -26,6 +26,8 @@ import RegraEditorPage from "./pages/regras/RegraEditorPage";
 import MatrizPage from "./pages/matriz/MatrizPage";
 import LicencasPage from "./pages/licencas/LicencasPage";
 import AuditoriaPage from "./pages/auditoria/AuditoriaPage";
+import SoDPage from "./pages/sod/SoDPage";
+import RelatoriosPage from "./pages/relatorios/RelatoriosPage";
 import AlertasPage from "./pages/alertas/AlertasPage";
 import ConfiguracoesLayout from "./pages/configuracoes/ConfiguracoesLayout";
 import CargosPage from "./pages/configuracoes/CargosPage";
@@ -80,6 +82,8 @@ const App = () => (
               <Route path="/matriz" element={<MatrizPage />} />
               <Route path="/licencas" element={<LicencasPage />} />
               <Route path="/licencas/:id" element={<PlaceholderPage title="Detalhe da Licença" />} />
+              <Route path="/sod" element={<SoDPage />} />
+              <Route path="/relatorios" element={<RelatoriosPage />} />
               <Route path="/auditoria" element={<Navigate to="/configuracoes/auditoria" replace />} />
               <Route path="/alertas" element={<Navigate to="/configuracoes/alertas" replace />} />
               <Route path="/admin/usuarios" element={<UsuariosPage />} />
