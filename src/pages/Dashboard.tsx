@@ -1,68 +1,152 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Users, UserCheck, GitPullRequest, Upload, AlertTriangle } from "lucide-react";
+import { Users, AlertTriangle, ShieldCheck, KeyRound, RefreshCw, AppWindow } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from "recharts";
 import { Link } from "react-router-dom";
-import { useColaboradores, useTerceiros, useEventosJML, useAlertas, useColabQuarentena } from "@/hooks/useOrigoData";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useColaboradores, useTerceiros, useAlertas, useColabQuarentena } from "@/hooks/useOrigoData";
 
-const accessStatusData = [
-  { name: "Ativos", value: 842, color: "hsl(142, 71%, 45%)" },
-  { name: "Pendentes", value: 56, color: "hsl(38, 92%, 50%)" },
-  { name: "Revogados", value: 124, color: "hsl(0, 84%, 60%)" },
-  { name: "Expirados", value: 38, color: "hsl(215, 16%, 47%)" },
-];
+function useAccessStatusData() {
+  return useQuery({
+    queryKey: ["dashboard_access_status"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("perfil_atribuicoes")
+        .select("ativo, data_revogacao");
+      if (error) throw error;
+      const rows = data ?? [];
+      const ativos = rows.filter(r => r.ativo && !r.data_revogacao).length;
+      const revogados = rows.filter(r => !r.ativo || !!r.data_revogacao).length;
+      return [
+        { name: "Ativos", value: ativos, color: "hsl(142, 71%, 45%)" },
+        { name: "Revogados", value: revogados, color: "hsl(0, 84%, 60%)" },
+      ].filter(d => d.value > 0);
+    },
+    refetchInterval: 30000,
+  });
+}
 
-const jmlWeeklyData = [
-  { semana: "S1", Joiner: 4, Mover: 8, Leaver: 2 },
-  { semana: "S2", Joiner: 6, Mover: 5, Leaver: 3 },
-  { semana: "S3", Joiner: 3, Mover: 12, Leaver: 1 },
-  { semana: "S4", Joiner: 8, Mover: 6, Leaver: 4 },
-  { semana: "S5", Joiner: 2, Mover: 9, Leaver: 5 },
-  { semana: "S6", Joiner: 5, Mover: 7, Leaver: 2 },
-  { semana: "S7", Joiner: 7, Mover: 4, Leaver: 6 },
-  { semana: "S8", Joiner: 3, Mover: 10, Leaver: 3 },
-];
+function useIamQueueStats() {
+  return useQuery({
+    queryKey: ["dashboard_iam_queue"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("iam_queue")
+        .select("status");
+      if (error) throw error;
+      const rows = data ?? [];
+      const pending = rows.filter(r => r.status === "pending").length;
+      const completed = rows.filter(r => r.status === "completed").length;
+      const failed = rows.filter(r => r.status === "failed" || r.status === "permanent_failure").length;
+      return { pending, completed, failed, total: rows.length };
+    },
+    refetchInterval: 30000,
+  });
+}
 
-const tipoColors: Record<string, string> = {
-  joiner: "bg-success text-success-foreground",
-  mover: "bg-info text-info-foreground",
-  leaver: "bg-destructive text-destructive-foreground",
-};
+function useWeeklyProvisioningData() {
+  return useQuery({
+    queryKey: ["dashboard_weekly_provisioning"],
+    queryFn: async () => {
+      const eightWeeksAgo = new Date();
+      eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56);
+      const { data, error } = await supabase
+        .from("iam_queue")
+        .select("action_type, created_at")
+        .gte("created_at", eightWeeksAgo.toISOString());
+      if (error) throw error;
+      const rows = data ?? [];
+      
+      const weeks: Record<string, { assign: number; remove: number; other: number }> = {};
+      for (let i = 0; i < 8; i++) {
+        weeks[`S${i + 1}`] = { assign: 0, remove: 0, other: 0 };
+      }
+      
+      const now = Date.now();
+      rows.forEach(r => {
+        const age = now - new Date(r.created_at).getTime();
+        const weekIdx = Math.min(7, Math.floor(age / (7 * 24 * 60 * 60 * 1000)));
+        const key = `S${8 - weekIdx}`;
+        if (!weeks[key]) return;
+        const at = r.action_type || "";
+        if (at.startsWith("assign")) weeks[key].assign++;
+        else if (at.startsWith("remove") || at.startsWith("disable")) weeks[key].remove++;
+        else weeks[key].other++;
+      });
+      
+      return Object.entries(weeks).map(([semana, v]) => ({
+        semana,
+        Concessão: v.assign,
+        Revogação: v.remove,
+        Outros: v.other,
+      }));
+    },
+    refetchInterval: 60000,
+  });
+}
+
+function useRecentIamQueue() {
+  return useQuery({
+    queryKey: ["dashboard_recent_queue"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("iam_queue")
+        .select("id, action_type, target_identity, status, created_at")
+        .order("created_at", { ascending: false })
+        .limit(5);
+      if (error) throw error;
+      return data ?? [];
+    },
+    refetchInterval: 30000,
+  });
+}
 
 const statusColors: Record<string, string> = {
-  pendente: "bg-warning/15 text-warning border-warning/30",
-  executado: "bg-success/15 text-success border-success/30",
-  quarentena: "bg-warning/15 text-warning border-warning/30",
-  erro: "bg-destructive/15 text-destructive border-destructive/30",
+  pending: "bg-warning/15 text-warning border-warning/30",
+  completed: "bg-success/15 text-success border-success/30",
+  failed: "bg-destructive/15 text-destructive border-destructive/30",
+  permanent_failure: "bg-destructive/15 text-destructive border-destructive/30",
+  processing: "bg-info/15 text-info border-info/30",
+};
+
+const actionLabels: Record<string, string> = {
+  assign_group: "Grupo",
+  remove_group: "Grupo",
+  assign_license: "Licença",
+  remove_license: "Licença",
+  assign_app: "App",
+  remove_app: "App",
+  disable_entra: "Desabilitar",
+  enable_entra: "Habilitar",
+  create: "Criar",
+  update: "Atualizar",
+  delete: "Excluir",
 };
 
 export default function Dashboard() {
   const { data: colaboradores } = useColaboradores();
   const { data: terceiros } = useTerceiros();
-  const { data: eventos } = useEventosJML();
   const { data: alertas } = useAlertas();
   const { data: quarentena } = useColabQuarentena();
+  const { data: accessStatus } = useAccessStatusData();
+  const { data: queueStats } = useIamQueueStats();
+  const { data: weeklyData } = useWeeklyProvisioningData();
+  const { data: recentQueue } = useRecentIamQueue();
 
   const pessoasAtivas = (colaboradores ?? []).filter((c) => c.status === "ativo").length;
-  const terceirosVencendo = (terceiros ?? []).filter((t) => {
-    if (!t.contrato_fim) return false;
-    const dias = Math.ceil((new Date(t.contrato_fim).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    return dias >= 0 && dias <= 30;
-  }).length;
-  const eventosPendentes = (eventos ?? []).filter((e) => ["pendente", "executando", "quarentena"].includes(e.status)).length;
+  const terceirosAtivos = (terceiros ?? []).filter((t) => t.ativo).length;
   const naoLidos = (alertas ?? []).filter((a) => !a.lido).length;
   const quarentenaPendente = (quarentena ?? []).length;
 
-  const recentEvents = (eventos ?? []).slice(0, 5);
-
   const kpis = [
-    { title: "Pessoas Ativas", value: pessoasAtivas.toString(), change: `${(colaboradores ?? []).length} total`, icon: Users, changeType: "positive" as const },
+    { title: "Pessoas Ativas", value: pessoasAtivas.toString(), change: `${terceirosAtivos} terceiros ativos`, icon: Users, changeType: "positive" as const },
     { title: "Quarentena Pendente", value: quarentenaPendente.toString(), icon: AlertTriangle, changeType: quarentenaPendente > 0 ? "warning" as const : "positive" as const, change: "ausentes do CSV" },
-    { title: "Eventos JML Pendentes", value: eventosPendentes.toString(), icon: GitPullRequest, changeType: "neutral" as const, change: `${(eventos ?? []).length} total` },
-    { title: "Alertas Não Lidos", value: naoLidos.toString(), icon: Upload, changeType: naoLidos > 0 ? "warning" as const : "positive" as const, change: `${(alertas ?? []).length} total` },
+    { title: "Fila de Provisionamento", value: (queueStats?.pending ?? 0).toString(), icon: RefreshCw, changeType: (queueStats?.failed ?? 0) > 0 ? "warning" as const : "positive" as const, change: `${queueStats?.failed ?? 0} com erro · ${queueStats?.completed ?? 0} concluídos` },
+    { title: "Alertas Não Lidos", value: naoLidos.toString(), icon: AlertTriangle, changeType: naoLidos > 0 ? "warning" as const : "positive" as const, change: `${(alertas ?? []).length} total` },
   ];
 
   return (
@@ -89,17 +173,17 @@ export default function Dashboard() {
 
       <div className="grid gap-4 lg:grid-cols-7">
         <Card className="lg:col-span-4">
-          <CardHeader><CardTitle className="text-base">Eventos JML — Últimas 8 Semanas</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Provisionamento — Últimas 8 Semanas</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={jmlWeeklyData}>
+              <BarChart data={weeklyData ?? []}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis dataKey="semana" className="text-xs" />
                 <YAxis className="text-xs" />
                 <Tooltip />
-                <Bar dataKey="Joiner" stackId="a" fill="hsl(142, 71%, 45%)" />
-                <Bar dataKey="Mover" stackId="a" fill="hsl(199, 89%, 48%)" />
-                <Bar dataKey="Leaver" stackId="a" fill="hsl(0, 84%, 60%)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Concessão" stackId="a" fill="hsl(142, 71%, 45%)" />
+                <Bar dataKey="Revogação" stackId="a" fill="hsl(0, 84%, 60%)" />
+                <Bar dataKey="Outros" stackId="a" fill="hsl(199, 89%, 48%)" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -108,37 +192,54 @@ export default function Dashboard() {
         <Card className="lg:col-span-3">
           <CardHeader><CardTitle className="text-base">Acessos por Status</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={280}>
-              <PieChart>
-                <Pie data={accessStatusData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={4} dataKey="value">
-                  {accessStatusData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+            {(accessStatus ?? []).length > 0 ? (
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie data={accessStatus} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={4} dataKey="value">
+                    {(accessStatus ?? []).map((entry, index) => <Cell key={index} fill={entry.color} />)}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-[280px] items-center justify-center text-muted-foreground text-sm">
+                Nenhuma atribuição de perfil encontrada
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Últimos Eventos JML</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">Últimas Solicitações de Provisionamento</CardTitle></CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b text-left text-muted-foreground">
-                <th className="pb-2 font-medium">Tipo</th><th className="pb-2 font-medium">Pessoa</th>
+                <th className="pb-2 font-medium">Ação</th><th className="pb-2 font-medium">Identidade</th>
                 <th className="pb-2 font-medium">Status</th><th className="pb-2 font-medium">Data</th>
               </tr></thead>
               <tbody>
-                {recentEvents.map((event) => (
-                  <tr key={event.id} className="border-b last:border-0">
-                    <td className="py-3"><Badge className={`${tipoColors[event.tipo]} text-[10px] uppercase`}>{event.tipo.charAt(0)}</Badge></td>
-                    <td className="py-3"><Link to={`/eventos-jml/${event.id}`} className="font-medium text-primary hover:underline">{event.colaborador_nome || "Desconhecido"}</Link></td>
-                    <td className="py-3"><Badge variant="outline" className={statusColors[event.status] || ""}>{event.status}</Badge></td>
-                    <td className="py-3 text-muted-foreground">{new Date(event.created_at).toLocaleDateString("pt-BR")}</td>
+                {(recentQueue ?? []).map((item) => (
+                  <tr key={item.id} className="border-b last:border-0">
+                    <td className="py-3">
+                      <Badge variant="outline" className="text-[10px] uppercase">
+                        {actionLabels[item.action_type] || item.action_type}
+                      </Badge>
+                    </td>
+                    <td className="py-3">
+                      <Link to={`/fila-provisionamento/${item.id}`} className="font-medium text-primary hover:underline">
+                        {item.target_identity || "—"}
+                      </Link>
+                    </td>
+                    <td className="py-3"><Badge variant="outline" className={statusColors[item.status] || ""}>{item.status}</Badge></td>
+                    <td className="py-3 text-muted-foreground">{new Date(item.created_at).toLocaleDateString("pt-BR")}</td>
                   </tr>
                 ))}
+                {(recentQueue ?? []).length === 0 && (
+                  <tr><td colSpan={4} className="py-6 text-center text-muted-foreground">Nenhuma solicitação recente</td></tr>
+                )}
               </tbody>
             </table>
           </div>
