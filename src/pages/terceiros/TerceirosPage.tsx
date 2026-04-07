@@ -53,6 +53,7 @@ export default function TerceirosPage() {
   const [form, setForm] = useState({ nome: "", email: "", empresa_terceira: "", contrato_inicio: "", contrato_fim: "", criticidade: "media", responsavel: "", ativo: true, sam_account_name: "" });
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { profile } = useAuth();
 
   const list = terceiros ?? [];
   const vencendo7d = list.filter((t: any) => { const d = diasRestantes(t.contrato_fim); return d >= 0 && d <= 7; }).length;
