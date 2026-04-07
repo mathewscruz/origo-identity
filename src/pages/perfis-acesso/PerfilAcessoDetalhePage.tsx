@@ -20,6 +20,7 @@ import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { generateEntraQueueForDiff, findAffectedCollaborators } from "@/lib/entraQueueHelper";
+import { logAuditoria } from "@/lib/auditLogger";
 
 const origemColors: Record<string, string> = {
   regra: "bg-primary/15 text-primary border-primary/30",
@@ -107,6 +108,7 @@ export default function PerfilAcessoDetalhePage() {
       await (supabase as any).from("perfil_grupos").delete().eq("perfil_id", id!);
       if (editForm.grupo_ids.length > 0) await (supabase as any).from("perfil_grupos").insert(editForm.grupo_ids.map(gid => ({ perfil_id: id!, grupo_id: gid })));
 
+      await logAuditoria({ acao: "editar_perfil", entidade: "perfis_acesso", entidade_id: id!, resumo: `Editado: ${editForm.nome}` });
       toast({ title: "Perfil atualizado" });
 
       // Calculate diff between old and new state
