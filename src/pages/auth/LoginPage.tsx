@@ -12,9 +12,8 @@ import { useAuth } from "@/contexts/AuthContext";
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [nome, setNome] = useState("");
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<"login" | "forgot" | "signup">("login");
+  const [mode, setMode] = useState<"login" | "forgot">("login");
   const { toast } = useToast();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -28,24 +27,6 @@ export default function LoginPage() {
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) toast({ title: "Erro no login", description: error.message, variant: "destructive" });
-    setLoading(false);
-  };
-
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (password.length < 6) { toast({ title: "Senha deve ter no mínimo 6 caracteres", variant: "destructive" }); return; }
-    setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { nome: nome || email } },
-    });
-    if (error) {
-      toast({ title: "Erro no cadastro", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Conta criada com sucesso!", description: "Você já pode acessar o sistema." });
-      setMode("login");
-    }
     setLoading(false);
   };
 
@@ -64,8 +45,8 @@ export default function LoginPage() {
     setLoading(false);
   };
 
-  const titles = { login: "Access & Identity", forgot: "Redefinir Senha", signup: "Criar Conta" };
-  const descs = { login: "Insira suas credenciais abaixo", forgot: "Informe seu email para receber o link", signup: "Preencha os dados para criar sua conta" };
+  const titles = { login: "Access & Identity", forgot: "Redefinir Senha" };
+  const descs = { login: "Insira suas credenciais abaixo", forgot: "Informe seu email para receber o link" };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
@@ -78,13 +59,7 @@ export default function LoginPage() {
           <CardDescription>{descs[mode]}</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={mode === "forgot" ? handleForgot : mode === "signup" ? handleSignup : handleLogin} className="space-y-4">
-            {mode === "signup" && (
-              <div className="space-y-2">
-                <Label>Nome</Label>
-                <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Seu nome" required />
-              </div>
-            )}
+          <form onSubmit={mode === "forgot" ? handleForgot : handleLogin} className="space-y-4">
             <div className="space-y-2">
               <Label>Email</Label>
               <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="seu@email.com" required />
@@ -96,15 +71,12 @@ export default function LoginPage() {
               </div>
             )}
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Aguarde..." : mode === "forgot" ? "Enviar Link" : mode === "signup" ? "Criar Conta" : "Entrar"}
+              {loading ? "Aguarde..." : mode === "forgot" ? "Enviar Link" : "Entrar"}
             </Button>
           </form>
           <div className="mt-4 space-y-2 text-center text-sm">
             {mode === "login" && (
-              <>
-                <button onClick={() => setMode("forgot")} className="text-muted-foreground hover:text-primary block mx-auto">Esqueceu a senha?</button>
-                <button onClick={() => setMode("signup")} className="text-primary hover:underline block mx-auto">Criar conta</button>
-              </>
+              <button onClick={() => setMode("forgot")} className="text-muted-foreground hover:text-primary block mx-auto">Esqueceu a senha?</button>
             )}
             {mode !== "login" && (
               <button onClick={() => setMode("login")} className="text-primary hover:underline">Voltar ao login</button>
