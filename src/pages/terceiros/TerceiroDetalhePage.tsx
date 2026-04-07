@@ -4,7 +4,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Pencil, RefreshCw, Plus, X, UserX, RotateCcw } from "lucide-react";
+import { ArrowLeft, Pencil, RefreshCw, Plus, X, UserX, RotateCcw, Info } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -418,7 +419,20 @@ export default function TerceiroDetalhePage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="contrato" className="mt-4">
+        <TabsContent value="contrato" className="mt-4 space-y-4">
+          <Alert className="border-primary/30 bg-primary/5">
+            <Info className="h-4 w-4 text-primary" />
+            <AlertDescription className="text-sm">
+              <strong>Revalidação automática a cada 45 dias.</strong> O responsável ({terceiro.responsavel || "não definido"}) receberá um e-mail com as opções de manter ou revogar o acesso.
+              {terceiro.contrato_inicio && (() => {
+                const inicio = new Date(terceiro.contrato_inicio!);
+                const ultimaRev = (terceiro as any).ultima_revalidacao ? new Date((terceiro as any).ultima_revalidacao) : inicio;
+                const proxima = new Date(ultimaRev);
+                proxima.setDate(proxima.getDate() + 45);
+                return <span className="block mt-1 text-xs text-muted-foreground">Próxima revalidação prevista: <strong>{proxima.toLocaleDateString("pt-BR")}</strong></span>;
+              })()}
+            </AlertDescription>
+          </Alert>
           <Card>
             <CardContent className="pt-6">
               <div className="grid grid-cols-2 gap-6">
@@ -427,6 +441,7 @@ export default function TerceiroDetalhePage() {
                   ["Fim contrato", terceiro.contrato_fim ? new Date(terceiro.contrato_fim).toLocaleDateString("pt-BR") : "—"],
                   ["Status", terceiro.ativo ? "Ativo" : "Inativo"],
                   ["Criticidade", crit.label],
+                  ["Última revalidação", (terceiro as any).ultima_revalidacao ? new Date((terceiro as any).ultima_revalidacao).toLocaleDateString("pt-BR") : "—"],
                 ].map(([label, value]) => (
                   <div key={label as string}><p className="text-xs text-muted-foreground">{label}</p><p className="text-sm font-medium">{value}</p></div>
                 ))}

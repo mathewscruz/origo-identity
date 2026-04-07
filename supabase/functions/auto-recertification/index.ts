@@ -26,6 +26,7 @@ Deno.serve(async (req) => {
   const results = {
     revisoes_criadas: 0,
     terceiros_expirados: 0,
+    terceiros_revalidados: 0,
     errors: [] as string[],
   };
 
@@ -208,6 +209,54 @@ Deno.serve(async (req) => {
 
         results.terceiros_expirados++;
         console.log(`Third-party expired: ${terceiro.nome}`);
+      }
+    }
+
+    // ─── PART 3: Third-party 45-day Revalidation ───
+
+    const { data: terceirosAtivos } = await sb
+      .from("terceiros")
+      .select("id, nome, email, responsavel, contrato_inicio, contrato_fim, ultima_revalidacao, sam_account_name")
+      .eq("ativo", true)
+      .not("contrato_fim", "is", null);
+
+    if (terceirosAtivos && terceirosAtivos.length > 0) {
+      const todayDate = new Date();
+      for (const t of terceirosAtivos) {
+        // Skip if contract already expired (handled by PART 2)
+        if (t.contrato_fim && new Date(t.contrato_fim) <= todayDate) continue;
+
+        const baseDate = t.ultima_revalidacao ? new Date(t.ultima_revalidacao) : (t.contrato_inicio ? new Date(t.contrato_inicio) : null);
+        if (!baseDate) continue;
+
+        const daysSinceBase = Math.floor((todayDate.getTime() - baseDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (daysSinceBase < 45) continue;
+
+        // 45 days have passed — create alert for responsible
+        await sb.from("alertas").insert({
+          titulo: `Revalidação de terceiro: ${t.nome}`,
+          mensagem: `O terceiro ${t.nome} precisa ser revalidado. O responsável (${t.responsavel || "não definido"}) deve decidir se mantém ou revoga o acesso.`,
+          severidade: "aviso",
+          tipo: "revalidacao_terceiro",
+          ref_url: `/terceiros/${t.id}`,
+          ref_id: t.id,
+          ref_tipo: "terceiro",
+        });
+
+        // Update ultima_revalidacao to today to avoid re-triggering
+        await sb.from("terceiros").update({ ultima_revalidacao: todayDate.toISOString().split("T")[0] }).eq("id", t.id);
+
+        // Audit
+        await sb.from("auditoria").insert({
+          entidade: "terceiro",
+          acao: "revalidacao_45dias",
+          entidade_id: t.id,
+          resumo: `Revalidação de 45 dias disparada para terceiro ${t.nome}. Responsável: ${t.responsavel || "—"}.`,
+          operador: "sistema",
+        });
+
+        results.terceiros_revalidados++;
+        console.log(`45-day revalidation triggered for ${t.nome}`);
       }
     }
 

@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Info } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +34,23 @@ const criticidadeConfig: Record<string, { label: string; class: string }> = {
 
 function diasRestantes(dataFim: string | null): number { if (!dataFim) return 999; return Math.ceil((new Date(dataFim).getTime() - Date.now()) / (1000 * 60 * 60 * 24)); }
 
+function normalize(str: string): string {
+  return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function generateTerceiroCredentials(nome: string, empresaTerceira: string): { sam: string; email: string } {
+  if (!nome.trim() || !empresaTerceira.trim()) return { sam: "", email: "" };
+  const prepositions = new Set(["de", "da", "do", "dos", "das", "e"]);
+  const parts = normalize(nome).split(/\s+/).filter(p => !prepositions.has(p) && p.length > 0);
+  if (parts.length === 0) return { sam: "", email: "" };
+  const first = parts[0];
+  const last = parts.length > 1 ? parts[parts.length - 1] : first;
+  const companyFirst = normalize(empresaTerceira).split(/\s+/).filter(p => p.length > 0)[0] || "";
+  const sam = `${first}.${last}_${companyFirst}`;
+  const email = `${sam}@parceiroorigo.com.br`;
+  return { sam, email };
+}
+
 function fimContratoDisplay(dataFim: string | null) {
   if (!dataFim) return <span className="text-muted-foreground">—</span>;
   const dias = diasRestantes(dataFim);
@@ -55,6 +74,12 @@ export default function TerceirosPage() {
   const { toast } = useToast();
   const { profile } = useAuth();
 
+  // Auto-generate credentials when nome or empresa change
+  useEffect(() => {
+    const { sam, email } = generateTerceiroCredentials(form.nome, form.empresa_terceira);
+    setForm(prev => ({ ...prev, sam_account_name: sam, email: email }));
+  }, [form.nome, form.empresa_terceira]);
+
   const list = terceiros ?? [];
   const vencendo7d = list.filter((t: any) => { const d = diasRestantes(t.contrato_fim); return d >= 0 && d <= 7; }).length;
   const filtered = list.filter((t: any) => !busca || t.nome.toLowerCase().includes(busca.toLowerCase()));
@@ -65,7 +90,8 @@ export default function TerceirosPage() {
 
   const handleSave = async () => {
     if (!form.nome.trim()) { toast({ title: "Nome obrigatório", variant: "destructive" }); return; }
-    if (!editing && !form.sam_account_name.trim()) { toast({ title: "Nome de login AD é obrigatório", variant: "destructive" }); return; }
+    if (!form.empresa_terceira.trim()) { toast({ title: "Empresa obrigatória", variant: "destructive" }); return; }
+    if (!form.sam_account_name.trim()) { toast({ title: "Preencha nome e empresa para gerar login e e-mail", variant: "destructive" }); return; }
     const payload: any = { nome: form.nome.trim(), email: form.email || null, empresa_terceira: form.empresa_terceira || null, contrato_inicio: form.contrato_inicio || null, contrato_fim: form.contrato_fim || null, criticidade: form.criticidade as any, responsavel: form.responsavel || null, ativo: form.ativo, sam_account_name: form.sam_account_name.trim() || null };
     if (editing) {
       // Detect disable: was active, now inactive
@@ -248,16 +274,24 @@ export default function TerceirosPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg"><DialogHeader><DialogTitle>{editing ? "Editar Terceiro" : "Novo Terceiro"}</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2"><Label>Nome completo *</Label><Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} /></div>
-            <div className="space-y-2"><Label>Nome de login AD (samAccountName) *</Label><Input placeholder="ex: joao.silva" value={form.sam_account_name} onChange={(e) => setForm({ ...form, sam_account_name: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Email</Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
-              <div className="space-y-2"><Label>Empresa</Label><Input value={form.empresa_terceira} onChange={(e) => setForm({ ...form, empresa_terceira: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Nome completo *</Label><Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Empresa *</Label><Input value={form.empresa_terceira} onChange={(e) => setForm({ ...form, empresa_terceira: e.target.value })} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Nome de login AD</Label><Input value={form.sam_account_name} readOnly disabled className="bg-muted cursor-not-allowed" /></div>
+              <div className="space-y-2"><Label>Email</Label><Input type="email" value={form.email} readOnly disabled className="bg-muted cursor-not-allowed" /></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Início contrato</Label><Input type="date" value={form.contrato_inicio} onChange={(e) => setForm({ ...form, contrato_inicio: e.target.value })} /></div>
               <div className="space-y-2"><Label>Fim contrato</Label><Input type="date" value={form.contrato_fim} onChange={(e) => setForm({ ...form, contrato_fim: e.target.value })} /></div>
             </div>
+            <Alert className="border-primary/30 bg-primary/5">
+              <Info className="h-4 w-4 text-primary" />
+              <AlertDescription className="text-xs text-muted-foreground">
+                Este terceiro será revalidado automaticamente a cada 45 dias. O responsável receberá um e-mail com as opções de manter ou revogar o acesso.
+              </AlertDescription>
+            </Alert>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Criticidade</Label>
                 <Select value={form.criticidade} onValueChange={(v) => setForm({ ...form, criticidade: v })}>
