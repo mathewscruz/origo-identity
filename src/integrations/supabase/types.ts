@@ -518,6 +518,84 @@ export type Database = {
         }
         Relationships: []
       }
+      entra_role_members: {
+        Row: {
+          colaborador_id: string | null
+          id: string
+          role_id: string
+          updated_at: string
+          user_display_name: string | null
+          user_email: string | null
+          user_entra_id: string
+        }
+        Insert: {
+          colaborador_id?: string | null
+          id?: string
+          role_id: string
+          updated_at?: string
+          user_display_name?: string | null
+          user_email?: string | null
+          user_entra_id: string
+        }
+        Update: {
+          colaborador_id?: string | null
+          id?: string
+          role_id?: string
+          updated_at?: string
+          user_display_name?: string | null
+          user_email?: string | null
+          user_entra_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entra_role_members_colaborador_id_fkey"
+            columns: ["colaborador_id"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "entra_role_members_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "entra_roles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      entra_roles: {
+        Row: {
+          descricao: string | null
+          id: string
+          is_built_in: boolean
+          is_privileged: boolean
+          nome: string
+          role_id: string
+          template_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          descricao?: string | null
+          id?: string
+          is_built_in?: boolean
+          is_privileged?: boolean
+          nome: string
+          role_id: string
+          template_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          descricao?: string | null
+          id?: string
+          is_built_in?: boolean
+          is_privileged?: boolean
+          nome?: string
+          role_id?: string
+          template_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       evento_jml_acoes: {
         Row: {
           aplicacao: string | null
