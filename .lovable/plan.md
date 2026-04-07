@@ -1,43 +1,79 @@
 
 
-## Analise: Fluxo de Convite de Usuarios Administradores
+## Plano: Fluxo completo de Desativação e Reativação (Colaboradores + Terceiros)
 
-### Problema critico encontrado
+### Problemas encontrados
 
-O fluxo atual de criacao de usuarios tem um **bug grave** que impede o uso em producao:
+**Colaborador — Desativação:**
+- Remove recursos de perfis (grupos/licenças/apps via `queueFullProfileActions`)
+- Envia `disable` (AD) + `disable_entra`
+- **NAO remove** recursos individuais (atribuídos via `manual_individual`)
 
-**`supabase.auth.signUp()` chamado do client-side desloga o admin atual.** Quando o admin cria um novo usuario via `signUp`, o Supabase automaticamente inicia uma sessao para o novo usuario, substituindo a sessao do admin logado. Isso causa:
+**Colaborador — Reativação:**
+- Envia `enable_entra` + `update` (AD)
+- Re-provisiona perfis via `provisionCargoAcessos` mas **somente se manual + tem cargo**
+- **NAO re-provisiona** recursos individuais removidos
 
-1. O admin e deslogado imediatamente apos criar o usuario
-2. O insert na tabela `user_roles` (linha 80) pode falhar porque a sessao agora pertence ao novo usuario, que nao tem role `admin`
-3. O novo usuario fica sem role atribuida
+**Terceiro — Desativação (botão "Desligar"):**
+- Revoga perfil_atribuicoes e remove recursos via `queueFullProfileActions`
+- **NAO envia** `disable_entra` nem `disable` (AD)
+- **NAO remove** recursos individuais
 
-### Correcao
+**Terceiro — Reativação:**
+- **NAO existe** — não há botão "Reativar" quando `ativo = false`
 
-Criar uma **Edge Function `admin-create-user`** que usa o `service_role_key` server-side para:
+**TerceirosPage.tsx (edição inline via Switch "Ativo"):**
+- Desativar: envia `disable` AD mas **NAO remove** grupos/licenças/apps nem `disable_entra`
+- Reativar: **nada acontece**
 
-1. Criar o usuario via `supabase.auth.admin.createUser()` (nao afeta a sessao do admin)
-2. Inserir o role na tabela `user_roles` 
-3. Opcionalmente enviar email de convite com link de redefinicao de senha
+---
 
-**No frontend (`UsuariosPage.tsx`):** Substituir o `signUp` pelo fetch para a edge function.
+### Correções
 
-### Fluxo corrigido
+**1. Colaborador — Desativação completa:**
+- Além dos recursos de perfil, buscar também itens individuais da `iam_queue` com `requested_by = 'manual_individual'` e `status = 'success'` para gerar ações de remoção inversa
+- Salvar os IDs dos recursos individuais removidos em `payload_json` do evento JML para poder restaurá-los na reativação
 
+**2. Colaborador — Reativação completa:**
+- Sempre chamar `provisionCargoAcessos` se houver `cargo_id` (não apenas se `isManual`)
+- Buscar recursos individuais que foram removidos na desativação (do evento JML leaver mais recente) e re-atribuí-los
+
+**3. Terceiro — Desativação completa (TerceiroDetalhePage):**
+- Adicionar `disable` (AD) + `disable_entra` ao fluxo de `handleDesligar`
+- Buscar e remover recursos individuais
+
+**4. Terceiro — Reativação (TerceiroDetalhePage):**
+- Adicionar botão "Reativar Terceiro" quando `ativo = false`
+- Fluxo: atualizar `ativo = true`, enviar `enable_entra`, re-provisionar perfis e recursos individuais salvos, criar evento JML "joiner"
+
+**5. TerceirosPage.tsx (edição inline):**
+- Desativar via Switch: alinhar com o fluxo completo (remover recursos + disable_entra)
+- Reativar via Switch: alinhar com reativação completa
+
+---
+
+### Detalhes de implementação
+
+**Armazenamento de recursos para restauração:**
+No momento da desativação, gravar no `dados_antes` do evento JML leaver a lista de recursos individuais ativos (`action_type`, `payload_json`, `target_identity`). Na reativação, ler esse evento e re-criar as ações de `assign`.
+
+**Fluxo de reativação (ambos):**
 ```text
-Admin clica "Novo Usuario"
-  → Frontend envia { email, nome, role, password } para edge function
-  → Edge function usa admin.createUser() (service_role)
-  → Edge function insere role em user_roles
-  → Retorna sucesso
-  → Admin permanece logado
-  → Novo usuario recebe email de confirmacao
+Reativar →
+  1. Update status para ativo
+  2. Enviar enable_entra + update (AD)
+  3. Re-provisionar perfis do cargo (provisionCargoAcessos)
+  4. Buscar último evento JML leaver e restaurar recursos individuais
+  5. Criar evento JML joiner
+  6. Audit log + alerta
+  7. triggerEntraProcessing()
 ```
 
 ### Arquivos
 
-| Acao | Arquivo |
+| Ação | Arquivo |
 |---|---|
-| Criar | `supabase/functions/admin-create-user/index.ts` — edge function com createUser + role insert |
-| Editar | `src/pages/admin/UsuariosPage.tsx` — substituir signUp por fetch na edge function |
+| Editar | `src/pages/colaboradores/ColaboradorDetalhePage.tsx` — desativação: incluir individuais + salvar no JML; reativação: restaurar individuais |
+| Editar | `src/pages/terceiros/TerceiroDetalhePage.tsx` — desativação: AD + Entra + individuais; adicionar botão e fluxo de reativação |
+| Editar | `src/pages/terceiros/TerceirosPage.tsx` — alinhar Switch ativo/inativo com fluxo completo |
 
