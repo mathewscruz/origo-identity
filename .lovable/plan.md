@@ -1,67 +1,73 @@
 
 
-## Plano: Corrigir fluxo de troca de perfil (delta) e desabilitação completa
+## Plano: Aprimorar o módulo de Aplicações
 
-### Problema 1 — Troca de cargo/perfil não faz delta
+### 1. Botão de Sync com Azure (Service Principals + App Registrations)
 
-Hoje `provisionCargoAcessos` faz `remove ALL old` + `assign ALL new`. Isso gera ações desnecessárias (remove e re-adiciona recursos que existem nos dois perfis) e pode causar interrupções temporárias para o usuário.
+**Nova Edge Function:** `supabase/functions/sync-entra-apps/index.ts`
+- Buscar Service Principals via `GET /servicePrincipals?$filter=tags/any(t: t eq 'WindowsAzureActiveDirectoryIntegratedApp')&$select=id,displayName,appId,servicePrincipalType,appOwnerOrganizationId`
+- Buscar App Registrations via `GET /applications?$select=id,appId,displayName`
+- Upsert na tabela `aplicacoes` usando `entra_id` como chave de conflito, evitando duplicatas
+- Definir `integracao_ativa = true` e `tipo_auth = 'SSO'` para apps vindos do Azure
 
-**Correção:** Calcular o delta real entre os recursos do perfil antigo e do novo, e só gerar ações para o que realmente mudou.
+**Config:** Adicionar `[functions.sync-entra-apps] verify_jwt = false` ao `supabase/config.toml`
 
-**Arquivo:** `src/lib/provisionCargoAcessos.ts`
+**UI:** Botão com icone `RefreshCw` ao lado de "Nova Aplicação" em `AplicacoesPage.tsx`. Ao clicar, invoca a Edge Function e mostra toast com resultado (X apps sincronizados, Y novos).
 
-- Buscar os perfis do cargo antigo e do cargo novo
-- Usar `getMergedResourcesForPerfis` para obter os recursos de cada lado
-- Calcular: `addedGrupos = novos - antigos`, `removedGrupos = antigos - novos` (idem para licenças e apps)
-- Chamar `generateEntraQueueForDiff` com o delta real em vez de `queueFullProfileActions` duas vezes
-- Resultado: recursos comuns aos dois perfis permanecem intactos no Entra ID
+### 2. Deduplicação
 
-### Problema 2 — Desabilitação não remove grupos/licenças/apps do Entra ID
+A Edge Function usará upsert com `onConflict: "entra_id"`. Para apps sem `entra_id` (manuais), a deduplicação será por nome antes do insert — se já existe um app com mesmo nome e sem `entra_id`, atualiza o `entra_id` nele em vez de criar duplicata.
 
-Quando o status muda para `inativo`/`desligado`, o sistema:
-- ✅ Envia `disable` para o AD local (via iam-agent-api)
-- ❌ NÃO remove grupos, licenças e apps do Entra ID
-- ❌ NÃO desabilita a conta no Entra ID (accountEnabled=false via Graph API)
+### 3. Owner já existe — validar UX
 
-**Correções:**
+O campo Owner já existe na tabela e no formulário de edição. Melhorias:
+- Na listagem, tornar o nome da aplicação clicável (link para página de detalhe)
+- Mostrar o Owner na listagem (já aparece, OK)
 
-1. **`src/pages/colaboradores/ColaboradorDetalhePage.tsx`** — no bloco de desabilitação (linhas 158-186):
-   - Após inserir a ação `disable` para o AD, buscar todos os perfis ativos do colaborador
-   - Chamar `queueFullProfileActions` com mode `"remove"` para gerar remoções de grupos/licenças/apps
-   - Adicionar uma ação `disable_entra` na fila para desabilitar a conta no Entra ID
+### 4. Página de Detalhe da Aplicação (nova)
 
-2. **`supabase/functions/process-iam-queue/index.ts`** — adicionar suporte ao action_type `disable_entra`:
-   - Resolver o userId no Entra ID
-   - Fazer `PATCH /users/{userId}` com `{ "accountEnabled": false }`
-   - Adicionar `"disable_entra"` e `"enable_entra"` ao array `ENTRA_ACTION_TYPES`
+**Novo arquivo:** `src/pages/aplicacoes/AplicacaoDetalhePage.tsx`
 
-3. **Reativação** — no bloco de reativação (linhas 189-219):
-   - Adicionar ação `enable_entra` para reabilitar a conta no Entra ID (`accountEnabled: true`)
-   - O `provisionCargoAcessos` já é chamado para re-atribuir os recursos
+Substituir o `PlaceholderPage` na rota `/aplicacoes/:id`.
 
-### Problema 2b — Mesma lógica nos fluxos de importação
+Conteúdo:
+- **Header:** Nome, criticidade (badge), tipo auth, owner, entra_id, switches de aprovação e integração, botão editar
+- **Aba "Usuários Atribuídos":** Lista de colaboradores que possuem essa app via seus perfis. Query: `perfil_aplicacoes` → `cargo_perfis` → `colaboradores` filtrados por cargo_id
+- **Aba "Grupos Atribuídos":** Lista de perfis que incluem essa app, com seus grupos associados
+- **Aba "Perfis":** Lista de perfis de acesso que incluem essa aplicação (via `perfil_aplicacoes`)
 
-Os mesmos ajustes devem ser aplicados em:
-- `supabase/functions/sync-csv-colab/index.ts` 
-- `supabase/functions/sync-sharepoint-csv/index.ts`
+### 5. Suporte a aplicações externas (fora do SSO Azure)
 
-Esses arquivos já detectam desabilitação mas só enviam `disable` para AD — precisam também gerar remoções de recursos e `disable_entra`.
+Já é possível cadastrar apps manuais. Melhorias:
+- Adicionar campo `url` na tabela `aplicacoes` (migration) para armazenar URL de acesso da app externa
+- Adicionar campo `origem` (`azure` | `manual`) para distinguir apps importados de manuais
+- No formulário, mostrar campo URL quando a app não tem `entra_id`
+- Na listagem, badge visual diferenciando "Azure SSO" de "Externa/Manual"
 
-### Arquivos a alterar
+### 6. Melhorias de UX/UI
+
+- **Filtros:** Adicionar filtros por criticidade, integração ativa/inativa, e origem (Azure/Manual)
+- **Contadores no header:** Cards com totais (Total, Ativas, Críticas, Sem Owner)
+- **Tooltip no icone de aprovação:** Mostrar "Requer aprovação para concessão"
+- **Nome clicável:** Link para a página de detalhe
+- **Empty state:** Mensagem quando não há apps com botão de sync
+
+### Arquivos a criar/alterar
 
 | Ação | Arquivo |
 |---|---|
-| Reescrever delta | `src/lib/provisionCargoAcessos.ts` |
-| Adicionar remoção de recursos + disable_entra | `src/pages/colaboradores/ColaboradorDetalhePage.tsx` |
-| Adicionar enable_entra na reativação | `src/pages/colaboradores/ColaboradorDetalhePage.tsx` |
-| Novo action_type disable_entra/enable_entra | `supabase/functions/process-iam-queue/index.ts` |
-| Atualizar desabilitação na importação CSV | `supabase/functions/sync-csv-colab/index.ts` |
-| Atualizar desabilitação na importação SharePoint | `supabase/functions/sync-sharepoint-csv/index.ts` |
+| Criar | `supabase/functions/sync-entra-apps/index.ts` |
+| Editar | `supabase/config.toml` — adicionar bloco da nova function |
+| Criar | `src/pages/aplicacoes/AplicacaoDetalhePage.tsx` |
+| Editar | `src/pages/aplicacoes/AplicacoesPage.tsx` — botão sync, filtros, contadores, link para detalhe |
+| Editar | `src/App.tsx` — trocar PlaceholderPage pela nova página de detalhe |
+| Migration | Adicionar colunas `url` e `origem` na tabela `aplicacoes` |
 
 ### Ordem de implementação
 
-1. Adicionar `disable_entra` e `enable_entra` na Edge Function
-2. Reescrever `provisionCargoAcessos` com cálculo de delta real
-3. Corrigir fluxo de desabilitação no `ColaboradorDetalhePage`
-4. Corrigir fluxo de desabilitação nas Edge Functions de importação
+1. Migration (colunas `url`, `origem`)
+2. Edge Function `sync-entra-apps`
+3. Atualizar `AplicacoesPage` (botão sync, filtros, contadores, links)
+4. Criar `AplicacaoDetalhePage`
+5. Atualizar rota no `App.tsx`
 
