@@ -31,3 +31,6 @@ verify_jwt = false
 [functions.reset-entra-password]
 verify_jwt = false
 
+[functions.sync-entra-roles]
+verify_jwt = false
+
