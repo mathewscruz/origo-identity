@@ -241,3 +241,22 @@ export function useColabQuarentena() {
     },
   });
 }
+
+export function useColabIndividualQueue(colaboradorId: string | undefined) {
+  return useQuery({
+    queryKey: ["colab_individual_queue", colaboradorId],
+    enabled: !!colaboradorId,
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("iam_queue")
+        .select("*")
+        .eq("colaborador_id", colaboradorId!)
+        .eq("requested_by", "manual_individual")
+        .in("action_type", ["assign_group", "assign_license", "assign_app"])
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+    ...REFETCH_OPTS,
+  });
+}
