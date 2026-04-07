@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Search, Pencil, Trash2 } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Shield, ShieldCheck, ShieldAlert } from "lucide-react";
 import { Link } from "react-router-dom";
 import { usePerfisAcesso, useAplicacoes, useEntraLicencas, useEntraGrupos } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,10 +17,11 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { findAffectedCollaborators, generateEntraQueueForDiff } from "@/lib/entraQueueHelper";
+import { findAffectedCollaborators, generateEntraQueueForDiff, queueFullProfileActions } from "@/lib/entraQueueHelper";
+import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 
 interface PerfilForm {
   nome: string;
@@ -39,7 +40,39 @@ export default function PerfisAcessoPage() {
   const { data: aplicacoes } = useAplicacoes();
   const { data: entraLicencas } = useEntraLicencas();
   const { data: entraGrupos } = useEntraGrupos();
+
+  // Fetch counts for extra columns
+  const { data: atribuicoesCounts } = useQuery({
+    queryKey: ["perfil_atribuicoes_counts"],
+    queryFn: async () => {
+      const { data } = await supabase.from("perfil_atribuicoes").select("perfil_id").eq("ativo", true);
+      const counts: Record<string, number> = {};
+      (data ?? []).forEach((a: any) => { counts[a.perfil_id] = (counts[a.perfil_id] || 0) + 1; });
+      return counts;
+    },
+  });
+  const { data: licencasCounts } = useQuery({
+    queryKey: ["perfil_licencas_counts"],
+    queryFn: async () => {
+      const { data } = await (supabase as any).from("perfil_licencas").select("perfil_id");
+      const counts: Record<string, number> = {};
+      (data ?? []).forEach((a: any) => { counts[a.perfil_id] = (counts[a.perfil_id] || 0) + 1; });
+      return counts;
+    },
+  });
+  const { data: gruposCounts } = useQuery({
+    queryKey: ["perfil_grupos_counts"],
+    queryFn: async () => {
+      const { data } = await (supabase as any).from("perfil_grupos").select("perfil_id");
+      const counts: Record<string, number> = {};
+      (data ?? []).forEach((a: any) => { counts[a.perfil_id] = (counts[a.perfil_id] || 0) + 1; });
+      return counts;
+    },
+  });
+
   const [busca, setBusca] = useState("");
+  const [filtroTipo, setFiltroTipo] = useState("todos");
+  const [filtroStatus, setFiltroStatus] = useState("todos");
   const [buscaApps, setBuscaApps] = useState("");
   const [buscaLicencas, setBuscaLicencas] = useState("");
   const [buscaGrupos, setBuscaGrupos] = useState("");
@@ -49,13 +82,26 @@ export default function PerfisAcessoPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<PerfilForm>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const list = (perfis ?? []).filter((p: any) => !busca || p.nome.toLowerCase().includes(busca.toLowerCase()));
+  const allPerfis = perfis ?? [];
+  const list = allPerfis.filter((p: any) => {
+    if (busca && !p.nome.toLowerCase().includes(busca.toLowerCase())) return false;
+    if (filtroTipo !== "todos" && p.tipo !== filtroTipo) return false;
+    if (filtroStatus === "ativo" && !p.ativo) return false;
+    if (filtroStatus === "inativo" && p.ativo) return false;
+    return true;
+  });
   const { paginatedItems, safePage } = usePagination(list, page, pageSize);
 
-  const openNew = () => { setForm(emptyForm); setEditingId(null); setDialogOpen(true); };
+  // Header counters
+  const totalPerfis = allPerfis.length;
+  const ativosPerfis = allPerfis.filter((p: any) => p.ativo).length;
+  const privilegiadosPerfis = allPerfis.filter((p: any) => p.tipo === "privilegiado").length;
+
+  const openNew = () => { setForm(emptyForm); setEditingId(null); setBuscaApps(""); setBuscaLicencas(""); setBuscaGrupos(""); setDialogOpen(true); };
   const openEdit = async (p: any) => {
     const { data: apps } = await (supabase as any).from("perfil_aplicacoes").select("aplicacao_id").eq("perfil_id", p.id);
     const { data: lics } = await (supabase as any).from("perfil_licencas").select("licenca_id").eq("perfil_id", p.id);
@@ -68,6 +114,7 @@ export default function PerfisAcessoPage() {
       tipo: p.tipo, ativo: p.ativo,
     });
     setEditingId(p.id);
+    setBuscaApps(""); setBuscaLicencas(""); setBuscaGrupos("");
     setDialogOpen(true);
   };
 
@@ -85,7 +132,6 @@ export default function PerfisAcessoPage() {
       const payload = { nome: form.nome.trim(), descricao: form.descricao.trim() || null, tipo: form.tipo as any, ativo: form.ativo };
       let perfilId = editingId;
 
-      // Capture old state BEFORE any changes (only for edits)
       let oldGrupoIds: string[] = [];
       let oldLicencaIds: string[] = [];
       let oldAppIds: string[] = [];
@@ -110,57 +156,45 @@ export default function PerfisAcessoPage() {
         perfilId = data.id;
       }
 
-      // Sync perfil_aplicacoes
       await (supabase as any).from("perfil_aplicacoes").delete().eq("perfil_id", perfilId);
-      if (form.aplicacao_ids.length > 0) {
-        await (supabase as any).from("perfil_aplicacoes").insert(form.aplicacao_ids.map(aid => ({ perfil_id: perfilId, aplicacao_id: aid })));
-      }
+      if (form.aplicacao_ids.length > 0) await (supabase as any).from("perfil_aplicacoes").insert(form.aplicacao_ids.map(aid => ({ perfil_id: perfilId, aplicacao_id: aid })));
 
-      // Sync perfil_licencas
       await (supabase as any).from("perfil_licencas").delete().eq("perfil_id", perfilId);
-      if (form.licenca_ids.length > 0) {
-        await (supabase as any).from("perfil_licencas").insert(form.licenca_ids.map(lid => ({ perfil_id: perfilId, licenca_id: lid })));
-      }
+      if (form.licenca_ids.length > 0) await (supabase as any).from("perfil_licencas").insert(form.licenca_ids.map(lid => ({ perfil_id: perfilId, licenca_id: lid })));
 
-      // Sync perfil_grupos
       await (supabase as any).from("perfil_grupos").delete().eq("perfil_id", perfilId);
-      if (form.grupo_ids.length > 0) {
-        await (supabase as any).from("perfil_grupos").insert(form.grupo_ids.map(gid => ({ perfil_id: perfilId, grupo_id: gid })));
-      }
+      if (form.grupo_ids.length > 0) await (supabase as any).from("perfil_grupos").insert(form.grupo_ids.map(gid => ({ perfil_id: perfilId, grupo_id: gid })));
 
-      // --- Entra ID provisioning: calculate diff and generate queue entries ---
+      // Entra ID provisioning diff
       if (perfilId) {
-        const newGrupoIds = form.grupo_ids;
-        const newLicencaIds = form.licenca_ids;
-        const newAppIds = form.aplicacao_ids;
-
         const diff = {
-          addedGrupoIds: newGrupoIds.filter(id => !oldGrupoIds.includes(id)),
-          removedGrupoIds: oldGrupoIds.filter(id => !newGrupoIds.includes(id)),
-          addedLicencaIds: newLicencaIds.filter(id => !oldLicencaIds.includes(id)),
-          removedLicencaIds: oldLicencaIds.filter(id => !newLicencaIds.includes(id)),
-          addedAppIds: newAppIds.filter(id => !oldAppIds.includes(id)),
-          removedAppIds: oldAppIds.filter(id => !newAppIds.includes(id)),
+          addedGrupoIds: form.grupo_ids.filter(id => !oldGrupoIds.includes(id)),
+          removedGrupoIds: oldGrupoIds.filter(id => !form.grupo_ids.includes(id)),
+          addedLicencaIds: form.licenca_ids.filter(id => !oldLicencaIds.includes(id)),
+          removedLicencaIds: oldLicencaIds.filter(id => !form.licenca_ids.includes(id)),
+          addedAppIds: form.aplicacao_ids.filter(id => !oldAppIds.includes(id)),
+          removedAppIds: oldAppIds.filter(id => !form.aplicacao_ids.includes(id)),
         };
-
         const hasDiff = Object.values(diff).some(arr => arr.length > 0);
-
         if (hasDiff) {
           try {
             const colabs = await findAffectedCollaborators(perfilId);
             if (colabs.length > 0) {
-              const queued = await generateEntraQueueForDiff(colabs, diff);
-              console.log(`[PerfisAcessoPage] Gerou ${queued} ações na fila para ${colabs.length} colaboradores`);
-              toast({ title: "Provisionamento", description: `${queued} ações geradas para ${colabs.length} colaborador(es)` });
+              const queued = await generateEntraQueueForDiff(colabs, diff, { triggerImmediately: false });
+              if (queued > 0) {
+                toast({ title: "Provisionamento", description: `${queued} ações geradas para ${colabs.length} colaborador(es)` });
+                triggerEntraProcessing();
+              }
             }
-          } catch (provErr) {
-            console.error("[PerfisAcessoPage] Erro no provisionamento:", provErr);
-          }
+          } catch (provErr) { console.error("[PerfisAcessoPage] Erro no provisionamento:", provErr); }
         }
       }
 
       toast({ title: editingId ? "Perfil atualizado" : "Perfil criado" });
       queryClient.invalidateQueries({ queryKey: ["perfis_acesso"] });
+      queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes_counts"] });
+      queryClient.invalidateQueries({ queryKey: ["perfil_licencas_counts"] });
+      queryClient.invalidateQueries({ queryKey: ["perfil_grupos_counts"] });
       setDialogOpen(false);
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
@@ -168,15 +202,40 @@ export default function PerfisAcessoPage() {
     setSaving(false);
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (perfId: string) => {
+    setDeleting(true);
     try {
-      const { error } = await supabase.from("perfis_acesso").delete().eq("id", id);
+      // Cleanup Entra ID: remove all resources from affected collaborators
+      const colabs = await findAffectedCollaborators(perfId);
+      if (colabs.length > 0) {
+        const queued = await queueFullProfileActions(colabs, [perfId], "remove", { triggerImmediately: false });
+        if (queued > 0) {
+          toast({ title: "Cleanup Entra ID", description: `${queued} ações de remoção geradas para ${colabs.length} colaborador(es)` });
+        }
+      }
+
+      // Revoke perfil_atribuicoes
+      await supabase.from("perfil_atribuicoes").update({ ativo: false, data_revogacao: new Date().toISOString() } as any).eq("perfil_id", perfId).eq("ativo", true);
+
+      // Delete related records
+      await Promise.all([
+        (supabase as any).from("perfil_aplicacoes").delete().eq("perfil_id", perfId),
+        (supabase as any).from("perfil_licencas").delete().eq("perfil_id", perfId),
+        (supabase as any).from("perfil_grupos").delete().eq("perfil_id", perfId),
+        (supabase as any).from("cargo_perfis").delete().eq("perfil_id", perfId),
+        supabase.from("perfil_composicao").delete().eq("perfil_id", perfId),
+      ]);
+
+      const { error } = await supabase.from("perfis_acesso").delete().eq("id", perfId);
       if (error) throw error;
+
+      triggerEntraProcessing();
       toast({ title: "Perfil excluído" });
       queryClient.invalidateQueries({ queryKey: ["perfis_acesso"] });
     } catch (err: any) {
       toast({ title: "Erro ao excluir", description: err.message, variant: "destructive" });
     }
+    setDeleting(false);
   };
 
   return (
@@ -189,11 +248,45 @@ export default function PerfisAcessoPage() {
         <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Perfil</Button>
       </div>
 
-      <div className="flex gap-2">
+      {/* Header counters */}
+      <div className="grid grid-cols-3 gap-4">
+        <Card><CardContent className="pt-4 flex items-center gap-3">
+          <Shield className="h-5 w-5 text-muted-foreground" />
+          <div><p className="text-xs text-muted-foreground">Total</p><p className="text-lg font-semibold">{totalPerfis}</p></div>
+        </CardContent></Card>
+        <Card><CardContent className="pt-4 flex items-center gap-3">
+          <ShieldCheck className="h-5 w-5 text-primary" />
+          <div><p className="text-xs text-muted-foreground">Ativos</p><p className="text-lg font-semibold">{ativosPerfis}</p></div>
+        </CardContent></Card>
+        <Card><CardContent className="pt-4 flex items-center gap-3">
+          <ShieldAlert className="h-5 w-5 text-destructive" />
+          <div><p className="text-xs text-muted-foreground">Privilegiados</p><p className="text-lg font-semibold">{privilegiadosPerfis}</p></div>
+        </CardContent></Card>
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-2 flex-wrap">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Buscar perfis..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
         </div>
+        <Select value={filtroTipo} onValueChange={v => { setFiltroTipo(v); setPage(1); }}>
+          <SelectTrigger className="w-40"><SelectValue placeholder="Tipo" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos os tipos</SelectItem>
+            <SelectItem value="funcional">Funcional</SelectItem>
+            <SelectItem value="tecnico">Técnico</SelectItem>
+            <SelectItem value="privilegiado">Privilegiado</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={filtroStatus} onValueChange={v => { setFiltroStatus(v); setPage(1); }}>
+          <SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos</SelectItem>
+            <SelectItem value="ativo">Ativos</SelectItem>
+            <SelectItem value="inativo">Inativos</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <Card>
@@ -206,8 +299,11 @@ export default function PerfisAcessoPage() {
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">
                     <th className="p-4 font-medium">Nome</th>
-                    <th className="p-4 font-medium">Aplicações</th>
                     <th className="p-4 font-medium">Tipo</th>
+                    <th className="p-4 font-medium text-center">Pessoas</th>
+                    <th className="p-4 font-medium text-center">Apps</th>
+                    <th className="p-4 font-medium text-center">Licenças</th>
+                    <th className="p-4 font-medium text-center">Grupos</th>
                     <th className="p-4 font-medium">Status</th>
                     <th className="p-4 font-medium w-20">Ações</th>
                   </tr>
@@ -215,28 +311,33 @@ export default function PerfisAcessoPage() {
                 <tbody>
                   {paginatedItems.map((p: any) => {
                     const apps = (p.perfil_aplicacoes ?? []).map((pa: any) => pa.aplicacoes?.nome).filter(Boolean);
+                    const pessoasCount = atribuicoesCounts?.[p.id] || 0;
+                    const licCount = licencasCounts?.[p.id] || 0;
+                    const grpCount = gruposCounts?.[p.id] || 0;
                     return (
                       <tr key={p.id} className="border-b last:border-0 hover:bg-muted/50">
-                        <td className="p-4"><Link to={`/perfis-acesso/${p.id}`} className="font-medium text-primary hover:underline">{p.nome}</Link></td>
                         <td className="p-4">
-                          {apps.length === 0 ? <span className="text-muted-foreground">—</span> : (
-                            <div className="flex flex-wrap gap-1">
-                              {apps.slice(0, 3).map((name: string, i: number) => (
-                                <Badge key={i} variant="outline" className="text-xs">{name}</Badge>
-                              ))}
-                              {apps.length > 3 && <Badge variant="secondary" className="text-xs">+{apps.length - 3}</Badge>}
-                            </div>
-                          )}
+                          <Link to={`/perfis-acesso/${p.id}`} className="font-medium text-primary hover:underline">{p.nome}</Link>
+                          {p.descricao && <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-xs">{p.descricao}</p>}
                         </td>
                         <td className="p-4"><Badge variant="outline">{p.tipo}</Badge></td>
+                        <td className="p-4 text-center"><span className="font-medium">{pessoasCount}</span></td>
+                        <td className="p-4 text-center"><span className="font-medium">{apps.length}</span></td>
+                        <td className="p-4 text-center"><span className="font-medium">{licCount}</span></td>
+                        <td className="p-4 text-center"><span className="font-medium">{grpCount}</span></td>
                         <td className="p-4"><Badge variant={p.ativo ? "default" : "secondary"}>{p.ativo ? "Ativo" : "Inativo"}</Badge></td>
                         <td className="p-4">
                           <div className="flex gap-1">
                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(p)}><Pencil className="h-3 w-3" /></Button>
                             <AlertDialog>
-                              <AlertDialogTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive"><Trash2 className="h-3 w-3" /></Button></AlertDialogTrigger>
+                              <AlertDialogTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" disabled={deleting}><Trash2 className="h-3 w-3" /></Button></AlertDialogTrigger>
                               <AlertDialogContent>
-                                <AlertDialogHeader><AlertDialogTitle>Excluir perfil?</AlertDialogTitle><AlertDialogDescription>Esta ação não pode ser desfeita. Todas as atribuições associadas serão afetadas.</AlertDialogDescription></AlertDialogHeader>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Excluir perfil "{p.nome}"?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Esta ação removerá o perfil e gerará ações de remoção no Entra ID para todos os colaboradores atribuídos. Esta ação não pode ser desfeita.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
                                 <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={() => handleDelete(p.id)}>Excluir</AlertDialogAction></AlertDialogFooter>
                               </AlertDialogContent>
                             </AlertDialog>
@@ -253,7 +354,7 @@ export default function PerfisAcessoPage() {
       </Card>
       <TablePagination totalItems={list.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
 
-      {/* Dialog Novo/Editar Perfil - com Tabs */}
+      {/* Dialog Novo/Editar Perfil */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
           <DialogHeader><DialogTitle>{editingId ? "Editar Perfil" : "Novo Perfil de Acesso"}</DialogTitle></DialogHeader>
