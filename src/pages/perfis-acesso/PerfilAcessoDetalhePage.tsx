@@ -337,7 +337,7 @@ export default function PerfilAcessoDetalhePage() {
               </div>
               <ScrollArea className="h-64 rounded-md border p-3">
                 <div className="space-y-2">
-                  {(aplicacoes ?? []).filter((a: any) => !buscaApps || a.nome.toLowerCase().includes(buscaApps.toLowerCase())).map((a: any) => (
+                  {(aplicacoes ?? []).filter((a: any) => !buscaApps || a.nome.toLowerCase().includes(buscaApps.toLowerCase())).sort((a: any, b: any) => (editForm.aplicacao_ids.includes(a.id) ? 0 : 1) - (editForm.aplicacao_ids.includes(b.id) ? 0 : 1)).map((a: any) => (
                     <label key={a.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
                       <Checkbox checked={editForm.aplicacao_ids.includes(a.id)} onCheckedChange={() => toggleItem("aplicacao_ids", a.id)} />
                       <span className="text-sm">{a.nome}</span>
@@ -354,7 +354,7 @@ export default function PerfilAcessoDetalhePage() {
               </div>
               <ScrollArea className="h-64 rounded-md border p-3">
                 <div className="space-y-2">
-                  {(entraLicencas ?? []).filter((lic: any) => !buscaLicencas || lic.nome.toLowerCase().includes(buscaLicencas.toLowerCase())).map((lic: any) => (
+                  {(entraLicencas ?? []).filter((lic: any) => !buscaLicencas || lic.nome.toLowerCase().includes(buscaLicencas.toLowerCase())).sort((a: any, b: any) => (editForm.licenca_ids.includes(a.id) ? 0 : 1) - (editForm.licenca_ids.includes(b.id) ? 0 : 1)).map((lic: any) => (
                     <label key={lic.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-2 py-1">
                       <Checkbox checked={editForm.licenca_ids.includes(lic.id)} onCheckedChange={() => toggleItem("licenca_ids", lic.id)} />
                       <span className="text-sm font-medium">{lic.nome}</span>
@@ -373,7 +373,7 @@ export default function PerfilAcessoDetalhePage() {
               </div>
               <ScrollArea className="h-64 rounded-md border p-3">
                 <div className="space-y-2">
-                  {(entraGrupos ?? []).filter((grp: any) => !buscaGrupos || grp.nome.toLowerCase().includes(buscaGrupos.toLowerCase())).map((grp: any) => (
+                  {(entraGrupos ?? []).filter((grp: any) => !buscaGrupos || grp.nome.toLowerCase().includes(buscaGrupos.toLowerCase())).sort((a: any, b: any) => (editForm.grupo_ids.includes(a.id) ? 0 : 1) - (editForm.grupo_ids.includes(b.id) ? 0 : 1)).map((grp: any) => (
                     <label key={grp.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-2 py-1">
                       <Checkbox checked={editForm.grupo_ids.includes(grp.id)} onCheckedChange={() => toggleItem("grupo_ids", grp.id)} />
                       <div className="flex-1 min-w-0">

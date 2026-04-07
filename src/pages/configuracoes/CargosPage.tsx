@@ -200,7 +200,7 @@ export default function CargosPage() {
               <div className="border rounded-md max-h-48 overflow-y-auto p-2 space-y-1">
                 {activePerfis.length === 0 ? (
                   <p className="text-sm text-muted-foreground p-2">Nenhum perfil de acesso disponível.</p>
-                ) : activePerfis.map((p: any) => {
+                ) : [...activePerfis].sort((a: any, b: any) => (selectedPerfis.includes(a.id) ? 0 : 1) - (selectedPerfis.includes(b.id) ? 0 : 1)).map((p: any) => {
                   const apps = (p.perfil_aplicacoes || []).map((pa: any) => pa.aplicacoes?.nome).filter(Boolean);
                   return (
                     <label key={p.id} className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer">

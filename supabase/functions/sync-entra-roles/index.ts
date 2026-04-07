@@ -75,9 +75,11 @@ Deno.serve(async (req) => {
     const sb = createClient(supabaseUrl, serviceKey);
 
     const token = await getAzureToken();
+    console.log("Token acquired, fetching roles...");
 
     // 1. Get all activated directory roles
     const roles = await graphGetAll(token, "https://graph.microsoft.com/v1.0/directoryRoles?$select=id,displayName,description,roleTemplateId");
+    console.log(`Fetched ${roles.length} roles`);
 
     // 2. Also get all role definitions for built-in info
     const roleDefs = await graphGetAll(token, "https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions?$select=id,displayName,description,isBuiltIn,templateId");
@@ -88,85 +90,128 @@ Deno.serve(async (req) => {
     const entraMap = new Map((colabs || []).filter((c: any) => c.entra_id).map((c: any) => [c.entra_id, c.id]));
     const emailMap = new Map((colabs || []).filter((c: any) => c.email).map((c: any) => [c.email.toLowerCase(), c.id]));
 
-    let totalMembers = 0;
-    let alertsGenerated = 0;
-
-    for (const role of roles) {
+    // 4. Upsert all roles in batch
+    const roleUpserts = roles.map((role) => {
       const templateId = role.roleTemplateId || "";
       const def = defMap.get(templateId);
-      const isPrivileged = PRIVILEGED_TEMPLATE_IDS.has(templateId);
-
-      // Upsert role
-      await sb.from("entra_roles" as any).upsert({
+      return {
         role_id: role.id,
         nome: role.displayName || "Unknown",
         descricao: role.description || def?.description || null,
-        is_privileged: isPrivileged,
+        is_privileged: PRIVILEGED_TEMPLATE_IDS.has(templateId),
         is_built_in: def?.isBuiltIn ?? true,
         template_id: templateId,
         updated_at: new Date().toISOString(),
-      }, { onConflict: "role_id" });
+      };
+    });
 
-      // Get role's internal ID in our DB
-      const { data: dbRole } = await sb.from("entra_roles" as any).select("id").eq("role_id", role.id).single();
-      if (!dbRole) continue;
+    // Batch upsert roles (chunks of 500)
+    for (let i = 0; i < roleUpserts.length; i += 500) {
+      await sb.from("entra_roles" as any).upsert(roleUpserts.slice(i, i + 500), { onConflict: "role_id" });
+    }
+    console.log("Roles upserted");
 
-      // Get members
-      const members = await graphGetAll(token, `https://graph.microsoft.com/v1.0/directoryRoles/${role.id}/members?$select=id,displayName,mail,userPrincipalName`);
+    // 5. Get all DB roles for ID mapping
+    const { data: dbRoles } = await sb.from("entra_roles" as any).select("id, role_id");
+    const dbRoleMap = new Map((dbRoles || []).map((r: any) => [r.role_id, r.id]));
 
-      // Delete old members for this role, then insert new
-      await sb.from("entra_role_members" as any).delete().eq("role_id", dbRole.id);
+    let totalMembers = 0;
+    let alertsGenerated = 0;
+    const allMemberInserts: any[] = [];
+    const alertInserts: any[] = [];
+    const roleIdsToClean: string[] = [];
 
-      for (const member of members) {
-        const userEntraId = member.id;
-        const email = (member.mail || member.userPrincipalName || "").toLowerCase();
-        const colaboradorId = entraMap.get(userEntraId) || emailMap.get(email) || null;
+    // 6. Fetch all members in parallel (batches of 5 concurrent)
+    const CONCURRENCY = 5;
+    for (let i = 0; i < roles.length; i += CONCURRENCY) {
+      const batch = roles.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        batch.map(async (role) => {
+          const members = await graphGetAll(token, `https://graph.microsoft.com/v1.0/directoryRoles/${role.id}/members?$select=id,displayName,mail,userPrincipalName`);
+          return { role, members };
+        })
+      );
 
-        await sb.from("entra_role_members" as any).insert({
-          role_id: dbRole.id,
-          user_entra_id: userEntraId,
-          user_display_name: member.displayName || null,
-          user_email: email || null,
-          colaborador_id: colaboradorId,
-          updated_at: new Date().toISOString(),
-        });
-        totalMembers++;
+      for (const { role, members } of results) {
+        const dbRoleId = dbRoleMap.get(role.id);
+        if (!dbRoleId) continue;
 
-        // Alert: privileged member not linked to active colaborador
-        if (isPrivileged && !colaboradorId) {
-          await sb.from("alertas" as any).insert({
-            titulo: `Membro privilegiado não vinculado: ${member.displayName}`,
-            mensagem: `O usuário "${member.displayName}" (${email}) possui a role privilegiada "${role.displayName}" mas não está vinculado a nenhum colaborador ativo no sistema.`,
-            severidade: "aviso",
-            tipo: "privilegiado_nao_vinculado",
+        const templateId = role.roleTemplateId || "";
+        const isPrivileged = PRIVILEGED_TEMPLATE_IDS.has(templateId);
+
+        roleIdsToClean.push(dbRoleId);
+
+        for (const member of members) {
+          const userEntraId = member.id;
+          const email = (member.mail || member.userPrincipalName || "").toLowerCase();
+          const colaboradorId = entraMap.get(userEntraId) || emailMap.get(email) || null;
+
+          allMemberInserts.push({
+            role_id: dbRoleId,
+            user_entra_id: userEntraId,
+            user_display_name: member.displayName || null,
+            user_email: email || null,
+            colaborador_id: colaboradorId,
+            updated_at: new Date().toISOString(),
+          });
+          totalMembers++;
+
+          if (isPrivileged && !colaboradorId) {
+            alertInserts.push({
+              titulo: `Membro privilegiado não vinculado: ${member.displayName}`,
+              mensagem: `O usuário "${member.displayName}" (${email}) possui a role privilegiada "${role.displayName}" mas não está vinculado a nenhum colaborador ativo no sistema.`,
+              severidade: "aviso",
+              tipo: "privilegiado_nao_vinculado",
+              ref_tipo: "entra_role",
+              ref_id: dbRoleId,
+            });
+            alertsGenerated++;
+          }
+        }
+
+        if (isPrivileged && members.length > 3) {
+          alertInserts.push({
+            titulo: `Role privilegiada com ${members.length} membros: ${role.displayName}`,
+            mensagem: `A role "${role.displayName}" possui ${members.length} membros atribuídos, o que excede o limite recomendado de 3 para roles privilegiadas.`,
+            severidade: "critico",
+            tipo: "privilegiado_excesso",
             ref_tipo: "entra_role",
-            ref_id: dbRole.id,
+            ref_id: dbRoleId,
           });
           alertsGenerated++;
         }
       }
+    }
+    console.log(`Fetched ${totalMembers} members across ${roles.length} roles`);
 
-      // Alert: privileged role with too many members
-      if (isPrivileged && members.length > 3) {
-        await sb.from("alertas" as any).insert({
-          titulo: `Role privilegiada com ${members.length} membros: ${role.displayName}`,
-          mensagem: `A role "${role.displayName}" possui ${members.length} membros atribuídos, o que excede o limite recomendado de 3 para roles privilegiadas.`,
-          severidade: "critico",
-          tipo: "privilegiado_excesso",
-          ref_tipo: "entra_role",
-          ref_id: dbRole.id,
-        });
-        alertsGenerated++;
+    // 7. Delete old members for all processed roles in batch
+    for (let i = 0; i < roleIdsToClean.length; i += 50) {
+      const chunk = roleIdsToClean.slice(i, i + 50);
+      await sb.from("entra_role_members" as any).delete().in("role_id", chunk);
+    }
+
+    // 8. Insert all members in batch (chunks of 500)
+    for (let i = 0; i < allMemberInserts.length; i += 500) {
+      await sb.from("entra_role_members" as any).insert(allMemberInserts.slice(i, i + 500));
+    }
+    console.log("Members inserted");
+
+    // 9. Insert alerts in batch
+    if (alertInserts.length > 0) {
+      for (let i = 0; i < alertInserts.length; i += 500) {
+        await sb.from("alertas" as any).insert(alertInserts.slice(i, i + 500));
       }
     }
 
-    // Audit log
+    // 10. Audit log
     await sb.from("auditoria" as any).insert({
       acao: "sync",
       entidade: "entra_roles",
       resumo: `Sincronização de roles: ${roles.length} roles, ${totalMembers} membros, ${alertsGenerated} alertas`,
       operador: "sistema",
     });
+
+    console.log("Sync complete");
 
     return new Response(JSON.stringify({
       success: true,
