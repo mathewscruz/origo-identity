@@ -202,7 +202,7 @@ export default function SolicitacoesPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" asChild>
-            <a href="https://iam.origoenergia.com.br/solicitacoes" target="_blank" rel="noopener noreferrer">
+            <a href="/portal" target="_blank" rel="noopener noreferrer">
               <ExternalLink className="mr-2 h-4 w-4" />Portal Externo
             </a>
           </Button>
