@@ -10,10 +10,9 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { Bell } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Link } from "react-router-dom";
+import { NotificacoesBell } from "@/components/NotificacoesBell";
+import { useAuth } from "@/contexts/AuthContext";
 
 const routeLabels: Record<string, string> = {
   "/": "Dashboard",
