@@ -1,48 +1,60 @@
 
 
-## Plano: Gerar e-mail corporativo Órigo para colaboradores com e-mail genérico
+## Plano: Auto-preenchimento de login/e-mail para terceiros + Revalidação a cada 45 dias
 
-### Problema
+### 1. Auto-preenchimento de Nome de Login AD e E-mail (bloqueados)
 
-Colaboradores importados via CSV podem vir com e-mails genéricos (ex: `joao@gmail.com`, sem domínio `@origoenergia.com.br`). O sistema precisa detectar esses casos e gerar automaticamente o e-mail corporativo no padrão `nome.sobrenome@origoenergia.com.br`, validando unicidade.
+**`TerceirosPage.tsx` — formulário de criação/edição:**
 
-### Lógica de geração
+Adicionar função `generateTerceiroCredentials(nome, empresaTerceira)` que:
+- Normaliza o nome (remove acentos, minúsculas, ignora preposições: de, da, do, dos, das)
+- Gera `sam_account_name`: `nome.sobrenome_primeironomeempresa`
+- Gera `email`: `nome.sobrenome_primeironomeempresa@parceiroorigo.com.br`
+- Para empresas compostas, usa apenas o primeiro nome (ex: "Tech Solutions" → "tech")
 
+A função é chamada automaticamente via `useEffect` quando `form.nome` ou `form.empresa_terceira` mudam. Os campos de login AD e e-mail ficam **readonly/disabled** com fundo acinzentado para indicar que são automáticos.
+
+Exemplo:
 ```text
-1. Detectar se o e-mail do CSV NÃO é @origoenergia.com.br
-2. Extrair nome completo (displayName): "João Carlos Silva"
-3. Gerar: joao.silva@origoenergia.com.br (primeiro.último)
-4. Verificar no banco se já existe colaborador com esse e-mail
-5. Se existir duplicata: joao.carlos@origoenergia.com.br (primeiro.meio)
-6. Se ainda existir: joao.carlos.silva@origoenergia.com.br (completo)
-7. Atualizar sam_account_name para o prefixo do e-mail gerado
+Nome: "João Carlos da Silva"
+Empresa: "Tech Solutions Ltda"
+→ sam_account_name: joao.silva_tech
+→ email: joao.silva_tech@parceiroorigo.com.br
 ```
 
-### Normalização
+Na edição, os campos continuam bloqueados (não permite alteração manual).
 
-- Converter para minúsculas
-- Remover acentos (João → joao, André → andre)
-- Tratar nomes compostos com preposições (da, de, do, dos, das) — ignorar na composição
+### 2. Aviso de revalidação a cada 45 dias
 
-### Alterações
+**`TerceirosPage.tsx` — formulário:**
+- Adicionar um banner informativo (Alert) abaixo do campo "Fim contrato" no dialog:
+  > "Este terceiro será revalidado automaticamente a cada 45 dias. O responsável receberá um e-mail com as opções de manter ou revogar o acesso."
 
-**1. `supabase/functions/sync-csv-colab/index.ts` — função `buildColabData`:**
+**`TerceiroDetalhePage.tsx` — ficha:**
+- Adicionar card/banner na aba "Contrato" informando o ciclo de revalidação de 45 dias e a próxima data de revalidação (calculada com base na data de início do contrato)
 
-Adicionar função `generateOrigoEmail(displayName, existingEmails)`:
-- Recebe o nome completo e um Set de e-mails já existentes no banco
-- Retorna o e-mail corporativo gerado
-- Antes do loop de classificação, carregar todos os e-mails existentes de colaboradores num Set
-- Na função `buildColabData`, se `row.mail` não termina com `@origoenergia.com.br`, chamar `generateOrigoEmail` e usar o resultado como `email` e derivar o `sam_account_name` dele
-- Adicionar cada e-mail gerado ao Set para evitar colisão entre registros do mesmo CSV
+### 3. Edge Function de revalidação automática (`auto-recertification`)
 
-**2. `src/pages/colaboradores/ColaboradoresPage.tsx` — indicador visual:**
+**Editar `auto-recertification/index.ts` — PART 3: Revalidação de Terceiros:**
+- Buscar todos os terceiros ativos com `contrato_fim` no futuro
+- Para cada terceiro, calcular se já se passaram 45 dias desde a última revalidação (verificar na tabela `revisoes` ou criar um campo/parametro)
+- Se 45 dias se passaram sem revalidação:
+  - Enviar e-mail ao `responsavel` com link para página de revalidação externa (similar ao fluxo de revisão externa existente)
+  - O link contém opções: **Manter** (estende por +45 dias) ou **Revogar** (desativa o terceiro)
+- Se o responsável clicar em "Revogar", o sistema desativa o terceiro automaticamente (disable AD + Entra + revogar perfis)
+- Se clicar em "Manter", registra a revalidação e agenda a próxima em 45 dias
+- O ciclo se repete até o fim do contrato
 
-Adicionar ícone/badge na listagem para sinalizar colaboradores cujo e-mail foi gerado automaticamente (quando o e-mail original do CSV difere do e-mail no banco)
+### Migração
+
+Adicionar coluna `ultima_revalidacao` (date, nullable) à tabela `terceiros` para rastrear quando foi a última revalidação.
 
 ### Arquivos
 
 | Ação | Arquivo |
 |---|---|
-| Editar | `supabase/functions/sync-csv-colab/index.ts` — lógica de geração de e-mail corporativo |
-| Editar | `src/pages/colaboradores/ColaboradoresPage.tsx` — indicador visual (opcional) |
+| Migração | Adicionar `ultima_revalidacao` à tabela `terceiros` |
+| Editar | `src/pages/terceiros/TerceirosPage.tsx` — auto-preenchimento de login/e-mail (readonly) + aviso revalidação |
+| Editar | `src/pages/terceiros/TerceiroDetalhePage.tsx` — banner de revalidação na aba contrato |
+| Editar | `supabase/functions/auto-recertification/index.ts` — PART 3: lógica de revalidação 45 dias com e-mail |
 
