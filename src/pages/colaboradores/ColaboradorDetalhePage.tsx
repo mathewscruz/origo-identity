@@ -156,6 +156,7 @@ export default function ColaboradorDetalhePage() {
               
               // Queue disable request
               if (oldStatus === "ativo" && newStatus !== "ativo") {
+                // 1. Disable in AD local
                 await supabase.from("iam_queue" as any).insert({
                   action_type: "disable",
                   payload_json: {
@@ -172,6 +173,39 @@ export default function ColaboradorDetalhePage() {
                   colaborador_id: id,
                   target_identity: sam || null,
                 });
+
+                // 2. Remove all Entra ID groups/licenses/apps from active profiles
+                const { data: activeAtribuicoes } = await supabase
+                  .from("perfil_atribuicoes")
+                  .select("perfil_id")
+                  .eq("colaborador_id", id!)
+                  .eq("ativo", true);
+                const activePerfilIds = (activeAtribuicoes ?? []).map((a: any) => a.perfil_id).filter(Boolean);
+                if (activePerfilIds.length > 0 && (pessoa.email || sam)) {
+                  const colabIdentity = {
+                    id: id!,
+                    nome: pessoa.nome,
+                    email: pessoa.email || null,
+                    sam_account_name: sam || null,
+                  };
+                  await queueFullProfileActions([colabIdentity], activePerfilIds, "remove", { triggerImmediately: false });
+                }
+
+                // 3. Disable Entra ID account
+                if (pessoa.email || sam) {
+                  await supabase.from("iam_queue" as any).insert({
+                    action_type: "disable_entra",
+                    payload_json: {
+                      mail: pessoa.email || null,
+                      samAccountName: sam,
+                      displayName: pessoa.nome,
+                    },
+                    requested_by: profile?.email || "sistema",
+                    colaborador_id: id,
+                    target_identity: pessoa.email || sam || null,
+                  });
+                }
+
                 toast({ title: "Solicitação de desativação enviada para processamento" });
 
                 if (isManual) {
@@ -187,6 +221,7 @@ export default function ColaboradorDetalhePage() {
 
               // Queue enable request
               if (oldStatus !== "ativo" && newStatus === "ativo") {
+                // 1. Enable in AD local
                 await supabase.from("iam_queue" as any).insert({
                   action_type: "update",
                   payload_json: {
@@ -203,8 +238,25 @@ export default function ColaboradorDetalhePage() {
                   colaborador_id: id,
                   target_identity: sam || null,
                 });
+
+                // 2. Enable Entra ID account
+                if (pessoa.email || sam) {
+                  await supabase.from("iam_queue" as any).insert({
+                    action_type: "enable_entra",
+                    payload_json: {
+                      mail: pessoa.email || null,
+                      samAccountName: sam,
+                      displayName: pessoa.nome,
+                    },
+                    requested_by: profile?.email || "sistema",
+                    colaborador_id: id,
+                    target_identity: pessoa.email || sam || null,
+                  });
+                }
+
                 toast({ title: "Solicitação de reativação enviada para processamento" });
 
+                // 3. Re-provision cargo-based access profiles
                 if (isManual && pessoa.cargo_id) {
                   await provisionCargoAcessos(id!, pessoa.cargo_id, null);
                 }

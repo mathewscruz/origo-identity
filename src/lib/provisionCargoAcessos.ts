@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { queueFullProfileActions } from "@/lib/entraQueueHelper";
+import { getMergedResourcesForPerfis, generateEntraQueueForDiff } from "@/lib/entraQueueHelper";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 
 interface ColabIdentity {
@@ -11,9 +11,8 @@ interface ColabIdentity {
 
 /**
  * Provisions access profiles for a collaborator based on their cargo change.
- * - Revokes old cargo-based assignments (origem='cargo')
- * - Creates new assignments for the new cargo's profiles
- * - Delegates ALL iam_queue generation to the central helper
+ * Uses delta calculation: only adds/removes what actually changed between old and new cargo.
+ * Resources common to both cargos remain untouched in Entra ID.
  */
 export async function provisionCargoAcessos(
   colaboradorId: string,
@@ -42,24 +41,46 @@ export async function provisionCargoAcessos(
 
   const hasIdentity = !!(colab.email || colab.sam_account_name);
 
-  // ── Revoke old cargo-based assignments ──
-  if (oldCargoId) {
-    // Get old cargo's profile IDs
-    const { data: oldCargoPerfis } = await (supabase as any)
+  // Get perfil IDs for old and new cargo
+  const getCargoPerfilIds = async (cargoId: string | null): Promise<string[]> => {
+    if (!cargoId) return [];
+    const { data } = await (supabase as any)
       .from("cargo_perfis")
       .select("perfil_id")
-      .eq("cargo_id", oldCargoId);
+      .eq("cargo_id", cargoId);
+    return (data ?? []).map((cp: any) => cp.perfil_id);
+  };
 
-    const oldPerfilIds = (oldCargoPerfis ?? []).map((cp: any) => cp.perfil_id);
+  const [oldPerfilIds, newPerfilIds] = await Promise.all([
+    getCargoPerfilIds(oldCargoId),
+    getCargoPerfilIds(newCargoId),
+  ]);
 
-    // Queue remove actions BEFORE revoking assignments
-    if (hasIdentity && oldPerfilIds.length > 0) {
-      await queueFullProfileActions([colabIdentity], oldPerfilIds, "remove", { triggerImmediately: false });
-    } else if (!hasIdentity && oldPerfilIds.length > 0) {
-      skippedDirectory = true;
-    }
+  // Get merged resources for old and new sets
+  const [oldResources, newResources] = await Promise.all([
+    oldPerfilIds.length > 0 ? getMergedResourcesForPerfis(oldPerfilIds) : { grupoIds: [], licencaIds: [], appIds: [] },
+    newPerfilIds.length > 0 ? getMergedResourcesForPerfis(newPerfilIds) : { grupoIds: [], licencaIds: [], appIds: [] },
+  ]);
 
-    // Revoke perfil_atribuicoes
+  // Calculate delta
+  const oldGrupoSet = new Set(oldResources.grupoIds);
+  const newGrupoSet = new Set(newResources.grupoIds);
+  const oldLicencaSet = new Set(oldResources.licencaIds);
+  const newLicencaSet = new Set(newResources.licencaIds);
+  const oldAppSet = new Set(oldResources.appIds);
+  const newAppSet = new Set(newResources.appIds);
+
+  const diff = {
+    addedGrupoIds: newResources.grupoIds.filter(id => !oldGrupoSet.has(id)),
+    removedGrupoIds: oldResources.grupoIds.filter(id => !newGrupoSet.has(id)),
+    addedLicencaIds: newResources.licencaIds.filter(id => !oldLicencaSet.has(id)),
+    removedLicencaIds: oldResources.licencaIds.filter(id => !newLicencaSet.has(id)),
+    addedAppIds: newResources.appIds.filter(id => !oldAppSet.has(id)),
+    removedAppIds: oldResources.appIds.filter(id => !newAppSet.has(id)),
+  };
+
+  // Revoke old cargo-based perfil_atribuicoes
+  if (oldCargoId && oldPerfilIds.length > 0) {
     const { data: revokedData } = await supabase
       .from("perfil_atribuicoes")
       .update({ ativo: false, data_revogacao: new Date().toISOString() })
@@ -70,37 +91,34 @@ export async function provisionCargoAcessos(
     revoked = revokedData?.length || 0;
   }
 
-  // ── Create new cargo-based assignments ──
-  if (newCargoId) {
-    const { data: newCargoPerfis } = await (supabase as any)
-      .from("cargo_perfis")
-      .select("perfil_id")
-      .eq("cargo_id", newCargoId);
+  // Create new cargo-based perfil_atribuicoes
+  if (newCargoId && newPerfilIds.length > 0) {
+    const inserts = newPerfilIds.map((perfilId: string) => ({
+      perfil_id: perfilId,
+      colaborador_id: colaboradorId,
+      origem: "cargo",
+      ativo: true,
+    }));
 
-    const newPerfilIds = (newCargoPerfis ?? []).map((cp: any) => cp.perfil_id);
+    const { data: inserted } = await supabase
+      .from("perfil_atribuicoes")
+      .insert(inserts)
+      .select("id");
+    provisioned = inserted?.length || 0;
+  }
 
-    if (newPerfilIds.length > 0) {
-      // Materialize perfil_atribuicoes
-      const inserts = newPerfilIds.map((perfilId: string) => ({
-        perfil_id: perfilId,
-        colaborador_id: colaboradorId,
-        origem: "cargo",
-        ativo: true,
-      }));
+  // Queue Entra ID actions for the delta only
+  if (hasIdentity) {
+    const hasDiff =
+      diff.addedGrupoIds.length + diff.removedGrupoIds.length +
+      diff.addedLicencaIds.length + diff.removedLicencaIds.length +
+      diff.addedAppIds.length + diff.removedAppIds.length;
 
-      const { data: inserted } = await supabase
-        .from("perfil_atribuicoes")
-        .insert(inserts)
-        .select("id");
-      provisioned = inserted?.length || 0;
-
-      // Queue assign actions
-      if (hasIdentity) {
-        await queueFullProfileActions([colabIdentity], newPerfilIds, "assign", { triggerImmediately: false });
-      } else {
-        skippedDirectory = true;
-      }
+    if (hasDiff > 0) {
+      await generateEntraQueueForDiff([colabIdentity], diff, { triggerImmediately: false });
     }
+  } else if (oldPerfilIds.length > 0 || newPerfilIds.length > 0) {
+    skippedDirectory = true;
   }
 
   // Trigger processing once for all queued actions
