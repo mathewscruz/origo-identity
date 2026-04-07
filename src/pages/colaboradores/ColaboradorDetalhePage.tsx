@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Pencil, XCircle, Plus } from "lucide-react";
+import { ArrowLeft, Pencil, XCircle, Plus, KeyRound } from "lucide-react";
 import { useColaborador, usePerfilAtribuicoes, useEventosJML, usePerfisAcesso } from "@/hooks/useOrigoData";
 import { provisionCargoAcessos } from "@/lib/provisionCargoAcessos";
 import { queueFullProfileActions } from "@/lib/entraQueueHelper";
@@ -61,6 +61,9 @@ export default function ColaboradorDetalhePage() {
   const [atribuirOpen, setAtribuirOpen] = useState(false);
   const [selectedPerfilId, setSelectedPerfilId] = useState("");
   const [saving, setSaving] = useState(false);
+  const [resetingPassword, setResetingPassword] = useState(false);
+  const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
 
   const eventos = (allEventos ?? []).filter((e) => e.colaborador_id === id);
 
@@ -293,6 +296,9 @@ export default function ColaboradorDetalhePage() {
               <SelectItem value="desligado">Desligado</SelectItem>
             </SelectContent>
           </Select>
+          <Button variant="outline" size="sm" onClick={() => { setTempPassword(null); setResetDialogOpen(true); }}>
+            <KeyRound className="mr-1 h-3 w-3" /> Resetar Senha
+          </Button>
           <Button variant="outline" size="sm"><Pencil className="mr-1 h-3 w-3" /> Editar</Button>
         </div>
       </div>
@@ -443,6 +449,70 @@ export default function ColaboradorDetalhePage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setAtribuirOpen(false)}>Cancelar</Button>
             <Button onClick={handleAtribuir} disabled={saving || !selectedPerfilId}>{saving ? "Salvando..." : "Atribuir"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Reset Password */}
+      <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Resetar Senha — Entra ID</DialogTitle>
+          </DialogHeader>
+          {tempPassword ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">Senha temporária gerada com sucesso. O usuário precisará alterá-la no próximo login.</p>
+              <div className="bg-muted p-3 rounded-md font-mono text-sm text-center select-all">{tempPassword}</div>
+              <p className="text-xs text-muted-foreground">Copie e envie ao colaborador de forma segura.</p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Uma senha temporária será gerada e o usuário <strong>{pessoa.nome}</strong> será obrigado a alterá-la no próximo login no Entra ID.
+            </p>
+          )}
+          <DialogFooter>
+            {tempPassword ? (
+              <Button onClick={() => setResetDialogOpen(false)}>Fechar</Button>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setResetDialogOpen(false)}>Cancelar</Button>
+                <Button
+                  disabled={resetingPassword}
+                  onClick={async () => {
+                    setResetingPassword(true);
+                    try {
+                      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reset-entra-password`;
+                      const res = await fetch(url, {
+                        method: "POST",
+                        headers: {
+                          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+                          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+                          "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({ colaborador_id: id }),
+                      });
+                      const data = await res.json();
+                      if (!res.ok) throw new Error(data.error || "Erro ao resetar senha");
+                      setTempPassword(data.tempPassword);
+                      toast({ title: "Senha resetada com sucesso" });
+                      await logAuditoria({
+                        acao: "reset_senha_entra",
+                        entidade: "colaboradores",
+                        entidade_id: id!,
+                        resumo: `Senha resetada no Entra ID para ${pessoa.nome}`,
+                        operador: profile?.email,
+                      });
+                    } catch (err: any) {
+                      toast({ title: "Erro", description: err.message, variant: "destructive" });
+                    } finally {
+                      setResetingPassword(false);
+                    }
+                  }}
+                >
+                  {resetingPassword ? "Resetando..." : "Confirmar Reset"}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
