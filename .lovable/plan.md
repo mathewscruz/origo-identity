@@ -1,41 +1,98 @@
 
 
-## Plano: Trocar "Perfil de Acesso" por seleção de Aplicações e Grupos no Portal
+## Plano: Responsividade global do sistema
 
 ### Problema
 
-Atualmente o portal externo permite solicitar apenas um Perfil de Acesso. O usuário precisa poder solicitar Aplicações e/ou Grupos específicos que não fazem parte do seu perfil atual.
+Tabelas com muitas colunas e layouts fixos causam scrolls horizontais e verticais em telas menores. Filtros, botões e grids não se adaptam bem a resoluções reduzidas.
 
-### Solução
+### Estratégia
 
-Substituir o campo "Perfil de Acesso" por dois campos de multi-seleção: **Aplicações** e **Grupos**. O campo `perfil_id` na tabela `solicitacoes_acesso` passará a ser nullable, e serão adicionadas colunas JSON para armazenar os itens solicitados.
+Aplicar melhorias de responsividade em 3 camadas:
 
-### Alterações
+1. **Layout principal** — ajustar `main` para padding reduzido em mobile
+2. **Cabeçalhos de página** — empilhar título e botões verticalmente em telas pequenas
+3. **Tabelas** — ocultar colunas menos importantes em telas menores via classes `hidden md:table-cell`
+4. **Filtros** — garantir que todos usem `flex-wrap` e larguras relativas
+5. **Dialogs/formulários** — usar `grid-cols-1` em mobile, `grid-cols-2` em desktop
 
-**1. Migração de banco:**
-- Tornar `perfil_id` nullable em `solicitacoes_acesso`
-- Adicionar colunas `aplicacoes_ids` (jsonb, default '[]') e `grupos_ids` (jsonb, default '[]')
+### Alterações por arquivo
 
-**2. `PortalSolicitacoesPage.tsx` — formulário:**
-- Remover campo de Perfil de Acesso
-- Adicionar campo "Tipo de Solicitação" (Aplicações / Grupos) ou exibir ambos sempre
-- Campo **Aplicações**: lista de checkboxes com multi-seleção, carregada de `aplicacoes`
-- Campo **Grupos**: lista de checkboxes com multi-seleção, carregada de `entra_grupos`
-- Validar que ao menos uma aplicação OU um grupo foi selecionado
-- Enviar `aplicacoes_ids` e `grupos_ids` como arrays JSON, `perfil_id` como null
+**1. `src/components/AppLayout.tsx`**
+- Trocar `p-6` por `p-3 md:p-6` no `<main>`
+- Header: ajustar gap para telas menores
 
-**3. `PortalSolicitacoesPage.tsx` — tabela de histórico:**
-- Trocar coluna "Perfil Solicitado" por "Itens Solicitados" mostrando nomes das aplicações/grupos
+**2. `src/pages/colaboradores/ColaboradoresPage.tsx`**
+- Cabeçalho: `flex-wrap` nos botões
+- Tabela: ocultar colunas CPF, Área, Origem em mobile (`hidden md:table-cell`)
+- Filtros: já usa `flex-wrap`, ajustar `min-w` dos selects
 
-**4. `SolicitacoesPage.tsx` (admin) — tabela:**
-- Adaptar exibição para mostrar aplicações/grupos solicitados quando `perfil_id` for null
-- Na decisão de aprovação, se aprovada, enfileirar as ações de `assign_app` e `assign` (grupo) na `iam_queue`
+**3. `src/pages/terceiros/TerceirosPage.tsx`**
+- Ocultar colunas Empresa, Responsável em mobile
+- Cabeçalho com `flex-wrap`
+
+**4. `src/pages/solicitacoes/SolicitacoesPage.tsx`**
+- Cabeçalho: `flex-wrap` nos botões
+- Tabela: ocultar coluna Justificativa em mobile
+- Cards de status: `grid-cols-1 sm:grid-cols-3`
+
+**5. `src/pages/portal/PortalSolicitacoesPage.tsx`**
+- Cards: `grid-cols-2 sm:grid-cols-4` (já ok)
+- Tabela: ocultar Justificativa e Comentário em mobile
+
+**6. `src/pages/Dashboard.tsx`**
+- KPIs: `grid-cols-2 md:grid-cols-4` (já ok)
+- Gráficos: `lg:grid-cols-7` → adicionar `grid-cols-1` base
+
+**7. `src/pages/fila-provisionamento/FilaProvisionamentoPage.tsx`**
+- Ocultar colunas secundárias em mobile
+
+**8. `src/pages/aplicacoes/AplicacoesPage.tsx`**
+- Ocultar colunas Tipo, Responsável em mobile
+
+**9. `src/pages/perfis-acesso/PerfisAcessoPage.tsx`**
+- Counters: `grid-cols-1 sm:grid-cols-3`
+- Tabela: ocultar Tipo em mobile
+
+**10. `src/pages/licencas/LicencasPage.tsx`**
+- Ocultar colunas secundárias em mobile
+
+**11. `src/pages/privilegiados/PrivilegiadosPage.tsx`**
+- Cards: `grid-cols-2 md:grid-cols-4`
+
+**12. `src/pages/configuracoes/CargosPage.tsx`, `EmpresasPage.tsx`, `OperadoresPage.tsx`**
+- Ajustar tabelas e dialogs para responsividade
+
+**13. `src/pages/matriz/MatrizPage.tsx`**
+- Manter `overflow-x-auto` (matriz é intrinsecamente larga), mas reduzir padding em mobile
+
+**14. `src/index.css`**
+- Adicionar classe utilitária `.responsive-table` para ocultar colunas via `@apply`
+
+### Padrão aplicado em todas as tabelas
+
+```text
+Colunas sempre visíveis: Nome/Título, Status, Ações
+Colunas ocultas em mobile: campos secundários (CPF, Área, Origem, Tipo, etc.)
+Classe: hidden md:table-cell (no <th> e <td>)
+```
 
 ### Arquivos
 
 | Ação | Arquivo |
 |---|---|
-| Migração | `perfil_id` nullable + colunas `aplicacoes_ids`, `grupos_ids` em `solicitacoes_acesso` |
-| Editar | `src/pages/portal/PortalSolicitacoesPage.tsx` — multi-seleção de aplicações e grupos |
-| Editar | `src/pages/solicitacoes/SolicitacoesPage.tsx` — exibir e processar solicitações com apps/grupos |
+| Editar | `src/components/AppLayout.tsx` — padding responsivo |
+| Editar | `src/pages/colaboradores/ColaboradoresPage.tsx` — colunas responsivas |
+| Editar | `src/pages/terceiros/TerceirosPage.tsx` — colunas responsivas |
+| Editar | `src/pages/solicitacoes/SolicitacoesPage.tsx` — layout responsivo |
+| Editar | `src/pages/portal/PortalSolicitacoesPage.tsx` — colunas responsivas |
+| Editar | `src/pages/Dashboard.tsx` — grids responsivos |
+| Editar | `src/pages/fila-provisionamento/FilaProvisionamentoPage.tsx` — colunas responsivas |
+| Editar | `src/pages/aplicacoes/AplicacoesPage.tsx` — colunas responsivas |
+| Editar | `src/pages/perfis-acesso/PerfisAcessoPage.tsx` — grids e colunas responsivas |
+| Editar | `src/pages/licencas/LicencasPage.tsx` — colunas responsivas |
+| Editar | `src/pages/privilegiados/PrivilegiadosPage.tsx` — grids responsivos |
+| Editar | `src/pages/configuracoes/CargosPage.tsx` — responsividade |
+| Editar | `src/pages/configuracoes/EmpresasPage.tsx` — responsividade |
+| Editar | `src/pages/configuracoes/OperadoresPage.tsx` — responsividade |
 
