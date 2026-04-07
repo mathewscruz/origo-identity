@@ -152,6 +152,24 @@ export default function TerceiroDetalhePage() {
     if (!id || !terceiro) return;
     setDesligando(true);
     try {
+      // Check for active "manter_ativo" exception before deactivating
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: activeExcecoes } = await (supabase as any).from("excecoes")
+        .select("id, justificativa, validade, solicitante")
+        .eq("colaborador_id", id)
+        .eq("tipo_excecao", "manter_ativo")
+        .eq("status", "aprovada")
+        .gte("validade", today);
+      if (activeExcecoes && activeExcecoes.length > 0) {
+        const exc = activeExcecoes[0];
+        toast({
+          title: "Exceção ativa impede desativação",
+          description: `Existe uma exceção "Manter Ativo" aprovada até ${new Date(exc.validade).toLocaleDateString("pt-BR")} (Solicitante: ${exc.solicitante}). Remova ou aguarde a expiração para desativar.`,
+          variant: "destructive",
+        });
+        setDesligando(false);
+        return;
+      }
       // 1. Deactivate terceiro
       await supabase.from("terceiros").update({ ativo: false }).eq("id", id);
 

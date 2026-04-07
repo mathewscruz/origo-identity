@@ -26,6 +26,11 @@ const statusColors: Record<string, string> = {
   expirada: "bg-muted text-muted-foreground",
 };
 
+const tipoExcecaoLabels: Record<string, { label: string; class: string }> = {
+  acesso: { label: "Concessão de Acesso", class: "bg-primary/15 text-primary border-primary/30" },
+  manter_ativo: { label: "Manter Ativo", class: "bg-warning/15 text-warning border-warning/30" },
+};
+
 type TabKey = "pendentes" | "aprovadas" | "rejeitadas" | "expiradas" | "todas";
 const tabFilter: Record<TabKey, (e: { status: string; _expired?: boolean }) => boolean> = {
   pendentes: (e) => e.status === "pendente",
@@ -53,11 +58,12 @@ export default function ExcecoesPage() {
   const { data: perfisAcesso } = usePerfisAcesso();
   const { profile } = useAuth();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [decisionDialog, setDecisionDialog] = useState<{ id: string; action: "aprovada" | "rejeitada"; colabId?: string; perfilId?: string } | null>(null);
+  const [decisionDialog, setDecisionDialog] = useState<{ id: string; action: "aprovada" | "rejeitada"; colabId?: string; perfilId?: string; tipoExcecao?: string } | null>(null);
   const [decisionComment, setDecisionComment] = useState("");
   const [processing, setProcessing] = useState(false);
 
   // Form state
+  const [formTipoExcecao, setFormTipoExcecao] = useState("acesso");
   const [formColabId, setFormColabId] = useState("");
   const [formPerfilId, setFormPerfilId] = useState("");
   const [formColabSearch, setFormColabSearch] = useState("");
@@ -110,20 +116,23 @@ export default function ExcecoesPage() {
   }, [perfisAcesso, formPerfilSearch]);
 
   const resetForm = () => {
-    setFormColabId(""); setFormPerfilId(""); setFormColabSearch(""); setFormPerfilSearch("");
+    setFormTipoExcecao("acesso"); setFormColabId(""); setFormPerfilId(""); setFormColabSearch(""); setFormPerfilSearch("");
     setFormJustificativa(""); setFormValidade("");
   };
 
   const handleCreate = async () => {
     if (!formJustificativa.trim()) { toast({ title: "Justificativa é obrigatória", variant: "destructive" }); return; }
+    if (!formColabId) { toast({ title: "Selecione um colaborador", variant: "destructive" }); return; }
+    if (formTipoExcecao === "manter_ativo" && !formValidade) { toast({ title: "Validade é obrigatória para exceções do tipo Manter Ativo", variant: "destructive" }); return; }
     const selectedColab = (colaboradores as any[])?.find((c: any) => c.id === formColabId);
     const selectedPerfil = (perfisAcesso as any[])?.find((p: any) => p.id === formPerfilId);
 
     const { error } = await supabase.from("excecoes").insert({
+      tipo_excecao: formTipoExcecao,
       colaborador_id: formColabId || null,
       colaborador_nome: selectedColab?.nome || null,
-      perfil_id: formPerfilId || null,
-      perfil_solicitado: selectedPerfil?.nome || null,
+      perfil_id: formTipoExcecao === "acesso" ? (formPerfilId || null) : null,
+      perfil_solicitado: formTipoExcecao === "acesso" ? (selectedPerfil?.nome || null) : null,
       justificativa: formJustificativa.trim(),
       solicitante: profile?.nome || profile?.email || "Sistema",
       validade: formValidade || null,
@@ -137,7 +146,7 @@ export default function ExcecoesPage() {
   const handleDecision = async () => {
     if (!decisionDialog) return;
     setProcessing(true);
-    const { id, action, colabId, perfilId } = decisionDialog;
+    const { id, action, colabId, perfilId, tipoExcecao } = decisionDialog;
 
     try {
       // Update exception status
@@ -148,8 +157,8 @@ export default function ExcecoesPage() {
       } as any).eq("id", id);
       if (error) throw error;
 
-      // If approved and we have both colab and perfil, provision access
-      if (action === "aprovada" && colabId && perfilId) {
+      // Only provision access if type is 'acesso' and approved
+      if (action === "aprovada" && tipoExcecao !== "manter_ativo" && colabId && perfilId) {
         // Create perfil_atribuicoes
         await supabase.from("perfil_atribuicoes").insert({
           colaborador_id: colabId,
@@ -181,12 +190,13 @@ export default function ExcecoesPage() {
       }
 
       // Audit
+      const tipoLabel = tipoExcecao === "manter_ativo" ? "Manter Ativo" : "Concessão de Acesso";
       await supabase.from("auditoria").insert({
         acao: action === "aprovada" ? "aprovar_excecao" : "rejeitar_excecao",
         entidade: "excecoes",
         entidade_id: id,
         operador: profile?.email || "sistema",
-        resumo: `Exceção ${action}${decisionComment ? `: ${decisionComment}` : ""}`,
+        resumo: `Exceção (${tipoLabel}) ${action}${decisionComment ? `: ${decisionComment}` : ""}`,
       } as any);
 
       toast({ title: action === "aprovada" ? "Exceção aprovada" : "Exceção rejeitada" });
@@ -206,7 +216,7 @@ export default function ExcecoesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Exceções de Acesso</h1>
-          <p className="text-sm text-muted-foreground">Concessões fora da regra com justificativa e aprovação</p>
+          <p className="text-sm text-muted-foreground">Concessões fora da regra e bypass de desativação com justificativa e aprovação</p>
         </div>
         <Button onClick={() => { resetForm(); setDialogOpen(true); }}><Plus className="mr-1 h-4 w-4" />Nova Exceção</Button>
       </div>
@@ -250,40 +260,47 @@ export default function ExcecoesPage() {
             <Card><CardContent className="p-0">
               {isLoading ? <div className="p-4 space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div> : (
                 <table className="w-full text-sm"><thead><tr className="border-b text-left text-muted-foreground">
+                  <th className="p-4 font-medium">Tipo</th>
                   <th className="p-4 font-medium">Solicitante</th><th className="p-4 font-medium">Colaborador</th>
                   <th className="p-4 font-medium">Perfil</th><th className="p-4 font-medium">Justificativa</th>
                   <th className="p-4 font-medium">Status</th><th className="p-4 font-medium">Solicitado em</th>
                   <th className="p-4 font-medium">Validade</th>
                   {t === "pendentes" && <th className="p-4 font-medium">Ações</th>}
                 </tr></thead><tbody>
-                  {paginatedItems.map((ex: any) => (
-                    <tr key={ex.id} className="border-b last:border-0 hover:bg-muted/50">
-                      <td className="p-4 font-medium">{ex.solicitante}</td>
-                      <td className="p-4 text-primary">{ex.colaborador_nome || "—"}</td>
-                      <td className="p-4 text-muted-foreground">{ex.perfil_solicitado || ex.perfis_acesso?.nome || "—"}</td>
-                      <td className="p-4 text-muted-foreground text-xs max-w-[200px] truncate" title={ex.justificativa}>{ex.justificativa}</td>
-                      <td className="p-4">
-                        <Badge variant="outline" className={statusColors[ex._expired ? "expirada" : ex.status]}>
-                          {({ pendente: "Pendente", aprovada: "Aprovada", rejeitada: "Rejeitada", expirada: "Expirada" } as Record<string, string>)[ex._expired ? "expirada" : ex.status] || ex.status}
-                        </Badge>
-                      </td>
-                      <td className="p-4 text-muted-foreground text-xs">{new Date(ex.created_at).toLocaleDateString("pt-BR")}</td>
-                      <td className="p-4 text-muted-foreground text-xs">{ex.validade ? new Date(ex.validade).toLocaleDateString("pt-BR") : "—"}</td>
-                      {t === "pendentes" && (
-                        <td className="p-4"><div className="flex gap-1">
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-success" title="Aprovar"
-                            onClick={() => setDecisionDialog({ id: ex.id, action: "aprovada", colabId: ex.colaborador_id, perfilId: ex.perfil_id })}>
-                            <Check className="h-3 w-3" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" title="Rejeitar"
-                            onClick={() => setDecisionDialog({ id: ex.id, action: "rejeitada" })}>
-                            <X className="h-3 w-3" />
-                          </Button>
-                        </div></td>
-                      )}
-                    </tr>
-                  ))}
-                  {paginatedItems.length === 0 && <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">Nenhuma exceção.</td></tr>}
+                  {paginatedItems.map((ex: any) => {
+                    const tipo = tipoExcecaoLabels[ex.tipo_excecao] || tipoExcecaoLabels.acesso;
+                    return (
+                      <tr key={ex.id} className="border-b last:border-0 hover:bg-muted/50">
+                        <td className="p-4">
+                          <Badge variant="outline" className={tipo.class}>{tipo.label}</Badge>
+                        </td>
+                        <td className="p-4 font-medium">{ex.solicitante}</td>
+                        <td className="p-4 text-primary">{ex.colaborador_nome || "—"}</td>
+                        <td className="p-4 text-muted-foreground">{ex.tipo_excecao === "manter_ativo" ? "—" : (ex.perfil_solicitado || ex.perfis_acesso?.nome || "—")}</td>
+                        <td className="p-4 text-muted-foreground text-xs max-w-[200px] truncate" title={ex.justificativa}>{ex.justificativa}</td>
+                        <td className="p-4">
+                          <Badge variant="outline" className={statusColors[ex._expired ? "expirada" : ex.status]}>
+                            {({ pendente: "Pendente", aprovada: "Aprovada", rejeitada: "Rejeitada", expirada: "Expirada" } as Record<string, string>)[ex._expired ? "expirada" : ex.status] || ex.status}
+                          </Badge>
+                        </td>
+                        <td className="p-4 text-muted-foreground text-xs">{new Date(ex.created_at).toLocaleDateString("pt-BR")}</td>
+                        <td className="p-4 text-muted-foreground text-xs">{ex.validade ? new Date(ex.validade).toLocaleDateString("pt-BR") : "—"}</td>
+                        {t === "pendentes" && (
+                          <td className="p-4"><div className="flex gap-1">
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-success" title="Aprovar"
+                              onClick={() => setDecisionDialog({ id: ex.id, action: "aprovada", colabId: ex.colaborador_id, perfilId: ex.perfil_id, tipoExcecao: ex.tipo_excecao })}>
+                              <Check className="h-3 w-3" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" title="Rejeitar"
+                              onClick={() => setDecisionDialog({ id: ex.id, action: "rejeitada", tipoExcecao: ex.tipo_excecao })}>
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div></td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                  {paginatedItems.length === 0 && <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">Nenhuma exceção.</td></tr>}
                 </tbody></table>
               )}
             </CardContent></Card>
@@ -297,11 +314,26 @@ export default function ExcecoesPage() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Nova Exceção</DialogTitle>
-            <DialogDescription>Solicite acesso fora da regra para um colaborador</DialogDescription>
+            <DialogDescription>Solicite uma exceção para um colaborador</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Colaborador</Label>
+              <Label>Tipo de Exceção</Label>
+              <Select value={formTipoExcecao} onValueChange={(v) => { setFormTipoExcecao(v); if (v === "manter_ativo") { setFormPerfilId(""); setFormPerfilSearch(""); } }}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="acesso">Concessão de Acesso</SelectItem>
+                  <SelectItem value="manter_ativo">Manter Ativo (bypass de desativação)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {formTipoExcecao === "acesso" 
+                  ? "Concede um perfil de acesso extra fora da regra padrão." 
+                  : "Impede o sistema de desativar/revogar acessos do colaborador durante o período de validade."}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Colaborador *</Label>
               <Input placeholder="Buscar colaborador..." value={formColabSearch} onChange={(e) => { setFormColabSearch(e.target.value); setFormColabId(""); }} />
               {formColabSearch && !formColabId && (
                 <div className="border rounded-md max-h-32 overflow-y-auto">
@@ -315,23 +347,29 @@ export default function ExcecoesPage() {
               )}
               {formColabId && <p className="text-xs text-success">✓ Selecionado</p>}
             </div>
-            <div className="space-y-2">
-              <Label>Perfil solicitado</Label>
-              <Input placeholder="Buscar perfil..." value={formPerfilSearch} onChange={(e) => { setFormPerfilSearch(e.target.value); setFormPerfilId(""); }} />
-              {formPerfilSearch && !formPerfilId && (
-                <div className="border rounded-md max-h-32 overflow-y-auto">
-                  {filteredPerfis.map((p: any) => (
-                    <button key={p.id} className="w-full text-left px-3 py-1.5 hover:bg-muted text-sm" onClick={() => { setFormPerfilId(p.id); setFormPerfilSearch(p.nome); }}>
-                      {p.nome} <Badge variant="outline" className="ml-2 text-[10px]">{p.tipo}</Badge>
-                    </button>
-                  ))}
-                  {filteredPerfis.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum resultado</p>}
-                </div>
-              )}
-              {formPerfilId && <p className="text-xs text-success">✓ Selecionado</p>}
-            </div>
+            {formTipoExcecao === "acesso" && (
+              <div className="space-y-2">
+                <Label>Perfil solicitado</Label>
+                <Input placeholder="Buscar perfil..." value={formPerfilSearch} onChange={(e) => { setFormPerfilSearch(e.target.value); setFormPerfilId(""); }} />
+                {formPerfilSearch && !formPerfilId && (
+                  <div className="border rounded-md max-h-32 overflow-y-auto">
+                    {filteredPerfis.map((p: any) => (
+                      <button key={p.id} className="w-full text-left px-3 py-1.5 hover:bg-muted text-sm" onClick={() => { setFormPerfilId(p.id); setFormPerfilSearch(p.nome); }}>
+                        {p.nome} <Badge variant="outline" className="ml-2 text-[10px]">{p.tipo}</Badge>
+                      </button>
+                    ))}
+                    {filteredPerfis.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum resultado</p>}
+                  </div>
+                )}
+                {formPerfilId && <p className="text-xs text-success">✓ Selecionado</p>}
+              </div>
+            )}
             <div className="space-y-2"><Label>Justificativa *</Label><Textarea value={formJustificativa} onChange={(e) => setFormJustificativa(e.target.value)} rows={3} placeholder="Motivo da exceção..." /></div>
-            <div className="space-y-2"><Label>Validade</Label><Input type="date" value={formValidade} onChange={(e) => setFormValidade(e.target.value)} /></div>
+            <div className="space-y-2">
+              <Label>Validade {formTipoExcecao === "manter_ativo" ? "*" : ""}</Label>
+              <Input type="date" value={formValidade} onChange={(e) => setFormValidade(e.target.value)} />
+              {formTipoExcecao === "manter_ativo" && <p className="text-xs text-muted-foreground">Após esta data, a exceção expira e o sistema poderá desativar o colaborador normalmente.</p>}
+            </div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button onClick={handleCreate}>Solicitar</Button></DialogFooter>
         </DialogContent>
@@ -344,7 +382,9 @@ export default function ExcecoesPage() {
             <DialogTitle>{decisionDialog?.action === "aprovada" ? "Aprovar Exceção" : "Rejeitar Exceção"}</DialogTitle>
             <DialogDescription>
               {decisionDialog?.action === "aprovada"
-                ? "Ao aprovar, o perfil será atribuído ao colaborador e os acessos serão provisionados no Entra ID."
+                ? decisionDialog?.tipoExcecao === "manter_ativo"
+                  ? "Ao aprovar, o colaborador ficará protegido contra desativação automática até a data de validade."
+                  : "Ao aprovar, o perfil será atribuído ao colaborador e os acessos serão provisionados no Entra ID."
                 : "Ao rejeitar, a exceção será marcada como rejeitada e nenhuma ação será tomada."}
             </DialogDescription>
           </DialogHeader>
