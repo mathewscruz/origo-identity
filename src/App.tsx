@@ -27,6 +27,7 @@ import MatrizPage from "./pages/matriz/MatrizPage";
 import LicencasPage from "./pages/licencas/LicencasPage";
 import AuditoriaPage from "./pages/auditoria/AuditoriaPage";
 import SoDPage from "./pages/sod/SoDPage";
+import PrivilegiadosPage from "./pages/privilegiados/PrivilegiadosPage";
 import RelatoriosPage from "./pages/relatorios/RelatoriosPage";
 import SolicitacoesPage from "./pages/solicitacoes/SolicitacoesPage";
 import WorkflowPage from "./pages/workflow/WorkflowPage";
@@ -85,6 +86,7 @@ const App = () => (
               <Route path="/licencas" element={<LicencasPage />} />
               <Route path="/licencas/:id" element={<PlaceholderPage title="Detalhe da Licença" />} />
               <Route path="/sod" element={<SoDPage />} />
+              <Route path="/privilegiados" element={<PrivilegiadosPage />} />
               <Route path="/relatorios" element={<RelatoriosPage />} />
               <Route path="/solicitacoes" element={<SolicitacoesPage />} />
               <Route path="/workflow" element={<WorkflowPage />} />

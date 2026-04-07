@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Users, UserCheck, GitPullRequest, AppWindow, Shield,
-  AlertTriangle, ClipboardCheck, Cog, Grid3X3, Key, FileText, Bell, Settings, LogOut, UsersRound, ListOrdered, ShieldAlert, BarChart3, HandHelping, GitBranch,
+  AlertTriangle, ClipboardCheck, Cog, Grid3X3, Key, FileText, Bell, Settings, LogOut, UsersRound, ListOrdered, ShieldAlert, BarChart3, HandHelping, GitBranch, Crown,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -29,6 +29,7 @@ const sidebarGroups = [
     { title: "Exceções", url: "/excecoes", icon: AlertTriangle },
     { title: "Revisões", url: "/revisoes", icon: ClipboardCheck },
     { title: "SoD / Conflitos", url: "/sod", icon: ShieldAlert },
+    { title: "Privilegiados", url: "/privilegiados", icon: Crown },
   ]},
   { label: "Controle", items: [
     { title: "Motor de Regras", url: "/regras", icon: Cog },

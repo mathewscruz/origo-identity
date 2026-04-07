@@ -28,6 +28,7 @@ const routeLabels: Record<string, string> = {
   "/matriz": "Matriz",
   "/licencas": "Licenças",
   "/sod": "SoD / Conflitos",
+  "/privilegiados": "Privilegiados",
   "/relatorios": "Relatórios",
   "/solicitacoes": "Solicitações",
   "/workflow": "Workflow",
