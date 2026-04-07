@@ -1,38 +1,93 @@
 
 
-## Plano: Licenças Microsoft + Licenças Externas
+## Plano: Mover Auditoria/Alertas para Configurações + Validar completude
 
-### Situacao atual
+### 1. Mover Auditoria e Alertas para dentro de Configurações
 
-- A tabela `entra_licencas` existe com colunas `nome`, `sku_id`, `total`, `em_uso` mas nao e populada automaticamente
-- A tabela `licencas` armazena licencas manuais com campos como `custo_unitario`, `renovacao`, `tipo`
-- A pagina mostra apenas a tabela `licencas`
-- Ja existem credenciais Azure configuradas (AZURE_TENANT_ID, CLIENT_ID, CLIENT_SECRET)
+**Rotas (App.tsx):**
+- Remover rotas `/auditoria` e `/alertas` do nível principal
+- Adicionar como sub-rotas de `/configuracoes`: `auditoria` e `alertas`
+- Adicionar redirects de `/auditoria` → `/configuracoes/auditoria` e `/alertas` → `/configuracoes/alertas`
 
-### Implementacao
+**Sidebar (AppSidebar.tsx):**
+- Remover o grupo "Auditoria" inteiro (com Auditoria e Alertas)
+- As entradas passam a existir apenas na navegação lateral de Configurações
 
-#### 1. Edge Function `sync-entra-licencas`
-Criar nova Edge Function que:
-- Busca `GET /subscribedSkus` na Microsoft Graph API (retorna todas as licencas do tenant com `prepaidUnits.enabled` e `consumedUnits`)
-- Faz upsert na tabela `entra_licencas` usando `sku_id` como chave
-- Remove licencas que nao existem mais no tenant
-- Reutiliza o padrao de auth e paginacao do `sync-entra-apps`
+**ConfiguracoesLayout.tsx:**
+- Adicionar dois itens no `subNav`: Auditoria (icon FileText) e Alertas (icon Bell)
 
-#### 2. Atualizar LicencasPage
-- Adicionar hook `useEntraLicencas()` (ja existe em `useOrigoData.ts`)
-- Unificar as duas listas em uma view com tabs/filtro: **Microsoft** | **Externas** | **Todas**
-- Botao de sync (icone refresh) ao lado de "Nova Licenca" que chama a Edge Function
-- Licencas Microsoft: read-only (total/em_uso vem do Azure), sem botoes editar/excluir
-- Licencas Externas: editaveis como hoje, com botao "Nova Licenca" para adicionar manualmente
-- Contadores no header: Total licencas, Microsoft, Externas, Criticas
+**AuditoriaPage.tsx e AlertasPage.tsx:**
+- Remover os headers `<h1>` próprios (título e subtítulo) pois o layout de Configurações já tem header
 
-#### 3. Coluna "Origem" visual
-- Badge "Microsoft" (azul) ou "Externa" (outline) na tabela para diferenciar
+### 2. Validar que auditoria registra todos os movimentos
 
-### Arquivos
+**Operações SEM registro de auditoria hoje:**
 
-| Acao | Arquivo |
+| Módulo | Operação | Ação faltante |
+|---|---|---|
+| Colaboradores | Criar/Editar/Excluir/Alterar status | Nenhum audit log |
+| Aplicações | Criar/Editar/Excluir | Nenhum audit log |
+| Perfis de Acesso | Criar/Editar/Excluir | Nenhum audit log |
+| Cargos/Áreas/Empresas/Localidades | CRUD | Nenhum audit log |
+| Revisões | Criar campanha | Nenhum audit log |
+| Licenças | Criar/Editar/Excluir (externas) | Nenhum audit log |
+| Operadores | Criar/Editar | Nenhum audit log |
+| Usuários Admin | Criar/Alterar role | Nenhum audit log |
+
+**Correção:** Adicionar `supabase.from("auditoria").insert(...)` após cada operação de escrita nos seguintes arquivos:
+- `ColaboradoresPage.tsx` — criar, editar, excluir
+- `ColaboradorDetalhePage.tsx` — alterar status (ativar/desativar)
+- `AplicacoesPage.tsx` — criar, editar, excluir
+- `PerfisAcessoPage.tsx` — criar, editar, excluir
+- `PerfilAcessoDetalhePage.tsx` — editar perfil, alterar apps/grupos/licenças
+- `CargosPage.tsx`, `AreasPage.tsx`, `EmpresasPage.tsx`, `LocalidadesPage.tsx` — CRUD
+- `OperadoresPage.tsx` — CRUD
+- `RevisoesPage.tsx` — criar campanha
+- `LicencasPage.tsx` — CRUD licenças externas
+- `UsuariosPage.tsx` — criar usuário, alterar role
+
+### 3. Validar que Alertas está funcional
+
+**Estado atual:** Alertas só é populado por importações CSV (sync-csv-colab e sync-sharepoint-csv). Faltam alertas para eventos operacionais importantes.
+
+**Alertas a adicionar (no frontend ou edge functions):**
+- Exceção aprovada/rejeitada → alerta "info"
+- Revisão concluída → alerta "info"
+- Colaborador desabilitado → alerta "aviso"
+- Falha na fila de provisionamento (item com status `failed`) → alerta "critico"
+- Licença Microsoft com uso >90% → alerta "aviso" (no sync-entra-licencas)
+
+**Correção no AlertasPage:** O componente `Badge` está gerando warning de ref (console log). Não afeta funcionalidade mas deve ser corrigido.
+
+### Arquivos a alterar
+
+| Ação | Arquivo |
 |---|---|
-| Criar | `supabase/functions/sync-entra-licencas/index.ts` |
-| Editar | `src/pages/licencas/LicencasPage.tsx` — tabs, sync, unificacao |
+| Editar | `src/App.tsx` — mover rotas |
+| Editar | `src/components/AppSidebar.tsx` — remover grupo Auditoria |
+| Editar | `src/pages/configuracoes/ConfiguracoesLayout.tsx` — adicionar sub-nav |
+| Editar | `src/pages/auditoria/AuditoriaPage.tsx` — remover header próprio |
+| Editar | `src/pages/alertas/AlertasPage.tsx` — remover header próprio |
+| Editar | `src/pages/colaboradores/ColaboradoresPage.tsx` — audit logs |
+| Editar | `src/pages/colaboradores/ColaboradorDetalhePage.tsx` — audit logs |
+| Editar | `src/pages/aplicacoes/AplicacoesPage.tsx` — audit logs |
+| Editar | `src/pages/perfis-acesso/PerfisAcessoPage.tsx` — audit logs |
+| Editar | `src/pages/perfis-acesso/PerfilAcessoDetalhePage.tsx` — audit logs |
+| Editar | `src/pages/configuracoes/CargosPage.tsx` — audit logs |
+| Editar | `src/pages/configuracoes/AreasPage.tsx` — audit logs |
+| Editar | `src/pages/configuracoes/EmpresasPage.tsx` — audit logs |
+| Editar | `src/pages/configuracoes/LocalidadesPage.tsx` — audit logs |
+| Editar | `src/pages/configuracoes/OperadoresPage.tsx` — audit logs |
+| Editar | `src/pages/revisoes/RevisoesPage.tsx` — audit logs |
+| Editar | `src/pages/licencas/LicencasPage.tsx` — audit logs |
+| Editar | `src/pages/admin/UsuariosPage.tsx` — audit logs |
+| Editar | `supabase/functions/sync-entra-licencas/index.ts` — alerta licença crítica |
+| Editar | `supabase/functions/process-iam-queue/index.ts` — alerta falha provisionamento |
+
+### Ordem de implementação
+
+1. Mover rotas e sidebar (App.tsx, AppSidebar, ConfiguracoesLayout)
+2. Ajustar headers das páginas de Auditoria e Alertas
+3. Adicionar audit logs em todos os módulos CRUD
+4. Adicionar alertas automáticos para eventos operacionais
 
