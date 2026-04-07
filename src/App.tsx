@@ -14,6 +14,7 @@ import TerceiroDetalhePage from "./pages/terceiros/TerceiroDetalhePage";
 import EventosJMLPage from "./pages/eventos-jml/EventosJMLPage";
 import EventoJMLDetalhePage from "./pages/eventos-jml/EventoJMLDetalhePage";
 import AplicacoesPage from "./pages/aplicacoes/AplicacoesPage";
+import AplicacaoDetalhePage from "./pages/aplicacoes/AplicacaoDetalhePage";
 import PerfisAcessoPage from "./pages/perfis-acesso/PerfisAcessoPage";
 import PerfilAcessoDetalhePage from "./pages/perfis-acesso/PerfilAcessoDetalhePage";
 import ExcecoesPage from "./pages/excecoes/ExcecoesPage";
@@ -66,7 +67,7 @@ const App = () => (
               <Route path="/eventos-jml" element={<EventosJMLPage />} />
               <Route path="/eventos-jml/:id" element={<EventoJMLDetalhePage />} />
               <Route path="/aplicacoes" element={<AplicacoesPage />} />
-              <Route path="/aplicacoes/:id" element={<PlaceholderPage title="Detalhe da Aplicação" />} />
+              <Route path="/aplicacoes/:id" element={<AplicacaoDetalhePage />} />
               <Route path="/perfis-acesso" element={<PerfisAcessoPage />} />
               <Route path="/perfis-acesso/:id" element={<PerfilAcessoDetalhePage />} />
               <Route path="/excecoes" element={<ExcecoesPage />} />
