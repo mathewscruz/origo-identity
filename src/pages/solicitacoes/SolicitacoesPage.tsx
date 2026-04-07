@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { logAuditoria } from "@/lib/auditLogger";
 import { useAuth } from "@/contexts/AuthContext";
+import { queueFullProfileActions } from "@/lib/entraQueueHelper";
 import { HandHelping, Plus, Search, Clock, CheckCircle2, XCircle, Send } from "lucide-react";
 
 export default function SolicitacoesPage() {
@@ -59,15 +60,35 @@ export default function SolicitacoesPage() {
       return;
     }
 
-    const { error } = await supabase.from("solicitacoes_acesso").insert({
+    // Check if workflow etapas exist for solicitacao
+    const { data: etapas } = await supabase
+      .from("workflow_etapas")
+      .select("*")
+      .eq("entidade_tipo", "solicitacao")
+      .eq("ativo", true)
+      .order("ordem");
+
+    const { data: inserted, error } = await supabase.from("solicitacoes_acesso").insert({
       solicitante_id: solicitanteId,
       perfil_id: perfilId,
       justificativa: justificativa.trim(),
-    } as any);
+      status: (etapas && etapas.length > 0) ? "em_aprovacao" : "pendente",
+    } as any).select("id").single();
 
     if (error) {
       toast({ title: "Erro ao criar solicitação", description: error.message, variant: "destructive" });
       return;
+    }
+
+    // Create workflow_execucoes for each etapa
+    if (etapas && etapas.length > 0 && inserted?.id) {
+      const execucoes = etapas.map((et: any) => ({
+        entidade_id: inserted.id,
+        entidade_tipo: "solicitacao",
+        etapa_id: et.id,
+        status: "pendente",
+      }));
+      await supabase.from("workflow_execucoes").insert(execucoes as any);
     }
 
     const colabNome = colabMap.get(solicitanteId)?.nome || "—";
@@ -76,11 +97,12 @@ export default function SolicitacoesPage() {
     await logAuditoria({
       acao: "criar",
       entidade: "solicitacao_acesso",
-      resumo: `Solicitação de acesso: ${colabNome} → ${perfilNome}`,
+      entidade_id: inserted?.id,
+      resumo: `Solicitação de acesso: ${colabNome} → ${perfilNome}${etapas && etapas.length > 0 ? ` (workflow: ${etapas.length} etapas)` : ""}`,
       operador: profile?.email || "sistema",
     });
 
-    toast({ title: "Solicitação criada com sucesso" });
+    toast({ title: "Solicitação criada com sucesso", description: etapas && etapas.length > 0 ? `Encaminhada para workflow com ${etapas.length} etapa(s) de aprovação.` : undefined });
     setDialogOpen(false);
     setSolicitanteId("");
     setPerfilId("");
@@ -105,7 +127,7 @@ export default function SolicitacoesPage() {
       return;
     }
 
-    // If approved, create perfil_atribuicao
+    // If approved, create perfil_atribuicao AND provision in Entra ID
     if (decisao === "aprovada") {
       await supabase.from("perfil_atribuicoes").insert({
         colaborador_id: decisionDialog.solicitante_id,
@@ -113,6 +135,20 @@ export default function SolicitacoesPage() {
         origem: "solicitacao",
         ativo: true,
       } as any);
+
+      // Queue Entra ID provisioning
+      const { data: colab } = await supabase
+        .from("colaboradores")
+        .select("id, nome, email, sam_account_name")
+        .eq("id", decisionDialog.solicitante_id)
+        .single();
+      if (colab && (colab.email || colab.sam_account_name)) {
+        await queueFullProfileActions(
+          [{ id: colab.id, nome: colab.nome, email: colab.email, sam_account_name: colab.sam_account_name }],
+          [decisionDialog.perfil_id],
+          "assign"
+        );
+      }
     }
 
     const colabNome = colabMap.get(decisionDialog.solicitante_id)?.nome || "—";

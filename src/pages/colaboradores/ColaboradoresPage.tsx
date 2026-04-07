@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +60,8 @@ const emptyForm: ColabForm = {
 };
 
 export default function ColaboradoresPage() {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [busca, setBusca] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
   const [cargoFilter, setCargoFilter] = useState("todos");
@@ -399,7 +402,7 @@ export default function ColaboradoresPage() {
           <p className="text-sm text-muted-foreground">Gestão de funcionários internos</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline"><Upload className="mr-1 h-4 w-4" />Importar Base</Button>
+          <Button variant="outline" onClick={() => navigate("/configuracoes/integracoes")}><Upload className="mr-1 h-4 w-4" />Importar Base</Button>
           <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Colaborador</Button>
         </div>
       </div>

@@ -299,7 +299,10 @@ export default function ColaboradorDetalhePage() {
           <Button variant="outline" size="sm" onClick={() => { setTempPassword(null); setResetDialogOpen(true); }}>
             <KeyRound className="mr-1 h-3 w-3" /> Resetar Senha
           </Button>
-          <Button variant="outline" size="sm"><Pencil className="mr-1 h-3 w-3" /> Editar</Button>
+          <Button variant="outline" size="sm" onClick={() => {
+            // Navigate to ColaboradoresPage with edit intent
+            window.location.href = `/colaboradores?edit=${id}`;
+          }}><Pencil className="mr-1 h-3 w-3" /> Editar</Button>
         </div>
       </div>
 

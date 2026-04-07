@@ -117,6 +117,7 @@ export default function TerceiroDetalhePage() {
 
   const handleAtribuirPerfil = async () => {
     if (!selectedPerfil || !id) return;
+    const perfilNome = (perfisAcesso as any[])?.find((p: any) => p.id === selectedPerfil)?.nome || "—";
     const { error } = await supabase.from("perfil_atribuicoes").insert({
       perfil_id: selectedPerfil,
       terceiro_id: id,
@@ -126,6 +127,7 @@ export default function TerceiroDetalhePage() {
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
     // Generate iam_queue for groups/licenses
     await generateProfileIamQueue(selectedPerfil, "assign");
+    await logAuditoria({ acao: "atribuir_perfil_terceiro", entidade: "perfil_atribuicoes", entidade_id: id, resumo: `Perfil "${perfilNome}" atribuído ao terceiro ${terceiro.nome}`, operador: profile?.email });
     toast({ title: "Perfil atribuído — solicitações de acesso enviadas" });
     qc.invalidateQueries({ queryKey: ["terceiro_atribuicoes", id] });
     setAtribuirOpen(false);
@@ -139,6 +141,7 @@ export default function TerceiroDetalhePage() {
     if (perfilId) {
       await generateProfileIamQueue(perfilId, "remove");
     }
+    await logAuditoria({ acao: "revogar_perfil_terceiro", entidade: "perfil_atribuicoes", entidade_id: id!, resumo: `Perfil revogado do terceiro ${terceiro.nome}`, operador: profile?.email });
     toast({ title: "Perfil revogado — solicitações de remoção enviadas" });
     qc.invalidateQueries({ queryKey: ["terceiro_atribuicoes", id] });
     triggerEntraProcessing();
