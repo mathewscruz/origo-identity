@@ -21,6 +21,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { provisionCargoAcessos } from "@/lib/provisionCargoAcessos";
 import { createEventoJML } from "@/lib/createEventoJML";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
+import { logAuditoria, logAlerta } from "@/lib/auditLogger";
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
@@ -345,6 +346,8 @@ export default function ColaboradoresPage() {
     }
 
     setSaving(false);
+    const action = editingId ? "editar_colaborador" : "criar_colaborador";
+    await logAuditoria({ acao: action, entidade: "colaboradores", entidade_id: colaboradorId || undefined, resumo: `${action === "criar_colaborador" ? "Criado" : "Editado"}: ${form.nome}`, operador: profile?.email });
     toast({ title: editingId ? "Colaborador atualizado" : "Colaborador criado" });
     queryClient.invalidateQueries({ queryKey: ["colaboradores"] });
     queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
@@ -380,6 +383,8 @@ export default function ColaboradoresPage() {
 
     const { error } = await supabase.from("colaboradores").delete().eq("id", deleteId);
     if (error) { toast({ title: "Erro ao excluir", description: error.message, variant: "destructive" }); return; }
+    await logAuditoria({ acao: "excluir_colaborador", entidade: "colaboradores", entidade_id: deleteId, resumo: `Excluído: ${deletingColab?.nome}`, operador: profile?.email });
+    await logAlerta({ titulo: "Colaborador excluído", mensagem: `${deletingColab?.nome} foi removido do sistema`, severidade: "aviso", tipo: "colaborador_excluido" });
     toast({ title: "Solicitação de exclusão enviada para processamento" });
     queryClient.invalidateQueries({ queryKey: ["colaboradores"] });
     setDeleteId(null);
