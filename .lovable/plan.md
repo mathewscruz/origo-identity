@@ -1,69 +1,77 @@
 
 
-## Plano: Melhorias no módulo de Perfis de Acesso
+## Plano: Melhorias no módulo de Exceções de Acesso
 
 ### Problemas e inconsistências encontrados
 
-**1. Código duplicado entre PerfisAcessoPage e PerfilAcessoDetalhePage**
-O formulário de edição existe em DOIS lugares com lógica quase idêntica (sync de apps/licenças/grupos, cálculo de diff, provisionamento). Qualquer correção futura precisa ser feita em dois arquivos. A página de detalhe não tem busca nas listas de apps/licenças/grupos no dialog de edição (a listagem tem, o detalhe não).
+**1. Formulário usa texto livre em vez de dados reais do sistema**
+Os campos "Colaborador", "Perfil solicitado" e "Solicitante" são inputs de texto livre. O sistema tem tabelas de `colaboradores` e `perfis_acesso` com dados reais. Deveria usar selects/comboboxes vinculados a essas tabelas, preenchendo automaticamente `colaborador_id` e `perfil_id` (que existem na tabela `excecoes` mas nunca são usados).
 
-**2. Tabela "Composição" é redundante**
-A aba "Composição" na página de detalhe permite adicionar itens manuais (grupo, role, permissão, licença) de forma textual livre — mas o perfil JÁ tem abas estruturadas de Aplicações, Licenças e Grupos com dados reais do Entra ID. A composição era útil antes dessas abas existirem, agora gera confusão.
+**2. Aprovar exceção não gera nenhuma ação no Entra ID**
+Quando uma exceção é aprovada, o status muda para "aprovada" mas nada acontece. O perfil solicitado não é atribuído ao colaborador no Entra ID. A aprovação é puramente documental.
 
-**3. Exclusão de perfil não faz cleanup no Entra ID**
-Ao excluir um perfil (`handleDelete`), o sistema deleta o registro mas NÃO remove os grupos/licenças/apps dos colaboradores que tinham esse perfil. Ficam recursos órfãos no Entra ID.
+**3. Não há registro de quem aprovou/rejeitou**
+O campo `aprovador` existe na tabela mas nunca é preenchido na função `handleDecision`. Não há rastreabilidade.
 
-**4. Listagem não mostra informações suficientes**
-A tabela mostra apenas Nome, Aplicações, Tipo e Status. Falta: quantidade de pessoas atribuídas, quantidade de licenças/grupos, e cargos vinculados.
+**4. Exceções expiradas não são detectadas automaticamente**
+Não existe nenhum mecanismo que mude o status para "expirada" quando a validade passa. Exceções aprovadas com validade vencida continuam como "aprovada".
 
-**5. Falta filtro por tipo e status na listagem**
-Só existe busca por nome. Não há filtros por tipo (funcional/técnico/privilegiado) ou status (ativo/inativo).
+**5. Falta busca/filtro na listagem**
+Não há campo de busca por nome de colaborador ou solicitante.
 
-**6. Pessoa na aba "Pessoas" não é clicável**
-O nome do colaborador na aba Pessoas do detalhe não tem link para `/colaboradores/:id`.
+**6. Não há confirmação antes de aprovar/rejeitar**
+Os botões de aprovar/rejeitar executam imediatamente sem confirmação ou campo para comentário/justificativa da decisão.
 
-**7. PerfisAcessoPage não chama triggerEntraProcessing após gerar a fila**
-A `PerfisAcessoPage` gera entradas na `iam_queue` via `generateEntraQueueForDiff` (que por padrão chama `triggerEntraProcessing`), mas a `PerfilAcessoDetalhePage` chama `triggerEntraProcessing()` explicitamente depois E passa `triggerImmediately: false`. Inconsistência: na listagem o trigger é automático, no detalhe é manual — abordagens diferentes para o mesmo resultado.
+**7. Falta coluna de data de criação**
+Não é possível ver quando a exceção foi solicitada.
+
+**8. Não há página de detalhe**
+Não existe uma view expandida da exceção com histórico completo.
 
 ### Melhorias propostas
 
-#### A. Remover aba "Composição" (redundante)
-- Remover a aba, o dialog e as funções `handleAddComp`/`handleDeleteComp`
-- Remover o card contador "Composição" no header
-- Simplifica a interface e elimina confusão
+#### A. Vincular formulário a dados reais
+- Substituir "Colaborador" por um combobox com busca na tabela `colaboradores`
+- Substituir "Perfil solicitado" por um combobox com busca na tabela `perfis_acesso`
+- Preencher `colaborador_id` e `perfil_id` automaticamente ao selecionar
+- Manter os campos de texto como fallback (preenchidos automaticamente com o nome selecionado)
+- "Solicitante" pode usar o nome do usuário logado como padrão
 
-#### B. Adicionar busca nas listas do dialog de edição (PerfilAcessoDetalhePage)
-- As listas de apps, licenças e grupos no dialog de edição da página de detalhe não têm campo de busca (a da listagem tem)
-- Adicionar Input de busca em cada aba do dialog
+#### B. Provisionar acesso ao aprovar
+- Quando status muda para "aprovada" e há `colaborador_id` + `perfil_id`:
+  - Criar `perfil_atribuicoes` com `origem = 'excecao'`
+  - Gerar ações na `iam_queue` para atribuir apps/licenças/grupos do perfil
+  - Triggerar processamento no Entra ID
+- Quando a exceção expira ou é revogada, reverter as ações
 
-#### C. Melhorar a listagem com mais colunas e filtros
-- Adicionar colunas: "Pessoas" (contagem), "Licenças" (contagem), "Grupos" (contagem)
-- Adicionar filtros por Tipo e Status
-- Adicionar contadores no header (Total, Ativos, Privilegiados)
+#### C. Registrar aprovador e adicionar confirmação
+- Preencher campo `aprovador` com o nome/email do usuário logado
+- Antes de aprovar/rejeitar, abrir dialog de confirmação com campo de comentário opcional
+- Registrar na auditoria
 
-#### D. Tornar nomes de pessoas clicáveis
-- Na aba "Pessoas" do detalhe, fazer o nome do colaborador ser um link para `/colaboradores/:id`
+#### D. Adicionar busca e data de criação
+- Campo de busca filtrando por colaborador, solicitante ou perfil
+- Coluna "Solicitado em" com a data de criação formatada
 
-#### E. Cleanup no Entra ID ao excluir perfil
-- Antes de deletar, buscar colaboradores afetados e gerar ações de `remove` na `iam_queue`
-- Exibir confirmação com a quantidade de pessoas impactadas
+#### E. Detecção automática de expiração
+- No frontend: ao carregar a lista, marcar visualmente exceções aprovadas com validade vencida
+- Opcional futuro: cron/trigger no backend para atualizar status e revogar acesso
 
-#### F. Mostrar cargos vinculados no detalhe
-- Adicionar uma aba ou seção "Cargos" mostrando quais cargos estão vinculados a este perfil (via `cargo_perfis`)
-- Link para a página de configuração de cargos
+#### F. Contadores no header
+- Cards com totais: Pendentes, Aprovadas, Expiradas, Total
 
 ### Arquivos a alterar
 
-| Ação | Arquivo |
+| Acao | Arquivo |
 |---|---|
-| Editar | `src/pages/perfis-acesso/PerfisAcessoPage.tsx` — filtros, colunas extras, cleanup ao excluir |
-| Editar | `src/pages/perfis-acesso/PerfilAcessoDetalhePage.tsx` — remover composição, busca no dialog, aba cargos, links nas pessoas |
+| Editar | `src/pages/excecoes/ExcecoesPage.tsx` — comboboxes, busca, confirmacao, provisioning, contadores |
 
-### Ordem de implementação
+### Ordem de implementacao
 
-1. Remover composição e adicionar aba Cargos no detalhe
-2. Adicionar busca no dialog de edição do detalhe
-3. Tornar nomes de pessoas clicáveis
-4. Melhorar listagem (filtros, colunas, contadores)
-5. Adicionar cleanup de Entra ID ao excluir perfil
+1. Adicionar contadores no header e busca na listagem
+2. Substituir inputs por comboboxes vinculados a dados reais
+3. Adicionar dialog de confirmacao com campo de comentario ao aprovar/rejeitar
+4. Registrar aprovador e criar entrada na auditoria
+5. Provisionar acesso no Entra ID ao aprovar (criar perfil_atribuicoes + iam_queue)
+6. Detectar e marcar exceções expiradas visualmente
 
