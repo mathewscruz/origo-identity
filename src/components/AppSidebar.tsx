@@ -54,7 +54,7 @@ export function AppSidebar() {
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2">
           <img src={logoImg} alt="Access & Identity" className="h-8 w-8 rounded-lg" />
-          {!collapsed && <div className="flex flex-col"><span className="text-sm font-semibold text-sidebar-primary-foreground">Access & Identity</span><span className="text-[10px] text-sidebar-foreground/60">Sistema</span></div>}
+          {!collapsed && <div className="flex flex-col"><span className="text-sm font-semibold text-sidebar-primary-foreground">Órigo Access & Identity</span><span className="text-[10px] text-sidebar-foreground/60">Sistema</span></div>}
         </div>
       </SidebarHeader>
       <SidebarSeparator />
