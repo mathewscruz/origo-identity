@@ -17,6 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { reprovisionCargoCollaborators } from "@/lib/entraQueueHelper";
+import { logAuditoria } from "@/lib/auditLogger";
 
 export default function CargosPage() {
   const { data: cargos, isLoading } = useCargos();
@@ -98,6 +99,7 @@ export default function CargosPage() {
       await (supabase as any).from("cargo_perfis").insert(toAdd.map((perfil_id) => ({ cargo_id: cargoId, perfil_id })));
     }
 
+    await logAuditoria({ acao: editing ? "editar_cargo" : "criar_cargo", entidade: "cargos", entidade_id: cargoId, resumo: `${editing ? "Editado" : "Criado"}: ${form.nome}` });
     toast({ title: editing ? "Cargo atualizado" : "Cargo criado" });
 
     // Reprovision collaborators when cargo_perfis changed
@@ -126,6 +128,7 @@ export default function CargosPage() {
     if (!deleteId) return;
     const { error } = await supabase.from("cargos").delete().eq("id", deleteId);
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+    await logAuditoria({ acao: "excluir_cargo", entidade: "cargos", entidade_id: deleteId });
     toast({ title: "Cargo excluído" });
     qc.invalidateQueries({ queryKey: ["cargos"] });
     setDeleteId(null);

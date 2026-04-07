@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { logAuditoria } from "@/lib/auditLogger";
 
 export default function AreasPage() {
   const { data: areas, isLoading } = useAreas();
@@ -39,10 +40,12 @@ export default function AreasPage() {
     if (editing) {
       const { error } = await supabase.from("areas").update(payload).eq("id", editing.id);
       if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+      await logAuditoria({ acao: "editar_area", entidade: "areas", entidade_id: editing.id, resumo: `Editada: ${form.nome}` });
       toast({ title: "Área atualizada" });
     } else {
-      const { error } = await supabase.from("areas").insert(payload);
+      const { data, error } = await supabase.from("areas").insert(payload).select("id").single();
       if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+      await logAuditoria({ acao: "criar_area", entidade: "areas", entidade_id: data?.id, resumo: `Criada: ${form.nome}` });
       toast({ title: "Área criada" });
     }
     qc.invalidateQueries({ queryKey: ["areas"] });
@@ -53,6 +56,7 @@ export default function AreasPage() {
     if (!deleteId) return;
     const { error } = await supabase.from("areas").delete().eq("id", deleteId);
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+    await logAuditoria({ acao: "excluir_area", entidade: "areas", entidade_id: deleteId });
     toast({ title: "Área excluída" });
     qc.invalidateQueries({ queryKey: ["areas"] });
     setDeleteId(null);
