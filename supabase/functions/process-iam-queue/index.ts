@@ -593,6 +593,17 @@ Deno.serve(async (req) => {
               error_code: isNonRetryable ? "on_premises_managed" : "graph_api_error",
             }).eq("id", item.id);
             allResults.push({ id: item.id, action: item.action_type, status: "failed", message: result.message });
+
+            // Generate critical alert for permanent failure
+            await supabase.from("alertas").insert({
+              titulo: `Falha no provisionamento: ${item.action_type}`,
+              mensagem: `Ação ${item.action_type} falhou para ${item.target_identity || "desconhecido"}: ${result.message}`,
+              severidade: "critico",
+              tipo: "provisionamento_falha",
+              ref_url: "/fila-provisionamento",
+              ref_id: item.id,
+              ref_tipo: "iam_queue",
+            });
           }
         }
       }
