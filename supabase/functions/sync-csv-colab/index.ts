@@ -328,6 +328,74 @@ async function queueProfileAccess(
   }
 }
 
+const PREPOSITIONS = new Set(["de", "da", "do", "dos", "das", "e", "del", "di"]);
+
+function normalizeNamePart(str: string): string {
+  return str
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z]/g, "");
+}
+
+function generateOrigoEmail(displayName: string, existingEmails: Set<string>): string | null {
+  if (!displayName || !displayName.trim()) return null;
+
+  const parts = displayName
+    .trim()
+    .split(/\s+/)
+    .map(normalizeNamePart)
+    .filter((p) => p.length > 0 && !PREPOSITIONS.has(p));
+
+  if (parts.length === 0) return null;
+
+  const domain = "@origoenergia.com.br";
+  const first = parts[0];
+
+  // Single name — just use it
+  if (parts.length === 1) {
+    const candidate = `${first}${domain}`;
+    if (!existingEmails.has(candidate)) return candidate;
+    // Add numeric suffix
+    for (let i = 2; i <= 99; i++) {
+      const c = `${first}${i}${domain}`;
+      if (!existingEmails.has(c)) return c;
+    }
+    return null;
+  }
+
+  const last = parts[parts.length - 1];
+  const middles = parts.slice(1, -1);
+
+  // Try 1: first.last
+  const try1 = `${first}.${last}${domain}`;
+  if (!existingEmails.has(try1)) return try1;
+
+  // Try 2: first.middle (use first middle name)
+  if (middles.length > 0) {
+    const try2 = `${first}.${middles[0]}${domain}`;
+    if (!existingEmails.has(try2)) return try2;
+  }
+
+  // Try 3: first.middle.last
+  if (middles.length > 0) {
+    const try3 = `${first}.${middles[0]}.${last}${domain}`;
+    if (!existingEmails.has(try3)) return try3;
+  }
+
+  // Try 4: all parts joined
+  const tryFull = parts.join(".") + domain;
+  if (!existingEmails.has(tryFull)) return tryFull;
+
+  // Try 5: numeric suffix on first.last
+  for (let i = 2; i <= 99; i++) {
+    const c = `${first}.${last}${i}${domain}`;
+    if (!existingEmails.has(c)) return c;
+  }
+
+  return null;
+}
+
 async function processCsvData(sb: any, csvText: string, filename: string) {
   // ── 1. Create sync_job ──
   const { data: job, error: jobErr } = await sb
