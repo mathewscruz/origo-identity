@@ -169,7 +169,7 @@ export default function PrivilegiadosPage() {
         </CardContent>
       </Card>
 
-      {totalPages > 1 && <TablePagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />}
+      {filtered.length > PAGE_SIZE && <TablePagination currentPage={page} totalItems={filtered.length} pageSize={PAGE_SIZE} onPageChange={setPage} />}
 
       <Dialog open={!!selectedRole} onOpenChange={(o) => !o && setSelectedRole(null)}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
