@@ -147,7 +147,7 @@ function AcessoReport() {
           </TableBody>
         </Table>
       </Card>
-      {totalPages > 1 && <TablePagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />}
+      {filtered.length > perPage && <TablePagination totalItems={filtered.length} pageSize={perPage} currentPage={page} onPageChange={setPage} />}
     </div>
   );
 }
@@ -253,7 +253,7 @@ function HistoricoReport() {
           </TableBody>
         </Table>
       </Card>
-      {totalPages > 1 && <TablePagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />}
+      {filtered.length > perPage && <TablePagination totalItems={filtered.length} pageSize={perPage} currentPage={page} onPageChange={setPage} />}
     </div>
   );
 }
