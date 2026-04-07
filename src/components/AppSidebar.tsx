@@ -21,7 +21,6 @@ const sidebarGroups = [
   { label: "Identidades", items: [
     { title: "Colaboradores", url: "/colaboradores", icon: Users },
     { title: "Terceiros", url: "/terceiros", icon: UserCheck },
-    { title: "Eventos JML", url: "/eventos-jml", icon: GitPullRequest },
   ]},
   { label: "Governança", items: [
     { title: "Aplicações", url: "/aplicacoes", icon: AppWindow },
