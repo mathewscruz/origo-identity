@@ -1,93 +1,39 @@
 
 
-## Plano: Mover Auditoria/Alertas para Configurações + Validar completude
+## Plano: Exibir ícones/logos das aplicações
 
-### 1. Mover Auditoria e Alertas para dentro de Configurações
+### Abordagem
 
-**Rotas (App.tsx):**
-- Remover rotas `/auditoria` e `/alertas` do nível principal
-- Adicionar como sub-rotas de `/configuracoes`: `auditoria` e `alertas`
-- Adicionar redirects de `/auditoria` → `/configuracoes/auditoria` e `/alertas` → `/configuracoes/alertas`
+Para apps com URL preenchida, usar o serviço gratuito Google Favicon para buscar o ícone do domínio automaticamente: `https://www.google.com/s2/favicons?domain=DOMINIO&sz=32`. Para apps Azure sem URL, usar o ícone genérico Cloud. Para apps manuais sem URL, usar o ícone Globe.
 
-**Sidebar (AppSidebar.tsx):**
-- Remover o grupo "Auditoria" inteiro (com Auditoria e Alertas)
-- As entradas passam a existir apenas na navegação lateral de Configurações
+Isso evita a necessidade de armazenar imagens no banco ou fazer chamadas extras à Graph API (que exigiria permissões adicionais para buscar logos de Service Principals).
 
-**ConfiguracoesLayout.tsx:**
-- Adicionar dois itens no `subNav`: Auditoria (icon FileText) e Alertas (icon Bell)
+### Implementação
 
-**AuditoriaPage.tsx e AlertasPage.tsx:**
-- Remover os headers `<h1>` próprios (título e subtítulo) pois o layout de Configurações já tem header
+**Componente auxiliar `AppIcon`** — Recebe `url` e `origem`, renderiza:
+- Se `url` preenchida: `<img>` com favicon do Google + fallback para ícone genérico em caso de erro
+- Se Azure sem URL: ícone Cloud
+- Se manual sem URL: ícone Globe
 
-### 2. Validar que auditoria registra todos os movimentos
+**Onde usar:**
+- Na coluna "Nome" da tabela em `AplicacoesPage.tsx` — ícone pequeno (20px) ao lado do nome
+- No header de `AplicacaoDetalhePage.tsx` — ícone maior (32px) ao lado do título
 
-**Operações SEM registro de auditoria hoje:**
+### Detalhes técnicos
 
-| Módulo | Operação | Ação faltante |
-|---|---|---|
-| Colaboradores | Criar/Editar/Excluir/Alterar status | Nenhum audit log |
-| Aplicações | Criar/Editar/Excluir | Nenhum audit log |
-| Perfis de Acesso | Criar/Editar/Excluir | Nenhum audit log |
-| Cargos/Áreas/Empresas/Localidades | CRUD | Nenhum audit log |
-| Revisões | Criar campanha | Nenhum audit log |
-| Licenças | Criar/Editar/Excluir (externas) | Nenhum audit log |
-| Operadores | Criar/Editar | Nenhum audit log |
-| Usuários Admin | Criar/Alterar role | Nenhum audit log |
+```text
+URL preenchida (ex: https://app.exemplo.com)
+  → https://www.google.com/s2/favicons?domain=app.exemplo.com&sz=32
+  → <img> com onError fallback para <Globe />
 
-**Correção:** Adicionar `supabase.from("auditoria").insert(...)` após cada operação de escrita nos seguintes arquivos:
-- `ColaboradoresPage.tsx` — criar, editar, excluir
-- `ColaboradorDetalhePage.tsx` — alterar status (ativar/desativar)
-- `AplicacoesPage.tsx` — criar, editar, excluir
-- `PerfisAcessoPage.tsx` — criar, editar, excluir
-- `PerfilAcessoDetalhePage.tsx` — editar perfil, alterar apps/grupos/licenças
-- `CargosPage.tsx`, `AreasPage.tsx`, `EmpresasPage.tsx`, `LocalidadesPage.tsx` — CRUD
-- `OperadoresPage.tsx` — CRUD
-- `RevisoesPage.tsx` — criar campanha
-- `LicencasPage.tsx` — CRUD licenças externas
-- `UsuariosPage.tsx` — criar usuário, alterar role
+Sem URL + origem "azure"  → <Cloud />
+Sem URL + origem "manual" → <Globe />
+```
 
-### 3. Validar que Alertas está funcional
-
-**Estado atual:** Alertas só é populado por importações CSV (sync-csv-colab e sync-sharepoint-csv). Faltam alertas para eventos operacionais importantes.
-
-**Alertas a adicionar (no frontend ou edge functions):**
-- Exceção aprovada/rejeitada → alerta "info"
-- Revisão concluída → alerta "info"
-- Colaborador desabilitado → alerta "aviso"
-- Falha na fila de provisionamento (item com status `failed`) → alerta "critico"
-- Licença Microsoft com uso >90% → alerta "aviso" (no sync-entra-licencas)
-
-**Correção no AlertasPage:** O componente `Badge` está gerando warning de ref (console log). Não afeta funcionalidade mas deve ser corrigido.
-
-### Arquivos a alterar
+### Arquivos
 
 | Ação | Arquivo |
 |---|---|
-| Editar | `src/App.tsx` — mover rotas |
-| Editar | `src/components/AppSidebar.tsx` — remover grupo Auditoria |
-| Editar | `src/pages/configuracoes/ConfiguracoesLayout.tsx` — adicionar sub-nav |
-| Editar | `src/pages/auditoria/AuditoriaPage.tsx` — remover header próprio |
-| Editar | `src/pages/alertas/AlertasPage.tsx` — remover header próprio |
-| Editar | `src/pages/colaboradores/ColaboradoresPage.tsx` — audit logs |
-| Editar | `src/pages/colaboradores/ColaboradorDetalhePage.tsx` — audit logs |
-| Editar | `src/pages/aplicacoes/AplicacoesPage.tsx` — audit logs |
-| Editar | `src/pages/perfis-acesso/PerfisAcessoPage.tsx` — audit logs |
-| Editar | `src/pages/perfis-acesso/PerfilAcessoDetalhePage.tsx` — audit logs |
-| Editar | `src/pages/configuracoes/CargosPage.tsx` — audit logs |
-| Editar | `src/pages/configuracoes/AreasPage.tsx` — audit logs |
-| Editar | `src/pages/configuracoes/EmpresasPage.tsx` — audit logs |
-| Editar | `src/pages/configuracoes/LocalidadesPage.tsx` — audit logs |
-| Editar | `src/pages/configuracoes/OperadoresPage.tsx` — audit logs |
-| Editar | `src/pages/revisoes/RevisoesPage.tsx` — audit logs |
-| Editar | `src/pages/licencas/LicencasPage.tsx` — audit logs |
-| Editar | `src/pages/admin/UsuariosPage.tsx` — audit logs |
-| Editar | `supabase/functions/sync-entra-licencas/index.ts` — alerta licença crítica |
-| Editar | `supabase/functions/process-iam-queue/index.ts` — alerta falha provisionamento |
-
-### Ordem de implementação
-
-1. Mover rotas e sidebar (App.tsx, AppSidebar, ConfiguracoesLayout)
-2. Ajustar headers das páginas de Auditoria e Alertas
-3. Adicionar audit logs em todos os módulos CRUD
-4. Adicionar alertas automáticos para eventos operacionais
+| Editar | `src/pages/aplicacoes/AplicacoesPage.tsx` — adicionar ícone na coluna Nome |
+| Editar | `src/pages/aplicacoes/AplicacaoDetalhePage.tsx` — adicionar ícone no header |
 
