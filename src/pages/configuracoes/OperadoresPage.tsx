@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { logAuditoria } from "@/lib/auditLogger";
 
 export default function OperadoresPage() {
   const { data: operadores, isLoading } = useOperadores();
@@ -37,10 +38,12 @@ export default function OperadoresPage() {
     if (editing) {
       const { error } = await supabase.from("operadores").update(payload).eq("id", editing.id);
       if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+      await logAuditoria({ acao: "editar_operador", entidade: "operadores", entidade_id: editing.id, resumo: `Editado: ${form.nome}` });
       toast({ title: "Operador atualizado" });
     } else {
-      const { error } = await supabase.from("operadores").insert(payload);
+      const { data, error } = await supabase.from("operadores").insert(payload).select("id").single();
       if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+      await logAuditoria({ acao: "criar_operador", entidade: "operadores", entidade_id: data?.id, resumo: `Criado: ${form.nome}` });
       toast({ title: "Operador criado" });
     }
     qc.invalidateQueries({ queryKey: ["operadores"] });
@@ -51,6 +54,7 @@ export default function OperadoresPage() {
     if (!deleteId) return;
     const { error } = await supabase.from("operadores").delete().eq("id", deleteId);
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+    await logAuditoria({ acao: "excluir_operador", entidade: "operadores", entidade_id: deleteId });
     toast({ title: "Operador excluído" });
     qc.invalidateQueries({ queryKey: ["operadores"] });
     setDeleteId(null);

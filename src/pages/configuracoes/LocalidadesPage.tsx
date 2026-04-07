@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { logAuditoria } from "@/lib/auditLogger";
 
 export default function LocalidadesPage() {
   const { data: localidades, isLoading } = useLocalidades();
@@ -39,10 +40,12 @@ export default function LocalidadesPage() {
     if (editing) {
       const { error } = await supabase.from("localidades").update(payload).eq("id", editing.id);
       if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+      await logAuditoria({ acao: "editar_localidade", entidade: "localidades", entidade_id: editing.id, resumo: `Editada: ${form.nome}` });
       toast({ title: "Localidade atualizada" });
     } else {
-      const { error } = await supabase.from("localidades").insert(payload);
+      const { data, error } = await supabase.from("localidades").insert(payload).select("id").single();
       if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+      await logAuditoria({ acao: "criar_localidade", entidade: "localidades", entidade_id: data?.id, resumo: `Criada: ${form.nome}` });
       toast({ title: "Localidade criada" });
     }
     qc.invalidateQueries({ queryKey: ["localidades"] });
@@ -53,6 +56,7 @@ export default function LocalidadesPage() {
     if (!deleteId) return;
     const { error } = await supabase.from("localidades").delete().eq("id", deleteId);
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+    await logAuditoria({ acao: "excluir_localidade", entidade: "localidades", entidade_id: deleteId });
     toast({ title: "Localidade excluída" });
     qc.invalidateQueries({ queryKey: ["localidades"] });
     setDeleteId(null);

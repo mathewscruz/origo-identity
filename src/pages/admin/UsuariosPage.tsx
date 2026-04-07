@@ -14,6 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { logAuditoria } from "@/lib/auditLogger";
 import TablePagination, { usePagination } from "@/components/TablePagination";
 
 function useProfiles() {
@@ -64,6 +65,7 @@ export default function UsuariosPage() {
       } else {
         await (supabase as any).from("user_roles").insert({ user_id: editing.id, role: form.role });
       }
+      await logAuditoria({ acao: "editar_usuario", entidade: "profiles", entidade_id: editing.id, resumo: `Editado: ${form.nome}, role: ${form.role}` });
       toast({ title: "Usuário atualizado" });
     } else {
       // Create via signup
@@ -77,6 +79,7 @@ export default function UsuariosPage() {
       if (data.user) {
         await (supabase as any).from("user_roles").insert({ user_id: data.user.id, role: form.role });
       }
+      await logAuditoria({ acao: "criar_usuario", entidade: "profiles", entidade_id: data.user?.id, resumo: `Criado: ${form.nome} (${form.email}), role: ${form.role}` });
       toast({ title: "Usuário criado", description: "Email de confirmação enviado." });
     }
     qc.invalidateQueries({ queryKey: ["admin_profiles"] });
@@ -88,6 +91,7 @@ export default function UsuariosPage() {
     // Can't delete auth user from client, but we can deactivate profile
     const { error } = await supabase.from("profiles").update({ ativo: false }).eq("id", deleteId);
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+    await logAuditoria({ acao: "desativar_usuario", entidade: "profiles", entidade_id: deleteId });
     toast({ title: "Usuário desativado" });
     qc.invalidateQueries({ queryKey: ["admin_profiles"] });
     setDeleteId(null);

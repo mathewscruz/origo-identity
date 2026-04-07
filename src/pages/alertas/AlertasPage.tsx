@@ -44,17 +44,13 @@ export default function AlertasPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Alertas</h1>
-          <p className="text-sm text-muted-foreground">Central de notificações operacionais</p>
-        </div>
-        {naoLidos.length > 0 && (
+      {naoLidos.length > 0 && (
+        <div className="flex justify-end">
           <Button variant="outline" onClick={marcarTodosLidos}>
             <CheckCheck className="mr-1 h-4 w-4" />Marcar todos como lidos
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       <Tabs value={tab} onValueChange={(v) => { setTab(v as "nao_lidos" | "todos"); setPage(1); }}>
         <TabsList>

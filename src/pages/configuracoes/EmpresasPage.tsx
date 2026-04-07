@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { logAuditoria } from "@/lib/auditLogger";
 
 export default function EmpresasPage() {
   const { data: empresas, isLoading } = useEmpresas();
@@ -36,10 +37,12 @@ export default function EmpresasPage() {
     if (editing) {
       const { error } = await supabase.from("empresas").update({ nome: form.nome.trim(), cnpj: form.cnpj.trim() || null, ativo: form.ativo }).eq("id", editing.id);
       if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+      await logAuditoria({ acao: "editar_empresa", entidade: "empresas", entidade_id: editing.id, resumo: `Editada: ${form.nome}` });
       toast({ title: "Empresa atualizada" });
     } else {
-      const { error } = await supabase.from("empresas").insert({ nome: form.nome.trim(), cnpj: form.cnpj.trim() || null, ativo: form.ativo });
+      const { data, error } = await supabase.from("empresas").insert({ nome: form.nome.trim(), cnpj: form.cnpj.trim() || null, ativo: form.ativo }).select("id").single();
       if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+      await logAuditoria({ acao: "criar_empresa", entidade: "empresas", entidade_id: data?.id, resumo: `Criada: ${form.nome}` });
       toast({ title: "Empresa criada" });
     }
     qc.invalidateQueries({ queryKey: ["empresas"] });
@@ -50,6 +53,7 @@ export default function EmpresasPage() {
     if (!deleteId) return;
     const { error } = await supabase.from("empresas").delete().eq("id", deleteId);
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
+    await logAuditoria({ acao: "excluir_empresa", entidade: "empresas", entidade_id: deleteId });
     toast({ title: "Empresa excluída" });
     qc.invalidateQueries({ queryKey: ["empresas"] });
     setDeleteId(null);

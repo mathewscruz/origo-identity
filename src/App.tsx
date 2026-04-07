@@ -80,8 +80,8 @@ const App = () => (
               <Route path="/matriz" element={<MatrizPage />} />
               <Route path="/licencas" element={<LicencasPage />} />
               <Route path="/licencas/:id" element={<PlaceholderPage title="Detalhe da Licença" />} />
-              <Route path="/auditoria" element={<AuditoriaPage />} />
-              <Route path="/alertas" element={<AlertasPage />} />
+              <Route path="/auditoria" element={<Navigate to="/configuracoes/auditoria" replace />} />
+              <Route path="/alertas" element={<Navigate to="/configuracoes/alertas" replace />} />
               <Route path="/admin/usuarios" element={<UsuariosPage />} />
               <Route path="/configuracoes" element={<ConfiguracoesLayout />}>
                 <Route index element={<Navigate to="/configuracoes/cargos" replace />} />
@@ -92,6 +92,8 @@ const App = () => (
                 <Route path="operadores" element={<OperadoresPage />} />
                 <Route path="parametros" element={<ParametrosPage />} />
                 <Route path="integracoes" element={<IntegracoesPage />} />
+                <Route path="auditoria" element={<AuditoriaPage />} />
+                <Route path="alertas" element={<AlertasPage />} />
               </Route>
             </Route>
             <Route path="*" element={<NotFound />} />

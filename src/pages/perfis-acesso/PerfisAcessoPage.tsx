@@ -22,6 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { findAffectedCollaborators, generateEntraQueueForDiff, queueFullProfileActions } from "@/lib/entraQueueHelper";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
+import { logAuditoria } from "@/lib/auditLogger";
 
 interface PerfilForm {
   nome: string;
@@ -190,6 +191,7 @@ export default function PerfisAcessoPage() {
         }
       }
 
+      await logAuditoria({ acao: editingId ? "editar_perfil" : "criar_perfil", entidade: "perfis_acesso", entidade_id: perfilId || undefined, resumo: `${editingId ? "Editado" : "Criado"}: ${form.nome}` });
       toast({ title: editingId ? "Perfil atualizado" : "Perfil criado" });
       queryClient.invalidateQueries({ queryKey: ["perfis_acesso"] });
       queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes_counts"] });
@@ -230,6 +232,7 @@ export default function PerfisAcessoPage() {
       if (error) throw error;
 
       triggerEntraProcessing();
+      await logAuditoria({ acao: "excluir_perfil", entidade: "perfis_acesso", entidade_id: perfId, resumo: `Perfil excluído` });
       toast({ title: "Perfil excluído" });
       queryClient.invalidateQueries({ queryKey: ["perfis_acesso"] });
     } catch (err: any) {

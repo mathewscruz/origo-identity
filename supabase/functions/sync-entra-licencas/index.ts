@@ -112,6 +112,27 @@ Deno.serve(async (req) => {
       if (!error) deleted = stale.length;
     }
 
+    // Generate alerts for critical licenses (>90% usage)
+    const criticalSkus = skus.filter((sku: any) => {
+      const t = sku.prepaidUnits?.enabled || 0;
+      const u = sku.consumedUnits || 0;
+      return t > 0 && (u / t) >= 0.9;
+    });
+    for (const sku of criticalSkus) {
+      const nome = sku.skuPartNumber || sku.skuId;
+      const t = sku.prepaidUnits?.enabled || 0;
+      const u = sku.consumedUnits || 0;
+      await supabase.from("alertas").insert({
+        titulo: `Licença crítica: ${nome}`,
+        mensagem: `A licença ${nome} está com ${u}/${t} unidades em uso (${Math.round((u/t)*100)}%)`,
+        severidade: "aviso",
+        tipo: "licenca_critica",
+      });
+    }
+    if (criticalSkus.length > 0) {
+      console.log(`[sync-entra-licencas] ${criticalSkus.length} license(s) above 90% usage`);
+    }
+
     const summary = { total: skus.length, created, updated, deleted };
     console.log("[sync-entra-licencas] Sync complete:", summary);
     return jsonResponse(summary);
