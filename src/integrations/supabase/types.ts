@@ -1515,6 +1515,7 @@ export type Database = {
           solicitante_id: string
           status: string
           updated_at: string
+          user_id: string | null
         }
         Insert: {
           aprovador?: string | null
@@ -1527,6 +1528,7 @@ export type Database = {
           solicitante_id: string
           status?: string
           updated_at?: string
+          user_id?: string | null
         }
         Update: {
           aprovador?: string | null
@@ -1539,6 +1541,7 @@ export type Database = {
           solicitante_id?: string
           status?: string
           updated_at?: string
+          user_id?: string | null
         }
         Relationships: [
           {
