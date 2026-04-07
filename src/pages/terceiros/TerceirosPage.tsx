@@ -47,7 +47,7 @@ function generateTerceiroCredentials(nome: string, empresaTerceira: string): { s
   const last = parts.length > 1 ? parts[parts.length - 1] : first;
   const companyFirst = normalize(empresaTerceira).split(/\s+/).filter(p => p.length > 0)[0] || "";
   const sam = `${first}.${last}_${companyFirst}`;
-  const email = `${sam}@parceiroorigo.com.br`;
+  const email = `${sam}@parceiroorigoenergia.com.br`;
   return { sam, email };
 }
 
