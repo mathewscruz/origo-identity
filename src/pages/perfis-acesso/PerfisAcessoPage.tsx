@@ -24,6 +24,7 @@ import { findAffectedCollaborators, generateEntraQueueForDiff, queueFullProfileA
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { logAuditoria } from "@/lib/auditLogger";
 import EmptyState from "@/components/EmptyState";
+import SortableHeader, { SortDirection, useSortableData } from "@/components/SortableHeader";
 
 interface PerfilForm {
   nome: string;
