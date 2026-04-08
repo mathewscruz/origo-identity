@@ -19,6 +19,7 @@ import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import EmptyState from "@/components/EmptyState";
+import SortableHeader, { SortDirection, useSortableData } from "@/components/SortableHeader";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { queueFullProfileActions } from "@/lib/entraQueueHelper";
@@ -66,6 +67,8 @@ export default function TerceirosPage() {
   const [busca, setBusca] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<SortDirection>(null);
   const { data: terceiros, isLoading } = useTerceiros();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -84,7 +87,8 @@ export default function TerceirosPage() {
   const list = terceiros ?? [];
   const vencendo7d = list.filter((t: any) => { const d = diasRestantes(t.contrato_fim); return d >= 0 && d <= 7; }).length;
   const filtered = list.filter((t: any) => !busca || t.nome.toLowerCase().includes(busca.toLowerCase()));
-  const { paginatedItems, safePage } = usePagination(filtered, page, pageSize);
+  const sorted = useSortableData(filtered, sortField, sortDir);
+  const { paginatedItems, safePage } = usePagination(sorted, page, pageSize);
 
   const openNew = () => { setEditing(null); setForm({ nome: "", email: "", empresa_terceira: "", contrato_inicio: "", contrato_fim: "", criticidade: "media", responsavel: "", ativo: true, sam_account_name: "" }); setDialogOpen(true); };
   const openEdit = (t: any) => { setEditing(t); setForm({ nome: t.nome, email: t.email || "", empresa_terceira: t.empresa_terceira || "", contrato_inicio: t.contrato_inicio || "", contrato_fim: t.contrato_fim || "", criticidade: t.criticidade, responsavel: t.responsavel || "", ativo: t.ativo, sam_account_name: t.sam_account_name || "" }); setDialogOpen(true); };
@@ -249,9 +253,9 @@ export default function TerceirosPage() {
 
       <Card><CardContent className="p-0">
         {isLoading ? <div className="p-4 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div> : (
-          <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left text-muted-foreground">
-            <th className="p-4 font-medium">Nome</th><th className="p-4 font-medium hidden md:table-cell">Empresa</th><th className="p-4 font-medium hidden lg:table-cell">Responsável</th>
-            <th className="p-4 font-medium hidden md:table-cell">Criticidade</th><th className="p-4 font-medium">Fim Contrato</th><th className="p-4 font-medium">Status</th><th className="p-4 font-medium w-20">Ações</th>
+          <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left text-muted-foreground text-xs uppercase tracking-wider">
+            <th className="p-4"><SortableHeader label="Nome" field="nome" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th><th className="p-4 hidden md:table-cell"><SortableHeader label="Empresa" field="empresa_terceira" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th><th className="p-4 font-medium hidden lg:table-cell">Responsável</th>
+            <th className="p-4 font-medium hidden md:table-cell">Criticidade</th><th className="p-4 font-medium">Fim Contrato</th><th className="p-4"><SortableHeader label="Status" field="ativo" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th><th className="p-4 font-medium w-20">Ações</th>
           </tr></thead><tbody>
             {paginatedItems.length === 0 && <tr><td colSpan={7}><EmptyState message="Nenhum terceiro encontrado." /></td></tr>}
             {paginatedItems.map((t: any) => (

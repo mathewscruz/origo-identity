@@ -213,7 +213,7 @@ export default function UsuariosPage() {
 
       <Card><CardContent className="p-0">
         {isLoading ? <div className="p-4 space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div> : (
-          <table className="w-full text-sm"><thead><tr className="border-b text-left text-muted-foreground">
+          <table className="w-full text-sm"><thead><tr className="border-b text-left text-muted-foreground text-xs uppercase tracking-wider">
             <th className="p-4 font-medium">Nome</th><th className="p-4 font-medium">Email</th><th className="p-4 font-medium">Perfil</th><th className="p-4 font-medium">Status</th><th className="p-4 font-medium w-28">Ações</th>
           </tr></thead><tbody>
             {paginatedItems.map((u: any) => (

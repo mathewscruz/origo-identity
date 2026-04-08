@@ -7,6 +7,21 @@ import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
+function tempoRelativo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "agora";
+  if (mins < 60) return `há ${mins} min`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `há ${hrs}h`;
+  const dias = Math.floor(hrs / 24);
+  if (dias === 1) return "há 1 dia";
+  if (dias < 30) return `há ${dias} dias`;
+  return new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+
+const severidadeOrdem: Record<string, number> = { critico: 0, aviso: 1, info: 2 };
+
 export function NotificacoesBell() {
   const [alertas, setAlertas] = useState<any[]>([]);
   const [naoLidos, setNaoLidos] = useState(0);
@@ -19,8 +34,14 @@ export function NotificacoesBell() {
       .select("*", { count: "exact" })
       .eq("lido", false)
       .order("created_at", { ascending: false })
-      .limit(10);
-    setAlertas(data || []);
+      .limit(20);
+    const sorted = (data || []).sort((a: any, b: any) => {
+      const sa = severidadeOrdem[a.severidade] ?? 3;
+      const sb = severidadeOrdem[b.severidade] ?? 3;
+      if (sa !== sb) return sa - sb;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+    setAlertas(sorted);
     setNaoLidos(count || 0);
   };
 
@@ -31,12 +52,9 @@ export function NotificacoesBell() {
   }, []);
 
   const handleClick = async (alerta: any) => {
-    // Mark as read
     await supabase.from("alertas").update({ lido: true } as any).eq("id", alerta.id);
     setOpen(false);
-    if (alerta.ref_url) {
-      navigate(alerta.ref_url);
-    }
+    if (alerta.ref_url) navigate(alerta.ref_url);
     fetchAlertas();
   };
 
@@ -57,6 +75,17 @@ export function NotificacoesBell() {
       default: return "bg-muted text-muted-foreground";
     }
   };
+
+  const severidadeLabel: Record<string, string> = { critico: "Críticos", aviso: "Avisos", info: "Informações" };
+
+  // Group by severity
+  const grouped = alertas.reduce<Record<string, any[]>>((acc, a) => {
+    const key = a.severidade || "info";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(a);
+    return acc;
+  }, {});
+  const groupOrder = ["critico", "aviso", "info"];
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -85,27 +114,40 @@ export function NotificacoesBell() {
               Nenhuma notificação pendente
             </div>
           ) : (
-            <div className="divide-y">
-              {alertas.map(a => (
-                <button
-                  key={a.id}
-                  onClick={() => handleClick(a)}
-                  className="w-full text-left px-4 py-3 hover:bg-accent/50 transition-colors"
-                >
-                  <div className="flex items-start gap-2">
-                    <Badge className={`mt-0.5 text-[10px] px-1.5 py-0 shrink-0 ${severidadeCor(a.severidade)}`}>
-                      {a.severidade}
-                    </Badge>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">{a.titulo}</p>
-                      {a.mensagem && <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{a.mensagem}</p>}
-                      <p className="text-[10px] text-muted-foreground/60 mt-1">
-                        {new Date(a.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                      </p>
+            <div>
+              {groupOrder.map(sev => {
+                const items = grouped[sev];
+                if (!items || items.length === 0) return null;
+                return (
+                  <div key={sev}>
+                    <div className="px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 bg-muted/30">
+                      {severidadeLabel[sev] || sev} ({items.length})
+                    </div>
+                    <div className="divide-y">
+                      {items.map(a => (
+                        <button
+                          key={a.id}
+                          onClick={() => handleClick(a)}
+                          className="w-full text-left px-4 py-3 hover:bg-accent/50 transition-colors"
+                        >
+                          <div className="flex items-start gap-2">
+                            <Badge className={`mt-0.5 text-[10px] px-1.5 py-0 shrink-0 ${severidadeCor(a.severidade)}`}>
+                              {a.severidade}
+                            </Badge>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium truncate">{a.titulo}</p>
+                              {a.mensagem && <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{a.mensagem}</p>}
+                              <p className="text-[10px] text-muted-foreground/60 mt-1">
+                                {tempoRelativo(a.created_at)}
+                              </p>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
                     </div>
                   </div>
-                </button>
-              ))}
+                );
+              })}
             </div>
           )}
         </ScrollArea>

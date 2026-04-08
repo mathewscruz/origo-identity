@@ -24,6 +24,7 @@ import { findAffectedCollaborators, generateEntraQueueForDiff, queueFullProfileA
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { logAuditoria } from "@/lib/auditLogger";
 import EmptyState from "@/components/EmptyState";
+import SortableHeader, { SortDirection, useSortableData } from "@/components/SortableHeader";
 
 interface PerfilForm {
   nome: string;
@@ -80,6 +81,8 @@ export default function PerfisAcessoPage() {
   const [buscaGrupos, setBuscaGrupos] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<SortDirection>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<PerfilForm>(emptyForm);
@@ -96,7 +99,8 @@ export default function PerfisAcessoPage() {
     if (filtroStatus === "inativo" && p.ativo) return false;
     return true;
   });
-  const { paginatedItems, safePage } = usePagination(list, page, pageSize);
+  const sorted = useSortableData(list, sortField, sortDir);
+  const { paginatedItems, safePage } = usePagination(sorted, page, pageSize);
 
   // Header counters
   const totalPerfis = allPerfis.length;
@@ -301,14 +305,14 @@ export default function PerfisAcessoPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th className="p-4 font-medium">Nome</th>
-                    <th className="p-4 font-medium hidden md:table-cell">Tipo</th>
+                  <tr className="border-b text-left text-muted-foreground text-xs uppercase tracking-wider">
+                    <th className="p-4"><SortableHeader label="Nome" field="nome" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
+                    <th className="p-4 hidden md:table-cell"><SortableHeader label="Tipo" field="tipo" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
                     <th className="p-4 font-medium text-center hidden sm:table-cell">Pessoas</th>
                     <th className="p-4 font-medium text-center hidden sm:table-cell">Apps</th>
                     <th className="p-4 font-medium text-center hidden lg:table-cell">Licenças</th>
                     <th className="p-4 font-medium text-center hidden lg:table-cell">Grupos</th>
-                    <th className="p-4 font-medium">Status</th>
+                    <th className="p-4"><SortableHeader label="Status" field="ativo" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
                     <th className="p-4 font-medium w-20">Ações</th>
                   </tr>
                 </thead>

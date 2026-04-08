@@ -25,6 +25,7 @@ import { createEventoJML } from "@/lib/createEventoJML";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { logAuditoria, logAlerta } from "@/lib/auditLogger";
 import EmptyState from "@/components/EmptyState";
+import SortableHeader, { SortDirection, useSortableData } from "@/components/SortableHeader";
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
@@ -70,6 +71,8 @@ export default function ColaboradoresPage() {
   const [areaFilter, setAreaFilter] = useState("todos");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<SortDirection>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -125,7 +128,8 @@ export default function ColaboradoresPage() {
     return true;
   });
 
-  const { paginatedItems, safePage } = usePagination(filtered, page, pageSize);
+  const sorted = useSortableData(filtered, sortField, sortDir);
+  const { paginatedItems, safePage } = usePagination(sorted, page, pageSize);
   const areasList = [...new Set(mapped.map((c) => c.area).filter((a) => a !== "—"))];
   const cargosList = [...new Set(mapped.map((c) => c.cargo).filter((c) => c !== "—"))];
 
@@ -493,14 +497,14 @@ export default function ColaboradoresPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th className="p-4 font-medium">Nome</th>
-                    <th className="p-4 font-medium hidden md:table-cell">Email</th>
+                  <tr className="border-b text-left text-muted-foreground text-xs uppercase tracking-wider">
+                    <th className="p-4"><SortableHeader label="Nome" field="nome" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
+                    <th className="p-4 hidden md:table-cell"><SortableHeader label="Email" field="email" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
                     <th className="p-4 font-medium hidden lg:table-cell">CPF</th>
-                    <th className="p-4 font-medium">Cargo</th>
-                    <th className="p-4 font-medium hidden lg:table-cell">Área</th>
+                    <th className="p-4"><SortableHeader label="Cargo" field="cargo" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
+                    <th className="p-4 hidden lg:table-cell"><SortableHeader label="Área" field="area" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
                     <th className="p-4 font-medium hidden lg:table-cell">Origem</th>
-                    <th className="p-4 font-medium">Status</th>
+                    <th className="p-4"><SortableHeader label="Status" field="status" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
                     <th className="p-4 font-medium">Ações</th>
                   </tr>
                 </thead>

@@ -257,7 +257,7 @@ export default function FilaProvisionamentoPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b text-left text-muted-foreground">
+                      <tr className="border-b text-left text-muted-foreground text-xs uppercase tracking-wider">
                         <th className="p-4 font-medium hidden lg:table-cell">Correlation ID</th>
                         <th className="p-4 font-medium">Ação</th>
                         <th className="p-4 font-medium">Usuário</th>
