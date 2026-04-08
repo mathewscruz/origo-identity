@@ -50,6 +50,7 @@ function markExpired(list: any[]): any[] {
 }
 
 export default function ExcecoesPage() {
+  const canEdit = useCanEdit();
   const [tab, setTab] = useState<TabKey>("pendentes");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -219,7 +220,7 @@ export default function ExcecoesPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Exceções de Acesso</h1>
           <p className="text-sm text-muted-foreground">Concessões fora da regra e bypass de desativação com justificativa e aprovação</p>
         </div>
-        <Button onClick={() => { resetForm(); setDialogOpen(true); }}><Plus className="mr-1 h-4 w-4" />Nova Exceção</Button>
+        {canEdit && <Button onClick={() => { resetForm(); setDialogOpen(true); }}><Plus className="mr-1 h-4 w-4" />Nova Exceção</Button>}
       </div>
 
       {/* Counters */}
