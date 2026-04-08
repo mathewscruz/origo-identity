@@ -169,6 +169,48 @@ export default function UsuariosPage() {
         <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Usuário</Button>
       </div>
 
+      {/* Minha Foto */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Minha Foto de Perfil</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-6">
+            <div className="relative group">
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary text-lg font-semibold text-primary-foreground overflow-hidden border-2 border-border">
+                {myProfile?.avatar_url ? (
+                  <img src={myProfile.avatar_url} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-xl">{initials}</span>
+                )}
+              </div>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingAvatar}
+                className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              >
+                {uploadingAvatar ? <Loader2 className="h-5 w-5 text-white animate-spin" /> : <Camera className="h-5 w-5 text-white" />}
+              </button>
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">Clique na foto ou use os botões para alterar.</p>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={uploadingAvatar}>
+                  {uploadingAvatar ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Camera className="mr-1 h-3 w-3" />}
+                  Alterar foto
+                </Button>
+                {myProfile?.avatar_url && (
+                  <Button size="sm" variant="ghost" className="text-destructive" onClick={handleRemoveAvatar} disabled={uploadingAvatar}>
+                    <Trash2 className="mr-1 h-3 w-3" />Remover
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card><CardContent className="p-0">
         {isLoading ? <div className="p-4 space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div> : (
           <table className="w-full text-sm"><thead><tr className="border-b text-left text-muted-foreground">
