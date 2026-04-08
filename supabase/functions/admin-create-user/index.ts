@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-bootstrap-key",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Content-Type": "application/json",
 };
 
@@ -11,22 +11,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const adminClient = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
 
-    // Bootstrap reset via service role key header (for initial setup)
-    if (body.action === "reset_password" && req.headers.get("x-bootstrap-key") === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) {
-      if (!body.user_id || !body.password || body.password.length < 6) {
-        return new Response(JSON.stringify({ error: "user_id e senha (mín 6 chars) obrigatórios" }), { status: 400, headers: corsHeaders });
-      }
-      const { error } = await adminClient.auth.admin.updateUserById(body.user_id, { password: body.password });
-      if (error) return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: corsHeaders });
-      return new Response(JSON.stringify({ success: true, message: "Senha atualizada." }), { headers: corsHeaders });
-    }
-
-    // Standard auth check
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Não autorizado" }), { status: 401, headers: corsHeaders });
@@ -51,7 +36,12 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Acesso restrito a administradores" }), { status: 403, headers: corsHeaders });
     }
 
-    // --- RESET PASSWORD (authenticated admin) ---
+    const adminClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+
+    // --- RESET PASSWORD ---
     if (body.action === "reset_password") {
       if (!body.user_id || !body.password || body.password.length < 6) {
         return new Response(JSON.stringify({ error: "user_id e senha (mín 6 chars) obrigatórios" }), { status: 400, headers: corsHeaders });
