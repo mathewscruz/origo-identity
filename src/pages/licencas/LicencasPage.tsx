@@ -35,6 +35,7 @@ type UnifiedLicense = {
 };
 
 export default function LicencasPage() {
+  const canEdit = useCanEdit();
   const { data: licencas, isLoading: loadingLicencas } = useLicencas();
   const { data: entraLicencas, isLoading: loadingEntra } = useEntraLicencas();
   const { data: aplicacoes } = useAplicacoes();
@@ -157,7 +158,7 @@ export default function LicencasPage() {
           <Button variant="outline" size="icon" onClick={handleSync} disabled={syncing} title="Sincronizar licenças Microsoft">
             <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
           </Button>
-          <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Licença Externa</Button>
+          {canEdit && <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Licença Externa</Button>}
         </div>
       </div>
 

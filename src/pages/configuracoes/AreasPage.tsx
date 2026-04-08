@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { logAuditoria } from "@/lib/auditLogger";
 
 export default function AreasPage() {
+  const canEdit = useCanEdit();
   const { data: areas, isLoading } = useAreas();
   const { data: empresas } = useEmpresas();
   const [page, setPage] = useState(1);
@@ -68,7 +69,7 @@ export default function AreasPage() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-base">Áreas</CardTitle>
-        <Button size="sm" onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Área</Button>
+        {canEdit && <Button size="sm" onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Área</Button>}
       </CardHeader>
       <CardContent>
         <div className="relative max-w-sm mb-4">
