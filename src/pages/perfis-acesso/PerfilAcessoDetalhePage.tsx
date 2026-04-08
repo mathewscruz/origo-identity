@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -59,12 +59,40 @@ export default function PerfilAcessoDetalhePage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  // Internal profiles per app
+  const { data: allPerfisInternos } = useQuery({
+    queryKey: ["all_perfis_internos"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any).from("aplicacao_perfis_internos").select("*").eq("ativo", true);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const { data: perfilAppsInternos } = useQuery({
+    queryKey: ["perfil_apps_internos", id], enabled: !!id,
+    queryFn: async () => {
+      const { data, error } = await (supabase as any).from("perfil_apps_internos").select("*, aplicacao_perfis_internos(nome_externo)").eq("perfil_id", id!);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ nome: "", descricao: "", tipo: "funcional", ativo: true, aplicacao_ids: [] as string[], licenca_ids: [] as string[], grupo_ids: [] as string[] });
+  const [editForm, setEditForm] = useState({ nome: "", descricao: "", tipo: "funcional", ativo: true, aplicacao_ids: [] as string[], licenca_ids: [] as string[], grupo_ids: [] as string[], perfil_interno_map: {} as Record<string, string> });
   const [saving, setSaving] = useState(false);
   const [buscaApps, setBuscaApps] = useState("");
   const [buscaLicencas, setBuscaLicencas] = useState("");
   const [buscaGrupos, setBuscaGrupos] = useState("");
+
+  // Which apps have internal profiles available
+  const appsWithProfiles = useMemo(() => {
+    const map: Record<string, any[]> = {};
+    for (const pi of (allPerfisInternos || [])) {
+      if (!map[pi.aplicacao_id]) map[pi.aplicacao_id] = [];
+      map[pi.aplicacao_id].push(pi);
+    }
+    return map;
+  }, [allPerfisInternos]);
 
   const openEdit = () => {
     if (!perfil) return;
