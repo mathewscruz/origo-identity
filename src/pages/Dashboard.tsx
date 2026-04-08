@@ -33,6 +33,22 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
   rejeitada:    { label: "Rejeitada",    color: "hsl(0, 84%, 60%)" },
 };
 
+type Period = "dia" | "semana" | "mes" | "ano";
+const PERIOD_LABELS: Record<Period, string> = { dia: "Dia", semana: "Semana", mes: "Mês", ano: "Ano" };
+
+function getPeriodConfig(period: Period) {
+  const now = new Date();
+  switch (period) {
+    case "dia": return { daysBack: 14, buckets: 14, labelFn: (i: number) => `D${i + 1}`, bucketFn: (age: number) => Math.min(13, Math.floor(age / 86400000)), reverse: 14 };
+    case "semana": return { daysBack: 56, buckets: 8, labelFn: (i: number) => `S${i + 1}`, bucketFn: (age: number) => Math.min(7, Math.floor(age / (7 * 86400000))), reverse: 8 };
+    case "mes": return { daysBack: 365, buckets: 12, labelFn: (i: number) => {
+      const d = new Date(now); d.setMonth(d.getMonth() - (11 - i));
+      return d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "");
+    }, bucketFn: (age: number) => Math.min(11, Math.floor(age / (30 * 86400000))), reverse: 12 };
+    case "ano": return { daysBack: 1460, buckets: 4, labelFn: (i: number) => `${now.getFullYear() - 3 + i}`, bucketFn: (age: number) => Math.min(3, Math.floor(age / (365 * 86400000))), reverse: 4 };
+  }
+}
+
 /* ── hooks ── */
 
 function useKpiCounts() {
@@ -62,40 +78,39 @@ function useKpiCounts() {
   });
 }
 
-function useWeeklyProvisioningData() {
+function useProvisioningData(period: Period) {
+  const cfg = getPeriodConfig(period);
   return useQuery({
-    queryKey: ["dashboard_weekly_prov"],
+    queryKey: ["dashboard_prov", period],
     queryFn: async () => {
-      const eightWeeksAgo = new Date();
-      eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56);
+      const since = new Date();
+      since.setDate(since.getDate() - cfg.daysBack);
       const { data } = await supabase
         .from("iam_queue")
         .select("action_type, created_at")
-        .gte("created_at", eightWeeksAgo.toISOString())
+        .gte("created_at", since.toISOString())
         .not("status", "eq", "cancelled");
       const rows = data ?? [];
-      const weeks: Record<string, { assign: number; remove: number; other: number }> = {};
-      for (let i = 0; i < 8; i++) weeks[`S${i + 1}`] = { assign: 0, remove: 0, other: 0 };
+      const buckets: Record<string, { assign: number; remove: number; other: number }> = {};
+      for (let i = 0; i < cfg.buckets; i++) buckets[cfg.labelFn(i)] = { assign: 0, remove: 0, other: 0 };
       const now = Date.now();
       rows.forEach(r => {
         const age = now - new Date(r.created_at).getTime();
-        const weekIdx = Math.min(7, Math.floor(age / (7 * 86400000)));
-        const key = `S${8 - weekIdx}`;
-        if (!weeks[key]) return;
+        const idx = cfg.bucketFn(age);
+        const key = cfg.labelFn(cfg.reverse - 1 - idx);
+        if (!buckets[key]) return;
         const at = r.action_type || "";
-        if (at.startsWith("assign")) weeks[key].assign++;
-        else if (at.startsWith("remove") || at.startsWith("disable")) weeks[key].remove++;
-        else weeks[key].other++;
+        if (at.startsWith("assign")) buckets[key].assign++;
+        else if (at.startsWith("remove") || at.startsWith("disable")) buckets[key].remove++;
+        else buckets[key].other++;
       });
-      return Object.entries(weeks).map(([semana, v]) => ({
+      return Object.entries(buckets).map(([semana, v]) => ({
         semana, Concessão: v.assign, Revogação: v.remove, Outros: v.other,
       }));
     },
     refetchInterval: 60000,
   });
 }
-
-function useAccessByApp() {
   return useQuery({
     queryKey: ["dashboard_access_by_app"],
     queryFn: async () => {
