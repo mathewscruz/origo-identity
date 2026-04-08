@@ -227,7 +227,7 @@ export default function PortalSolicitacoesPage() {
           {loading ? (
             <div className="p-8 text-center text-muted-foreground">Carregando...</div>
           ) : solicitacoes.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground">
+            <div className="p-8">
               <Send className="mx-auto mb-2 h-10 w-10 opacity-50" />
               <p>Você ainda não possui solicitações.</p>
               <p className="text-sm">Clique em "Nova Solicitação" para começar.</p>

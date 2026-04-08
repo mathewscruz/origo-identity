@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { logAuditoria } from "@/lib/auditLogger";
+import EmptyState from "@/components/EmptyState";
 
 export default function EmpresasPage() {
   const canEdit = useCanEdit();

@@ -8,6 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { useRevisao, useRevisaoItens } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
+import EmptyState from "@/components/EmptyState";
 
 const decisaoColors: Record<string, string> = {
   manter: "bg-success/15 text-success border-success/30",

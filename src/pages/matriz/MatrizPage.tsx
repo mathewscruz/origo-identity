@@ -5,6 +5,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import EmptyState from "@/components/EmptyState";
 
 function useMatrizData() {
   return useQuery({
@@ -165,7 +166,7 @@ export default function MatrizPage() {
         </div>
       ) : cargos.length === 0 || perfis.length === 0 ? (
         <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
+          <CardContent className="py-12">
             Cadastre cargos e perfis de acesso para visualizar a matriz.
           </CardContent>
         </Card>

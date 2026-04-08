@@ -135,8 +135,8 @@ export default function PrivilegiadosPage() {
               {isLoading ? (
                 <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
               ) : paginated.length === 0 ? (
-                <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                  {totalRoles === 0 ? "Nenhuma role sincronizada. Clique em \"Sincronizar com Entra ID\" para importar." : "Nenhuma role encontrada com os filtros aplicados."}
+                <TableRow><TableCell colSpan={5}>
+                  <EmptyState message={totalRoles === 0 ? "Nenhuma role sincronizada. Clique em \"Sincronizar com Entra ID\" para importar." : "Nenhuma role encontrada com os filtros aplicados."} />
                 </TableCell></TableRow>
               ) : paginated.map((role: any) => {
                 const count = memberCountMap.get(role.id) || 0;

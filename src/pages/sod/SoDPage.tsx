@@ -321,7 +321,7 @@ export default function SoDPage() {
                 {loading ? (
                   <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
                 ) : filteredViolacoes.length === 0 ? (
-                  <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                  <TableRow><TableCell colSpan={4}>
                     <div className="flex flex-col items-center gap-2">
                       <CheckCircle2 className="h-8 w-8 text-green-500" />
                       <span>Nenhuma violação detectada</span>
