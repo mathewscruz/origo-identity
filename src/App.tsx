@@ -42,7 +42,7 @@ import LoginPage from "./pages/auth/LoginPage";
 import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
 import FilaProvisionamentoPage from "./pages/fila-provisionamento/FilaProvisionamentoPage";
 import SolicitacaoDetalhePage from "./pages/fila-provisionamento/SolicitacaoDetalhePage";
-import PlaceholderPage from "./pages/PlaceholderPage";
+
 import NotFound from "./pages/NotFound";
 import PortalLayout from "./pages/portal/PortalLayout";
 import PortalLoginPage from "./pages/portal/PortalLoginPage";
@@ -80,12 +80,12 @@ const App = () => (
               <Route path="/perfis-acesso" element={<PerfisAcessoPage />} />
               <Route path="/perfis-acesso/:id" element={<PerfilAcessoDetalhePage />} />
               <Route path="/excecoes" element={<ExcecoesPage />} />
-              <Route path="/excecoes/:id" element={<PlaceholderPage title="Detalhe da Exceção" />} />
+              <Route path="/excecoes/:id" element={<ExcecoesPage />} />
               <Route path="/revisoes" element={<RevisoesPage />} />
               <Route path="/revisoes/:id" element={<RevisaoDetalhePage />} />
               <Route path="/matriz" element={<MatrizPage />} />
               <Route path="/licencas" element={<LicencasPage />} />
-              <Route path="/licencas/:id" element={<PlaceholderPage title="Detalhe da Licença" />} />
+              <Route path="/licencas/:id" element={<LicencasPage />} />
               <Route path="/sod" element={<SoDPage />} />
               <Route path="/privilegiados" element={<PrivilegiadosPage />} />
               <Route path="/relatorios" element={<RelatoriosPage />} />

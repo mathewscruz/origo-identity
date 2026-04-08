@@ -14,13 +14,17 @@ function useAccessStatusData() {
   return useQuery({
     queryKey: ["dashboard_access_status"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { count: ativosCount } = await supabase
         .from("perfil_atribuicoes")
-        .select("ativo, data_revogacao");
-      if (error) throw error;
-      const rows = data ?? [];
-      const ativos = rows.filter(r => r.ativo && !r.data_revogacao).length;
-      const revogados = rows.filter(r => !r.ativo || !!r.data_revogacao).length;
+        .select("id", { count: "exact", head: true })
+        .eq("ativo", true)
+        .is("data_revogacao", null);
+      const { count: revogadosCount } = await supabase
+        .from("perfil_atribuicoes")
+        .select("id", { count: "exact", head: true })
+        .eq("ativo", false);
+      const ativos = ativosCount ?? 0;
+      const revogados = revogadosCount ?? 0;
       return [
         { name: "Ativos", value: ativos, color: "hsl(142, 71%, 45%)" },
         { name: "Revogados", value: revogados, color: "hsl(0, 84%, 60%)" },
@@ -34,15 +38,20 @@ function useIamQueueStats() {
   return useQuery({
     queryKey: ["dashboard_iam_queue"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("iam_queue")
-        .select("status");
-      if (error) throw error;
-      const rows = data ?? [];
-      const pending = rows.filter(r => r.status === "pending").length;
-      const completed = rows.filter(r => r.status === "completed").length;
-      const failed = rows.filter(r => r.status === "failed" || r.status === "permanent_failure").length;
-      return { pending, completed, failed, total: rows.length };
+      // Use count queries instead of loading all rows
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      const since = ninetyDaysAgo.toISOString();
+
+      const [pendingRes, completedRes, failedRes] = await Promise.all([
+        supabase.from("iam_queue").select("id", { count: "exact", head: true }).eq("status", "pending").gte("created_at", since),
+        supabase.from("iam_queue").select("id", { count: "exact", head: true }).eq("status", "completed").gte("created_at", since),
+        supabase.from("iam_queue").select("id", { count: "exact", head: true }).in("status", ["failed", "permanent_failure"]).gte("created_at", since),
+      ]);
+      const pending = pendingRes.count ?? 0;
+      const completed = completedRes.count ?? 0;
+      const failed = failedRes.count ?? 0;
+      return { pending, completed, failed, total: pending + completed + failed };
     },
     refetchInterval: 30000,
   });
@@ -57,7 +66,8 @@ function useWeeklyProvisioningData() {
       const { data, error } = await supabase
         .from("iam_queue")
         .select("action_type, created_at")
-        .gte("created_at", eightWeeksAgo.toISOString());
+        .gte("created_at", eightWeeksAgo.toISOString())
+        .not("status", "eq", "cancelled");
       if (error) throw error;
       const rows = data ?? [];
       
@@ -96,6 +106,7 @@ function useRecentIamQueue() {
       const { data, error } = await supabase
         .from("iam_queue")
         .select("id, action_type, target_identity, status, created_at")
+        .not("status", "eq", "cancelled")
         .order("created_at", { ascending: false })
         .limit(5);
       if (error) throw error;

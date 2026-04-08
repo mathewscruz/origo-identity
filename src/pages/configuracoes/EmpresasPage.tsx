@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useCanEdit } from "@/hooks/useRole";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { logAuditoria } from "@/lib/auditLogger";
 
 export default function EmpresasPage() {
+  const canEdit = useCanEdit();
   const { data: empresas, isLoading } = useEmpresas();
   const [page, setPage] = useState(1);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -63,7 +65,7 @@ export default function EmpresasPage() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-base">Empresas</CardTitle>
-        <Button size="sm" onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Empresa</Button>
+        {canEdit && <Button size="sm" onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Empresa</Button>}
       </CardHeader>
       <CardContent>
         {isLoading ? (
