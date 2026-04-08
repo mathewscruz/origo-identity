@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { logAuditoria, logAlerta } from "@/lib/auditLogger";
+import EmptyState from "@/components/EmptyState";
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
@@ -565,7 +566,7 @@ export default function ColaboradorDetalhePage() {
                       );
                     })}
                     {(!atribuicoes || atribuicoes.length === 0) && (
-                      <tr><td colSpan={5} className="p-8 text-center text-muted-foreground">Nenhum perfil atribuído.</td></tr>
+                      <tr><td colSpan={5}><EmptyState message="Nenhum perfil atribuído." /></td></tr>
                     )}
                   </tbody>
                 </table>
@@ -614,7 +615,7 @@ export default function ColaboradorDetalhePage() {
                       );
                     })}
                     {(!individualQueue || individualQueue.length === 0) && (
-                      <tr><td colSpan={5} className="p-8 text-center text-muted-foreground">Nenhum acesso individual.</td></tr>
+                      <tr><td colSpan={5}><EmptyState message="Nenhum acesso individual." /></td></tr>
                     )}
                   </tbody>
                 </table>
@@ -627,7 +628,7 @@ export default function ColaboradorDetalhePage() {
           <Card>
             <CardContent className="pt-6">
               {eventos.length === 0 ? (
-                <p className="text-center text-muted-foreground">Nenhum evento JML.</p>
+                <EmptyState message="Nenhum evento JML." />
               ) : (
                 <div className="relative border-l-2 border-border pl-6 space-y-6">
                   {eventos.map((ev) => (

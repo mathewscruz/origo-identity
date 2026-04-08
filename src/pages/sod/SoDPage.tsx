@@ -13,6 +13,7 @@ import { toast } from "@/hooks/use-toast";
 import { logAuditoria, logAlerta } from "@/lib/auditLogger";
 import { ShieldAlert, Plus, Trash2, Search, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import EmptyState from "@/components/EmptyState";
 
 interface SoDConflito {
   id: string;
@@ -278,7 +279,7 @@ export default function SoDPage() {
                 {loading ? (
                   <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
                 ) : filteredConflitos.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Nenhum conflito cadastrado</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6}><EmptyState message="Nenhum conflito cadastrado" /></TableCell></TableRow>
                 ) : filteredConflitos.map(c => (
                   <TableRow key={c.id}>
                     <TableCell className="font-medium">{perfilMap.get(c.perfil_a_id)?.nome || "—"}</TableCell>
@@ -321,7 +322,7 @@ export default function SoDPage() {
                 {loading ? (
                   <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
                 ) : filteredViolacoes.length === 0 ? (
-                  <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                  <TableRow><TableCell colSpan={4}>
                     <div className="flex flex-col items-center gap-2">
                       <CheckCircle2 className="h-8 w-8 text-green-500" />
                       <span>Nenhuma violação detectada</span>

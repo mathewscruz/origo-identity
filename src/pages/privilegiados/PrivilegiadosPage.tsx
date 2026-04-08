@@ -13,6 +13,7 @@ import { Crown, RefreshCw, Search, Shield, ShieldAlert, Users, Link as LinkIcon 
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import TablePagination from "@/components/TablePagination";
+import EmptyState from "@/components/EmptyState";
 
 const PAGE_SIZE = 15;
 
@@ -135,8 +136,8 @@ export default function PrivilegiadosPage() {
               {isLoading ? (
                 <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
               ) : paginated.length === 0 ? (
-                <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                  {totalRoles === 0 ? "Nenhuma role sincronizada. Clique em \"Sincronizar com Entra ID\" para importar." : "Nenhuma role encontrada com os filtros aplicados."}
+                <TableRow><TableCell colSpan={5}>
+                  <EmptyState message={totalRoles === 0 ? "Nenhuma role sincronizada. Clique em \"Sincronizar com Entra ID\" para importar." : "Nenhuma role encontrada com os filtros aplicados."} />
                 </TableCell></TableRow>
               ) : paginated.map((role: any) => {
                 const count = memberCountMap.get(role.id) || 0;
@@ -183,7 +184,7 @@ export default function PrivilegiadosPage() {
           <div className="space-y-2">
             <h3 className="text-sm font-semibold">Membros ({roleMembers?.length || 0})</h3>
             {!roleMembers || roleMembers.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">Nenhum membro atribuído a esta role.</p>
+              <EmptyState message="Nenhum membro atribuído a esta role." />
             ) : (
               <Table>
                 <TableHeader>

@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "@/hooks/use-toast";
 import { Download, Search, FileText, Users, ShieldAlert, UserX } from "lucide-react";
 import TablePagination from "@/components/TablePagination";
+import EmptyState from "@/components/EmptyState";
 
 function exportCsv(headers: string[], rows: string[][], filename: string) {
   const bom = "\uFEFF";
@@ -135,7 +136,7 @@ function AcessoReport() {
             {loading ? (
               <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
             ) : paged.length === 0 ? (
-              <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Nenhum registro</TableCell></TableRow>
+              <TableRow><TableCell colSpan={4}><EmptyState message="Nenhum registro" /></TableCell></TableRow>
             ) : paged.map((r, i) => (
               <TableRow key={i}>
                 <TableCell className="font-medium">{r.colaborador}</TableCell>
@@ -239,7 +240,7 @@ function HistoricoReport() {
             {loading ? (
               <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
             ) : paged.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Nenhum registro</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6}><EmptyState message="Nenhum registro" /></TableCell></TableRow>
             ) : paged.map((r, i) => (
               <TableRow key={i}>
                 <TableCell className="font-medium">{r.colaborador}</TableCell>
@@ -341,7 +342,7 @@ function ExcessivosReport() {
             {loading ? (
               <TableRow><TableCell colSpan={2} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
             ) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={2} className="text-center py-8 text-muted-foreground">Nenhum colaborador com acesso excessivo</TableCell></TableRow>
+              <TableRow><TableCell colSpan={2}><EmptyState message="Nenhum colaborador com acesso excessivo" /></TableCell></TableRow>
             ) : filtered.map(r => (
               <TableRow key={r.id}>
                 <TableCell className="font-medium">{r.nome}</TableCell>
@@ -431,7 +432,7 @@ function OrfasReport() {
             {loading ? (
               <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
             ) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Nenhuma conta órfã encontrada ✓</TableCell></TableRow>
+              <TableRow><TableCell colSpan={4}><EmptyState message="Nenhuma conta órfã encontrada ✓" /></TableCell></TableRow>
             ) : filtered.map(r => (
               <TableRow key={r.id}>
                 <TableCell className="font-medium">{r.nome}</TableCell>

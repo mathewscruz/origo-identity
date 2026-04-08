@@ -15,6 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { queueFullProfileActions } from "@/lib/entraQueueHelper";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { HandHelping, Plus, Search, Clock, CheckCircle2, XCircle, Send, ExternalLink, AppWindow, Users } from "lucide-react";
+import EmptyState from "@/components/EmptyState";
 
 export default function SolicitacoesPage() {
   const { profile } = useAuth();
@@ -335,7 +336,7 @@ export default function SolicitacoesPage() {
                 {loading ? (
                   <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
                 ) : filtered(pendentes).length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Nenhuma solicitação pendente</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6}><EmptyState message="Nenhuma solicitação pendente" /></TableCell></TableRow>
                 ) : filtered(pendentes).map(s => (
                   <TableRow key={s.id}>
                     <TableCell className="font-medium">{colabMap.get(s.solicitante_id)?.nome || "—"}</TableCell>
@@ -369,7 +370,7 @@ export default function SolicitacoesPage() {
               </TableRow></TableHeader>
               <TableBody>
                 {filtered(decididas).length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Nenhum histórico</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6}><EmptyState message="Nenhum histórico" /></TableCell></TableRow>
                 ) : filtered(decididas).map(s => (
                   <TableRow key={s.id}>
                     <TableCell className="font-medium">{colabMap.get(s.solicitante_id)?.nome || "—"}</TableCell>

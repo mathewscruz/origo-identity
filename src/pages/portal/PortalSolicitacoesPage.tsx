@@ -12,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/hooks/use-toast";
 import { Plus, Clock, CheckCircle2, XCircle, Send, FileText, AppWindow, Users } from "lucide-react";
 import { format } from "date-fns";
+import EmptyState from "@/components/EmptyState";
 
 export default function PortalSolicitacoesPage() {
   const [solicitacoes, setSolicitacoes] = useState<any[]>([]);
@@ -227,7 +228,7 @@ export default function PortalSolicitacoesPage() {
           {loading ? (
             <div className="p-8 text-center text-muted-foreground">Carregando...</div>
           ) : solicitacoes.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground">
+            <div className="p-8">
               <Send className="mx-auto mb-2 h-10 w-10 opacity-50" />
               <p>Você ainda não possui solicitações.</p>
               <p className="text-sm">Clique em "Nova Solicitação" para começar.</p>
@@ -308,7 +309,7 @@ export default function PortalSolicitacoesPage() {
                   </label>
                 ))}
                 {filteredApps.length === 0 && (
-                  <p className="text-sm text-muted-foreground py-2 text-center">Nenhuma aplicação encontrada</p>
+                  <EmptyState message="Nenhuma aplicação encontrada" size="sm" />
                 )}
               </ScrollArea>
             </div>
@@ -337,7 +338,7 @@ export default function PortalSolicitacoesPage() {
                   </label>
                 ))}
                 {filteredGrupos.length === 0 && (
-                  <p className="text-sm text-muted-foreground py-2 text-center">Nenhum grupo encontrado</p>
+                  <EmptyState message="Nenhum grupo encontrado" size="sm" />
                 )}
               </ScrollArea>
             </div>

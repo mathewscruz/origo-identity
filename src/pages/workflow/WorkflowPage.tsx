@@ -12,6 +12,7 @@ import { toast } from "@/hooks/use-toast";
 import { logAuditoria } from "@/lib/auditLogger";
 import { useAuth } from "@/contexts/AuthContext";
 import { GitBranch, Plus, Trash2, ArrowDown, Clock, CheckCircle2, XCircle, Search } from "lucide-react";
+import EmptyState from "@/components/EmptyState";
 
 const APROVADOR_TIPOS = [
   { value: "gestor", label: "Gestor Direto" },
@@ -121,7 +122,7 @@ export default function WorkflowPage() {
   const renderEtapasChain = (list: any[]) => (
     <div className="flex flex-col gap-2">
       {list.length === 0 ? (
-        <p className="text-sm text-muted-foreground py-4 text-center">Nenhuma etapa configurada</p>
+        <EmptyState message="Nenhuma etapa configurada" />
       ) : list.map((etapa, idx) => (
         <div key={etapa.id}>
           <div className="flex items-center gap-3 p-3 rounded-lg border bg-card">
@@ -226,7 +227,7 @@ export default function WorkflowPage() {
                 {loading ? (
                   <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
                 ) : filteredExecucoes.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Nenhuma execução registrada</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6}><EmptyState message="Nenhuma execução registrada" /></TableCell></TableRow>
                 ) : filteredExecucoes.map(e => {
                   const etapa = etapaMap.get(e.etapa_id);
                   return (

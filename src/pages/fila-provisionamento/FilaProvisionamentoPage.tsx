@@ -14,6 +14,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { useEventosJML } from "@/hooks/useOrigoData";
+import EmptyState from "@/components/EmptyState";
 
 // ---- Provisionamento configs ----
 const statusConfig: Record<string, { label: string; class: string }> = {
@@ -296,7 +297,7 @@ export default function FilaProvisionamentoPage() {
                         );
                       })}
                       {paginatedItems.length === 0 && (
-                        <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">Nenhuma solicitação encontrada.</td></tr>
+                        <tr><td colSpan={9}><EmptyState message="Nenhuma solicitação encontrada." /></td></tr>
                       )}
                     </tbody>
                   </table>
@@ -357,7 +358,7 @@ export default function FilaProvisionamentoPage() {
                             <td className="p-4 text-muted-foreground text-xs">{new Date(ev.created_at).toLocaleDateString("pt-BR")}</td>
                           </tr>
                         ))}
-                        {jmlPaginated.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-muted-foreground">Nenhum evento.</td></tr>}
+                        {jmlPaginated.length === 0 && <tr><td colSpan={5}><EmptyState message="Nenhum evento." /></td></tr>}
                       </tbody>
                     </table>
                   )}

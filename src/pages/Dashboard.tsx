@@ -10,6 +10,7 @@ import {
   PieChart, Pie, Cell, Legend,
 } from "recharts";
 import { Link } from "react-router-dom";
+import EmptyState from "@/components/EmptyState";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -338,9 +339,7 @@ export default function Dashboard() {
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-[280px] items-center justify-center text-muted-foreground text-sm">
-                Nenhuma atribuição encontrada
-              </div>
+              <div className="flex h-[280px] items-center justify-center"><EmptyState message="Nenhuma atribuição encontrada" /></div>
             )}
           </CardContent>
         </Card>
@@ -364,9 +363,7 @@ export default function Dashboard() {
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-[240px] items-center justify-center text-muted-foreground text-sm">
-                Nenhuma solicitação no período
-              </div>
+              <div className="flex h-[240px] items-center justify-center"><EmptyState message="Nenhuma solicitação no período" /></div>
             )}
           </CardContent>
         </Card>
@@ -400,9 +397,7 @@ export default function Dashboard() {
                 })}
               </div>
             ) : (
-              <div className="flex h-[200px] items-center justify-center text-muted-foreground text-sm">
-                Nenhuma revisão em andamento
-              </div>
+              <div className="flex h-[200px] items-center justify-center"><EmptyState message="Nenhuma revisão em andamento" /></div>
             )}
           </CardContent>
         </Card>
@@ -439,7 +434,7 @@ export default function Dashboard() {
               ))}
             </div>
           ) : (
-            <div className="py-8 text-center text-sm text-muted-foreground">Nenhuma atividade recente</div>
+            <EmptyState message="Nenhuma atividade recente" size="lg" />
           )}
         </CardContent>
       </Card>
