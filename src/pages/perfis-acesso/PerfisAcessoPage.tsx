@@ -23,6 +23,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { findAffectedCollaborators, generateEntraQueueForDiff, queueFullProfileActions } from "@/lib/entraQueueHelper";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { logAuditoria } from "@/lib/auditLogger";
+import EmptyState from "@/components/EmptyState";
 
 interface PerfilForm {
   nome: string;

@@ -15,6 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { queueFullProfileActions } from "@/lib/entraQueueHelper";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { HandHelping, Plus, Search, Clock, CheckCircle2, XCircle, Send, ExternalLink, AppWindow, Users } from "lucide-react";
+import EmptyState from "@/components/EmptyState";
 
 export default function SolicitacoesPage() {
   const { profile } = useAuth();

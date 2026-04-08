@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "@/hooks/use-toast";
 import { Download, Search, FileText, Users, ShieldAlert, UserX } from "lucide-react";
 import TablePagination from "@/components/TablePagination";
+import EmptyState from "@/components/EmptyState";
 
 function exportCsv(headers: string[], rows: string[][], filename: string) {
   const bom = "\uFEFF";

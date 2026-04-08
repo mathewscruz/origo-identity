@@ -12,6 +12,7 @@ import { toast } from "@/hooks/use-toast";
 import { logAuditoria } from "@/lib/auditLogger";
 import { useAuth } from "@/contexts/AuthContext";
 import { GitBranch, Plus, Trash2, ArrowDown, Clock, CheckCircle2, XCircle, Search } from "lucide-react";
+import EmptyState from "@/components/EmptyState";
 
 const APROVADOR_TIPOS = [
   { value: "gestor", label: "Gestor Direto" },

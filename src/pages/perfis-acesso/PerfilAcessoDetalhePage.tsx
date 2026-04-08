@@ -21,6 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { generateEntraQueueForDiff, findAffectedCollaborators } from "@/lib/entraQueueHelper";
 import { logAuditoria } from "@/lib/auditLogger";
+import EmptyState from "@/components/EmptyState";
 
 const origemColors: Record<string, string> = {
   regra: "bg-primary/15 text-primary border-primary/30",

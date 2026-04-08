@@ -19,6 +19,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getPerfilResourceIds, generateEntraQueueForDiff } from "@/lib/entraQueueHelper";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import EmptyState from "@/components/EmptyState";
 
 const statusColors: Record<string, string> = {
   pendente: "bg-warning/15 text-warning border-warning/30",

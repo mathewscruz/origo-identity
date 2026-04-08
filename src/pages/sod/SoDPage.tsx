@@ -13,6 +13,7 @@ import { toast } from "@/hooks/use-toast";
 import { logAuditoria, logAlerta } from "@/lib/auditLogger";
 import { ShieldAlert, Plus, Trash2, Search, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import EmptyState from "@/components/EmptyState";
 
 interface SoDConflito {
   id: string;

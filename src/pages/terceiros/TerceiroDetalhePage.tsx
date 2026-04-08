@@ -23,6 +23,7 @@ import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { queueFullProfileActions } from "@/lib/entraQueueHelper";
 import { createEventoJML } from "@/lib/createEventoJML";
 import { logAuditoria, logAlerta } from "@/lib/auditLogger";
+import EmptyState from "@/components/EmptyState";
 
 const criticidadeConfig: Record<string, { label: string; class: string }> = {
   baixa: { label: "Baixa", class: "bg-muted text-muted-foreground" },

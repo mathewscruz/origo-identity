@@ -12,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/hooks/use-toast";
 import { Plus, Clock, CheckCircle2, XCircle, Send, FileText, AppWindow, Users } from "lucide-react";
 import { format } from "date-fns";
+import EmptyState from "@/components/EmptyState";
 
 export default function PortalSolicitacoesPage() {
   const [solicitacoes, setSolicitacoes] = useState<any[]>([]);

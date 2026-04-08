@@ -13,6 +13,7 @@ import { Crown, RefreshCw, Search, Shield, ShieldAlert, Users, Link as LinkIcon 
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import TablePagination from "@/components/TablePagination";
+import EmptyState from "@/components/EmptyState";
 
 const PAGE_SIZE = 15;
 
