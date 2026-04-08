@@ -39,11 +39,25 @@ const PERIOD_LABELS: Record<Period, string> = { dia: "Dia", semana: "Semana", me
 function getPeriodConfig(period: Period) {
   const now = new Date();
   switch (period) {
-    case "dia": return { daysBack: 14, buckets: 14, labelFn: (i: number) => `D${i + 1}`, bucketFn: (age: number) => Math.min(13, Math.floor(age / 86400000)), reverse: 14 };
-    case "semana": return { daysBack: 56, buckets: 8, labelFn: (i: number) => `S${i + 1}`, bucketFn: (age: number) => Math.min(7, Math.floor(age / (7 * 86400000))), reverse: 8 };
+    case "dia": return { daysBack: 14, buckets: 14, labelFn: (i: number) => {
+      const d = new Date(now); d.setDate(d.getDate() - (13 - i));
+      return `${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1).toString().padStart(2, "0")}`;
+    }, bucketFn: (age: number) => Math.min(13, Math.floor(age / 86400000)), reverse: 14 };
+    case "semana": {
+      const getWeekNumber = (d: Date) => {
+        const start = new Date(d.getFullYear(), 0, 1);
+        const diff = d.getTime() - start.getTime() + ((start.getDay() + 6) % 7) * 86400000;
+        return Math.ceil(diff / (7 * 86400000));
+      };
+      return { daysBack: 56, buckets: 8, labelFn: (i: number) => {
+        const d = new Date(now); d.setDate(d.getDate() - (7 - i) * 7);
+        return `Sem ${getWeekNumber(d)}`;
+      }, bucketFn: (age: number) => Math.min(7, Math.floor(age / (7 * 86400000))), reverse: 8 };
+    }
     case "mes": return { daysBack: 365, buckets: 12, labelFn: (i: number) => {
       const d = new Date(now); d.setMonth(d.getMonth() - (11 - i));
-      return d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "");
+      const m = d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "");
+      return `${m}/${d.getFullYear().toString().slice(2)}`;
     }, bucketFn: (age: number) => Math.min(11, Math.floor(age / (30 * 86400000))), reverse: 12 };
     case "ano": return { daysBack: 1460, buckets: 4, labelFn: (i: number) => `${now.getFullYear() - 3 + i}`, bucketFn: (age: number) => Math.min(3, Math.floor(age / (365 * 86400000))), reverse: 4 };
   }
