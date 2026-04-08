@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
-  LayoutDashboard, Users, UserCheck, GitPullRequest, AppWindow, Shield,
-  AlertTriangle, ClipboardCheck, Cog, Grid3X3, Key, FileText, Bell, Settings, LogOut, UsersRound, ListOrdered, ShieldAlert, BarChart3, HandHelping, GitBranch, Crown,
+  LayoutDashboard, Users, UserCheck, AppWindow, Shield,
+  AlertTriangle, ClipboardCheck, Cog, Grid3X3, Key, LogOut, UsersRound, ListOrdered, ShieldAlert, BarChart3, HandHelping, GitBranch, Crown, Settings,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -32,14 +32,14 @@ const sidebarGroups = [
     { title: "Revisões", url: "/revisoes", icon: ClipboardCheck },
     { title: "SoD / Conflitos", url: "/sod", icon: ShieldAlert },
     { title: "Privilegiados", url: "/privilegiados", icon: Crown },
+    { title: "Workflow", url: "/workflow", icon: GitBranch },
   ]},
   { label: "Controle", items: [
     { title: "Matriz", url: "/matriz", icon: Grid3X3 },
     { title: "Licenças", url: "/licencas", icon: Key },
     { title: "Relatórios", url: "/relatorios", icon: BarChart3 },
   ]},
-  { label: "Sistema", items: [
-    { title: "Workflow", url: "/workflow", icon: GitBranch },
+  { label: "Administração", items: [
     { title: "Configurações", url: "/configuracoes", icon: Settings },
     { title: "Usuários", url: "/admin/usuarios", icon: UsersRound },
   ]},
@@ -67,7 +67,7 @@ export function AppSidebar() {
       <Sidebar collapsible="icon">
         <SidebarHeader className="p-4">
           <div className="flex items-center gap-2">
-            <img src={logoImg} alt="Access & Identity" className={`rounded-lg object-contain ${collapsed ? "h-6 w-6" : "h-8 w-8"}`} />
+            <img src={logoImg} alt="Access & Identity" className={`rounded-lg object-contain shrink-0 ${collapsed ? "h-6 w-6" : "h-8 w-8"}`} />
             {!collapsed && <div className="flex flex-col"><span className="text-sm font-semibold text-sidebar-primary-foreground">Órigo Access & Identity</span><span className="text-[10px] text-sidebar-foreground/60">Sistema</span></div>}
           </div>
         </SidebarHeader>
