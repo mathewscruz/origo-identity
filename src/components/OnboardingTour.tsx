@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useId } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
