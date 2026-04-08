@@ -42,7 +42,7 @@ import LoginPage from "./pages/auth/LoginPage";
 import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
 import FilaProvisionamentoPage from "./pages/fila-provisionamento/FilaProvisionamentoPage";
 import SolicitacaoDetalhePage from "./pages/fila-provisionamento/SolicitacaoDetalhePage";
-import PlaceholderPage from "./pages/PlaceholderPage";
+
 import NotFound from "./pages/NotFound";
 import PortalLayout from "./pages/portal/PortalLayout";
 import PortalLoginPage from "./pages/portal/PortalLoginPage";
