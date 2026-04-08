@@ -25,6 +25,8 @@ import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { logAuditoria } from "@/lib/auditLogger";
 import EmptyState from "@/components/EmptyState";
 import SortableHeader, { SortDirection, useSortableData } from "@/components/SortableHeader";
+import OnboardingTour from "@/components/OnboardingTour";
+import { tourSteps } from "@/lib/tourSteps";
 
 interface PerfilForm {
   nome: string;
@@ -253,7 +255,7 @@ export default function PerfisAcessoPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Perfis de Acesso</h1>
           <p className="text-sm text-muted-foreground">Perfis baseados em cargo com múltiplas aplicações vinculadas</p>
         </div>
-        <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Perfil</Button>
+        <div data-tour="actions"><Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Perfil</Button></div>
       </div>
 
       {/* Header counters */}
@@ -273,7 +275,7 @@ export default function PerfisAcessoPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-2 flex-wrap">
+      <div data-tour="search-filter" className="flex gap-2 flex-wrap">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Buscar perfis..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
@@ -297,7 +299,7 @@ export default function PerfisAcessoPage() {
         </Select>
       </div>
 
-      <Card>
+      <Card data-tour="table">
         <CardContent className="p-0">
           {isLoading ? (
             <div className="p-4 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
@@ -472,6 +474,7 @@ export default function PerfisAcessoPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <OnboardingTour pageKey="perfis_acesso" steps={tourSteps.perfis_acesso} />
     </div>
   );
 }

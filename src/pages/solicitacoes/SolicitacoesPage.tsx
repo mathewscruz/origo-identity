@@ -16,6 +16,8 @@ import { queueFullProfileActions } from "@/lib/entraQueueHelper";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { HandHelping, Plus, Search, Clock, CheckCircle2, XCircle, Send, ExternalLink, AppWindow, Users } from "lucide-react";
 import EmptyState from "@/components/EmptyState";
+import OnboardingTour from "@/components/OnboardingTour";
+import { tourSteps } from "@/lib/tourSteps";
 
 export default function SolicitacoesPage() {
   const { profile } = useAuth();
@@ -285,7 +287,7 @@ export default function SolicitacoesPage() {
           <h1 className="text-2xl font-bold text-foreground">Solicitações de Acesso</h1>
           <p className="text-muted-foreground">Self-Service — solicite e gerencie acessos</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div data-tour="actions" className="flex flex-wrap gap-2">
           <Button variant="outline" asChild>
             <a href="/portal" target="_blank" rel="noopener noreferrer">
               <ExternalLink className="mr-2 h-4 w-4" />Portal Externo
@@ -315,14 +317,14 @@ export default function SolicitacoesPage() {
         <Input placeholder="Buscar solicitações..." value={busca} onChange={e => setBusca(e.target.value)} className="pl-9" />
       </div>
 
-      <Tabs defaultValue="pendentes">
+      <Tabs data-tour="tabs" defaultValue="pendentes">
         <TabsList>
           <TabsTrigger value="pendentes">Pendentes ({pendentes.length})</TabsTrigger>
           <TabsTrigger value="historico">Histórico ({decididas.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="pendentes">
-          <Card>
+          <Card data-tour="table">
             <Table>
               <TableHeader><TableRow>
                 <TableHead>Solicitante</TableHead>
@@ -456,6 +458,7 @@ export default function SolicitacoesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <OnboardingTour pageKey="solicitacoes" steps={tourSteps.solicitacoes} />
     </div>
   );
 }

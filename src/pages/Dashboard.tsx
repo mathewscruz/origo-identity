@@ -13,6 +13,8 @@ import {
 } from "recharts";
 import { Link } from "react-router-dom";
 import EmptyState from "@/components/EmptyState";
+import OnboardingTour from "@/components/OnboardingTour";
+import { tourSteps } from "@/lib/tourSteps";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -305,7 +307,7 @@ export default function Dashboard() {
       </div>
 
       {/* KPIs */}
-      <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+      <div data-tour="kpi-cards" className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
         {kpiCards.map((k, i) => (
           <Link key={k.title} to={k.href} className={`group animate-content-in stagger-${i + 1}`}>
             <Card className="transition-all duration-200 hover:shadow-md hover:border-primary/30 group-hover:-translate-y-0.5">
@@ -327,7 +329,7 @@ export default function Dashboard() {
 
       {/* Row 2: Area chart + App donut */}
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-7 animate-content-in stagger-3">
-        <Card className="lg:col-span-4">
+        <Card data-tour="chart-provisioning" className="lg:col-span-4">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">Provisionamento</CardTitle>
@@ -393,7 +395,7 @@ export default function Dashboard() {
 
       {/* Row 3: Solicitações donut + Revisões */}
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-2 animate-content-in stagger-4">
-        <Card>
+        <Card data-tour="chart-requests">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">Solicitações</CardTitle>
@@ -459,7 +461,7 @@ export default function Dashboard() {
       </div>
 
       {/* Row 4: Activity timeline */}
-      <Card className="animate-content-in stagger-5">
+      <Card data-tour="timeline" className="animate-content-in stagger-5">
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Atividade Recente</CardTitle>
         </CardHeader>
@@ -493,6 +495,7 @@ export default function Dashboard() {
           )}
         </CardContent>
       </Card>
+      <OnboardingTour pageKey="dashboard" steps={tourSteps.dashboard} />
     </div>
   );
 }

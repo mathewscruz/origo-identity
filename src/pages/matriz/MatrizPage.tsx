@@ -6,6 +6,8 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import EmptyState from "@/components/EmptyState";
+import OnboardingTour from "@/components/OnboardingTour";
+import { tourSteps } from "@/lib/tourSteps";
 
 function useMatrizData() {
   return useQuery({
@@ -139,10 +141,12 @@ export default function MatrizPage() {
             Gerada automaticamente a partir das atribuições de cargo e motor de regras
           </p>
         </div>
-        <Button variant="outline" disabled>
-          <Download className="mr-1 h-4 w-4" />
-          Exportar
-        </Button>
+        <div data-tour="actions">
+          <Button variant="outline" disabled>
+            <Download className="mr-1 h-4 w-4" />
+            Exportar
+          </Button>
+        </div>
       </div>
 
       <div className="flex items-center gap-4 text-sm text-muted-foreground">
@@ -171,7 +175,7 @@ export default function MatrizPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
+        <Card data-tour="matrix">
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -206,6 +210,7 @@ export default function MatrizPage() {
           </CardContent>
         </Card>
       )}
+      <OnboardingTour pageKey="matriz" steps={tourSteps.matriz} />
     </div>
   );
 }
