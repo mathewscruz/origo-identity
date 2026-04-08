@@ -25,6 +25,16 @@ export default function IntegracoesPage() {
   const { toast } = useToast();
   const { data: csvJob, refetch: refetchCsv } = useSyncJobsCsv();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
+
+  const { data: connectorStats } = useQuery({
+    queryKey: ["connector-stats"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any).from("aplicacoes").select("id, nome, connector_type").neq("connector_type", "manual");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
 
   useEffect(() => { setCsvSyncing(csvJob?.status === "running"); }, [csvJob?.status]);
 
