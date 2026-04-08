@@ -29,6 +29,7 @@ const criticidadeColors: Record<string, string> = {
 };
 
 export default function AplicacoesPage() {
+  const canEdit = useCanEdit();
   const { data: apps, isLoading } = useAplicacoes();
   const navigate = useNavigate();
 
@@ -132,7 +133,7 @@ export default function AplicacoesPage() {
             </TooltipTrigger>
             <TooltipContent>Sincronizar apps do Azure</TooltipContent>
           </Tooltip>
-          <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Aplicação</Button>
+          {canEdit && <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Aplicação</Button>}
         </div>
       </div>
 
@@ -194,7 +195,7 @@ export default function AplicacoesPage() {
               <Button variant="outline" onClick={handleSync} disabled={syncing}>
                 <RefreshCw className={`mr-1 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />Sincronizar Azure
               </Button>
-              <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Aplicação</Button>
+              {canEdit && <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Aplicação</Button>}
             </div>
           </div>
         ) : (
@@ -229,10 +230,10 @@ export default function AplicacoesPage() {
                       ) : <span className="text-muted-foreground">—</span>}
                     </td>
                     <td className="p-4 hidden lg:table-cell">{app.integracao_ativa ? <Badge variant="outline" className="bg-success/15 text-success border-success/30">Ativa</Badge> : <Badge variant="outline" className="bg-muted text-muted-foreground">Inativa</Badge>}</td>
-                    <td className="p-4"><div className="flex gap-1">
+                    {canEdit && <td className="p-4"><div className="flex gap-1">
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => openEdit(app, e)}><Pencil className="h-3 w-3" /></Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteId(app.id); }}><Trash2 className="h-3 w-3" /></Button>
-                    </div></td>
+                    </div></td>}
                   </tr>
                 ))}
               </tbody>
