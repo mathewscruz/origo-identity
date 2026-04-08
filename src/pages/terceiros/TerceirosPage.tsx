@@ -18,6 +18,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
+import EmptyState from "@/components/EmptyState";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { queueFullProfileActions } from "@/lib/entraQueueHelper";
@@ -252,6 +253,7 @@ export default function TerceirosPage() {
             <th className="p-4 font-medium">Nome</th><th className="p-4 font-medium hidden md:table-cell">Empresa</th><th className="p-4 font-medium hidden lg:table-cell">Responsável</th>
             <th className="p-4 font-medium hidden md:table-cell">Criticidade</th><th className="p-4 font-medium">Fim Contrato</th><th className="p-4 font-medium">Status</th><th className="p-4 font-medium w-20">Ações</th>
           </tr></thead><tbody>
+            {paginatedItems.length === 0 && <tr><td colSpan={7}><EmptyState message="Nenhum terceiro encontrado." /></td></tr>}
             {paginatedItems.map((t: any) => (
               <tr key={t.id} className="border-b last:border-0 hover:bg-muted/50">
                 <td className="p-4"><Link to={`/terceiros/${t.id}`} className="font-medium text-primary hover:underline">{t.nome}</Link></td>
