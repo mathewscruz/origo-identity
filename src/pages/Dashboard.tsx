@@ -1,57 +1,59 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Users, AlertTriangle, ShieldCheck, KeyRound, RefreshCw, AppWindow } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  Users, AlertTriangle, ShieldCheck, RefreshCw, AppWindow, FileCheck,
+  ArrowUpRight, Clock, CheckCircle2, XCircle, Loader2,
+} from "lucide-react";
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from "recharts";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useColaboradores, useTerceiros, useAlertas, useColabQuarentena } from "@/hooks/useOrigoData";
 
-function useAccessStatusData() {
+/* ── palette ── */
+const COLORS = [
+  "hsl(176, 74%, 34%)",  // primary teal
+  "hsl(199, 89%, 48%)",  // info blue
+  "hsl(142, 71%, 45%)",  // success green
+  "hsl(38, 92%, 50%)",   // warning amber
+  "hsl(0, 84%, 60%)",    // destructive red
+  "hsl(262, 52%, 47%)",  // purple
+];
+
+const STATUS_MAP: Record<string, { label: string; color: string }> = {
+  pendente:     { label: "Pendente",     color: "hsl(38, 92%, 50%)" },
+  em_aprovacao: { label: "Em Aprovação", color: "hsl(199, 89%, 48%)" },
+  aprovada:     { label: "Aprovada",     color: "hsl(142, 71%, 45%)" },
+  rejeitada:    { label: "Rejeitada",    color: "hsl(0, 84%, 60%)" },
+};
+
+/* ── hooks ── */
+
+function useKpiCounts() {
   return useQuery({
-    queryKey: ["dashboard_access_status"],
+    queryKey: ["dashboard_kpis"],
     queryFn: async () => {
-      const { count: ativosCount } = await supabase
-        .from("perfil_atribuicoes")
-        .select("id", { count: "exact", head: true })
-        .eq("ativo", true)
-        .is("data_revogacao", null);
-      const { count: revogadosCount } = await supabase
-        .from("perfil_atribuicoes")
-        .select("id", { count: "exact", head: true })
-        .eq("ativo", false);
-      const ativos = ativosCount ?? 0;
-      const revogados = revogadosCount ?? 0;
-      return [
-        { name: "Ativos", value: ativos, color: "hsl(142, 71%, 45%)" },
-        { name: "Revogados", value: revogados, color: "hsl(0, 84%, 60%)" },
-      ].filter(d => d.value > 0);
-    },
-    refetchInterval: 30000,
-  });
-}
-
-function useIamQueueStats() {
-  return useQuery({
-    queryKey: ["dashboard_iam_queue"],
-    queryFn: async () => {
-      // Use count queries instead of loading all rows
-      const ninetyDaysAgo = new Date();
-      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-      const since = ninetyDaysAgo.toISOString();
-
-      const [pendingRes, completedRes, failedRes] = await Promise.all([
-        supabase.from("iam_queue").select("id", { count: "exact", head: true }).eq("status", "pending").gte("created_at", since),
-        supabase.from("iam_queue").select("id", { count: "exact", head: true }).eq("status", "completed").gte("created_at", since),
-        supabase.from("iam_queue").select("id", { count: "exact", head: true }).in("status", ["failed", "permanent_failure"]).gte("created_at", since),
+      const [colabs, terceiros, apps, perfis, solicit, fila, alertas] = await Promise.all([
+        supabase.from("colaboradores").select("id", { count: "exact", head: true }).eq("status", "ativo"),
+        supabase.from("terceiros").select("id", { count: "exact", head: true }).eq("ativo", true),
+        supabase.from("aplicacoes").select("id", { count: "exact", head: true }).neq("connector_type", "manual"),
+        supabase.from("perfis_acesso").select("id", { count: "exact", head: true }).eq("ativo", true),
+        supabase.from("solicitacoes_acesso").select("id", { count: "exact", head: true }).in("status", ["pendente", "em_aprovacao"]),
+        supabase.from("iam_queue").select("id", { count: "exact", head: true }).eq("status", "pending"),
+        supabase.from("alertas").select("id", { count: "exact", head: true }).eq("lido", false),
       ]);
-      const pending = pendingRes.count ?? 0;
-      const completed = completedRes.count ?? 0;
-      const failed = failedRes.count ?? 0;
-      return { pending, completed, failed, total: pending + completed + failed };
+      return {
+        pessoasAtivas: (colabs.count ?? 0) + (terceiros.count ?? 0),
+        terceirosAtivos: terceiros.count ?? 0,
+        appsConectadas: apps.count ?? 0,
+        perfisAtivos: perfis.count ?? 0,
+        solicitPendentes: solicit.count ?? 0,
+        filaPendente: fila.count ?? 0,
+        alertasNaoLidos: alertas.count ?? 0,
+      };
     },
     refetchInterval: 30000,
   });
@@ -59,27 +61,22 @@ function useIamQueueStats() {
 
 function useWeeklyProvisioningData() {
   return useQuery({
-    queryKey: ["dashboard_weekly_provisioning"],
+    queryKey: ["dashboard_weekly_prov"],
     queryFn: async () => {
       const eightWeeksAgo = new Date();
       eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56);
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("iam_queue")
         .select("action_type, created_at")
         .gte("created_at", eightWeeksAgo.toISOString())
         .not("status", "eq", "cancelled");
-      if (error) throw error;
       const rows = data ?? [];
-      
       const weeks: Record<string, { assign: number; remove: number; other: number }> = {};
-      for (let i = 0; i < 8; i++) {
-        weeks[`S${i + 1}`] = { assign: 0, remove: 0, other: 0 };
-      }
-      
+      for (let i = 0; i < 8; i++) weeks[`S${i + 1}`] = { assign: 0, remove: 0, other: 0 };
       const now = Date.now();
       rows.forEach(r => {
         const age = now - new Date(r.created_at).getTime();
-        const weekIdx = Math.min(7, Math.floor(age / (7 * 24 * 60 * 60 * 1000)));
+        const weekIdx = Math.min(7, Math.floor(age / (7 * 86400000)));
         const key = `S${8 - weekIdx}`;
         if (!weeks[key]) return;
         const at = r.action_type || "";
@@ -87,174 +84,363 @@ function useWeeklyProvisioningData() {
         else if (at.startsWith("remove") || at.startsWith("disable")) weeks[key].remove++;
         else weeks[key].other++;
       });
-      
       return Object.entries(weeks).map(([semana, v]) => ({
-        semana,
-        Concessão: v.assign,
-        Revogação: v.remove,
-        Outros: v.other,
+        semana, Concessão: v.assign, Revogação: v.remove, Outros: v.other,
       }));
     },
     refetchInterval: 60000,
   });
 }
 
-function useRecentIamQueue() {
+function useAccessByApp() {
   return useQuery({
-    queryKey: ["dashboard_recent_queue"],
+    queryKey: ["dashboard_access_by_app"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("iam_queue")
-        .select("id, action_type, target_identity, status, created_at")
-        .not("status", "eq", "cancelled")
+      const { data: atribuicoes } = await supabase
+        .from("perfil_atribuicoes")
+        .select("perfil_id")
+        .eq("ativo", true)
+        .is("data_revogacao", null);
+      if (!atribuicoes?.length) return [];
+      const perfilIds = [...new Set(atribuicoes.map(a => a.perfil_id))];
+      const { data: perfilApps } = await supabase
+        .from("perfil_aplicacoes")
+        .select("aplicacao_id, perfil_id")
+        .in("perfil_id", perfilIds.slice(0, 200));
+      if (!perfilApps?.length) return [];
+      const appCount: Record<string, number> = {};
+      const perfilCountMap: Record<string, number> = {};
+      atribuicoes.forEach(a => { perfilCountMap[a.perfil_id] = (perfilCountMap[a.perfil_id] || 0) + 1; });
+      perfilApps.forEach(pa => {
+        appCount[pa.aplicacao_id] = (appCount[pa.aplicacao_id] || 0) + (perfilCountMap[pa.perfil_id] || 1);
+      });
+      const appIds = Object.keys(appCount);
+      const { data: apps } = await supabase.from("aplicacoes").select("id, nome").in("id", appIds.slice(0, 50));
+      const appNames: Record<string, string> = {};
+      (apps ?? []).forEach(a => { appNames[a.id] = a.nome; });
+      const sorted = Object.entries(appCount)
+        .map(([id, value]) => ({ name: appNames[id] || "Desconhecido", value }))
+        .sort((a, b) => b.value - a.value);
+      if (sorted.length <= 5) return sorted;
+      const top5 = sorted.slice(0, 5);
+      const others = sorted.slice(5).reduce((sum, i) => sum + i.value, 0);
+      return [...top5, { name: "Outros", value: others }];
+    },
+    refetchInterval: 60000,
+  });
+}
+
+function useSolicitacoesByStatus() {
+  return useQuery({
+    queryKey: ["dashboard_solicit_status"],
+    queryFn: async () => {
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      const { data } = await supabase
+        .from("solicitacoes_acesso")
+        .select("status")
+        .gte("created_at", ninetyDaysAgo.toISOString());
+      const counts: Record<string, number> = {};
+      (data ?? []).forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
+      return Object.entries(counts)
+        .map(([status, value]) => ({
+          name: STATUS_MAP[status]?.label || status,
+          value,
+          color: STATUS_MAP[status]?.color || "hsl(215, 16%, 47%)",
+        }))
+        .filter(d => d.value > 0);
+    },
+    refetchInterval: 30000,
+  });
+}
+
+function useRevisoesAtivas() {
+  return useQuery({
+    queryKey: ["dashboard_revisoes"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("revisoes")
+        .select("id, nome, total_itens, itens_revisados, status")
+        .eq("status", "em_andamento")
         .order("created_at", { ascending: false })
-        .limit(5);
-      if (error) throw error;
+        .limit(4);
       return data ?? [];
     },
     refetchInterval: 30000,
   });
 }
 
-const statusColors: Record<string, string> = {
-  pending: "bg-warning/15 text-warning border-warning/30",
-  completed: "bg-success/15 text-success border-success/30",
-  failed: "bg-destructive/15 text-destructive border-destructive/30",
-  permanent_failure: "bg-destructive/15 text-destructive border-destructive/30",
-  processing: "bg-info/15 text-info border-info/30",
-};
+function useRecentActivity() {
+  return useQuery({
+    queryKey: ["dashboard_activity"],
+    queryFn: async () => {
+      const [queueRes, solicitRes] = await Promise.all([
+        supabase.from("iam_queue")
+          .select("id, action_type, target_identity, status, created_at")
+          .not("status", "eq", "cancelled")
+          .order("created_at", { ascending: false })
+          .limit(5),
+        supabase.from("solicitacoes_acesso")
+          .select("id, status, created_at, justificativa")
+          .order("created_at", { ascending: false })
+          .limit(5),
+      ]);
+      type ActivityItem = {
+        id: string; type: "queue" | "solicitacao"; label: string;
+        status: string; date: string; link: string;
+      };
+      const items: ActivityItem[] = [];
+      (queueRes.data ?? []).forEach(q => items.push({
+        id: q.id, type: "queue",
+        label: q.target_identity || q.action_type,
+        status: q.status, date: q.created_at,
+        link: `/fila-provisionamento/${q.id}`,
+      }));
+      (solicitRes.data ?? []).forEach(s => items.push({
+        id: s.id, type: "solicitacao",
+        label: (s.justificativa || "Solicitação").slice(0, 60),
+        status: s.status, date: s.created_at,
+        link: "/solicitacoes",
+      }));
+      return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 8);
+    },
+    refetchInterval: 30000,
+  });
+}
 
-const actionLabels: Record<string, string> = {
-  assign_group: "Grupo",
-  remove_group: "Grupo",
-  assign_license: "Licença",
-  remove_license: "Licença",
-  assign_app: "App",
-  remove_app: "App",
-  disable_entra: "Desabilitar",
-  enable_entra: "Habilitar",
-  update_entra: "Atualizar Entra",
-  create: "Criar",
-  update: "Atualizar",
-  delete: "Excluir",
-};
+/* ── custom tooltip ── */
+function CustomTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-lg border bg-card p-3 shadow-lg text-xs">
+      <p className="font-medium text-card-foreground mb-1">{label}</p>
+      {payload.map((p: any) => (
+        <div key={p.dataKey} className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
+          <span className="text-muted-foreground">{p.dataKey}:</span>
+          <span className="font-semibold text-card-foreground">{p.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
+/* ── status icon ── */
+function StatusIcon({ status }: { status: string }) {
+  switch (status) {
+    case "pending": case "pendente": case "em_aprovacao":
+      return <Clock className="h-4 w-4 text-warning" />;
+    case "completed": case "aprovada":
+      return <CheckCircle2 className="h-4 w-4 text-success" />;
+    case "failed": case "permanent_failure": case "rejeitada":
+      return <XCircle className="h-4 w-4 text-destructive" />;
+    case "processing":
+      return <Loader2 className="h-4 w-4 text-info animate-spin" />;
+    default:
+      return <Clock className="h-4 w-4 text-muted-foreground" />;
+  }
+}
+
+/* ── main ── */
 export default function Dashboard() {
-  const { data: colaboradores } = useColaboradores();
-  const { data: terceiros } = useTerceiros();
-  const { data: alertas } = useAlertas();
-  const { data: quarentena } = useColabQuarentena();
-  const { data: accessStatus } = useAccessStatusData();
-  const { data: queueStats } = useIamQueueStats();
+  const { data: kpis } = useKpiCounts();
   const { data: weeklyData } = useWeeklyProvisioningData();
-  const { data: recentQueue } = useRecentIamQueue();
+  const { data: accessByApp } = useAccessByApp();
+  const { data: solicitStatus } = useSolicitacoesByStatus();
+  const { data: revisoes } = useRevisoesAtivas();
+  const { data: activity } = useRecentActivity();
 
-  const pessoasAtivas = (colaboradores ?? []).filter((c) => c.status === "ativo").length;
-  const terceirosAtivos = (terceiros ?? []).filter((t) => t.ativo).length;
-  const naoLidos = (alertas ?? []).filter((a) => !a.lido).length;
-  const quarentenaPendente = (quarentena ?? []).length;
-
-  const kpis = [
-    { title: "Pessoas Ativas", value: pessoasAtivas.toString(), change: `${terceirosAtivos} terceiros ativos`, icon: Users, changeType: "positive" as const },
-    { title: "Quarentena Pendente", value: quarentenaPendente.toString(), icon: AlertTriangle, changeType: quarentenaPendente > 0 ? "warning" as const : "positive" as const, change: "ausentes do CSV" },
-    { title: "Fila de Provisionamento", value: (queueStats?.pending ?? 0).toString(), icon: RefreshCw, changeType: (queueStats?.failed ?? 0) > 0 ? "warning" as const : "positive" as const, change: `${queueStats?.failed ?? 0} com erro · ${queueStats?.completed ?? 0} concluídos` },
-    { title: "Alertas Não Lidos", value: naoLidos.toString(), icon: AlertTriangle, changeType: naoLidos > 0 ? "warning" as const : "positive" as const, change: `${(alertas ?? []).length} total` },
+  const kpiCards = [
+    { title: "Pessoas Ativas", value: kpis?.pessoasAtivas ?? 0, sub: `${kpis?.terceirosAtivos ?? 0} terceiros`, icon: Users, href: "/colaboradores", color: "text-primary" },
+    { title: "Aplicações Conectadas", value: kpis?.appsConectadas ?? 0, sub: "com conector ativo", icon: AppWindow, href: "/aplicacoes", color: "text-info" },
+    { title: "Perfis Ativos", value: kpis?.perfisAtivos ?? 0, sub: "perfis de acesso", icon: ShieldCheck, href: "/perfis-acesso", color: "text-success" },
+    { title: "Solicitações Pendentes", value: kpis?.solicitPendentes ?? 0, sub: "aguardando decisão", icon: FileCheck, href: "/solicitacoes", color: "text-warning" },
+    { title: "Fila de Provisionamento", value: kpis?.filaPendente ?? 0, sub: "itens pendentes", icon: RefreshCw, href: "/fila-provisionamento", color: "text-info" },
+    { title: "Alertas Não Lidos", value: kpis?.alertasNaoLidos ?? 0, sub: "requerem atenção", icon: AlertTriangle, href: "/alertas", color: (kpis?.alertasNaoLidos ?? 0) > 0 ? "text-destructive" : "text-success" },
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Visão operacional consolidada</p>
+        <p className="text-sm text-muted-foreground">Visão operacional consolidada em tempo real</p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {kpis.map((kpi) => (
-          <Card key={kpi.title}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{kpi.title}</CardTitle>
-              <kpi.icon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{kpi.value}</div>
-              <p className={`text-xs ${kpi.changeType === "positive" ? "text-success" : kpi.changeType === "warning" ? "text-warning" : "text-muted-foreground"}`}>{kpi.change}</p>
-            </CardContent>
-          </Card>
+      {/* KPIs */}
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+        {kpiCards.map((k) => (
+          <Link key={k.title} to={k.href} className="group">
+            <Card className="transition-all duration-200 hover:shadow-md hover:border-primary/30 group-hover:-translate-y-0.5">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 pt-4 px-4">
+                <CardTitle className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider leading-tight">{k.title}</CardTitle>
+                <k.icon className={`h-4 w-4 ${k.color} opacity-70`} />
+              </CardHeader>
+              <CardContent className="px-4 pb-4 pt-0">
+                <div className="text-2xl font-bold tracking-tight">{k.value}</div>
+                <div className="flex items-center gap-1 mt-0.5">
+                  <span className="text-[10px] text-muted-foreground">{k.sub}</span>
+                  <ArrowUpRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
         ))}
       </div>
 
+      {/* Row 2: Area chart + App donut */}
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-7">
         <Card className="lg:col-span-4">
-          <CardHeader><CardTitle className="text-base">Provisionamento — Últimas 8 Semanas</CardTitle></CardHeader>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Provisionamento — 8 Semanas</CardTitle>
+          </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={weeklyData ?? []}>
+              <AreaChart data={weeklyData ?? []}>
+                <defs>
+                  <linearGradient id="gradConcessao" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(142, 71%, 45%)" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="hsl(142, 71%, 45%)" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="gradRevogacao" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(0, 84%, 60%)" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="hsl(0, 84%, 60%)" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="gradOutros" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(199, 89%, 48%)" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="hsl(199, 89%, 48%)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="semana" className="text-xs" />
-                <YAxis className="text-xs" />
-                <Tooltip />
-                <Bar dataKey="Concessão" stackId="a" fill="hsl(142, 71%, 45%)" />
-                <Bar dataKey="Revogação" stackId="a" fill="hsl(0, 84%, 60%)" />
-                <Bar dataKey="Outros" stackId="a" fill="hsl(199, 89%, 48%)" radius={[4, 4, 0, 0]} />
-              </BarChart>
+                <XAxis dataKey="semana" className="text-xs" tick={{ fill: "hsl(215, 16%, 47%)", fontSize: 11 }} />
+                <YAxis className="text-xs" tick={{ fill: "hsl(215, 16%, 47%)", fontSize: 11 }} />
+                <Tooltip content={<CustomTooltip />} />
+                <Area type="monotone" dataKey="Concessão" stroke="hsl(142, 71%, 45%)" fill="url(#gradConcessao)" strokeWidth={2} />
+                <Area type="monotone" dataKey="Revogação" stroke="hsl(0, 84%, 60%)" fill="url(#gradRevogacao)" strokeWidth={2} />
+                <Area type="monotone" dataKey="Outros" stroke="hsl(199, 89%, 48%)" fill="url(#gradOutros)" strokeWidth={2} />
+              </AreaChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
 
         <Card className="lg:col-span-3">
-          <CardHeader><CardTitle className="text-base">Acessos por Status</CardTitle></CardHeader>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Acessos por Aplicação</CardTitle>
+          </CardHeader>
           <CardContent>
-            {(accessStatus ?? []).length > 0 ? (
+            {(accessByApp ?? []).length > 0 ? (
               <ResponsiveContainer width="100%" height={280}>
                 <PieChart>
-                  <Pie data={accessStatus} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={4} dataKey="value">
-                    {(accessStatus ?? []).map((entry, index) => <Cell key={index} fill={entry.color} />)}
+                  <Pie data={accessByApp} cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={3} dataKey="value" nameKey="name">
+                    {(accessByApp ?? []).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                   </Pie>
-                  <Tooltip />
-                  <Legend />
+                  <Tooltip formatter={(v: number, name: string) => [`${v} atribuições`, name]} contentStyle={{ borderRadius: 8, border: "1px solid hsl(214, 32%, 91%)", fontSize: 12 }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
               <div className="flex h-[280px] items-center justify-center text-muted-foreground text-sm">
-                Nenhuma atribuição de perfil encontrada
+                Nenhuma atribuição encontrada
               </div>
             )}
           </CardContent>
         </Card>
       </div>
 
+      {/* Row 3: Solicitações donut + Revisões */}
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Solicitações — Últimos 90 dias</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {(solicitStatus ?? []).length > 0 ? (
+              <ResponsiveContainer width="100%" height={240}>
+                <PieChart>
+                  <Pie data={solicitStatus} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value" nameKey="name">
+                    {(solicitStatus ?? []).map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                  </Pie>
+                  <Tooltip formatter={(v: number, name: string) => [`${v}`, name]} contentStyle={{ borderRadius: 8, border: "1px solid hsl(214, 32%, 91%)", fontSize: 12 }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-[240px] items-center justify-center text-muted-foreground text-sm">
+                Nenhuma solicitação no período
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Revisões de Acesso em Andamento</CardTitle>
+              <Link to="/revisoes" className="text-xs text-primary hover:underline flex items-center gap-1">
+                Ver todas <ArrowUpRight className="h-3 w-3" />
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {(revisoes ?? []).length > 0 ? (
+              <div className="space-y-4">
+                {(revisoes ?? []).map((rev) => {
+                  const pct = rev.total_itens > 0 ? Math.round((rev.itens_revisados / rev.total_itens) * 100) : 0;
+                  return (
+                    <Link key={rev.id} to={`/revisoes/${rev.id}`} className="block group">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm font-medium truncate max-w-[70%] group-hover:text-primary transition-colors">{rev.nome}</span>
+                        <span className="text-xs text-muted-foreground">{rev.itens_revisados}/{rev.total_itens} itens</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Progress value={pct} className="flex-1 h-2" />
+                        <span className="text-xs font-semibold text-muted-foreground w-10 text-right">{pct}%</span>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex h-[200px] items-center justify-center text-muted-foreground text-sm">
+                Nenhuma revisão em andamento
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Row 4: Activity timeline */}
       <Card>
-        <CardHeader><CardTitle className="text-base">Últimas Solicitações de Provisionamento</CardTitle></CardHeader>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Atividade Recente</CardTitle>
+        </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead><tr className="border-b text-left text-muted-foreground">
-                <th className="pb-2 font-medium">Ação</th><th className="pb-2 font-medium">Identidade</th>
-                <th className="pb-2 font-medium">Status</th><th className="pb-2 font-medium">Data</th>
-              </tr></thead>
-              <tbody>
-                {(recentQueue ?? []).map((item) => (
-                  <tr key={item.id} className="border-b last:border-0">
-                    <td className="py-3">
-                      <Badge variant="outline" className="text-[10px] uppercase">
-                        {actionLabels[item.action_type] || item.action_type}
-                      </Badge>
-                    </td>
-                    <td className="py-3">
-                      <Link to={`/fila-provisionamento/${item.id}`} className="font-medium text-primary hover:underline">
-                        {item.target_identity || "—"}
-                      </Link>
-                    </td>
-                    <td className="py-3"><Badge variant="outline" className={statusColors[item.status] || ""}>{({ pending: "Pendente", processing: "Processando", success: "Concluído", failed: "Falhou" } as Record<string, string>)[item.status] || item.status}</Badge></td>
-                    <td className="py-3 text-muted-foreground">{new Date(item.created_at).toLocaleDateString("pt-BR")}</td>
-                  </tr>
-                ))}
-                {(recentQueue ?? []).length === 0 && (
-                  <tr><td colSpan={4} className="py-6 text-center text-muted-foreground">Nenhuma solicitação recente</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          {(activity ?? []).length > 0 ? (
+            <div className="space-y-0">
+              {(activity ?? []).map((item, idx) => (
+                <Link
+                  key={item.id + item.type}
+                  to={item.link}
+                  className="flex items-center gap-4 py-3 px-2 -mx-2 rounded-md hover:bg-muted/50 transition-colors group"
+                  style={{ borderBottom: idx < (activity?.length ?? 0) - 1 ? "1px solid hsl(214, 32%, 91%)" : "none" }}
+                >
+                  <StatusIcon status={item.status} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">
+                      {item.label}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {item.type === "queue" ? "Provisionamento" : "Solicitação"} · {new Date(item.date).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] uppercase shrink-0">
+                    {STATUS_MAP[item.status]?.label || item.status}
+                  </Badge>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="py-8 text-center text-sm text-muted-foreground">Nenhuma atividade recente</div>
+          )}
         </CardContent>
       </Card>
     </div>
