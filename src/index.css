@@ -95,3 +95,16 @@
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
 }
+
+@layer utilities {
+  .stagger-1 { animation-delay: 0ms; }
+  .stagger-2 { animation-delay: 60ms; }
+  .stagger-3 { animation-delay: 120ms; }
+  .stagger-4 { animation-delay: 180ms; }
+  .stagger-5 { animation-delay: 240ms; }
+  .stagger-6 { animation-delay: 300ms; }
+
+  .loading-fade {
+    animation: content-in 0.3s ease-out both;
+  }
+}

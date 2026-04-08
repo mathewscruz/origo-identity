@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import logoImg from "@/assets/logo.png";
+import PageTransition from "@/components/PageTransition";
 import { toast } from "sonner";
 import type { User } from "@supabase/supabase-js";
 
@@ -73,7 +74,9 @@ export default function PortalLayout() {
         </div>
       </header>
       <main className="mx-auto max-w-5xl px-4 py-6">
-        <Outlet />
+        <PageTransition>
+          <Outlet />
+        </PageTransition>
       </main>
 
       <AlertDialog open={logoutOpen} onOpenChange={setLogoutOpen}>

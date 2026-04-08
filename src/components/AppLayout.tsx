@@ -1,7 +1,7 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Outlet, useLocation } from "react-router-dom";
-// fade-in transition on route change
+import PageTransition from "@/components/PageTransition";
 import ModoOperacaoBanner from "@/components/ModoOperacaoBanner";
 import {
   Breadcrumb,
@@ -112,9 +112,9 @@ export default function AppLayout() {
             </div>
           </header>
           <main className="flex-1 overflow-auto p-3 md:p-6">
-            <div key={location.pathname} className="animate-fade-in">
+            <PageTransition>
               <Outlet />
-            </div>
+            </PageTransition>
           </main>
         </div>
       </div>
