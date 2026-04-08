@@ -142,6 +142,13 @@ export default function PerfilAcessoDetalhePage() {
       await (supabase as any).from("perfil_grupos").delete().eq("perfil_id", id!);
       if (editForm.grupo_ids.length > 0) await (supabase as any).from("perfil_grupos").insert(editForm.grupo_ids.map(gid => ({ perfil_id: id!, grupo_id: gid })));
 
+      // Sync perfil_apps_internos (internal profiles per app)
+      await (supabase as any).from("perfil_apps_internos").delete().eq("perfil_id", id!);
+      const piEntries = Object.entries(editForm.perfil_interno_map).filter(([appId, piId]) => piId && editForm.aplicacao_ids.includes(appId));
+      if (piEntries.length > 0) {
+        await (supabase as any).from("perfil_apps_internos").insert(piEntries.map(([appId, piId]) => ({ perfil_id: id!, aplicacao_id: appId, perfil_interno_id: piId })));
+      }
+
       await logAuditoria({ acao: "editar_perfil", entidade: "perfis_acesso", entidade_id: id!, resumo: `Editado: ${editForm.nome}` });
       toast({ title: "Perfil atualizado" });
 
@@ -177,6 +184,7 @@ export default function PerfilAcessoDetalhePage() {
       queryClient.invalidateQueries({ queryKey: ["perfil_aplicacoes", id] });
       queryClient.invalidateQueries({ queryKey: ["perfil_licencas", id] });
       queryClient.invalidateQueries({ queryKey: ["perfil_grupos", id] });
+      queryClient.invalidateQueries({ queryKey: ["perfil_apps_internos", id] });
       queryClient.invalidateQueries({ queryKey: ["perfis_acesso"] });
       setEditOpen(false);
       triggerEntraProcessing();
