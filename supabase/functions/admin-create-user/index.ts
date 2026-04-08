@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-bootstrap-key",
   "Content-Type": "application/json",
 };
 
@@ -11,15 +11,22 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
+    const adminClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
 
-    // For reset_password, allow bootstrap via service role key header
+    // Bootstrap reset via service role key header (for initial setup)
     if (body.action === "reset_password" && req.headers.get("x-bootstrap-key") === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) {
-      const adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      if (!body.user_id || !body.password || body.password.length < 6) {
+        return new Response(JSON.stringify({ error: "user_id e senha (mín 6 chars) obrigatórios" }), { status: 400, headers: corsHeaders });
+      }
       const { error } = await adminClient.auth.admin.updateUserById(body.user_id, { password: body.password });
       if (error) return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: corsHeaders });
-      return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+      return new Response(JSON.stringify({ success: true, message: "Senha atualizada." }), { headers: corsHeaders });
     }
 
+    // Standard auth check
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Não autorizado" }), { status: 401, headers: corsHeaders });
@@ -44,31 +51,17 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Acesso restrito a administradores" }), { status: 403, headers: corsHeaders });
     }
 
-    const body = await req.json();
-    const { action } = body;
-
-    const adminClient = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
-
-    // --- RESET PASSWORD ---
-    if (action === "reset_password") {
-      const { user_id, password } = body;
-      if (!user_id) {
-        return new Response(JSON.stringify({ error: "user_id é obrigatório" }), { status: 400, headers: corsHeaders });
+    // --- RESET PASSWORD (authenticated admin) ---
+    if (body.action === "reset_password") {
+      if (!body.user_id || !body.password || body.password.length < 6) {
+        return new Response(JSON.stringify({ error: "user_id e senha (mín 6 chars) obrigatórios" }), { status: 400, headers: corsHeaders });
       }
-      if (!password || password.length < 6) {
-        return new Response(JSON.stringify({ error: "Senha é obrigatória (mínimo 6 caracteres)" }), { status: 400, headers: corsHeaders });
-      }
-      const { error: resetErr } = await adminClient.auth.admin.updateUserById(user_id, { password });
-      if (resetErr) {
-        return new Response(JSON.stringify({ error: resetErr.message }), { status: 400, headers: corsHeaders });
-      }
+      const { error: resetErr } = await adminClient.auth.admin.updateUserById(body.user_id, { password: body.password });
+      if (resetErr) return new Response(JSON.stringify({ error: resetErr.message }), { status: 400, headers: corsHeaders });
       return new Response(JSON.stringify({ success: true, message: "Senha atualizada com sucesso." }), { headers: corsHeaders });
     }
 
-    // --- CREATE USER (default) ---
+    // --- CREATE USER ---
     const { email, nome, role, password } = body;
     if (!email || !nome) {
       return new Response(JSON.stringify({ error: "Email e nome são obrigatórios" }), { status: 400, headers: corsHeaders });
