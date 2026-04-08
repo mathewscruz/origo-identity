@@ -102,7 +102,7 @@ export function AppSidebar() {
                   <span className="text-sidebar-foreground/50 truncate">{profile?.email || ""}</span>
                 </div>
               </div>
-              <Button variant="ghost" size="sm" className="w-full justify-start text-sidebar-foreground/60 hover:text-sidebar-foreground" onClick={() => setLogoutOpen(true)}>
+              <Button variant="ghost" size="sm" className="w-full justify-start text-destructive hover:text-destructive hover:bg-sidebar-accent" onClick={() => setLogoutOpen(true)}>
                 <LogOut className="mr-2 h-4 w-4" />Sair
               </Button>
             </div>
