@@ -71,6 +71,8 @@ export default function ColaboradoresPage() {
   const [areaFilter, setAreaFilter] = useState("todos");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<SortDirection>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -126,7 +128,8 @@ export default function ColaboradoresPage() {
     return true;
   });
 
-  const { paginatedItems, safePage } = usePagination(filtered, page, pageSize);
+  const sorted = useSortableData(filtered, sortField, sortDir);
+  const { paginatedItems, safePage } = usePagination(sorted, page, pageSize);
   const areasList = [...new Set(mapped.map((c) => c.area).filter((a) => a !== "—"))];
   const cargosList = [...new Set(mapped.map((c) => c.cargo).filter((c) => c !== "—"))];
 
