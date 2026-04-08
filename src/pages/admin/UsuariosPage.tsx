@@ -259,10 +259,16 @@ export default function UsuariosPage() {
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setChangingPwd(null)}>Cancelar</Button><Button onClick={async () => {
             if (newPwd.length < 6) { toast({ title: "Mínimo 6 caracteres", variant: "destructive" }); return; }
-            // Admin can only reset own password via updateUser
-            const { error } = await supabase.auth.updateUser({ password: newPwd });
-            if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
-            toast({ title: "Senha atualizada" });
+            const session = (await supabase.auth.getSession()).data.session;
+            const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+            const res = await fetch(`${supabaseUrl}/functions/v1/admin-create-user`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session?.access_token}` },
+              body: JSON.stringify({ action: "reset_password", user_id: changingPwd, password: newPwd }),
+            });
+            const result = await res.json();
+            if (!res.ok) { toast({ title: "Erro", description: result.error || "Falha ao redefinir senha", variant: "destructive" }); return; }
+            toast({ title: "Senha atualizada com sucesso" });
             setChangingPwd(null);
           }}>Atualizar</Button></DialogFooter>
         </DialogContent>
