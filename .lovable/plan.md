@@ -1,55 +1,112 @@
 
 
-## Plano: Transicoes suaves entre telas e carregamentos
+## Plano: Melhorias UX/UI — Itens 2, 4, 5, 6, 7, 8, 10 + Padronizacao visual de dialogs/tabelas
 
-### Problema
+### Escopo
 
-Atualmente a troca de tela usa apenas `animate-fade-in` (do plugin tailwindcss-animate) num div com `key={location.pathname}`. Isso causa um flash — o conteudo anterior desaparece instantaneamente e o novo faz fade-in. Nao ha transicao de saida nem suavizacao nos carregamentos.
+Manter os 7 itens solicitados da avaliacao anterior, mais uma revisao visual de consistencia em dialogs, tabelas, titulos e botoes.
 
-### Solucao
+---
 
-**1. Adicionar keyframes customizados no Tailwind config**
+### Item 2 — Reorganizar sidebar
 
-Definir animacoes mais suaves e longas:
-- `page-in`: fade + leve slide-up (opacity 0→1, translateY 8px→0, duracao 0.4s ease-out)
-- `page-out`: fade out rapido (opacity 1→0, duracao 0.15s)
-- `content-in`: para cards e secoes internas (opacity 0→1, translateY 4px→0, duracao 0.3s, com delay escalonado)
+- Mover "Workflow" de "Sistema" para "Governanca"
+- Renomear grupo "Sistema" para "Administracao"
+- Resultado: 5 grupos semanticamente corretos
 
-**2. Criar componente `PageTransition` wrapper**
+**Arquivo:** `src/components/AppSidebar.tsx`
 
-Componente simples que aplica a animacao de entrada com CSS:
-- Recebe `children` e aplica `animate-page-in`
-- Usa `key` do pathname para re-trigger
-- Adiciona um leve delay (50ms) antes de mostrar para evitar flash
+---
 
-**3. Aplicar `PageTransition` no AppLayout**
+### Item 4 — Pagina 404 em PT-BR com branding
 
-Substituir o div com `animate-fade-in` pelo novo componente no `<main>`.
+- Traduzir textos para portugues
+- Adicionar logo Origo em grayscale (reutilizar EmptyState)
+- Botao estilizado com Button component em vez de link simples
 
-**4. Adicionar animacoes escalonadas nos cards do Dashboard e listagens**
+**Arquivo:** `src/pages/NotFound.tsx`
 
-Usar classes utilitarias com `animation-delay` para que cards/linhas aparecam em sequencia (stagger effect):
-- Primeiro card: 0ms
-- Segundo: 50ms
-- Terceiro: 100ms
-- Aplicar via CSS custom classes `.stagger-1`, `.stagger-2`, etc.
+---
 
-**5. Suavizar carregamentos (loading states)**
+### Item 5 — Login com split layout profissional
 
-Adicionar transicao nos skeletons/spinners existentes — quando o conteudo real aparece, ele faz fade-in em vez de substituicao brusca. Criar uma classe `.loading-fade` que anima opacity de 0 a 1 em 0.3s.
+- Layout dividido: lado esquerdo com gradiente teal/dark, logo grande, tagline "Gestao de Identidades e Acessos"
+- Lado direito com o formulario atual
+- Responsivo: em mobile, apenas o formulario com logo acima
 
-**6. Transicao no Portal tambem**
+**Arquivo:** `src/pages/auth/LoginPage.tsx`
 
-Aplicar o mesmo `PageTransition` no `PortalLayout.tsx`.
+---
 
-### Arquivos
+### Item 6 — Breadcrumb inteligente (sem UUIDs)
+
+- Quando o ultimo segmento do path e um UUID, substituir por "Detalhe" como fallback
+- Futuramente, paginas de detalhe podem passar o nome real via context, mas por ora "Detalhe" e suficiente
+
+**Arquivo:** `src/components/AppLayout.tsx`
+
+---
+
+### Item 7 — Configuracoes responsivas
+
+- Em telas < md, trocar o menu lateral por tabs horizontais scrollaveis
+- Usar `useIsMobile` hook existente para alternar layout
+- Manter menu lateral em desktop
+
+**Arquivo:** `src/pages/configuracoes/ConfiguracoesLayout.tsx`
+
+---
+
+### Item 8 — Indicadores de ordenacao nas tabelas
+
+- Criar componente `SortableHeader` reutilizavel que exibe seta up/down e alterna ordenacao ao clicar
+- Aplicar nas colunas principais (Nome, Status, Data) das paginas: Colaboradores, Terceiros, Perfis de Acesso, Solicitacoes, Fila de Provisionamento
+
+**Arquivos:** Criar `src/components/SortableHeader.tsx`, editar as 5 paginas de listagem
+
+---
+
+### Item 10 — Notificacoes com timestamps relativos e agrupamento
+
+- Adicionar timestamps relativos ("ha 5 min", "ha 2h") usando calculo simples (sem lib externa)
+- Agrupar alertas por severidade no popover: criticos primeiro, depois avisos, depois info
+- Ja tem botao "Ver todos" — manter
+
+**Arquivo:** `src/components/NotificacoesBell.tsx`
+
+---
+
+### Padronizacao visual de Dialogs, Tabelas e Botoes
+
+Apos avaliar os 26 arquivos com dialogs, identifiquei inconsistencias:
+
+**Dialogs:**
+- Alguns usam `className="sm:max-w-2xl"` e outros nao tem largura definida — padronizar para `sm:max-w-lg` em formularios simples e `sm:max-w-2xl` em formularios complexos
+- Botoes de rodape: alguns tem "Cancelar" + "Salvar", outros so "Criar/Atualizar" sem cancelar — padronizar para sempre ter Cancelar (outline) + Acao primaria
+- AlertDialogs de exclusao: padronizar texto para "Esta acao nao pode ser desfeita." em todos
+
+**Tabelas:**
+- Headers: padronizar para todos usarem `text-xs uppercase tracking-wider` para consistencia
+- Linhas: garantir que todas tenham `cursor-pointer` quando clicaveis (link para detalhe)
+
+**Botoes de acao em listas:**
+- Padronizar icones de acao: Pencil para editar, Trash2 para excluir, sempre em variant ghost size icon
+- Tooltips nos botoes de acao onde falta
+
+**Paginas afetadas pela padronizacao:** AreasPage, CargosPage, EmpresasPage, LocalidadesPage, ColaboradoresPage, TerceirosPage, PerfisAcessoPage, RevisoesPage, SolicitacoesPage, UsuariosPage
+
+---
+
+### Resumo de arquivos
 
 | Acao | Arquivo |
 |---|---|
-| Editar | `tailwind.config.ts` — adicionar keyframes page-in, content-in, stagger classes |
-| Editar | `src/index.css` — adicionar classes utilitarias .stagger-1 a .stagger-6 e .loading-fade |
-| Criar | `src/components/PageTransition.tsx` — wrapper de transicao |
-| Editar | `src/components/AppLayout.tsx` — usar PageTransition no main |
-| Editar | `src/pages/portal/PortalLayout.tsx` — usar PageTransition |
-| Editar | `src/pages/Dashboard.tsx` — adicionar stagger nos cards/graficos |
+| Editar | `src/components/AppSidebar.tsx` — reorganizar grupos |
+| Editar | `src/pages/NotFound.tsx` — PT-BR + logo |
+| Editar | `src/pages/auth/LoginPage.tsx` — split layout |
+| Editar | `src/components/AppLayout.tsx` — breadcrumb sem UUID |
+| Editar | `src/pages/configuracoes/ConfiguracoesLayout.tsx` — tabs responsivas |
+| Criar | `src/components/SortableHeader.tsx` — header ordenavel reutilizavel |
+| Editar | `src/components/NotificacoesBell.tsx` — timestamps + agrupamento |
+| Editar | ~10 paginas de listagem — padronizacao de dialogs, headers de tabela, botoes |
 
