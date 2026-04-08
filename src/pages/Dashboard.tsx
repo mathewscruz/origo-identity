@@ -298,7 +298,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
         <p className="text-sm text-muted-foreground">Visão operacional consolidada em tempo real</p>
@@ -306,8 +306,8 @@ export default function Dashboard() {
 
       {/* KPIs */}
       <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
-        {kpiCards.map((k) => (
-          <Link key={k.title} to={k.href} className="group">
+        {kpiCards.map((k, i) => (
+          <Link key={k.title} to={k.href} className={`group animate-content-in stagger-${i + 1}`}>
             <Card className="transition-all duration-200 hover:shadow-md hover:border-primary/30 group-hover:-translate-y-0.5">
               <CardHeader className="flex flex-row items-center justify-between pb-1 pt-4 px-4">
                 <CardTitle className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider leading-tight">{k.title}</CardTitle>
@@ -326,7 +326,7 @@ export default function Dashboard() {
       </div>
 
       {/* Row 2: Area chart + App donut */}
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-7">
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-7 animate-content-in stagger-3">
         <Card className="lg:col-span-4">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
@@ -392,7 +392,7 @@ export default function Dashboard() {
       </div>
 
       {/* Row 3: Solicitações donut + Revisões */}
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-2 animate-content-in stagger-4">
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
@@ -459,7 +459,7 @@ export default function Dashboard() {
       </div>
 
       {/* Row 4: Activity timeline */}
-      <Card>
+      <Card className="animate-content-in stagger-5">
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Atividade Recente</CardTitle>
         </CardHeader>
