@@ -980,36 +980,6 @@ export type Database = {
           },
         ]
       }
-      operadores: {
-        Row: {
-          ativo: boolean
-          created_at: string
-          email: string
-          id: string
-          nome: string
-          updated_at: string
-          user_id: string | null
-        }
-        Insert: {
-          ativo?: boolean
-          created_at?: string
-          email: string
-          id?: string
-          nome: string
-          updated_at?: string
-          user_id?: string | null
-        }
-        Update: {
-          ativo?: boolean
-          created_at?: string
-          email?: string
-          id?: string
-          nome?: string
-          updated_at?: string
-          user_id?: string | null
-        }
-        Relationships: []
-      }
       parametros: {
         Row: {
           chave: string
@@ -1170,41 +1140,6 @@ export type Database = {
             columns: ["terceiro_id"]
             isOneToOne: false
             referencedRelation: "terceiros"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      perfil_composicao: {
-        Row: {
-          created_at: string
-          detalhe: string | null
-          id: string
-          nome: string
-          perfil_id: string
-          tipo: string
-        }
-        Insert: {
-          created_at?: string
-          detalhe?: string | null
-          id?: string
-          nome: string
-          perfil_id: string
-          tipo: string
-        }
-        Update: {
-          created_at?: string
-          detalhe?: string | null
-          id?: string
-          nome?: string
-          perfil_id?: string
-          tipo?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "perfil_composicao_perfil_id_fkey"
-            columns: ["perfil_id"]
-            isOneToOne: false
-            referencedRelation: "perfis_acesso"
             referencedColumns: ["id"]
           },
         ]
