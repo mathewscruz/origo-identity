@@ -46,6 +46,8 @@ const routeLabels: Record<string, string> = {
   "/admin/usuarios": "Usuários",
 };
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function AppBreadcrumb() {
   const location = useLocation();
   const segments = location.pathname.split("/").filter(Boolean);
@@ -67,7 +69,8 @@ function AppBreadcrumb() {
 
   for (let i = 0; i < segments.length; i++) {
     currentPath += `/${segments[i]}`;
-    const label = routeLabels[currentPath] || segments[i];
+    let label = routeLabels[currentPath] || segments[i];
+    if (UUID_REGEX.test(segments[i])) label = "Detalhe";
     crumbs.push({ label, path: currentPath, isLast: i === segments.length - 1 });
   }
 
