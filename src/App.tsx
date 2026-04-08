@@ -34,7 +34,7 @@ import CargosPage from "./pages/configuracoes/CargosPage";
 import AreasPage from "./pages/configuracoes/AreasPage";
 import EmpresasPage from "./pages/configuracoes/EmpresasPage";
 import LocalidadesPage from "./pages/configuracoes/LocalidadesPage";
-import OperadoresPage from "./pages/configuracoes/OperadoresPage";
+
 import ParametrosPage from "./pages/configuracoes/ParametrosPage";
 import IntegracoesPage from "./pages/configuracoes/IntegracoesPage";
 import UsuariosPage from "./pages/admin/UsuariosPage";
@@ -100,7 +100,7 @@ const App = () => (
                 <Route path="areas" element={<AreasPage />} />
                 <Route path="empresas" element={<EmpresasPage />} />
                 <Route path="localidades" element={<LocalidadesPage />} />
-                <Route path="operadores" element={<OperadoresPage />} />
+                
                 <Route path="parametros" element={<ParametrosPage />} />
                 <Route path="integracoes" element={<IntegracoesPage />} />
                 <Route path="auditoria" element={<AuditoriaPage />} />

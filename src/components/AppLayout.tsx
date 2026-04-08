@@ -37,7 +37,7 @@ const routeLabels: Record<string, string> = {
   "/configuracoes/areas": "Áreas",
   "/configuracoes/empresas": "Empresas",
   "/configuracoes/localidades": "Localidades",
-  "/configuracoes/operadores": "Operadores",
+  
   "/configuracoes/parametros": "Parâmetros",
   "/configuracoes/integracoes": "Integrações",
   "/configuracoes/auditoria": "Auditoria",
