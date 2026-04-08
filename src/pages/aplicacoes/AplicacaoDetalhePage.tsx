@@ -111,6 +111,10 @@ export default function AplicacaoDetalhePage() {
     api_key_value: "",
     app_token: "",
     session_token: "",
+    token_url: "",
+    oauth_client_id: "",
+    oauth_client_secret: "",
+    oauth_scope: "",
     profiles_endpoint: "",
     create_user_endpoint: "",
     update_user_endpoint: "",
@@ -138,6 +142,10 @@ export default function AplicacaoDetalhePage() {
       api_key_value: config.api_key_value || "",
       app_token: config.app_token || "",
       session_token: config.session_token || "",
+      token_url: config.token_url || "",
+      oauth_client_id: config.oauth_client_id || "",
+      oauth_client_secret: config.oauth_client_secret || "",
+      oauth_scope: config.oauth_scope || "",
       profiles_endpoint: config.profiles_endpoint || "",
       create_user_endpoint: config.create_user_endpoint || "",
       update_user_endpoint: config.update_user_endpoint || "",
@@ -163,6 +171,12 @@ export default function AplicacaoDetalhePage() {
       if (connForm.auth_type === "basic") { connConfig.username = connForm.username; connConfig.password = connForm.password; }
       if (connForm.auth_type === "api_key") { connConfig.api_key_header = connForm.api_key_header; connConfig.api_key_value = connForm.api_key_value; }
       if (connForm.auth_type === "app_token") { connConfig.app_token = connForm.app_token; connConfig.session_token = connForm.session_token; }
+      if (connForm.auth_type === "oauth2_client_credentials") {
+        connConfig.token_url = connForm.token_url;
+        connConfig.oauth_client_id = connForm.oauth_client_id;
+        connConfig.oauth_client_secret = connForm.oauth_client_secret;
+        connConfig.oauth_scope = connForm.oauth_scope || undefined;
+      }
 
       const { error } = await supabase.from("aplicacoes").update({
         connector_type: connForm.connector_type as any,
