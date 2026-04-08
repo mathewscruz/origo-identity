@@ -92,18 +92,6 @@ export default function ParametrosPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Alertas de Terceiros</CardTitle>
-          <CardDescription>Dias de antecedência para alertas de vencimento de contrato</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>Dias antes do vencimento</Label>
-            <Input type="number" defaultValue={getParam("dias_alerta_contrato") || "30"} className="w-32" />
-          </div>
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>
