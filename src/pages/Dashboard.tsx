@@ -264,10 +264,13 @@ function StatusIcon({ status }: { status: string }) {
 
 /* ── main ── */
 export default function Dashboard() {
+  const [provPeriod, setProvPeriod] = useState<Period>("semana");
+  const [solicitPeriod, setSolicitPeriod] = useState<Period>("semana");
+
   const { data: kpis } = useKpiCounts();
-  const { data: weeklyData } = useWeeklyProvisioningData();
+  const { data: provData } = useProvisioningData(provPeriod);
   const { data: accessByApp } = useAccessByApp();
-  const { data: solicitStatus } = useSolicitacoesByStatus();
+  const { data: solicitStatus } = useSolicitacoesByStatus(solicitPeriod);
   const { data: revisoes } = useRevisoesAtivas();
   const { data: activity } = useRecentActivity();
 
