@@ -497,14 +497,14 @@ export default function ColaboradoresPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th className="p-4 font-medium">Nome</th>
-                    <th className="p-4 font-medium hidden md:table-cell">Email</th>
+                  <tr className="border-b text-left text-muted-foreground text-xs uppercase tracking-wider">
+                    <th className="p-4"><SortableHeader label="Nome" field="nome" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
+                    <th className="p-4 hidden md:table-cell"><SortableHeader label="Email" field="email" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
                     <th className="p-4 font-medium hidden lg:table-cell">CPF</th>
-                    <th className="p-4 font-medium">Cargo</th>
-                    <th className="p-4 font-medium hidden lg:table-cell">Área</th>
+                    <th className="p-4"><SortableHeader label="Cargo" field="cargo" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
+                    <th className="p-4 hidden lg:table-cell"><SortableHeader label="Área" field="area" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
                     <th className="p-4 font-medium hidden lg:table-cell">Origem</th>
-                    <th className="p-4 font-medium">Status</th>
+                    <th className="p-4"><SortableHeader label="Status" field="status" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
                     <th className="p-4 font-medium">Ações</th>
                   </tr>
                 </thead>
