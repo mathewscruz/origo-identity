@@ -106,8 +106,8 @@ export default function AppLayout() {
             <AppBreadcrumb />
             <div className="ml-auto flex items-center gap-2">
               <NotificacoesBell />
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-                {initials}
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground overflow-hidden">
+                {profile?.avatar_url ? <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" /> : initials}
               </div>
             </div>
           </header>
