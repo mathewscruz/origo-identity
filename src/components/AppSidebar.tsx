@@ -94,7 +94,9 @@ export function AppSidebar() {
           {!collapsed && (
             <div className="space-y-2">
               <div className="flex items-center gap-2 rounded-lg bg-sidebar-accent/50 p-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar-primary text-xs font-semibold text-sidebar-primary-foreground">{initials}</div>
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar-primary text-xs font-semibold text-sidebar-primary-foreground overflow-hidden shrink-0">
+                  {profile?.avatar_url ? <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" /> : initials}
+                </div>
                 <div className="flex flex-col text-xs flex-1 min-w-0">
                   <span className="font-medium text-sidebar-accent-foreground truncate">{profile?.nome || "Usuário"}</span>
                   <span className="text-sidebar-foreground/50 truncate">{profile?.email || ""}</span>

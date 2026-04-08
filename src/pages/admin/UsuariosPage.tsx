@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { useState, useRef } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, Key } from "lucide-react";
+import { Plus, Pencil, Trash2, Key, Camera, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
@@ -33,7 +33,7 @@ function useProfiles() {
 
 export default function UsuariosPage() {
   const { data: profiles, isLoading } = useProfiles();
-  const { role: myRole } = useAuth();
+  const { role: myRole, user, profile: myProfile, refreshProfile } = useAuth();
   const [page, setPage] = useState(1);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -41,6 +41,8 @@ export default function UsuariosPage() {
   const [form, setForm] = useState({ email: "", nome: "", role: "viewer", ativo: true, password: "" });
   const [changingPwd, setChangingPwd] = useState<string | null>(null);
   const [newPwd, setNewPwd] = useState("");
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -48,6 +50,60 @@ export default function UsuariosPage() {
   const { paginatedItems, safePage } = usePagination(list, page, 25);
 
   const isAdmin = myRole === "admin";
+
+  const initials = myProfile?.nome ? myProfile.nome.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase() : "??";
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    if (!file.type.startsWith("image/")) { toast({ title: "Selecione uma imagem", variant: "destructive" }); return; }
+    if (file.size > 2 * 1024 * 1024) { toast({ title: "Imagem muito grande (máx. 2MB)", variant: "destructive" }); return; }
+
+    setUploadingAvatar(true);
+    try {
+      const ext = file.name.split(".").pop() || "png";
+      const filePath = `${user.id}/avatar.${ext}`;
+
+      // Remove old avatar files
+      const { data: existing } = await supabase.storage.from("avatars").list(user.id);
+      if (existing?.length) {
+        await supabase.storage.from("avatars").remove(existing.map(f => `${user.id}/${f.name}`));
+      }
+
+      const { error: uploadError } = await supabase.storage.from("avatars").upload(filePath, file, { upsert: true });
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath);
+      const avatarUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+
+      const { error: updateError } = await supabase.from("profiles").update({ avatar_url: avatarUrl }).eq("id", user.id);
+      if (updateError) throw updateError;
+
+      await refreshProfile();
+      toast({ title: "Foto atualizada com sucesso!" });
+    } catch (err: any) {
+      toast({ title: "Erro ao enviar foto", description: err.message, variant: "destructive" });
+    }
+    setUploadingAvatar(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleRemoveAvatar = async () => {
+    if (!user) return;
+    setUploadingAvatar(true);
+    try {
+      const { data: existing } = await supabase.storage.from("avatars").list(user.id);
+      if (existing?.length) {
+        await supabase.storage.from("avatars").remove(existing.map(f => `${user.id}/${f.name}`));
+      }
+      await supabase.from("profiles").update({ avatar_url: null }).eq("id", user.id);
+      await refreshProfile();
+      toast({ title: "Foto removida" });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    }
+    setUploadingAvatar(false);
+  };
 
   const openNew = () => { setEditing(null); setForm({ email: "", nome: "", role: "viewer", ativo: true, password: "" }); setDialogOpen(true); };
   const openEdit = (u: any) => { setEditing(u); setForm({ email: u.email, nome: u.nome, role: u.role || "viewer", ativo: u.ativo, password: "" }); setDialogOpen(true); };
@@ -112,6 +168,48 @@ export default function UsuariosPage() {
         <div><h1 className="text-2xl font-semibold tracking-tight">Usuários do Sistema</h1><p className="text-sm text-muted-foreground">Gerenciar acesso, perfis e permissões</p></div>
         <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Usuário</Button>
       </div>
+
+      {/* Minha Foto */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Minha Foto de Perfil</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-6">
+            <div className="relative group">
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary text-lg font-semibold text-primary-foreground overflow-hidden border-2 border-border">
+                {myProfile?.avatar_url ? (
+                  <img src={myProfile.avatar_url} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-xl">{initials}</span>
+                )}
+              </div>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingAvatar}
+                className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              >
+                {uploadingAvatar ? <Loader2 className="h-5 w-5 text-white animate-spin" /> : <Camera className="h-5 w-5 text-white" />}
+              </button>
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">Clique na foto ou use os botões para alterar.</p>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={uploadingAvatar}>
+                  {uploadingAvatar ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Camera className="mr-1 h-3 w-3" />}
+                  Alterar foto
+                </Button>
+                {myProfile?.avatar_url && (
+                  <Button size="sm" variant="ghost" className="text-destructive" onClick={handleRemoveAvatar} disabled={uploadingAvatar}>
+                    <Trash2 className="mr-1 h-3 w-3" />Remover
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card><CardContent className="p-0">
         {isLoading ? <div className="p-4 space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div> : (
