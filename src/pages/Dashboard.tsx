@@ -111,6 +111,8 @@ function useProvisioningData(period: Period) {
     refetchInterval: 60000,
   });
 }
+
+function useAccessByApp() {
   return useQuery({
     queryKey: ["dashboard_access_by_app"],
     queryFn: async () => {
