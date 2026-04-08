@@ -80,12 +80,12 @@ const App = () => (
               <Route path="/perfis-acesso" element={<PerfisAcessoPage />} />
               <Route path="/perfis-acesso/:id" element={<PerfilAcessoDetalhePage />} />
               <Route path="/excecoes" element={<ExcecoesPage />} />
-              <Route path="/excecoes/:id" element={<PlaceholderPage title="Detalhe da Exceção" />} />
+              <Route path="/excecoes/:id" element={<ExcecoesPage />} />
               <Route path="/revisoes" element={<RevisoesPage />} />
               <Route path="/revisoes/:id" element={<RevisaoDetalhePage />} />
               <Route path="/matriz" element={<MatrizPage />} />
               <Route path="/licencas" element={<LicencasPage />} />
-              <Route path="/licencas/:id" element={<PlaceholderPage title="Detalhe da Licença" />} />
+              <Route path="/licencas/:id" element={<LicencasPage />} />
               <Route path="/sod" element={<SoDPage />} />
               <Route path="/privilegiados" element={<PrivilegiadosPage />} />
               <Route path="/relatorios" element={<RelatoriosPage />} />
