@@ -1,76 +1,58 @@
 
 
-## Plano: Reformular Dashboard com metricas reais e graficos interativos
+## Plano: Adicionar logo Órigo em estados vazios de todo o sistema
 
-### Situacao atual
+### Abordagem
 
-O dashboard tem 4 KPIs basicos, 1 grafico de barras (provisionamento semanal), 1 pie chart (acessos ativos/revogados) e 1 tabela de fila recente. Faltam metricas de modulos importantes: Solicitacoes, Revisoes, Aplicacoes, Terceiros, Conectores, SoD.
-
-### Novo Layout
-
-```text
-┌──────────┬──────────┬──────────┬──────────┬──────────┬──────────┐
-│ Pessoas  │Aplicacoes│ Perfis   │Solicit.  │ Fila     │ Alertas  │
-│ Ativas   │Conectadas│ Ativos   │Pendentes │Pendente  │ NaoLidos │
-└──────────┴──────────┴──────────┴──────────┴──────────┴──────────┘
-┌─────────────────────────────┬────────────────────────────────────┐
-│ Provisionamento 8 Semanas   │ Distribuicao de Acessos (Donut)   │
-│ (AreaChart com gradiente)   │ (por app, top 5 + outros)         │
-└─────────────────────────────┴────────────────────────────────────┘
-┌─────────────────────────────┬────────────────────────────────────┐
-│ Solicitacoes por Status     │ Revisoes de Acesso                │
-│ (Donut: pendente/aprovada/  │ (Progresso das revisoes ativas)   │
-│  rejeitada)                 │                                   │
-└─────────────────────────────┴────────────────────────────────────┘
-┌──────────────────────────────────────────────────────────────────┐
-│ Atividade Recente (timeline unificada: fila + solicitacoes)     │
-└──────────────────────────────────────────────────────────────────┘
-```
+Criar um componente reutilizavel `EmptyState` que exibe o logo da Órigo em preto e branco (usando filtro CSS `grayscale`) ao lado da mensagem de "nenhum dado". Depois, substituir todas as ocorrencias de mensagens inline de empty state por esse componente.
 
 ### Alteracoes
 
-**1. KPIs expandidos (6 cards em grid responsivo):**
-- Pessoas Ativas (colaboradores + terceiros)
-- Aplicacoes Conectadas (count de aplicacoes com `connector_type != 'manual'`)
-- Perfis de Acesso Ativos (count)
-- Solicitacoes Pendentes (count de `solicitacoes_acesso` com status pendente/em_aprovacao)
-- Fila Pendente (count de iam_queue pending)
-- Alertas Nao Lidos
+**1. Copiar o logo para o projeto:**
+- Copiar `user-uploads://origo_ENERGIA_mosca.png` para `src/assets/origo-logo.png`
 
-Cada KPI clicavel, levando ao modulo correspondente.
+**2. Criar componente `EmptyState` (`src/components/EmptyState.tsx`):**
+- Props: `message: string`, `size?: "sm" | "md" | "lg"` (para adaptar a tabelas vs cards vs secoes)
+- Exibe o logo em grayscale + opacity reduzida, proporcional ao tamanho do texto
+- `sm`: logo 20px, texto `text-xs` (para celulas de tabela inline)
+- `md`: logo 32px, texto `text-sm` (padrao para tabelas)
+- `lg`: logo 48px, texto `text-base` (para cards e secoes grandes)
+- Layout: flex horizontal centralizado (logo + texto)
 
-**2. Grafico de Provisionamento — AreaChart com gradiente:**
-- Trocar BarChart por AreaChart com preenchimento gradiente
-- Manter dados semanais, visual mais moderno
-- Tooltip customizado usando ChartTooltipContent
+**3. Substituir empty states em todos os modulos (~45 ocorrencias):**
 
-**3. Distribuicao de Acessos por Aplicacao (novo):**
-- Donut chart mostrando top 5 aplicacoes com mais atribuicoes + "Outros"
-- Consulta: join `perfil_atribuicoes` → `perfil_aplicacoes` → `aplicacoes`
-- Cores do tema
+| Arquivo | Quantidade |
+|---|---|
+| `Dashboard.tsx` | 4 |
+| `AlertasPage.tsx` | 1 |
+| `AplicacaoDetalhePage.tsx` | 4 |
+| `AplicacoesPage.tsx` | 1 |
+| `ColaboradorDetalhePage.tsx` | 3 |
+| `ColaboradoresPage.tsx` | 1 |
+| `CargosPage.tsx` | 1 |
+| `IntegracoesPage.tsx` | 1 |
+| `ExcecoesPage.tsx` | 1 |
+| `FilaProvisionamentoPage.tsx` | 2 |
+| `LicencasPage.tsx` | 1 |
+| `PerfilAcessoDetalhePage.tsx` | 6 |
+| `PerfisAcessoPage.tsx` | 3 |
+| `PortalSolicitacoesPage.tsx` | 2 |
+| `PrivilegiadosPage.tsx` | 2 |
+| `RelatoriosPage.tsx` | 4 |
+| `SoDPage.tsx` | 2 |
+| `SolicitacoesPage.tsx` | 2 |
+| `TerceiroDetalhePage.tsx` | 1 |
+| `WorkflowPage.tsx` | 2 |
+| `MatrizPage.tsx` | 1 |
+| `RevisaoDetalhePage.tsx` | 1 |
 
-**4. Solicitacoes por Status (novo):**
-- Donut chart: pendente, em_aprovacao, aprovada, rejeitada
-- Dados de `solicitacoes_acesso` dos ultimos 90 dias
-
-**5. Revisoes de Acesso (novo):**
-- Cards com progresso de revisoes em andamento
-- Barra de progresso mostrando % de itens decididos
-
-**6. Atividade Recente (reformulado):**
-- Timeline unificada com as ultimas 8 acoes (iam_queue + solicitacoes)
-- Icones por tipo de acao, cores por status
-- Links para detalhes
-
-**7. Visual:**
-- Usar `ChartContainer` + `ChartTooltipContent` do shadcn/ui para tooltips bonitos
-- Animacoes de entrada com CSS (fade-in nos cards)
-- Cores consistentes com o tema (primary teal, success, warning, destructive)
-- Refresh em tempo real a cada 30s
+Para celulas de tabela (`<td>`), o componente sera usado dentro do `<td>`. Para divs e cards, substitui o conteudo diretamente.
 
 ### Arquivos
 
 | Acao | Arquivo |
 |---|---|
-| Reescrever | `src/pages/Dashboard.tsx` — novo layout completo com todos os graficos e KPIs |
+| Copiar | Logo para `src/assets/origo-logo.png` |
+| Criar | `src/components/EmptyState.tsx` |
+| Editar | Todos os 22 arquivos listados acima |
 
