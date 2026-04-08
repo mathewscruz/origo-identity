@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { logAuditoria } from "@/lib/auditLogger";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import AppIcon from "@/components/AppIcon";
+import EmptyState from "@/components/EmptyState";
 
 const criticidadeColors: Record<string, string> = {
   baixa: "bg-muted text-muted-foreground",
@@ -188,8 +189,7 @@ export default function AplicacoesPage() {
           <div className="p-4 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
         ) : paginatedItems.length === 0 ? (
           <div className="p-12 text-center">
-            <Globe className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-            <p className="text-lg font-medium text-muted-foreground">Nenhuma aplicação encontrada</p>
+            <EmptyState message="Nenhuma aplicação encontrada" size="lg" />
             <p className="text-sm text-muted-foreground mt-1">Sincronize com o Azure ou crie uma aplicação manualmente</p>
             <div className="mt-4 flex gap-2 justify-center">
               <Button variant="outline" onClick={handleSync} disabled={syncing}>

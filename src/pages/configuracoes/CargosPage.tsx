@@ -19,6 +19,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { reprovisionCargoCollaborators } from "@/lib/entraQueueHelper";
 import { logAuditoria } from "@/lib/auditLogger";
+import EmptyState from "@/components/EmptyState";
 
 export default function CargosPage() {
   const canEdit = useCanEdit();
@@ -200,8 +201,8 @@ export default function CargosPage() {
             <div className="space-y-2">
               <Label>Perfis de Acesso</Label>
               <div className="border rounded-md max-h-48 overflow-y-auto p-2 space-y-1">
-                {activePerfis.length === 0 ? (
-                  <p className="text-sm text-muted-foreground p-2">Nenhum perfil de acesso disponível.</p>
+                 {activePerfis.length === 0 ? (
+                  <EmptyState message="Nenhum perfil de acesso disponível." size="sm" />
                 ) : [...activePerfis].sort((a: any, b: any) => (selectedPerfis.includes(a.id) ? 0 : 1) - (selectedPerfis.includes(b.id) ? 0 : 1)).map((p: any) => {
                   const apps = (p.perfil_aplicacoes || []).map((pa: any) => pa.aplicacoes?.nome).filter(Boolean);
                   return (

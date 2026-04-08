@@ -24,6 +24,7 @@ import { provisionCargoAcessos } from "@/lib/provisionCargoAcessos";
 import { createEventoJML } from "@/lib/createEventoJML";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { logAuditoria, logAlerta } from "@/lib/auditLogger";
+import EmptyState from "@/components/EmptyState";
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
@@ -579,7 +580,7 @@ export default function ColaboradoresPage() {
                     </tr>
                   ))}
                   {paginatedItems.length === 0 && (
-                    <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">Nenhum colaborador encontrado.</td></tr>
+                    <tr><td colSpan={8}><EmptyState message="Nenhum colaborador encontrado." /></td></tr>
                   )}
                 </tbody>
               </table>

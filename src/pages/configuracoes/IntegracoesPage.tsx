@@ -16,6 +16,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import EmptyState from "@/components/EmptyState";
 
 export default function IntegracoesPage() {
   const [csvSyncing, setCsvSyncing] = useState(false);
@@ -146,7 +147,7 @@ export default function IntegracoesPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           {(connectorStats || []).length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhuma aplicação com conector configurado. Configure na página de detalhe de cada aplicação.</p>
+            <EmptyState message="Nenhuma aplicação com conector configurado. Configure na página de detalhe de cada aplicação." />
           ) : (
             <div className="space-y-2">
               {(connectorStats || []).map((app: any) => (
