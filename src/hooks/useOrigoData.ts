@@ -106,11 +106,9 @@ export function usePerfilAcesso(id: string | undefined) {
   });
 }
 
-export function usePerfilComposicao(perfilId: string | undefined) {
-  return useQuery({
-    queryKey: ["perfil_composicao", perfilId], enabled: !!perfilId,
-    queryFn: async () => { const { data, error } = await supabase.from("perfil_composicao").select("*").eq("perfil_id", perfilId!); if (error) throw error; return data; },
-  });
+// perfil_composicao table was removed — hook kept as no-op for compatibility
+export function usePerfilComposicao(_perfilId: string | undefined) {
+  return useQuery({ queryKey: ["perfil_composicao_deprecated"], queryFn: async () => [] as any[], enabled: false });
 }
 
 export function usePerfilAtribuicoes(perfilId?: string, colaboradorId?: string) {
@@ -127,29 +125,18 @@ export function usePerfilAtribuicoes(perfilId?: string, colaboradorId?: string) 
   });
 }
 
+// Regras module removed — hooks kept as no-ops
 export function useRegras() {
-  return useQuery({ queryKey: ["regras"], queryFn: () => fetchAll("regras", "*", "prioridade"), ...REFETCH_OPTS });
+  return useQuery({ queryKey: ["regras_deprecated"], queryFn: async () => [] as any[], enabled: false });
 }
-
-export function useRegra(id: string | undefined) {
-  return useQuery({
-    queryKey: ["regra", id], enabled: !!id,
-    queryFn: async () => { const { data, error } = await supabase.from("regras").select("*").eq("id", id!).single(); if (error) throw error; return data; },
-  });
+export function useRegra(_id: string | undefined) {
+  return useQuery({ queryKey: ["regra_deprecated"], queryFn: async () => null, enabled: false });
 }
-
-export function useRegraCondicoes(regraId: string | undefined) {
-  return useQuery({
-    queryKey: ["regra_condicoes", regraId], enabled: !!regraId,
-    queryFn: async () => { const { data, error } = await supabase.from("regra_condicoes").select("*").eq("regra_id", regraId!).order("ordem"); if (error) throw error; return data; },
-  });
+export function useRegraCondicoes(_regraId: string | undefined) {
+  return useQuery({ queryKey: ["regra_condicoes_deprecated"], queryFn: async () => [] as any[], enabled: false });
 }
-
-export function useRegraResultados(regraId: string | undefined) {
-  return useQuery({
-    queryKey: ["regra_resultados", regraId], enabled: !!regraId,
-    queryFn: async () => { const { data, error } = await supabase.from("regra_resultados").select("*, perfis_acesso(nome)").eq("regra_id", regraId!).order("ordem"); if (error) throw error; return data; },
-  });
+export function useRegraResultados(_regraId: string | undefined) {
+  return useQuery({ queryKey: ["regra_resultados_deprecated"], queryFn: async () => [] as any[], enabled: false });
 }
 
 export function useEventosJML() {

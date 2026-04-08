@@ -225,7 +225,7 @@ export default function PerfisAcessoPage() {
         (supabase as any).from("perfil_licencas").delete().eq("perfil_id", perfId),
         (supabase as any).from("perfil_grupos").delete().eq("perfil_id", perfId),
         (supabase as any).from("cargo_perfis").delete().eq("perfil_id", perfId),
-        supabase.from("perfil_composicao").delete().eq("perfil_id", perfId),
+        // perfil_composicao table removed
       ]);
 
       const { error } = await supabase.from("perfis_acesso").delete().eq("id", perfId);
