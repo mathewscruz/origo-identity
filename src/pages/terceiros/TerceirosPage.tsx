@@ -20,6 +20,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import EmptyState from "@/components/EmptyState";
 import SortableHeader, { SortDirection, useSortableData } from "@/components/SortableHeader";
+import OnboardingTour from "@/components/OnboardingTour";
+import { tourSteps } from "@/lib/tourSteps";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { queueFullProfileActions } from "@/lib/entraQueueHelper";
@@ -241,17 +243,17 @@ export default function TerceirosPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div><h1 className="text-2xl font-semibold tracking-tight">Terceiros</h1><p className="text-sm text-muted-foreground">Ciclo de vida de terceiros com controle de contrato</p></div>
-        <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Terceiro</Button>
+        <div data-tour="actions"><Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Terceiro</Button></div>
       </div>
 
       {vencendo7d > 0 && <Card className="border-destructive/30 bg-destructive/5"><CardContent className="flex items-center gap-3 py-3"><AlertTriangle className="h-4 w-4 text-destructive" /><span className="text-sm font-medium text-destructive">{vencendo7d} terceiro(s) com contrato vencendo em 7 dias</span></CardContent></Card>}
 
-      <div className="relative flex-1 min-w-[200px] max-w-sm">
+      <div data-tour="search-filter" className="relative flex-1 min-w-[200px] max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input placeholder="Buscar terceiros..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
       </div>
 
-      <Card><CardContent className="p-0">
+      <Card data-tour="table"><CardContent className="p-0">
         {isLoading ? <div className="p-4 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div> : (
           <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left text-muted-foreground text-xs uppercase tracking-wider">
             <th className="p-4"><SortableHeader label="Nome" field="nome" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th><th className="p-4 hidden md:table-cell"><SortableHeader label="Empresa" field="empresa_terceira" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th><th className="p-4 font-medium hidden lg:table-cell">Responsável</th>
@@ -318,6 +320,7 @@ export default function TerceirosPage() {
           <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleDelete}>Excluir</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <OnboardingTour pageKey="terceiros" steps={tourSteps.terceiros} />
     </div>
   );
 }

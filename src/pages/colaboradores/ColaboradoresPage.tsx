@@ -26,6 +26,8 @@ import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { logAuditoria, logAlerta } from "@/lib/auditLogger";
 import EmptyState from "@/components/EmptyState";
 import SortableHeader, { SortDirection, useSortableData } from "@/components/SortableHeader";
+import OnboardingTour from "@/components/OnboardingTour";
+import { tourSteps } from "@/lib/tourSteps";
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
@@ -455,13 +457,13 @@ export default function ColaboradoresPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Colaboradores</h1>
           <p className="text-sm text-muted-foreground">Gestão de funcionários internos</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div data-tour="actions" className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => navigate("/configuracoes/integracoes")}><Upload className="mr-1 h-4 w-4" />Importar Base</Button>
           <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Colaborador</Button>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div data-tour="search-filter" className="flex flex-wrap gap-2">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Buscar nome ou email..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
@@ -489,7 +491,7 @@ export default function ColaboradoresPage() {
         </Select>
       </div>
 
-      <Card>
+      <Card data-tour="table">
         <CardContent className="p-0">
           {isLoading ? (
             <div className="p-4 space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
@@ -761,6 +763,7 @@ export default function ColaboradoresPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <OnboardingTour pageKey="colaboradores" steps={tourSteps.colaboradores} />
     </div>
   );
 }
