@@ -56,9 +56,49 @@ export type Database = {
         }
         Relationships: []
       }
+      aplicacao_perfis_internos: {
+        Row: {
+          aplicacao_id: string
+          ativo: boolean
+          created_at: string
+          descricao: string | null
+          external_id: string | null
+          id: string
+          nome_externo: string
+        }
+        Insert: {
+          aplicacao_id: string
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          external_id?: string | null
+          id?: string
+          nome_externo: string
+        }
+        Update: {
+          aplicacao_id?: string
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          external_id?: string | null
+          id?: string
+          nome_externo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aplicacao_perfis_internos_aplicacao_id_fkey"
+            columns: ["aplicacao_id"]
+            isOneToOne: false
+            referencedRelation: "aplicacoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       aplicacoes: {
         Row: {
           aprovacao_necessaria: boolean
+          connector_config: Json | null
+          connector_type: string
           created_at: string
           criticidade: Database["public"]["Enums"]["criticidade"]
           default_app_role_id: string
@@ -74,6 +114,8 @@ export type Database = {
         }
         Insert: {
           aprovacao_necessaria?: boolean
+          connector_config?: Json | null
+          connector_type?: string
           created_at?: string
           criticidade?: Database["public"]["Enums"]["criticidade"]
           default_app_role_id?: string
@@ -89,6 +131,8 @@ export type Database = {
         }
         Update: {
           aprovacao_necessaria?: boolean
+          connector_config?: Json | null
+          connector_type?: string
           created_at?: string
           criticidade?: Database["public"]["Enums"]["criticidade"]
           default_app_role_id?: string
@@ -1022,6 +1066,52 @@ export type Database = {
             columns: ["perfil_id"]
             isOneToOne: false
             referencedRelation: "perfis_acesso"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      perfil_apps_internos: {
+        Row: {
+          aplicacao_id: string
+          created_at: string
+          id: string
+          perfil_id: string
+          perfil_interno_id: string
+        }
+        Insert: {
+          aplicacao_id: string
+          created_at?: string
+          id?: string
+          perfil_id: string
+          perfil_interno_id: string
+        }
+        Update: {
+          aplicacao_id?: string
+          created_at?: string
+          id?: string
+          perfil_id?: string
+          perfil_interno_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "perfil_apps_internos_aplicacao_id_fkey"
+            columns: ["aplicacao_id"]
+            isOneToOne: false
+            referencedRelation: "aplicacoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "perfil_apps_internos_perfil_id_fkey"
+            columns: ["perfil_id"]
+            isOneToOne: false
+            referencedRelation: "perfis_acesso"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "perfil_apps_internos_perfil_interno_id_fkey"
+            columns: ["perfil_interno_id"]
+            isOneToOne: false
+            referencedRelation: "aplicacao_perfis_internos"
             referencedColumns: ["id"]
           },
         ]

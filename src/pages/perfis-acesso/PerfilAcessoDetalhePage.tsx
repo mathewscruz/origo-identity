@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -59,20 +59,54 @@ export default function PerfilAcessoDetalhePage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  // Internal profiles per app
+  const { data: allPerfisInternos } = useQuery({
+    queryKey: ["all_perfis_internos"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any).from("aplicacao_perfis_internos").select("*").eq("ativo", true);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const { data: perfilAppsInternos } = useQuery({
+    queryKey: ["perfil_apps_internos", id], enabled: !!id,
+    queryFn: async () => {
+      const { data, error } = await (supabase as any).from("perfil_apps_internos").select("*, aplicacao_perfis_internos(nome_externo)").eq("perfil_id", id!);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ nome: "", descricao: "", tipo: "funcional", ativo: true, aplicacao_ids: [] as string[], licenca_ids: [] as string[], grupo_ids: [] as string[] });
+  const [editForm, setEditForm] = useState({ nome: "", descricao: "", tipo: "funcional", ativo: true, aplicacao_ids: [] as string[], licenca_ids: [] as string[], grupo_ids: [] as string[], perfil_interno_map: {} as Record<string, string> });
   const [saving, setSaving] = useState(false);
   const [buscaApps, setBuscaApps] = useState("");
   const [buscaLicencas, setBuscaLicencas] = useState("");
   const [buscaGrupos, setBuscaGrupos] = useState("");
 
+  // Which apps have internal profiles available
+  const appsWithProfiles = useMemo(() => {
+    const map: Record<string, any[]> = {};
+    for (const pi of (allPerfisInternos || [])) {
+      if (!map[pi.aplicacao_id]) map[pi.aplicacao_id] = [];
+      map[pi.aplicacao_id].push(pi);
+    }
+    return map;
+  }, [allPerfisInternos]);
+
   const openEdit = () => {
     if (!perfil) return;
+    // Build perfil_interno_map from existing data
+    const piMap: Record<string, string> = {};
+    for (const pai of (perfilAppsInternos || [])) {
+      piMap[pai.aplicacao_id] = pai.perfil_interno_id;
+    }
     setEditForm({
       nome: perfil.nome, descricao: perfil.descricao || "", tipo: perfil.tipo, ativo: perfil.ativo,
       aplicacao_ids: (perfilApps ?? []).map((pa: any) => pa.aplicacao_id),
       licenca_ids: (perfilLicencas ?? []).map((pl: any) => pl.licenca_id),
       grupo_ids: (perfilGrupos ?? []).map((pg: any) => pg.grupo_id),
+      perfil_interno_map: piMap,
     });
     setBuscaApps("");
     setBuscaLicencas("");
@@ -107,6 +141,13 @@ export default function PerfilAcessoDetalhePage() {
       // Sync grupos
       await (supabase as any).from("perfil_grupos").delete().eq("perfil_id", id!);
       if (editForm.grupo_ids.length > 0) await (supabase as any).from("perfil_grupos").insert(editForm.grupo_ids.map(gid => ({ perfil_id: id!, grupo_id: gid })));
+
+      // Sync perfil_apps_internos (internal profiles per app)
+      await (supabase as any).from("perfil_apps_internos").delete().eq("perfil_id", id!);
+      const piEntries = Object.entries(editForm.perfil_interno_map).filter(([appId, piId]) => piId && editForm.aplicacao_ids.includes(appId));
+      if (piEntries.length > 0) {
+        await (supabase as any).from("perfil_apps_internos").insert(piEntries.map(([appId, piId]) => ({ perfil_id: id!, aplicacao_id: appId, perfil_interno_id: piId })));
+      }
 
       await logAuditoria({ acao: "editar_perfil", entidade: "perfis_acesso", entidade_id: id!, resumo: `Editado: ${editForm.nome}` });
       toast({ title: "Perfil atualizado" });
@@ -143,6 +184,7 @@ export default function PerfilAcessoDetalhePage() {
       queryClient.invalidateQueries({ queryKey: ["perfil_aplicacoes", id] });
       queryClient.invalidateQueries({ queryKey: ["perfil_licencas", id] });
       queryClient.invalidateQueries({ queryKey: ["perfil_grupos", id] });
+      queryClient.invalidateQueries({ queryKey: ["perfil_apps_internos", id] });
       queryClient.invalidateQueries({ queryKey: ["perfis_acesso"] });
       setEditOpen(false);
       triggerEntraProcessing();
@@ -337,12 +379,34 @@ export default function PerfilAcessoDetalhePage() {
               </div>
               <ScrollArea className="h-64 rounded-md border p-3">
                 <div className="space-y-2">
-                  {(aplicacoes ?? []).filter((a: any) => !buscaApps || a.nome.toLowerCase().includes(buscaApps.toLowerCase())).sort((a: any, b: any) => (editForm.aplicacao_ids.includes(a.id) ? 0 : 1) - (editForm.aplicacao_ids.includes(b.id) ? 0 : 1)).map((a: any) => (
-                    <label key={a.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
-                      <Checkbox checked={editForm.aplicacao_ids.includes(a.id)} onCheckedChange={() => toggleItem("aplicacao_ids", a.id)} />
-                      <span className="text-sm">{a.nome}</span>
-                    </label>
-                  ))}
+                  {(aplicacoes ?? []).filter((a: any) => !buscaApps || a.nome.toLowerCase().includes(buscaApps.toLowerCase())).sort((a: any, b: any) => (editForm.aplicacao_ids.includes(a.id) ? 0 : 1) - (editForm.aplicacao_ids.includes(b.id) ? 0 : 1)).map((a: any) => {
+                    const appProfiles = appsWithProfiles[a.id] || [];
+                    const isChecked = editForm.aplicacao_ids.includes(a.id);
+                    return (
+                      <div key={a.id} className="space-y-1">
+                        <label className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+                          <Checkbox checked={isChecked} onCheckedChange={() => toggleItem("aplicacao_ids", a.id)} />
+                          <span className="text-sm">{a.nome}</span>
+                          {appProfiles.length > 0 && <Badge variant="outline" className="text-xs ml-auto">{appProfiles.length} perfis</Badge>}
+                        </label>
+                        {isChecked && appProfiles.length > 0 && (
+                          <div className="ml-8">
+                            <Select
+                              value={editForm.perfil_interno_map[a.id] || ""}
+                              onValueChange={v => setEditForm(prev => ({ ...prev, perfil_interno_map: { ...prev.perfil_interno_map, [a.id]: v } }))}
+                            >
+                              <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Selecione perfil interno..." /></SelectTrigger>
+                              <SelectContent>
+                                {appProfiles.map((pi: any) => (
+                                  <SelectItem key={pi.id} value={pi.id}>{pi.nome_externo}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </ScrollArea>
             </TabsContent>

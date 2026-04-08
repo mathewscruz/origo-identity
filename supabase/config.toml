@@ -37,3 +37,6 @@ verify_jwt = false
 [functions.admin-create-user]
 verify_jwt = false
 
+[functions.sync-app-profiles]
+verify_jwt = false
+
