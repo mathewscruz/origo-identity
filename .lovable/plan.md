@@ -1,52 +1,20 @@
 
-### Diagnóstico real
-O erro principal não é só “tempo de scroll”.
 
-1. O `OnboardingTour` está sendo renderizado dentro da própria página, ou seja, dentro de `main` e do `PageTransition`.
-2. O `PageTransition` usa `transform` (`animate-page-in`), e isso altera a referência de elementos `position: fixed`. Na prática, o overlay/tooltip não está preso ao viewport real, mas ao bloco animado da página.
-3. O `main` também tem padding e scroll próprio, então as coordenadas de `getBoundingClientRect()` e a área onde o tour desenha o destaque ficam desalinhadas.
-4. Alguns anchors ainda estão amplos demais, especialmente no Dashboard (`data-tour="kpi-cards"` no grid inteiro), o que piora a sensação de foco “fora do lugar”.
+## Plano: Criar endpoint de reset de senha administrativa
 
-### O que vou ajustar
-**1. Tirar o tour de dentro da página**
-- Renderizar o tour via portal em `document.body` ou mover sua montagem para um nível acima do `PageTransition`.
-- Isso faz `fixed` voltar a usar o viewport real e elimina o deslocamento por sidebar/header/padding/animação.
+### Problema
+Os 3 usuarios admin existem no sistema e estao ativos, mas as senhas cadastradas nao correspondem ao que esta sendo digitado. Os logs confirmam erro `invalid_credentials` em todas as tentativas recentes.
 
-**2. Desacoplar o tour da animação de página**
-- Garantir que o tour não fique dentro de nenhum ancestral com `transform`.
-- Se necessário, manter a animação da página normal e o tour como camada global separada.
+### Solucao
+Criar uma edge function `admin-reset-password` que permite redefinir a senha de um usuario existente usando o service role key. Como nenhum admin consegue logar atualmente, a funcao precisara de uma abordagem de bootstrap — aceitar um token secreto temporario para o primeiro reset.
 
-**3. Refinar a medição**
-- Medir o alvo apenas depois de estabilizar layout e gráfico.
-- Recalcular com base no scroll container real do alvo.
-- Continuar revalidando em resize, scroll e mudança de step.
+**Alternativa mais simples (recomendada):** Usar o fluxo de "Esqueceu a senha" que ja existe na tela de login. O usuario clica em "Esqueceu a senha?", digita o email, e recebe um link para redefinir. Isso ja esta implementado no `LoginPage.tsx` e na rota `/reset-password`.
 
-**4. Corrigir anchors do Dashboard**
-- Trocar alvos muito genéricos por alvos mais precisos:
-  - KPIs: destacar um card/grupo visual correto, não um wrapper ambíguo.
-  - Gráfico de provisionamento: mirar no card inteiro do gráfico.
-  - Solicitações: mirar no card correto.
-  - Timeline: manter foco no card/lista inteira.
+### Pergunta antes de prosseguir
 
-**5. Revisar integração nas páginas**
-- Padronizar `data-tour` para sempre apontar para blocos visuais estáveis:
-  - toolbar
-  - tabs reais
-  - card de gráfico
-  - tabela/card principal
-- Evitar wrappers estruturais que mudam com responsividade.
+Qual abordagem voce prefere?
 
-### Arquivos
-| Ação | Arquivo |
-|---|---|
-| Editar | `src/components/OnboardingTour.tsx` — renderização via portal + ajuste de medição/scroll |
-| Editar | `src/components/AppLayout.tsx` ou estrutura global equivalente — posicionar o tour fora de `PageTransition` se necessário |
-| Editar | `src/lib/tourSteps.ts` — revisar targets e posições |
-| Editar | `src/pages/Dashboard.tsx` — mover `data-tour` para anchors mais precisos |
-| Editar | demais páginas com tour — revisar anchors amplos quando necessário |
+1. **Usar "Esqueceu a senha"** — Cada usuario clica no link na tela de login e redefine via email. Nao precisa de codigo novo.
+2. **Criar endpoint de reset administrativo** — Uma edge function que permite forcar nova senha para qualquer usuario (requer autenticacao ou token secreto).
+3. **Redefinir senhas diretamente agora** — Posso criar um script unico que redefine as senhas dos 3 usuarios para valores que voce me informar.
 
-### Resultado esperado
-- O destaque passa a ficar no lugar certo independentemente da resolução.
-- Sidebar, header, padding e animações deixam de deslocar o overlay.
-- Tooltip e área destacada ficam coerentes entre si.
-- O Dashboard deixa de focar áreas erradas no primeiro passo.
