@@ -530,6 +530,7 @@ export default function AplicacaoDetalhePage() {
                       <SelectItem value="basic">Basic Auth</SelectItem>
                       <SelectItem value="api_key">API Key (Header)</SelectItem>
                       <SelectItem value="app_token">App-Token (GLPI)</SelectItem>
+                      <SelectItem value="oauth2_client_credentials">OAuth 2.0 (Client Credentials)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -553,6 +554,16 @@ export default function AplicacaoDetalhePage() {
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-2"><Label>App-Token</Label><Input type="password" value={connForm.app_token} onChange={e => setConnForm({ ...connForm, app_token: e.target.value })} /></div>
                     <div className="space-y-2"><Label>Session-Token</Label><Input type="password" value={connForm.session_token} onChange={e => setConnForm({ ...connForm, session_token: e.target.value })} /></div>
+                  </div>
+                )}
+                {connForm.auth_type === "oauth2_client_credentials" && (
+                  <div className="space-y-3">
+                    <div className="space-y-2"><Label>Token URL *</Label><Input placeholder="https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token" value={connForm.token_url} onChange={e => setConnForm({ ...connForm, token_url: e.target.value })} /></div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-2"><Label>Client ID *</Label><Input value={connForm.oauth_client_id} onChange={e => setConnForm({ ...connForm, oauth_client_id: e.target.value })} /></div>
+                      <div className="space-y-2"><Label>Client Secret *</Label><Input type="password" value={connForm.oauth_client_secret} onChange={e => setConnForm({ ...connForm, oauth_client_secret: e.target.value })} /></div>
+                    </div>
+                    <div className="space-y-2"><Label>Scope (opcional)</Label><Input placeholder="https://api.exemplo.com/.default" value={connForm.oauth_scope} onChange={e => setConnForm({ ...connForm, oauth_scope: e.target.value })} /></div>
                   </div>
                 )}
 
