@@ -75,8 +75,8 @@ export default function EmpresasPage() {
           <>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead><tr className="border-b text-left text-muted-foreground">
-                  <th className="pb-2 font-medium">Nome</th><th className="pb-2 font-medium hidden md:table-cell">CNPJ</th><th className="pb-2 font-medium">Status</th><th className="pb-2 font-medium w-20">Ações</th>
+                <thead><tr className="border-b text-left text-muted-foreground text-xs uppercase tracking-wider">
+                  <th className="p-3 font-medium">Nome</th><th className="p-3 font-medium hidden md:table-cell">CNPJ</th><th className="p-3 font-medium">Status</th><th className="p-3 font-medium w-20">Ações</th>
                 </tr></thead>
                 <tbody>
                   {paginatedItems.length === 0 && <tr><td colSpan={4}><EmptyState message="Nenhuma empresa cadastrada." /></td></tr>}

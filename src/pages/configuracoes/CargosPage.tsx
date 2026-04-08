@@ -157,12 +157,12 @@ export default function CargosPage() {
           <>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead><tr className="border-b text-left text-muted-foreground">
-                  <th className="pb-2 font-medium">Nome</th>
-                  <th className="pb-2 font-medium hidden md:table-cell">Área</th>
-                  <th className="pb-2 font-medium hidden sm:table-cell">Perfis</th>
-                  <th className="pb-2 font-medium">Status</th>
-                  <th className="pb-2 font-medium w-20">Ações</th>
+                <thead><tr className="border-b text-left text-muted-foreground text-xs uppercase tracking-wider">
+                  <th className="p-3 font-medium">Nome</th>
+                  <th className="p-3 font-medium hidden md:table-cell">Área</th>
+                  <th className="p-3 font-medium hidden sm:table-cell">Perfis</th>
+                  <th className="p-3 font-medium">Status</th>
+                  <th className="p-3 font-medium w-20">Ações</th>
                 </tr></thead>
                 <tbody>
                   {paginatedItems.map((cargo: any) => (
