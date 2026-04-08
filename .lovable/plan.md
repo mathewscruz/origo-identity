@@ -1,40 +1,55 @@
 
 
-## Plano: Adicionar seletor de periodo nos graficos de Provisionamento e Solicitacoes
+## Plano: Transicoes suaves entre telas e carregamentos
 
-### Alteracoes em `src/pages/Dashboard.tsx`
+### Problema
 
-**1. Refatorar hook `useWeeklyProvisioningData` para aceitar periodo dinamico:**
-- Renomear para `useProvisioningData(period)` onde period = `"dia" | "semana" | "mes" | "ano"`
-- Dia: ultimos 14 dias, agrupado por dia (D1..D14)
-- Semana: ultimas 8 semanas (comportamento atual)
-- Mes: ultimos 12 meses, agrupado por mes (Jan, Fev...)
-- Ano: ultimos 4 anos, agrupado por ano
+Atualmente a troca de tela usa apenas `animate-fade-in` (do plugin tailwindcss-animate) num div com `key={location.pathname}`. Isso causa um flash — o conteudo anterior desaparece instantaneamente e o novo faz fade-in. Nao ha transicao de saida nem suavizacao nos carregamentos.
 
-**2. Refatorar hook `useSolicitacoesByStatus` para aceitar periodo dinamico:**
-- Aceitar mesmo tipo de periodo
-- Dia: ultimos 14 dias
-- Semana: ultimas 8 semanas
-- Mes: ultimos 12 meses
-- Ano: ultimos 4 anos
-- Query key inclui o periodo para refetch automatico
+### Solucao
 
-**3. Adicionar estados `provPeriod` e `solicitPeriod` no componente Dashboard:**
-- `useState<"dia"|"semana"|"mes"|"ano">("semana")` para cada grafico
+**1. Adicionar keyframes customizados no Tailwind config**
 
-**4. Adicionar toggle de periodo no CardHeader de cada grafico:**
-- Grupo de botoes pequenos (estilo segmented control) usando `Button` variant `ghost`/`outline` com tamanho `sm`
-- Opcoes: Dia | Semana | Mes | Ano
-- Botao ativo com estilo `default` (preenchido)
-- Posicionado ao lado direito do titulo no CardHeader
+Definir animacoes mais suaves e longas:
+- `page-in`: fade + leve slide-up (opacity 0→1, translateY 8px→0, duracao 0.4s ease-out)
+- `page-out`: fade out rapido (opacity 1→0, duracao 0.15s)
+- `content-in`: para cards e secoes internas (opacity 0→1, translateY 4px→0, duracao 0.3s, com delay escalonado)
 
-**5. Simplificar titulos:**
-- "Provisionamento — 8 Semanas" → "Provisionamento"
-- "Solicitacoes — Ultimos 90 dias" → "Solicitacoes"
+**2. Criar componente `PageTransition` wrapper**
+
+Componente simples que aplica a animacao de entrada com CSS:
+- Recebe `children` e aplica `animate-page-in`
+- Usa `key` do pathname para re-trigger
+- Adiciona um leve delay (50ms) antes de mostrar para evitar flash
+
+**3. Aplicar `PageTransition` no AppLayout**
+
+Substituir o div com `animate-fade-in` pelo novo componente no `<main>`.
+
+**4. Adicionar animacoes escalonadas nos cards do Dashboard e listagens**
+
+Usar classes utilitarias com `animation-delay` para que cards/linhas aparecam em sequencia (stagger effect):
+- Primeiro card: 0ms
+- Segundo: 50ms
+- Terceiro: 100ms
+- Aplicar via CSS custom classes `.stagger-1`, `.stagger-2`, etc.
+
+**5. Suavizar carregamentos (loading states)**
+
+Adicionar transicao nos skeletons/spinners existentes — quando o conteudo real aparece, ele faz fade-in em vez de substituicao brusca. Criar uma classe `.loading-fade` que anima opacity de 0 a 1 em 0.3s.
+
+**6. Transicao no Portal tambem**
+
+Aplicar o mesmo `PageTransition` no `PortalLayout.tsx`.
 
 ### Arquivos
 
 | Acao | Arquivo |
 |---|---|
-| Editar | `src/pages/Dashboard.tsx` — hooks parametrizados, estados de periodo, toggles no header, titulos simplificados |
+| Editar | `tailwind.config.ts` — adicionar keyframes page-in, content-in, stagger classes |
+| Editar | `src/index.css` — adicionar classes utilitarias .stagger-1 a .stagger-6 e .loading-fade |
+| Criar | `src/components/PageTransition.tsx` — wrapper de transicao |
+| Editar | `src/components/AppLayout.tsx` — usar PageTransition no main |
+| Editar | `src/pages/portal/PortalLayout.tsx` — usar PageTransition |
+| Editar | `src/pages/Dashboard.tsx` — adicionar stagger nos cards/graficos |
 
