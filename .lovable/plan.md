@@ -1,45 +1,37 @@
 
 
-## Plano: Remover "Operadores" (redundante com "Usuários")
+## Plano: Adicionar suporte OAuth 2.0 Client Credentials ao framework de conectores
 
-### Diagnóstico
+### Situação atual
 
-Os dois módulos fazem essencialmente a mesma coisa — gerenciar quem opera o sistema:
+O framework de conectores já suporta autenticação por:
+- Bearer token
+- Basic auth (usuário/senha)
+- API key (header customizado)
+- App token (padrão GLPI)
 
-| | Operadores (Configurações) | Usuários (Admin) |
-|---|---|---|
-| Tabela | `operadores` (nome, email, ativo) | `profiles` + `user_roles` (nome, email, ativo, role) |
-| Vinculado a auth | Não | Sim (auth.users) |
-| Controle de permissão | Nenhum | admin/operador/viewer |
-| Criação de conta | Não | Sim (via edge function) |
-| Troca de senha | Não | Sim |
+Falta suporte a **OAuth 2.0 Client Credentials**, necessário para SAP, Salesforce, Google Workspace e outros.
 
-**Conclusão:** "Operadores" é uma tabela legada que não está vinculada à autenticação. Toda a gestão real de acesso ao sistema já é feita em "Usuários". Manter os dois causa confusão e dados duplicados.
+### Alteração
 
-A única referência funcional à tabela `operadores` é em `IntegracoesPage.tsx` (linha 105), onde emails de operadores são usados como lista de proteção durante limpeza de colaboradores. Isso pode ser migrado para usar `profiles` no lugar.
+**1. Ampliar `connector_config` com campos OAuth 2.0:**
+- Adicionar `auth_type: "oauth2_client_credentials"` como opção
+- Novos campos no config: `token_url`, `client_id`, `client_secret`, `scope` (opcional)
+- O sistema faz POST ao `token_url` para obter um `access_token` antes de cada chamada
 
-### Alterações
+**2. Atualizar edge functions (`sync-app-profiles` e `process-iam-queue`):**
+- Adicionar função `getOAuth2Token(config)` que faz o fluxo client_credentials
+- Usar o token obtido como Bearer nas chamadas subsequentes
 
-**1. Remover página e rota de Operadores:**
-- Remover `src/pages/configuracoes/OperadoresPage.tsx`
-- Remover import e rota em `src/App.tsx`
-- Remover link "Operadores" do sub-nav em `ConfiguracoesLayout.tsx`
-- Remover referência no breadcrumb em `AppLayout.tsx`
-
-**2. Migrar referência em IntegracoesPage.tsx:**
-- Linha 105: trocar `supabase.from("operadores").select("email")` por `supabase.from("profiles").select("email")` para proteger emails de usuários do sistema durante limpeza
-
-**3. Remover hook `useOperadores`:**
-- Remover de `src/hooks/useOrigoData.ts`
+**3. Atualizar UI do conector (`AplicacaoDetalhePage.tsx`):**
+- Quando `auth_type === "oauth2_client_credentials"`, exibir campos: Token URL, Client ID, Client Secret, Scope
+- Botão "Testar Conexão" deve validar obtendo um token
 
 ### Arquivos
 
 | Ação | Arquivo |
 |---|---|
-| Remover | `src/pages/configuracoes/OperadoresPage.tsx` |
-| Editar | `src/App.tsx` — remover import e rota de Operadores |
-| Editar | `src/pages/configuracoes/ConfiguracoesLayout.tsx` — remover link "Operadores" do menu |
-| Editar | `src/components/AppLayout.tsx` — remover breadcrumb de operadores |
-| Editar | `src/pages/configuracoes/IntegracoesPage.tsx` — usar `profiles` em vez de `operadores` |
-| Editar | `src/hooks/useOrigoData.ts` — remover `useOperadores` |
+| Editar | `supabase/functions/sync-app-profiles/index.ts` — adicionar `getOAuth2Token()` e case `oauth2_client_credentials` |
+| Editar | `supabase/functions/process-iam-queue/index.ts` — mesma função OAuth no dispatcher genérico |
+| Editar | `src/pages/aplicacoes/AplicacaoDetalhePage.tsx` — campos OAuth 2.0 na aba Conector |
 
