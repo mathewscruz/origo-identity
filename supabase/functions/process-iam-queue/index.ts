@@ -14,6 +14,11 @@ const ENTRA_ACTION_TYPES = [
   "update_entra",
 ];
 
+const EXTERNAL_APP_ACTION_TYPES = [
+  "create_user_app", "update_user_app",
+  "disable_user_app", "delete_user_app",
+];
+
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
@@ -37,10 +42,6 @@ async function getAzureToken(tenantId: string, clientId: string, clientSecret: s
   return access_token;
 }
 
-/**
- * Resolve user in Entra ID using email as primary identifier.
- * Priority: mail → userPrincipalName → onPremisesSamAccountName (fallback)
- */
 async function resolveUserId(
   token: string,
   email: string | null,
@@ -48,7 +49,6 @@ async function resolveUserId(
 ): Promise<{ userId: string | null; resolvedBy: string }> {
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
-  // 1. Try by mail (primary)
   if (email) {
     const safeEmail = email.replace(/'/g, "''");
     const filterUrl = `https://graph.microsoft.com/v1.0/users?$filter=mail eq '${safeEmail}' or userPrincipalName eq '${safeEmail}'&$select=id,displayName,mail,userPrincipalName`;
@@ -69,7 +69,6 @@ async function resolveUserId(
     }
   }
 
-  // 2. Fallback: try by onPremisesSamAccountName
   if (samAccountName) {
     const safeSam = samAccountName.replace(/'/g, "''");
     try {
@@ -90,12 +89,6 @@ async function resolveUserId(
   return { userId: null, resolvedBy: `not_found (email: ${email || "N/A"}, sam: ${samAccountName || "N/A"})` };
 }
 
-/**
- * Resolve Service Principal Object ID using 3 strategies:
- * 1. Direct SP lookup (entra_id = SP Object ID)
- * 2. Filter by appId (entra_id = Application Client ID)
- * 3. Application Object ID lookup → extract appId → filter SP by appId
- */
 async function resolveServicePrincipal(
   headers: Record<string, string>,
   graphBase: string,
@@ -104,21 +97,19 @@ async function resolveServicePrincipal(
 ): Promise<string | null> {
   console.log(`[${context}] Resolving SP for ID: ${idValue}`);
 
-  // 1. Try direct lookup as SP Object ID
   try {
     const directRes = await fetch(`${graphBase}/servicePrincipals/${idValue}?$select=id,displayName,appId`, { headers });
     if (directRes.ok) {
       const sp = await directRes.json();
-      console.log(`[${context}] ✅ Strategy 1 - Direct SP lookup succeeded: ${idValue} → ${sp.displayName} (appId: ${sp.appId})`);
+      console.log(`[${context}] ✅ Strategy 1 - Direct SP lookup succeeded: ${idValue} → ${sp.displayName}`);
       return sp.id;
     }
     const errText = await directRes.text();
-    console.log(`[${context}] Strategy 1 - Direct SP lookup failed (${directRes.status}): ${errText.substring(0, 200)}`);
+    console.log(`[${context}] Strategy 1 failed (${directRes.status}): ${errText.substring(0, 200)}`);
   } catch (e) {
-    console.warn(`[${context}] Strategy 1 - Direct SP lookup error:`, e);
+    console.warn(`[${context}] Strategy 1 error:`, e);
   }
 
-  // 2. Fallback: filter by appId (Application/client ID)
   try {
     const filterRes = await fetch(
       `${graphBase}/servicePrincipals?$filter=appId eq '${idValue}'&$select=id,displayName,appId`,
@@ -127,25 +118,23 @@ async function resolveServicePrincipal(
     if (filterRes.ok) {
       const data = await filterRes.json();
       if (data.value && data.value.length > 0) {
-        console.log(`[${context}] ✅ Strategy 2 - appId filter succeeded: ${idValue} → SP ${data.value[0].id} (${data.value[0].displayName})`);
+        console.log(`[${context}] ✅ Strategy 2 - appId filter succeeded: ${idValue} → SP ${data.value[0].id}`);
         return data.value[0].id;
       }
-      console.log(`[${context}] Strategy 2 - appId filter returned 0 results`);
+      console.log(`[${context}] Strategy 2 returned 0 results`);
     } else {
       const errText = await filterRes.text();
-      console.log(`[${context}] Strategy 2 - appId filter failed (${filterRes.status}): ${errText.substring(0, 200)}`);
+      console.log(`[${context}] Strategy 2 failed (${filterRes.status}): ${errText.substring(0, 200)}`);
     }
   } catch (e) {
-    console.warn(`[${context}] Strategy 2 - appId filter error:`, e);
+    console.warn(`[${context}] Strategy 2 error:`, e);
   }
 
-  // 3. Try as Application Object ID → get real appId → find SP
   try {
     const appRes = await fetch(`${graphBase}/applications/${idValue}?$select=id,appId,displayName`, { headers });
     if (appRes.ok) {
       const app = await appRes.json();
       console.log(`[${context}] Strategy 3 - Found Application: ${app.displayName} (appId: ${app.appId})`);
-      // Now find the SP using the real appId
       const spRes = await fetch(
         `${graphBase}/servicePrincipals?$filter=appId eq '${app.appId}'&$select=id,displayName`,
         { headers }
@@ -153,20 +142,17 @@ async function resolveServicePrincipal(
       if (spRes.ok) {
         const spData = await spRes.json();
         if (spData.value && spData.value.length > 0) {
-          console.log(`[${context}] ✅ Strategy 3 - App→SP resolved: ${app.appId} → SP ${spData.value[0].id} (${spData.value[0].displayName})`);
+          console.log(`[${context}] ✅ Strategy 3 succeeded: ${app.appId} → SP ${spData.value[0].id}`);
           return spData.value[0].id;
         }
-        console.log(`[${context}] Strategy 3 - App found but no SP for appId ${app.appId}`);
       } else {
-        const errText = await spRes.text();
-        console.log(`[${context}] Strategy 3 - SP filter after app lookup failed (${spRes.status}): ${errText.substring(0, 200)}`);
+        await spRes.text();
       }
     } else {
-      const errText = await appRes.text();
-      console.log(`[${context}] Strategy 3 - Application lookup failed (${appRes.status}): ${errText.substring(0, 200)}`);
+      await appRes.text();
     }
   } catch (e) {
-    console.warn(`[${context}] Strategy 3 - Application lookup error:`, e);
+    console.warn(`[${context}] Strategy 3 error:`, e);
   }
 
   console.error(`[${context}] ❌ All 3 strategies failed for ID: ${idValue}`);
@@ -186,31 +172,19 @@ async function executeAction(
     case "assign_group": {
       const groupId = payload.groupId;
       if (!groupId) return { success: false, message: "groupId ausente no payload" };
-
       if (payload.onPremisesSync) {
-        return { success: false, message: `Grupo "${payload.groupName || groupId}" é sincronizado do AD local — adicione o membro no AD local e aguarde a replicação` };
+        return { success: false, message: `Grupo "${payload.groupName || groupId}" é sincronizado do AD local` };
       }
-
       const res = await fetch(`${graphBase}/groups/${groupId}/members/$ref`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          "@odata.id": `${graphBase}/directoryObjects/${userId}`,
-        }),
+        method: "POST", headers,
+        body: JSON.stringify({ "@odata.id": `${graphBase}/directoryObjects/${userId}` }),
       });
-
-      if (res.status === 204 || res.status === 200) {
-        return { success: true, message: `Usuário adicionado ao grupo ${payload.groupName || groupId}` };
-      }
+      if (res.status === 204 || res.status === 200) return { success: true, message: `Usuário adicionado ao grupo ${payload.groupName || groupId}` };
       if (res.status === 400) {
         const err = await res.json().catch(() => ({}));
-        if (err?.error?.message?.includes("already exist")) {
-          return { success: true, message: `Usuário já é membro do grupo ${payload.groupName || groupId}`, alreadyExists: true };
-        }
-        if (err?.error?.message?.includes("on-premises mastered")) {
-          return { success: false, message: `Grupo "${payload.groupName || groupId}" é gerenciado pelo AD local — não pode ser alterado via Entra ID` };
-        }
-        return { success: false, message: `Erro ao adicionar ao grupo: ${err?.error?.message || res.status}` };
+        if (err?.error?.message?.includes("already exist")) return { success: true, message: `Usuário já é membro do grupo`, alreadyExists: true };
+        if (err?.error?.message?.includes("on-premises mastered")) return { success: false, message: `Grupo gerenciado pelo AD local` };
+        return { success: false, message: `Erro: ${err?.error?.message || res.status}` };
       }
       const errText = await res.text();
       return { success: false, message: `Graph API erro ${res.status}: ${errText}` };
@@ -219,18 +193,9 @@ async function executeAction(
     case "remove_group": {
       const groupId = payload.groupId;
       if (!groupId) return { success: false, message: "groupId ausente no payload" };
-
-      const res = await fetch(`${graphBase}/groups/${groupId}/members/${userId}/$ref`, {
-        method: "DELETE",
-        headers,
-      });
-
-      if (res.status === 204 || res.status === 200) {
-        return { success: true, message: `Usuário removido do grupo ${payload.groupName || groupId}` };
-      }
-      if (res.status === 404) {
-        return { success: true, message: `Usuário já não é membro do grupo ${payload.groupName || groupId}`, alreadyExists: true };
-      }
+      const res = await fetch(`${graphBase}/groups/${groupId}/members/${userId}/$ref`, { method: "DELETE", headers });
+      if (res.status === 204 || res.status === 200) return { success: true, message: `Usuário removido do grupo ${payload.groupName || groupId}` };
+      if (res.status === 404) return { success: true, message: `Usuário já não é membro do grupo`, alreadyExists: true };
       const errText = await res.text();
       return { success: false, message: `Graph API erro ${res.status}: ${errText}` };
     }
@@ -238,190 +203,103 @@ async function executeAction(
     case "assign_license": {
       const skuId = payload.skuId;
       if (!skuId) return { success: false, message: "skuId ausente no payload" };
-
-      // Ensure usageLocation is set before assigning license
       try {
         const locRes = await fetch(`${graphBase}/users/${userId}?$select=usageLocation`, { headers });
         if (locRes.ok) {
           const locData = await locRes.json();
           if (!locData.usageLocation) {
-            console.log(`[assign_license] Setting usageLocation=BR for user ${userId}`);
-            const patchRes = await fetch(`${graphBase}/users/${userId}`, {
-              method: "PATCH",
-              headers,
-              body: JSON.stringify({ usageLocation: "BR" }),
-            });
-            if (!patchRes.ok && patchRes.status !== 204) {
-              const patchErr = await patchRes.text();
-              console.warn(`[assign_license] Failed to set usageLocation: ${patchErr}`);
-            }
+            const patchRes = await fetch(`${graphBase}/users/${userId}`, { method: "PATCH", headers, body: JSON.stringify({ usageLocation: "BR" }) });
+            if (!patchRes.ok && patchRes.status !== 204) await patchRes.text();
           }
         }
-      } catch (e) {
-        console.warn(`[assign_license] Error checking usageLocation:`, e);
-      }
-
+      } catch (e) { console.warn(`[assign_license] Error checking usageLocation:`, e); }
       const res = await fetch(`${graphBase}/users/${userId}/assignLicense`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          addLicenses: [{ skuId, disabledPlans: [] }],
-          removeLicenses: [],
-        }),
+        method: "POST", headers,
+        body: JSON.stringify({ addLicenses: [{ skuId, disabledPlans: [] }], removeLicenses: [] }),
       });
-
-      if (res.ok) {
-        return { success: true, message: `Licença ${payload.licenseName || skuId} atribuída com sucesso` };
-      }
+      if (res.ok) return { success: true, message: `Licença ${payload.licenseName || skuId} atribuída` };
       const err = await res.json().catch(() => ({}));
-      if (err?.error?.message?.includes("already")) {
-        return { success: true, message: `Licença ${payload.licenseName || skuId} já atribuída`, alreadyExists: true };
-      }
-      return { success: false, message: `Erro ao atribuir licença: ${err?.error?.message || res.status}` };
+      if (err?.error?.message?.includes("already")) return { success: true, message: `Licença já atribuída`, alreadyExists: true };
+      return { success: false, message: `Erro: ${err?.error?.message || res.status}` };
     }
 
     case "remove_license": {
       const skuId = payload.skuId;
       if (!skuId) return { success: false, message: "skuId ausente no payload" };
-
       const res = await fetch(`${graphBase}/users/${userId}/assignLicense`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          addLicenses: [],
-          removeLicenses: [skuId],
-        }),
+        method: "POST", headers,
+        body: JSON.stringify({ addLicenses: [], removeLicenses: [skuId] }),
       });
-
-      if (res.ok) {
-        return { success: true, message: `Licença ${payload.licenseName || skuId} removida com sucesso` };
-      }
+      if (res.ok) return { success: true, message: `Licença removida` };
       const errText = await res.text();
-      return { success: false, message: `Erro ao remover licença: ${errText}` };
+      return { success: false, message: `Erro: ${errText}` };
     }
 
     case "assign_app": {
       const appClientId = payload.appId;
       let appRoleId = payload.appRoleId || "00000000-0000-0000-0000-000000000000";
       if (!appClientId) return { success: false, message: "appId ausente no payload" };
-
       const spObjectId = await resolveServicePrincipal(headers, graphBase, appClientId, "assign_app");
-
-      if (!spObjectId) {
-        return { success: false, message: `Service Principal não encontrado para appId ${appClientId}. Verifique se o app está registrado no Entra ID.` };
-      }
-
-      // Resolve real default appRoleId from the SP if using the placeholder
+      if (!spObjectId) return { success: false, message: `Service Principal não encontrado para ${appClientId}` };
       if (appRoleId === "00000000-0000-0000-0000-000000000000") {
         try {
           const spDetailRes = await fetch(`${graphBase}/servicePrincipals/${spObjectId}?$select=appRoles`, { headers });
           if (spDetailRes.ok) {
             const spDetail = await spDetailRes.json();
             const roles = spDetail.appRoles || [];
-            // Find "Default Access" or "User" role, or use the first available, or keep placeholder
             const defaultRole = roles.find((r: any) => r.displayName === "Default Access" || r.value === "User" || r.isEnabled);
-            if (defaultRole) {
-              console.log(`[assign_app] Using real appRoleId: ${defaultRole.id} (${defaultRole.displayName}) instead of placeholder`);
-              appRoleId = defaultRole.id;
-            } else if (roles.length === 0) {
-              // No app roles defined — use the default access GUID which means "default access" for apps without explicit roles
-              console.log(`[assign_app] No appRoles defined on SP, keeping default 00000000...`);
-            }
-          } else {
-            await spDetailRes.text(); // consume body
-          }
-        } catch (e) {
-          console.warn(`[assign_app] Error fetching appRoles:`, e);
-        }
+            if (defaultRole) appRoleId = defaultRole.id;
+          } else { await spDetailRes.text(); }
+        } catch (e) { console.warn(`[assign_app] Error fetching appRoles:`, e); }
       }
-
       const res = await fetch(`${graphBase}/servicePrincipals/${spObjectId}/appRoleAssignedTo`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          principalId: userId,
-          resourceId: spObjectId,
-          appRoleId: appRoleId,
-        }),
+        method: "POST", headers,
+        body: JSON.stringify({ principalId: userId, resourceId: spObjectId, appRoleId }),
       });
-
-      if (res.ok || res.status === 201) {
-        return { success: true, message: `App ${payload.appName || appClientId} atribuído com sucesso` };
-      }
+      if (res.ok || res.status === 201) return { success: true, message: `App ${payload.appName || appClientId} atribuído` };
       const err = await res.json().catch(() => ({}));
-      if (err?.error?.message?.includes("already exists")) {
-        return { success: true, message: `App ${payload.appName || appClientId} já atribuído`, alreadyExists: true };
-      }
-      return { success: false, message: `Erro ao atribuir app: ${err?.error?.message || res.status}` };
+      if (err?.error?.message?.includes("already exists")) return { success: true, message: `App já atribuído`, alreadyExists: true };
+      return { success: false, message: `Erro: ${err?.error?.message || res.status}` };
     }
 
     case "remove_app": {
       const appClientId = payload.appId;
       const assignmentId = payload.assignmentId;
       if (!appClientId) return { success: false, message: "appId ausente no payload" };
-
       const spObjectId = await resolveServicePrincipal(headers, graphBase, appClientId, "remove_app");
-
-      if (!spObjectId) {
-        return { success: false, message: `Service Principal não encontrado para appId ${appClientId}` };
-      }
-
+      if (!spObjectId) return { success: false, message: `Service Principal não encontrado` };
       if (assignmentId) {
-        const res = await fetch(`${graphBase}/servicePrincipals/${spObjectId}/appRoleAssignedTo/${assignmentId}`, {
-          method: "DELETE",
-          headers,
-        });
-        if (res.status === 204 || res.ok) {
-          return { success: true, message: `App ${payload.appName || appClientId} removido com sucesso` };
-        }
+        const res = await fetch(`${graphBase}/servicePrincipals/${spObjectId}/appRoleAssignedTo/${assignmentId}`, { method: "DELETE", headers });
+        if (res.status === 204 || res.ok) return { success: true, message: `App removido` };
         const errText = await res.text();
-        return { success: false, message: `Erro ao remover app: ${errText}` };
+        return { success: false, message: `Erro: ${errText}` };
       }
-
-      const listRes = await fetch(
-        `${graphBase}/servicePrincipals/${spObjectId}/appRoleAssignedTo?$filter=principalId eq '${userId}'`,
-        { headers }
-      );
+      const listRes = await fetch(`${graphBase}/servicePrincipals/${spObjectId}/appRoleAssignedTo?$filter=principalId eq '${userId}'`, { headers });
       if (listRes.ok) {
         const listData = await listRes.json();
         if (listData.value && listData.value.length > 0) {
           for (const assignment of listData.value) {
-            await fetch(`${graphBase}/servicePrincipals/${spObjectId}/appRoleAssignedTo/${assignment.id}`, {
-              method: "DELETE",
-              headers,
-            });
+            await fetch(`${graphBase}/servicePrincipals/${spObjectId}/appRoleAssignedTo/${assignment.id}`, { method: "DELETE", headers });
           }
-          return { success: true, message: `App ${payload.appName || appClientId} removido com sucesso` };
+          return { success: true, message: `App removido` };
         }
-        return { success: true, message: `Usuário não tinha acesso ao app ${payload.appName || appClientId}`, alreadyExists: true };
+        return { success: true, message: `Usuário já não tinha acesso`, alreadyExists: true };
       }
-      return { success: false, message: `Erro ao listar assignments do app` };
+      return { success: false, message: `Erro ao listar assignments` };
     }
 
     case "disable_entra": {
-      const res = await fetch(`${graphBase}/users/${userId}`, {
-        method: "PATCH",
-        headers,
-        body: JSON.stringify({ accountEnabled: false }),
-      });
-      if (res.status === 204 || res.ok) {
-        return { success: true, message: `Conta Entra ID desabilitada com sucesso` };
-      }
+      const res = await fetch(`${graphBase}/users/${userId}`, { method: "PATCH", headers, body: JSON.stringify({ accountEnabled: false }) });
+      if (res.status === 204 || res.ok) return { success: true, message: `Conta desabilitada no Entra ID` };
       const errText = await res.text();
-      return { success: false, message: `Erro ao desabilitar conta Entra ID: ${errText}` };
+      return { success: false, message: `Erro: ${errText}` };
     }
 
     case "enable_entra": {
-      const res = await fetch(`${graphBase}/users/${userId}`, {
-        method: "PATCH",
-        headers,
-        body: JSON.stringify({ accountEnabled: true }),
-      });
-      if (res.status === 204 || res.ok) {
-        return { success: true, message: `Conta Entra ID reabilitada com sucesso` };
-      }
+      const res = await fetch(`${graphBase}/users/${userId}`, { method: "PATCH", headers, body: JSON.stringify({ accountEnabled: true }) });
+      if (res.status === 204 || res.ok) return { success: true, message: `Conta reabilitada no Entra ID` };
       const errText = await res.text();
-      return { success: false, message: `Erro ao reabilitar conta Entra ID: ${errText}` };
+      return { success: false, message: `Erro: ${errText}` };
     }
 
     case "update_entra": {
@@ -430,26 +308,165 @@ async function executeAction(
       if (payload.jobTitle) updateBody.jobTitle = payload.jobTitle;
       if (payload.companyName) updateBody.companyName = payload.companyName;
       if (payload.displayName) updateBody.displayName = payload.displayName;
-
-      if (Object.keys(updateBody).length === 0) {
-        return { success: true, message: "Nenhum atributo para atualizar no Entra ID" };
-      }
-
-      const res = await fetch(`${graphBase}/users/${userId}`, {
-        method: "PATCH",
-        headers,
-        body: JSON.stringify(updateBody),
-      });
-      if (res.status === 204 || res.ok) {
-        return { success: true, message: `Atributos atualizados no Entra ID: ${Object.keys(updateBody).join(", ")}` };
-      }
+      if (Object.keys(updateBody).length === 0) return { success: true, message: "Nenhum atributo para atualizar" };
+      const res = await fetch(`${graphBase}/users/${userId}`, { method: "PATCH", headers, body: JSON.stringify(updateBody) });
+      if (res.status === 204 || res.ok) return { success: true, message: `Atributos atualizados: ${Object.keys(updateBody).join(", ")}` };
       const errText = await res.text();
-      return { success: false, message: `Erro ao atualizar Entra ID: ${errText}` };
+      return { success: false, message: `Erro: ${errText}` };
     }
 
     default:
       return { success: false, message: `action_type não suportado: ${actionType}` };
   }
+}
+
+/**
+ * Execute an action against an external app using its connector config.
+ */
+async function executeExternalAppAction(
+  supabaseClient: any,
+  actionType: string,
+  payload: Record<string, any>,
+  colaboradorId: string | null
+): Promise<{ success: boolean; message: string }> {
+  const appId = payload.aplicacao_id;
+  if (!appId) return { success: false, message: "aplicacao_id ausente no payload" };
+
+  // Fetch app connector config
+  const { data: app, error: appErr } = await supabaseClient
+    .from("aplicacoes")
+    .select("nome, connector_type, connector_config")
+    .eq("id", appId)
+    .single();
+
+  if (appErr || !app) return { success: false, message: `Aplicação ${appId} não encontrada` };
+
+  const config = app.connector_config as Record<string, any> | null;
+  if (!config?.base_url) return { success: false, message: `Conector da aplicação ${app.nome} não configurado (sem base_url)` };
+
+  // Build auth headers
+  const authHeaders: Record<string, string> = { "Content-Type": "application/json" };
+  switch (config.auth_type) {
+    case "bearer":
+      if (config.api_token) authHeaders["Authorization"] = `Bearer ${config.api_token}`;
+      break;
+    case "basic": {
+      const encoded = btoa(`${config.username || ""}:${config.password || ""}`);
+      authHeaders["Authorization"] = `Basic ${encoded}`;
+      break;
+    }
+    case "api_key":
+      if (config.api_key_header && config.api_key_value) authHeaders[config.api_key_header] = config.api_key_value;
+      break;
+    case "app_token":
+      if (config.app_token) authHeaders["App-Token"] = config.app_token;
+      if (config.session_token) authHeaders["Session-Token"] = config.session_token;
+      break;
+  }
+  if (config.custom_headers && typeof config.custom_headers === "object") {
+    Object.assign(authHeaders, config.custom_headers);
+  }
+
+  const baseUrl = config.base_url.replace(/\/$/, "");
+
+  // Get collaborator info
+  let colabInfo: Record<string, any> = {};
+  if (colaboradorId) {
+    const { data: colab } = await supabaseClient
+      .from("colaboradores")
+      .select("nome, email, matricula, cpf, sam_account_name")
+      .eq("id", colaboradorId)
+      .single();
+    if (colab) colabInfo = colab;
+  }
+
+  // Build request body based on action type and config mappings
+  const userPayload: Record<string, any> = {
+    ...payload.user_data,
+    name: colabInfo.nome || payload.user_data?.name,
+    email: colabInfo.email || payload.user_data?.email,
+    matricula: colabInfo.matricula,
+  };
+
+  // Add internal profile if specified
+  if (payload.perfil_interno_id) {
+    const { data: pi } = await supabaseClient
+      .from("aplicacao_perfis_internos")
+      .select("nome_externo, external_id")
+      .eq("id", payload.perfil_interno_id)
+      .single();
+    if (pi) {
+      userPayload.profile_id = pi.external_id;
+      userPayload.profile_name = pi.nome_externo;
+    }
+  }
+
+  try {
+    switch (actionType) {
+      case "create_user_app": {
+        const endpoint = config.create_user_endpoint || "/users";
+        const fieldMap = config.create_user_fields || {};
+        const body = mapFields(userPayload, fieldMap);
+        console.log(`[ext-app] POST ${baseUrl}${endpoint} for ${colabInfo.nome || "?"}`);
+        const res = await fetch(`${baseUrl}${endpoint}`, { method: "POST", headers: authHeaders, body: JSON.stringify(body) });
+        if (res.ok || res.status === 201) return { success: true, message: `Usuário criado em ${app.nome}` };
+        const errText = await res.text();
+        return { success: false, message: `Erro ao criar usuário em ${app.nome} (${res.status}): ${errText.substring(0, 300)}` };
+      }
+
+      case "update_user_app": {
+        const userId = payload.external_user_id || userPayload.email;
+        const endpoint = (config.update_user_endpoint || "/users/{id}").replace("{id}", encodeURIComponent(userId));
+        const fieldMap = config.update_user_fields || {};
+        const body = mapFields(userPayload, fieldMap);
+        console.log(`[ext-app] PUT ${baseUrl}${endpoint}`);
+        const res = await fetch(`${baseUrl}${endpoint}`, { method: "PUT", headers: authHeaders, body: JSON.stringify(body) });
+        if (res.ok || res.status === 204) return { success: true, message: `Usuário atualizado em ${app.nome}` };
+        const errText = await res.text();
+        return { success: false, message: `Erro ao atualizar em ${app.nome} (${res.status}): ${errText.substring(0, 300)}` };
+      }
+
+      case "disable_user_app": {
+        const userId = payload.external_user_id || userPayload.email;
+        const endpoint = (config.disable_user_endpoint || "/users/{id}").replace("{id}", encodeURIComponent(userId));
+        const body = config.disable_user_body || { is_active: false };
+        console.log(`[ext-app] PATCH ${baseUrl}${endpoint} (disable)`);
+        const res = await fetch(`${baseUrl}${endpoint}`, { method: "PATCH", headers: authHeaders, body: JSON.stringify(body) });
+        if (res.ok || res.status === 204) return { success: true, message: `Usuário desativado em ${app.nome}` };
+        const errText = await res.text();
+        return { success: false, message: `Erro ao desativar em ${app.nome} (${res.status}): ${errText.substring(0, 300)}` };
+      }
+
+      case "delete_user_app": {
+        const userId = payload.external_user_id || userPayload.email;
+        const endpoint = (config.delete_user_endpoint || "/users/{id}").replace("{id}", encodeURIComponent(userId));
+        console.log(`[ext-app] DELETE ${baseUrl}${endpoint}`);
+        const res = await fetch(`${baseUrl}${endpoint}`, { method: "DELETE", headers: authHeaders });
+        if (res.ok || res.status === 204) return { success: true, message: `Usuário removido de ${app.nome}` };
+        const errText = await res.text();
+        return { success: false, message: `Erro ao remover de ${app.nome} (${res.status}): ${errText.substring(0, 300)}` };
+      }
+
+      default:
+        return { success: false, message: `action_type externo não suportado: ${actionType}` };
+    }
+  } catch (err) {
+    return { success: false, message: `Erro de rede com ${app.nome}: ${err instanceof Error ? err.message : "desconhecido"}` };
+  }
+}
+
+/** Map internal fields to external API fields using a mapping config */
+function mapFields(data: Record<string, any>, fieldMap: Record<string, string>): Record<string, any> {
+  if (!fieldMap || Object.keys(fieldMap).length === 0) return data;
+  const result: Record<string, any> = {};
+  for (const [internalKey, externalKey] of Object.entries(fieldMap)) {
+    if (data[internalKey] !== undefined) result[externalKey] = data[internalKey];
+  }
+  // Include unmapped fields as-is
+  for (const [key, value] of Object.entries(data)) {
+    if (!fieldMap[key] && value !== undefined) result[key] = value;
+  }
+  return result;
 }
 
 function calculateNextRetry(retryCount: number): string {
@@ -468,18 +485,13 @@ Deno.serve(async (req) => {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-  if (!TENANT_ID || !CLIENT_ID || !CLIENT_SECRET) {
-    return jsonResponse({ error: "Azure credentials not configured" }, 500);
-  }
-
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
-  // Check for force mode from request body
   let forceMode = false;
   try {
     const body = await req.json();
     forceMode = body?.force === true;
-  } catch { /* no body or invalid JSON — default to non-force */ }
+  } catch { /* no body */ }
 
   try {
     // Check modo_operacao
@@ -490,26 +502,132 @@ Deno.serve(async (req) => {
       .single();
 
     if (modoParam?.valor === "simulacao") {
-      return jsonResponse({ success: true, processed: 0, mode: "simulacao", message: "Modo simulação ativo — nenhuma ação executada" });
+      return jsonResponse({ success: true, processed: 0, mode: "simulacao", message: "Modo simulação ativo" });
     }
 
-    // Get Azure token
-    console.log("Obtaining Azure token...");
-    const token = await getAzureToken(TENANT_ID, CLIENT_ID, CLIENT_SECRET);
-    console.log("Azure token acquired");
-
-    // Process ALL pending Entra ID items in a loop
     const allResults: { id: string; action: string; status: string; message: string }[] = [];
     let totalProcessed = 0;
 
+    // ─── PART 1: Process Entra ID actions ───
+    if (TENANT_ID && CLIENT_ID && CLIENT_SECRET) {
+      console.log("Obtaining Azure token...");
+      const token = await getAzureToken(TENANT_ID, CLIENT_ID, CLIENT_SECRET);
+      console.log("Azure token acquired");
+
+      while (true) {
+        let query = supabase
+          .from("iam_queue")
+          .select("*")
+          .in("action_type", ENTRA_ACTION_TYPES)
+          .eq("status", "pending");
+
+        if (!forceMode) {
+          query = query.or("next_retry_at.is.null,next_retry_at.lte." + new Date().toISOString());
+        }
+
+        const { data: items, error: fetchErr } = await query
+          .order("created_at", { ascending: true })
+          .limit(50);
+
+        if (fetchErr) return jsonResponse({ error: fetchErr.message }, 500);
+        if (!items || items.length === 0) break;
+
+        console.log(`Processing batch of ${items.length} Entra ID items (force=${forceMode})...`);
+
+        for (const item of items) {
+          const payload = item.payload_json as Record<string, any>;
+          await supabase.from("iam_queue").update({ status: "processing" }).eq("id", item.id);
+
+          let email = payload.mail;
+          let samAccount = payload.samAccountName;
+
+          if (item.colaborador_id) {
+            const { data: colab } = await supabase
+              .from("colaboradores")
+              .select("nome, email, sam_account_name")
+              .eq("id", item.colaborador_id)
+              .single();
+            if (colab) {
+              email = colab.email || email;
+              samAccount = colab.sam_account_name || samAccount;
+            }
+          }
+
+          const { userId, resolvedBy } = await resolveUserId(token, email, samAccount);
+
+          if (!userId) {
+            const retryCount = (item.retry_count || 0) + 1;
+            const maxRetries = item.max_retries || 10;
+            if (retryCount >= maxRetries) {
+              await supabase.from("iam_queue").update({
+                status: "failed", error_code: "user_not_found",
+                result_message: `Usuário não encontrado após ${maxRetries} tentativas. Busca: ${resolvedBy}`,
+                processed_at: new Date().toISOString(), processed_by: "lovable_cloud",
+              }).eq("id", item.id);
+              allResults.push({ id: item.id, action: item.action_type, status: "failed", message: `User not found` });
+            } else {
+              await supabase.from("iam_queue").update({
+                status: "pending", retry_count: retryCount,
+                next_retry_at: calculateNextRetry(retryCount),
+                error_code: "user_not_found",
+                result_message: `Retry ${retryCount}/${maxRetries} — ${resolvedBy}`,
+              }).eq("id", item.id);
+              allResults.push({ id: item.id, action: item.action_type, status: "retry", message: `Retry ${retryCount}/${maxRetries}` });
+            }
+            continue;
+          }
+
+          const result = await executeAction(token, userId, item.action_type, payload);
+          console.log(`[executeAction] item=${item.id} action=${item.action_type} success=${result.success}`);
+
+          if (result.success) {
+            await supabase.from("iam_queue").update({
+              status: "success", processed_at: new Date().toISOString(), processed_by: "lovable_cloud",
+              result_message: `${result.message} [${resolvedBy}]`, error_code: null,
+            }).eq("id", item.id);
+            allResults.push({ id: item.id, action: item.action_type, status: "success", message: result.message });
+          } else {
+            const isNonRetryable = result.message.includes("AD local") || result.message.includes("on-premises");
+            const retryCount = (item.retry_count || 0) + 1;
+            const maxRetries = item.max_retries || 10;
+
+            if (!isNonRetryable && retryCount < maxRetries) {
+              await supabase.from("iam_queue").update({
+                status: "pending", retry_count: retryCount,
+                next_retry_at: calculateNextRetry(retryCount),
+                error_code: "graph_api_error",
+                result_message: `Retry ${retryCount}/${maxRetries} — ${result.message}`,
+              }).eq("id", item.id);
+              allResults.push({ id: item.id, action: item.action_type, status: "retry", message: result.message });
+            } else {
+              await supabase.from("iam_queue").update({
+                status: "failed", processed_at: new Date().toISOString(), processed_by: "lovable_cloud",
+                result_message: result.message,
+                error_code: isNonRetryable ? "on_premises_managed" : "graph_api_error",
+              }).eq("id", item.id);
+              allResults.push({ id: item.id, action: item.action_type, status: "failed", message: result.message });
+              await supabase.from("alertas").insert({
+                titulo: `Falha: ${item.action_type}`, mensagem: `Ação ${item.action_type} falhou para ${item.target_identity || "?"}: ${result.message}`,
+                severidade: "critico", tipo: "provisionamento_falha",
+                ref_url: "/fila-provisionamento", ref_id: item.id, ref_tipo: "iam_queue",
+              });
+            }
+          }
+        }
+
+        totalProcessed += items.length;
+        if (items.length < 50) break;
+      }
+    }
+
+    // ─── PART 2: Process External App actions ───
     while (true) {
       let query = supabase
         .from("iam_queue")
         .select("*")
-        .in("action_type", ENTRA_ACTION_TYPES)
+        .in("action_type", EXTERNAL_APP_ACTION_TYPES)
         .eq("status", "pending");
 
-      // In force mode, ignore next_retry_at — process everything pending
       if (!forceMode) {
         query = query.or("next_retry_at.is.null,next_retry_at.lte." + new Date().toISOString());
       }
@@ -518,122 +636,51 @@ Deno.serve(async (req) => {
         .order("created_at", { ascending: true })
         .limit(50);
 
-      if (fetchErr) {
-        return jsonResponse({ error: fetchErr.message }, 500);
-      }
-
+      if (fetchErr) return jsonResponse({ error: fetchErr.message }, 500);
       if (!items || items.length === 0) break;
 
-      console.log(`Processing batch of ${items.length} Entra ID queue items (force=${forceMode})...`);
+      console.log(`Processing batch of ${items.length} external app items...`);
 
       for (const item of items) {
         const payload = item.payload_json as Record<string, any>;
-
-        // Mark as processing
         await supabase.from("iam_queue").update({ status: "processing" }).eq("id", item.id);
 
-        // Resolve email/name from the database (source of truth), not from payload
-        let email = payload.mail;
-        let samAccount = payload.samAccountName;
-
-        if (item.colaborador_id) {
-          const { data: colab } = await supabase
-            .from("colaboradores")
-            .select("nome, email, sam_account_name")
-            .eq("id", item.colaborador_id)
-            .single();
-
-          if (colab) {
-            email = colab.email || email;
-            samAccount = colab.sam_account_name || samAccount;
-            console.log(`[process] Colaborador ${item.colaborador_id}: email=${email}, sam=${samAccount}, nome=${colab.nome}`);
-          }
-        }
-
-        // Resolve user in Entra ID using email as primary
-        const { userId, resolvedBy } = await resolveUserId(token, email, samAccount);
-
-        if (!userId) {
-          const retryCount = (item.retry_count || 0) + 1;
-          const maxRetries = item.max_retries || 10;
-
-          if (retryCount >= maxRetries) {
-            await supabase.from("iam_queue").update({
-              status: "failed",
-              error_code: "user_not_found",
-              result_message: `Usuário não encontrado no Entra ID após ${maxRetries} tentativas. Busca por: ${resolvedBy}`,
-              processed_at: new Date().toISOString(),
-              processed_by: "lovable_cloud",
-            }).eq("id", item.id);
-            allResults.push({ id: item.id, action: item.action_type, status: "failed", message: `User not found - ${resolvedBy}` });
-          } else {
-            const nextRetry = calculateNextRetry(retryCount);
-            await supabase.from("iam_queue").update({
-              status: "pending",
-              retry_count: retryCount,
-              next_retry_at: nextRetry,
-              error_code: "user_not_found",
-              result_message: `Retry ${retryCount}/${maxRetries} — Busca por: ${resolvedBy}`,
-            }).eq("id", item.id);
-            allResults.push({ id: item.id, action: item.action_type, status: "retry", message: `Retry ${retryCount}/${maxRetries}` });
-          }
-          continue;
-        }
-
-        // Execute the action
-        const result = await executeAction(token, userId, item.action_type, payload);
-        console.log(`[executeAction] item=${item.id} action=${item.action_type} success=${result.success} message="${result.message}"`);
+        const result = await executeExternalAppAction(supabase, item.action_type, payload, item.colaborador_id);
+        console.log(`[ext-app] item=${item.id} action=${item.action_type} success=${result.success}`);
 
         if (result.success) {
           await supabase.from("iam_queue").update({
-            status: "success",
-            processed_at: new Date().toISOString(),
-            processed_by: "lovable_cloud",
-            result_message: `${result.message} [resolvido por: ${resolvedBy}]`,
-            error_code: null,
+            status: "success", processed_at: new Date().toISOString(), processed_by: "lovable_cloud",
+            result_message: result.message, error_code: null,
           }).eq("id", item.id);
           allResults.push({ id: item.id, action: item.action_type, status: "success", message: result.message });
         } else {
-          const isNonRetryable = result.message.includes("AD local") || result.message.includes("on-premises");
           const retryCount = (item.retry_count || 0) + 1;
           const maxRetries = item.max_retries || 10;
-
-          if (!isNonRetryable && retryCount < maxRetries) {
-            const nextRetry = calculateNextRetry(retryCount);
+          if (retryCount < maxRetries) {
             await supabase.from("iam_queue").update({
-              status: "pending",
-              retry_count: retryCount,
-              next_retry_at: nextRetry,
-              error_code: "graph_api_error",
+              status: "pending", retry_count: retryCount,
+              next_retry_at: calculateNextRetry(retryCount),
+              error_code: "ext_app_error",
               result_message: `Retry ${retryCount}/${maxRetries} — ${result.message}`,
             }).eq("id", item.id);
             allResults.push({ id: item.id, action: item.action_type, status: "retry", message: result.message });
           } else {
             await supabase.from("iam_queue").update({
-              status: "failed",
-              processed_at: new Date().toISOString(),
-              processed_by: "lovable_cloud",
-              result_message: result.message,
-              error_code: isNonRetryable ? "on_premises_managed" : "graph_api_error",
+              status: "failed", processed_at: new Date().toISOString(), processed_by: "lovable_cloud",
+              result_message: result.message, error_code: "ext_app_error",
             }).eq("id", item.id);
             allResults.push({ id: item.id, action: item.action_type, status: "failed", message: result.message });
-
-            // Generate critical alert for permanent failure
             await supabase.from("alertas").insert({
-              titulo: `Falha no provisionamento: ${item.action_type}`,
-              mensagem: `Ação ${item.action_type} falhou para ${item.target_identity || "desconhecido"}: ${result.message}`,
-              severidade: "critico",
-              tipo: "provisionamento_falha",
-              ref_url: "/fila-provisionamento",
-              ref_id: item.id,
-              ref_tipo: "iam_queue",
+              titulo: `Falha ext: ${item.action_type}`, mensagem: result.message,
+              severidade: "critico", tipo: "provisionamento_falha",
+              ref_url: "/fila-provisionamento", ref_id: item.id, ref_tipo: "iam_queue",
             });
           }
         }
       }
 
       totalProcessed += items.length;
-
       if (items.length < 50) break;
     }
 
@@ -649,12 +696,7 @@ Deno.serve(async (req) => {
 
     console.log(`Done: ${summary.success} success, ${summary.retries} retries, ${summary.failures} failures`);
 
-    return jsonResponse({
-      success: true,
-      processed: totalProcessed,
-      summary,
-      results: allResults,
-    });
+    return jsonResponse({ success: true, processed: totalProcessed, summary, results: allResults });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro desconhecido";
     console.error("process-iam-queue error:", msg);
