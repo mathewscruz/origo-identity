@@ -167,7 +167,7 @@ export default function MatrizPage() {
       ) : cargos.length === 0 || perfis.length === 0 ? (
         <Card>
           <CardContent className="py-12">
-            Cadastre cargos e perfis de acesso para visualizar a matriz.
+            <EmptyState message="Cadastre cargos e perfis de acesso para visualizar a matriz." size="lg" />
           </CardContent>
         </Card>
       ) : (

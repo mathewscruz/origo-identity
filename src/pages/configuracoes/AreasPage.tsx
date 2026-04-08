@@ -87,6 +87,7 @@ export default function AreasPage() {
                   <th className="pb-2 font-medium">Nome</th><th className="pb-2 font-medium">Empresa</th><th className="pb-2 font-medium">Status</th><th className="pb-2 font-medium w-20">Ações</th>
                 </tr></thead>
                 <tbody>
+                  {paginatedItems.length === 0 && <tr><td colSpan={4}><EmptyState message="Nenhuma área encontrada." /></td></tr>}
                   {paginatedItems.map((area: any) => (
                     <tr key={area.id} className="border-b last:border-0 hover:bg-muted/50">
                       <td className="py-3 font-medium">{area.nome}</td>

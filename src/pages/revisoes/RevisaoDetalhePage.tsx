@@ -22,7 +22,7 @@ export default function RevisaoDetalhePage() {
   const [search, setSearch] = useState("");
 
   if (isLoading) return <div className="space-y-4 p-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}</div>;
-  if (!revisao) return <div className="p-8 text-center text-muted-foreground">Revisão não encontrada.</div>;
+  if (!revisao) return <div className="p-8"><EmptyState message="Revisão não encontrada." size="lg" /></div>;
 
   const progress = revisao.total_itens > 0 ? (revisao.itens_revisados / revisao.total_itens) * 100 : 0;
   const mantidos = (itens || []).filter((it: any) => it.decisao === "manter").length;

@@ -79,6 +79,7 @@ export default function EmpresasPage() {
                   <th className="pb-2 font-medium">Nome</th><th className="pb-2 font-medium hidden md:table-cell">CNPJ</th><th className="pb-2 font-medium">Status</th><th className="pb-2 font-medium w-20">Ações</th>
                 </tr></thead>
                 <tbody>
+                  {paginatedItems.length === 0 && <tr><td colSpan={4}><EmptyState message="Nenhuma empresa cadastrada." /></td></tr>}
                   {paginatedItems.map((emp: any) => (
                     <tr key={emp.id} className="border-b last:border-0 hover:bg-muted/50">
                       <td className="py-3 font-medium">{emp.nome}</td>
