@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import AppIcon from "@/components/AppIcon";
+import EmptyState from "@/components/EmptyState";
 
 const criticidadeColors: Record<string, string> = {
   baixa: "bg-muted text-muted-foreground",
@@ -334,7 +335,7 @@ export default function AplicacaoDetalhePage() {
         <TabsContent value="usuarios">
           <Card><CardContent className="p-0">
             {colabList.length === 0 ? (
-              <div className="p-8 text-center text-muted-foreground">Nenhum usuário atribuído a esta aplicação</div>
+              <EmptyState message="Nenhum usuário atribuído a esta aplicação" size="lg" />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -361,7 +362,7 @@ export default function AplicacaoDetalhePage() {
         <TabsContent value="perfis">
           <Card><CardContent className="p-0">
             {perfis.length === 0 ? (
-              <div className="p-8 text-center text-muted-foreground">Nenhum perfil vinculado a esta aplicação</div>
+              <EmptyState message="Nenhum perfil vinculado a esta aplicação" size="lg" />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -386,7 +387,7 @@ export default function AplicacaoDetalhePage() {
         <TabsContent value="grupos">
           <Card><CardContent className="p-0">
             {grupos.length === 0 ? (
-              <div className="p-8 text-center text-muted-foreground">Nenhum grupo vinculado a esta aplicação</div>
+              <EmptyState message="Nenhum grupo vinculado a esta aplicação" size="lg" />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -460,9 +461,7 @@ export default function AplicacaoDetalhePage() {
             </CardHeader>
             <CardContent className="p-0">
               {(perfisInternos || []).length === 0 ? (
-                <div className="p-8 text-center text-muted-foreground">
-                  Nenhum perfil interno cadastrado. {hasConnector ? "Clique em 'Sincronizar da API' ou adicione manualmente." : "Adicione manualmente."}
-                </div>
+                <EmptyState message={`Nenhum perfil interno cadastrado. ${hasConnector ? "Clique em 'Sincronizar da API' ou adicione manualmente." : "Adicione manualmente."}`} size="lg" />
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">

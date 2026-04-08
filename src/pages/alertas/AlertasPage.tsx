@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import TablePagination, { usePagination } from "@/components/TablePagination";
 import { toast } from "sonner";
+import EmptyState from "@/components/EmptyState";
 
 const severidadeColors: Record<string, string> = {
   info: "bg-info/15 text-info border-info/30",
@@ -99,7 +100,7 @@ export default function AlertasPage() {
                       </td>
                     </tr>
                   ))}
-                  {paginatedItems.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-muted-foreground">Nenhum alerta.</td></tr>}
+                  {paginatedItems.length === 0 && <tr><td colSpan={5}><EmptyState message="Nenhum alerta." /></td></tr>}
                 </tbody></table>
               )}
             </CardContent></Card>
