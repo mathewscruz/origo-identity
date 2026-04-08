@@ -1,23 +1,45 @@
 
 
-## Plano: Corrigir animações permanentes na página de Integrações
+## Plano: Remover "Operadores" (redundante com "Usuários")
 
-### Problema
+### Diagnóstico
 
-A página de Integrações mostra ícones girando e textos como "Importando..." mesmo quando nenhuma operação está em andamento. Isso acontece porque:
+Os dois módulos fazem essencialmente a mesma coisa — gerenciar quem opera o sistema:
 
-1. **Job "running" preso no banco:** O `useEffect` na linha 39 faz `setCsvSyncing(csvJob?.status === "running")`. Se o último registro em `sync_jobs` ficou com status "running" (job travado/timeout), o botão de CSV fica eternamente com animação.
-2. **Painel de progresso exibido para jobs antigos:** A condição `showCsvProgress` mostra o painel para qualquer job com status "done" ou "error", mesmo que seja de dias atrás.
+| | Operadores (Configurações) | Usuários (Admin) |
+|---|---|---|
+| Tabela | `operadores` (nome, email, ativo) | `profiles` + `user_roles` (nome, email, ativo, role) |
+| Vinculado a auth | Não | Sim (auth.users) |
+| Controle de permissão | Nenhum | admin/operador/viewer |
+| Criação de conta | Não | Sim (via edge function) |
+| Troca de senha | Não | Sim |
 
-### Solução
+**Conclusão:** "Operadores" é uma tabela legada que não está vinculada à autenticação. Toda a gestão real de acesso ao sistema já é feita em "Usuários". Manter os dois causa confusão e dados duplicados.
 
-1. **Timeout de segurança para jobs "running":** Considerar um job como "stale" se estiver com status "running" há mais de 10 minutos (comparar `updated_at` com `now()`). Nesse caso, não ativar `csvSyncing`.
-2. **Limitar exibição do painel de progresso:** Só mostrar o painel `CsvProgressPanel` se o job foi criado/atualizado nas últimas 2 horas.
-3. **Resetar estados locais:** Garantir que `spSyncing`, `groupSyncing` e `csvSyncing` são resetados corretamente ao montar o componente (não depender apenas do DB).
+A única referência funcional à tabela `operadores` é em `IntegracoesPage.tsx` (linha 105), onde emails de operadores são usados como lista de proteção durante limpeza de colaboradores. Isso pode ser migrado para usar `profiles` no lugar.
+
+### Alterações
+
+**1. Remover página e rota de Operadores:**
+- Remover `src/pages/configuracoes/OperadoresPage.tsx`
+- Remover import e rota em `src/App.tsx`
+- Remover link "Operadores" do sub-nav em `ConfiguracoesLayout.tsx`
+- Remover referência no breadcrumb em `AppLayout.tsx`
+
+**2. Migrar referência em IntegracoesPage.tsx:**
+- Linha 105: trocar `supabase.from("operadores").select("email")` por `supabase.from("profiles").select("email")` para proteger emails de usuários do sistema durante limpeza
+
+**3. Remover hook `useOperadores`:**
+- Remover de `src/hooks/useOrigoData.ts`
 
 ### Arquivos
 
 | Ação | Arquivo |
 |---|---|
-| Editar | `src/pages/configuracoes/IntegracoesPage.tsx` — adicionar verificação de tempo no `useEffect` do `csvSyncing` e na condição `showCsvProgress` |
+| Remover | `src/pages/configuracoes/OperadoresPage.tsx` |
+| Editar | `src/App.tsx` — remover import e rota de Operadores |
+| Editar | `src/pages/configuracoes/ConfiguracoesLayout.tsx` — remover link "Operadores" do menu |
+| Editar | `src/components/AppLayout.tsx` — remover breadcrumb de operadores |
+| Editar | `src/pages/configuracoes/IntegracoesPage.tsx` — usar `profiles` em vez de `operadores` |
+| Editar | `src/hooks/useOrigoData.ts` — remover `useOperadores` |
 
