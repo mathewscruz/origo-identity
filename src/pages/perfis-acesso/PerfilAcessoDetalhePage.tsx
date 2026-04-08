@@ -96,11 +96,17 @@ export default function PerfilAcessoDetalhePage() {
 
   const openEdit = () => {
     if (!perfil) return;
+    // Build perfil_interno_map from existing data
+    const piMap: Record<string, string> = {};
+    for (const pai of (perfilAppsInternos || [])) {
+      piMap[pai.aplicacao_id] = pai.perfil_interno_id;
+    }
     setEditForm({
       nome: perfil.nome, descricao: perfil.descricao || "", tipo: perfil.tipo, ativo: perfil.ativo,
       aplicacao_ids: (perfilApps ?? []).map((pa: any) => pa.aplicacao_id),
       licenca_ids: (perfilLicencas ?? []).map((pl: any) => pl.licenca_id),
       grupo_ids: (perfilGrupos ?? []).map((pg: any) => pg.grupo_id),
+      perfil_interno_map: piMap,
     });
     setBuscaApps("");
     setBuscaLicencas("");
