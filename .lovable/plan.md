@@ -1,30 +1,60 @@
 
+## Plano: corrigir o onboarding de forma realmente estável
 
-## Plano: Corrigir posicionamento do Onboarding Tour
+### Diagnóstico
+O problema não é só “tempo de scroll”. Pela revisão do código e do replay, há 3 causas combinadas:
 
-### Problemas identificados
+1. O tour ainda mede enquanto o elemento está se movendo.
+2. O cálculo usa alvos muito amplos em alguns passos (`kpi-cards`, wrappers de filtros/ações), então o destaque parece “fora” mesmo quando o seletor bate.
+3. O auto-scroll atual não considera bem a área útil real da tela (header fixo + container `main`), então em certas resoluções o foco fica deslocado.
 
-1. **Scroll container errado**: O conteudo rola dentro de `main.overflow-auto`, mas o tour escuta scroll em `window`. O `scrollIntoView` rola o `main`, porem o listener de scroll nao detecta isso corretamente.
-2. **Medicao prematura**: `requestAnimationFrame` dispara antes do `scrollIntoView({ behavior: "smooth" })` completar, capturando coordenadas intermediarias.
-3. **Atualizacao continua ausente**: Nao ha polling para recalcular a posicao apos o scroll terminar.
+### O que vou ajustar
 
-### Solucao
+**1. Reescrever a lógica de posicionamento do `OnboardingTour`**
+- Parar de depender de timeout fixo como fonte principal.
+- Medir o alvo até ele “estabilizar” antes de exibir/atualizar o destaque.
+- Usar a área visível real do app para decidir se precisa scrollar.
+- Fazer scroll manual no container correto, sem `scrollIntoView`.
 
-Editar `src/components/OnboardingTour.tsx`:
+**2. Considerar header + viewport corretamente**
+- Definir uma “safe area” para o tour não jogar o foco embaixo do header.
+- Calcular posição sempre em coordenadas de viewport, já que overlay e tooltip são `fixed`.
 
-1. **Remover `scrollIntoView` e usar scroll manual no container correto**: Buscar o container scrollavel (`main.overflow-auto` ou ancestral com overflow) e calcular o scroll necessario para centralizar o elemento.
+**3. Tornar o tour resiliente a resolução e layout responsivo**
+- Recalcular em:
+  - resize
+  - scroll do container correto
+  - mudança de step
+  - pequenas mudanças de layout após render
+- Adicionar observação leve do elemento alvo para reagir a mudanças de tamanho/posição.
 
-2. **Usar `setTimeout` de ~400ms apos scroll** em vez de `requestAnimationFrame` para garantir que o scroll suave terminou antes de medir.
+**4. Corrigir os anchors do tour**
+- Revisar `tourSteps` e os `data-tour` das páginas.
+- Onde o seletor hoje aponta para um wrapper grande demais, trocar por um alvo mais preciso e visualmente coerente:
+  - cards específicos
+  - card inteiro do gráfico
+  - toolbar real
+  - tabs list real
+- No Dashboard, ajustar principalmente o primeiro passo para não parecer que está focando a área errada.
 
-3. **Adicionar listener de scroll no container `main`** alem do `window`, usando `document.querySelector("main")` para capturar scrolls internos.
+**5. Melhorar o tooltip**
+- Fazer “flip” automático quando a posição escolhida não couber bem.
+- Manter o tooltip perto do alvo sem invadir header/bordas.
+- Evitar parecer que tooltip e foco pertencem a áreas diferentes.
 
-4. **Recalcular posicao com intervalo**: Apos cada mudanca de step, usar um segundo `setTimeout` de ~100ms para re-medir e corrigir qualquer drift.
+**6. Robustez**
+- Gerar `mask id` único por instância para evitar conflito.
+- Se o alvo não estabilizar ou não existir, pular o passo com fallback limpo.
 
-5. **Fallback robusto**: Se o elemento-alvo nao for encontrado, pular para o proximo step automaticamente em vez de mostrar overlay sem destaque.
-
-### Arquivo
-
-| Acao | Arquivo |
+### Arquivos
+| Ação | Arquivo |
 |---|---|
-| Editar | `src/components/OnboardingTour.tsx` — corrigir logica de scroll, medicao e listeners |
+| Editar | `src/components/OnboardingTour.tsx` — refatorar cálculo, scroll, estabilização e posicionamento |
+| Editar | `src/lib/tourSteps.ts` — refinar posições e passos |
+| Editar | páginas com `data-tour` relevantes (principalmente `src/pages/Dashboard.tsx`) — mover anchors para elementos mais precisos |
 
+### Resultado esperado
+- O destaque passa a cair no elemento certo em qualquer resolução.
+- O onboarding deixa de “correr atrás” da tela durante scroll.
+- Tooltip e área destacada ficam coerentes visualmente.
+- Os passos ficam mais precisos, especialmente em dashboard, filtros, tabelas e gráficos.
