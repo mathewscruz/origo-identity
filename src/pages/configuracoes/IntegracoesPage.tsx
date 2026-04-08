@@ -36,7 +36,16 @@ export default function IntegracoesPage() {
     },
   });
 
-  useEffect(() => { setCsvSyncing(csvJob?.status === "running"); }, [csvJob?.status]);
+  useEffect(() => {
+    if (csvJob?.status === "running" && csvJob?.updated_at) {
+      const updatedAt = new Date(csvJob.updated_at).getTime();
+      const now = Date.now();
+      const staleMs = 10 * 60 * 1000; // 10 minutes
+      setCsvSyncing(now - updatedAt < staleMs);
+    } else {
+      setCsvSyncing(false);
+    }
+  }, [csvJob?.status, csvJob?.updated_at]);
 
   const handleCsvUpload = useCallback(async (file: File) => {
     setCsvSyncing(true);
@@ -116,7 +125,13 @@ export default function IntegracoesPage() {
     setCleaning(false);
   }, [toast]);
 
-  const showCsvProgress = !!csvJob && (csvJob.status === "running" || csvJob.status === "done" || csvJob.status === "error");
+  const showCsvProgress = (() => {
+    if (!csvJob) return false;
+    if (!["running", "done", "error"].includes(csvJob.status)) return false;
+    const updatedAt = csvJob.updated_at ? new Date(csvJob.updated_at).getTime() : 0;
+    const twoHoursMs = 2 * 60 * 60 * 1000;
+    return Date.now() - updatedAt < twoHoursMs;
+  })();
 
   return (
     <div className="space-y-4">
