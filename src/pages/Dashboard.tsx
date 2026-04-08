@@ -315,11 +315,20 @@ export default function Dashboard() {
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-7">
         <Card className="lg:col-span-4">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Provisionamento — 8 Semanas</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Provisionamento</CardTitle>
+              <div className="flex gap-1">
+                {(["dia", "semana", "mes", "ano"] as Period[]).map(p => (
+                  <Button key={p} size="sm" variant={provPeriod === p ? "default" : "ghost"} className="h-7 px-2.5 text-xs" onClick={() => setProvPeriod(p)}>
+                    {PERIOD_LABELS[p]}
+                  </Button>
+                ))}
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={weeklyData ?? []}>
+              <AreaChart data={provData ?? []}>
                 <defs>
                   <linearGradient id="gradConcessao" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="hsl(142, 71%, 45%)" stopOpacity={0.3} />
