@@ -1,112 +1,77 @@
 
 
-## Plano: Melhorias UX/UI — Itens 2, 4, 5, 6, 7, 8, 10 + Padronizacao visual de dialogs/tabelas
+## Plano: Tour guiado de primeiro acesso por pagina
 
-### Escopo
+### Abordagem
 
-Manter os 7 itens solicitados da avaliacao anterior, mais uma revisao visual de consistencia em dialogs, tabelas, titulos e botoes.
+Criar um sistema de onboarding tour que apresenta as funcionalidades de cada pagina na primeira visita do usuario. O estado de "ja visto" sera salvo no `localStorage` por usuario (usando o `user.id` como chave). O tour destaca elementos da pagina com overlay escuro e tooltip explicativo.
 
----
+### Componentes
 
-### Item 2 — Reorganizar sidebar
+**1. Criar `src/components/OnboardingTour.tsx`**
 
-- Mover "Workflow" de "Sistema" para "Governanca"
-- Renomear grupo "Sistema" para "Administracao"
-- Resultado: 5 grupos semanticamente corretos
+Componente reutilizavel que recebe uma lista de steps:
+```typescript
+interface TourStep {
+  target: string;       // CSS selector do elemento a destacar
+  title: string;
+  description: string;
+  position?: "top" | "bottom" | "left" | "right";
+}
+```
 
-**Arquivo:** `src/components/AppSidebar.tsx`
+Funcionamento:
+- Renderiza overlay escuro (backdrop) com recorte no elemento alvo (usando `getBoundingClientRect`)
+- Tooltip posicionado ao lado do elemento com titulo, descricao, botao "Proximo" e "Pular"
+- Indicador de progresso (1/5, 2/5...)
+- Ao completar ou pular, salva `onboarding_{userId}_{pageKey} = true` no localStorage
+- Verifica no mount se ja foi visto — se sim, nao renderiza nada
 
----
+**2. Criar `src/lib/tourSteps.ts`**
 
-### Item 4 — Pagina 404 em PT-BR com branding
+Arquivo centralizado com os steps de cada pagina:
 
-- Traduzir textos para portugues
-- Adicionar logo Origo em grayscale (reutilizar EmptyState)
-- Botao estilizado com Button component em vez de link simples
+| Pagina | Steps (resumo) |
+|---|---|
+| Dashboard | KPIs, Graficos de provisionamento, Timeline de atividades |
+| Colaboradores | Tabela de colaboradores, Filtros, Botao importar |
+| Terceiros | Lista de terceiros, Status, Acoes |
+| Aplicacoes | Cards de aplicacoes, Conector, Perfis |
+| Perfis de Acesso | Lista de perfis, Vinculacao a aplicacoes |
+| Revisoes | Campanhas, Status, Acoes de revisao |
+| Fila Provisionamento | Fila pendente, Acoes, Filtros |
+| Solicitacoes | Lista, Status, Aprovacao |
+| Configuracoes | Menu lateral, Sub-paginas disponiveis |
+| Matriz | Visualizacao de matriz, Filtros |
 
-**Arquivo:** `src/pages/NotFound.tsx`
+**3. Integrar nas paginas**
 
----
+Cada pagina adiciona `<OnboardingTour pageKey="dashboard" steps={tourSteps.dashboard} />` no final do JSX. O componente cuida de todo o resto.
 
-### Item 5 — Login com split layout profissional
+### Detalhes tecnicos
 
-- Layout dividido: lado esquerdo com gradiente teal/dark, logo grande, tagline "Gestao de Identidades e Acessos"
-- Lado direito com o formulario atual
-- Responsivo: em mobile, apenas o formulario com logo acima
+- **Persistencia:** localStorage com chave `origo_tour_{userId}_{pageKey}`
+- **Posicionamento:** `getBoundingClientRect()` + `position: fixed` para overlay e tooltip
+- **Scroll:** `element.scrollIntoView({ behavior: "smooth", block: "center" })` antes de cada step
+- **Resize:** listener para recalcular posicao
+- **Z-index:** overlay em `z-[9998]`, tooltip em `z-[9999]`
+- **Botoes:** "Pular" (ghost, fecha tudo) | "Anterior" (outline) | "Proximo"/"Concluir" (primary)
+- **Visual:** Card com sombra, seta apontando para o elemento, animacao de fade-in
 
-**Arquivo:** `src/pages/auth/LoginPage.tsx`
-
----
-
-### Item 6 — Breadcrumb inteligente (sem UUIDs)
-
-- Quando o ultimo segmento do path e um UUID, substituir por "Detalhe" como fallback
-- Futuramente, paginas de detalhe podem passar o nome real via context, mas por ora "Detalhe" e suficiente
-
-**Arquivo:** `src/components/AppLayout.tsx`
-
----
-
-### Item 7 — Configuracoes responsivas
-
-- Em telas < md, trocar o menu lateral por tabs horizontais scrollaveis
-- Usar `useIsMobile` hook existente para alternar layout
-- Manter menu lateral em desktop
-
-**Arquivo:** `src/pages/configuracoes/ConfiguracoesLayout.tsx`
-
----
-
-### Item 8 — Indicadores de ordenacao nas tabelas
-
-- Criar componente `SortableHeader` reutilizavel que exibe seta up/down e alterna ordenacao ao clicar
-- Aplicar nas colunas principais (Nome, Status, Data) das paginas: Colaboradores, Terceiros, Perfis de Acesso, Solicitacoes, Fila de Provisionamento
-
-**Arquivos:** Criar `src/components/SortableHeader.tsx`, editar as 5 paginas de listagem
-
----
-
-### Item 10 — Notificacoes com timestamps relativos e agrupamento
-
-- Adicionar timestamps relativos ("ha 5 min", "ha 2h") usando calculo simples (sem lib externa)
-- Agrupar alertas por severidade no popover: criticos primeiro, depois avisos, depois info
-- Ja tem botao "Ver todos" — manter
-
-**Arquivo:** `src/components/NotificacoesBell.tsx`
-
----
-
-### Padronizacao visual de Dialogs, Tabelas e Botoes
-
-Apos avaliar os 26 arquivos com dialogs, identifiquei inconsistencias:
-
-**Dialogs:**
-- Alguns usam `className="sm:max-w-2xl"` e outros nao tem largura definida — padronizar para `sm:max-w-lg` em formularios simples e `sm:max-w-2xl` em formularios complexos
-- Botoes de rodape: alguns tem "Cancelar" + "Salvar", outros so "Criar/Atualizar" sem cancelar — padronizar para sempre ter Cancelar (outline) + Acao primaria
-- AlertDialogs de exclusao: padronizar texto para "Esta acao nao pode ser desfeita." em todos
-
-**Tabelas:**
-- Headers: padronizar para todos usarem `text-xs uppercase tracking-wider` para consistencia
-- Linhas: garantir que todas tenham `cursor-pointer` quando clicaveis (link para detalhe)
-
-**Botoes de acao em listas:**
-- Padronizar icones de acao: Pencil para editar, Trash2 para excluir, sempre em variant ghost size icon
-- Tooltips nos botoes de acao onde falta
-
-**Paginas afetadas pela padronizacao:** AreasPage, CargosPage, EmpresasPage, LocalidadesPage, ColaboradoresPage, TerceirosPage, PerfisAcessoPage, RevisoesPage, SolicitacoesPage, UsuariosPage
-
----
-
-### Resumo de arquivos
+### Arquivos
 
 | Acao | Arquivo |
 |---|---|
-| Editar | `src/components/AppSidebar.tsx` — reorganizar grupos |
-| Editar | `src/pages/NotFound.tsx` — PT-BR + logo |
-| Editar | `src/pages/auth/LoginPage.tsx` — split layout |
-| Editar | `src/components/AppLayout.tsx` — breadcrumb sem UUID |
-| Editar | `src/pages/configuracoes/ConfiguracoesLayout.tsx` — tabs responsivas |
-| Criar | `src/components/SortableHeader.tsx` — header ordenavel reutilizavel |
-| Editar | `src/components/NotificacoesBell.tsx` — timestamps + agrupamento |
-| Editar | ~10 paginas de listagem — padronizacao de dialogs, headers de tabela, botoes |
+| Criar | `src/components/OnboardingTour.tsx` — componente do tour |
+| Criar | `src/lib/tourSteps.ts` — definicoes de steps por pagina |
+| Editar | `src/pages/Dashboard.tsx` — adicionar tour |
+| Editar | `src/pages/colaboradores/ColaboradoresPage.tsx` — adicionar tour |
+| Editar | `src/pages/terceiros/TerceirosPage.tsx` — adicionar tour |
+| Editar | `src/pages/aplicacoes/AplicacoesPage.tsx` — adicionar tour |
+| Editar | `src/pages/perfis-acesso/PerfisAcessoPage.tsx` — adicionar tour |
+| Editar | `src/pages/revisoes/RevisoesPage.tsx` — adicionar tour |
+| Editar | `src/pages/fila-provisionamento/FilaProvisionamentoPage.tsx` — adicionar tour |
+| Editar | `src/pages/solicitacoes/SolicitacoesPage.tsx` — adicionar tour |
+| Editar | `src/pages/configuracoes/ConfiguracoesLayout.tsx` — adicionar tour |
+| Editar | `src/pages/matriz/MatrizPage.tsx` — adicionar tour |
 
