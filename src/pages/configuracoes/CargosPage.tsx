@@ -21,6 +21,7 @@ import { reprovisionCargoCollaborators } from "@/lib/entraQueueHelper";
 import { logAuditoria } from "@/lib/auditLogger";
 
 export default function CargosPage() {
+  const canEdit = useCanEdit();
   const { data: cargos, isLoading } = useCargos();
   const { data: areas } = useAreas();
   const { data: perfisAcesso } = usePerfisAcesso();
@@ -142,7 +143,7 @@ export default function CargosPage() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-base">Cargos</CardTitle>
-        <Button size="sm" onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Cargo</Button>
+        {canEdit && <Button size="sm" onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Cargo</Button>}
       </CardHeader>
       <CardContent>
         <div className="relative max-w-sm mb-4">
