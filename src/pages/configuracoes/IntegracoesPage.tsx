@@ -102,8 +102,8 @@ export default function IntegracoesPage() {
   const handleCleanBase = useCallback(async () => {
     setCleaning(true);
     try {
-      const { data: operadores } = await supabase.from("operadores").select("email");
-      const protectedEmails = new Set((operadores || []).map((o: any) => o.email?.toLowerCase()));
+      const { data: systemUsers } = await supabase.from("profiles").select("email");
+      const protectedEmails = new Set((systemUsers || []).map((o: any) => o.email?.toLowerCase()));
       const { data: toClean } = await supabase.from("colaboradores").select("id, email");
       const safeToClean = (toClean || []).filter((c: any) => !c.email || !protectedEmails.has(c.email.toLowerCase()));
       if (safeToClean.length === 0) { toast({ title: "Nada a limpar" }); setCleaning(false); return; }

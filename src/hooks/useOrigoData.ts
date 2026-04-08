@@ -43,10 +43,6 @@ export function useCargos() {
   return useQuery({ queryKey: ["cargos"], queryFn: () => fetchAll("cargos", "*, areas(nome)", "nome"), ...REFETCH_OPTS });
 }
 
-export function useOperadores() {
-  return useQuery({ queryKey: ["operadores"], queryFn: () => fetchAll("operadores", "*", "nome"), ...REFETCH_OPTS });
-}
-
 export function useParametros() {
   return useQuery({ queryKey: ["parametros"], queryFn: () => fetchAll("parametros", "*", "chave"), ...REFETCH_OPTS });
 }
