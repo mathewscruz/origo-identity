@@ -257,7 +257,7 @@ export default function OnboardingTour({ pageKey, steps, delay = 800 }: Onboardi
   const step = steps[currentStep];
   const padding = 6;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[9998]" onClick={(e) => e.stopPropagation()}>
       {/* Overlay with cutout */}
       <svg className="absolute inset-0 w-full h-full" style={{ pointerEvents: "none" }}>
@@ -350,6 +350,7 @@ export default function OnboardingTour({ pageKey, steps, delay = 800 }: Onboardi
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
