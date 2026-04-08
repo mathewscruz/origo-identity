@@ -11,6 +11,32 @@ function jsonResponse(data: unknown, status = 200) {
 }
 
 /**
+ * Obtain an OAuth 2.0 access token using client_credentials grant.
+ */
+async function getOAuth2Token(config: Record<string, any>): Promise<string> {
+  const tokenUrl = config.token_url;
+  if (!tokenUrl) throw new Error("token_url não configurada para OAuth 2.0");
+  const params: Record<string, string> = {
+    client_id: config.oauth_client_id || "",
+    client_secret: config.oauth_client_secret || "",
+    grant_type: "client_credentials",
+  };
+  if (config.oauth_scope) params.scope = config.oauth_scope;
+  const res = await fetch(tokenUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(params),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`OAuth2 token failed (${res.status}): ${text.substring(0, 500)}`);
+  }
+  const { access_token } = await res.json();
+  if (!access_token) throw new Error("OAuth2 response sem access_token");
+  return access_token;
+}
+
+/**
  * Fetch profiles/roles from an external app via its connector config.
  * Supports: rest_api (generic REST GET), scim (SCIM /Roles or /Groups).
  * For 'manual' or 'entra' connector types, returns empty (managed elsewhere).
@@ -42,6 +68,11 @@ async function fetchExternalProfiles(
       if (config.app_token) authHeaders["App-Token"] = config.app_token;
       if (config.session_token) authHeaders["Session-Token"] = config.session_token;
       break;
+    case "oauth2_client_credentials": {
+      const token = await getOAuth2Token(config);
+      authHeaders["Authorization"] = `Bearer ${token}`;
+      break;
+    }
   }
 
   // Add custom headers

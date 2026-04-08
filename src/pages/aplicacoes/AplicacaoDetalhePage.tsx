@@ -111,6 +111,10 @@ export default function AplicacaoDetalhePage() {
     api_key_value: "",
     app_token: "",
     session_token: "",
+    token_url: "",
+    oauth_client_id: "",
+    oauth_client_secret: "",
+    oauth_scope: "",
     profiles_endpoint: "",
     create_user_endpoint: "",
     update_user_endpoint: "",
@@ -138,6 +142,10 @@ export default function AplicacaoDetalhePage() {
       api_key_value: config.api_key_value || "",
       app_token: config.app_token || "",
       session_token: config.session_token || "",
+      token_url: config.token_url || "",
+      oauth_client_id: config.oauth_client_id || "",
+      oauth_client_secret: config.oauth_client_secret || "",
+      oauth_scope: config.oauth_scope || "",
       profiles_endpoint: config.profiles_endpoint || "",
       create_user_endpoint: config.create_user_endpoint || "",
       update_user_endpoint: config.update_user_endpoint || "",
@@ -163,6 +171,12 @@ export default function AplicacaoDetalhePage() {
       if (connForm.auth_type === "basic") { connConfig.username = connForm.username; connConfig.password = connForm.password; }
       if (connForm.auth_type === "api_key") { connConfig.api_key_header = connForm.api_key_header; connConfig.api_key_value = connForm.api_key_value; }
       if (connForm.auth_type === "app_token") { connConfig.app_token = connForm.app_token; connConfig.session_token = connForm.session_token; }
+      if (connForm.auth_type === "oauth2_client_credentials") {
+        connConfig.token_url = connForm.token_url;
+        connConfig.oauth_client_id = connForm.oauth_client_id;
+        connConfig.oauth_client_secret = connForm.oauth_client_secret;
+        connConfig.oauth_scope = connForm.oauth_scope || undefined;
+      }
 
       const { error } = await supabase.from("aplicacoes").update({
         connector_type: connForm.connector_type as any,
@@ -516,6 +530,7 @@ export default function AplicacaoDetalhePage() {
                       <SelectItem value="basic">Basic Auth</SelectItem>
                       <SelectItem value="api_key">API Key (Header)</SelectItem>
                       <SelectItem value="app_token">App-Token (GLPI)</SelectItem>
+                      <SelectItem value="oauth2_client_credentials">OAuth 2.0 (Client Credentials)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -539,6 +554,16 @@ export default function AplicacaoDetalhePage() {
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-2"><Label>App-Token</Label><Input type="password" value={connForm.app_token} onChange={e => setConnForm({ ...connForm, app_token: e.target.value })} /></div>
                     <div className="space-y-2"><Label>Session-Token</Label><Input type="password" value={connForm.session_token} onChange={e => setConnForm({ ...connForm, session_token: e.target.value })} /></div>
+                  </div>
+                )}
+                {connForm.auth_type === "oauth2_client_credentials" && (
+                  <div className="space-y-3">
+                    <div className="space-y-2"><Label>Token URL *</Label><Input placeholder="https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token" value={connForm.token_url} onChange={e => setConnForm({ ...connForm, token_url: e.target.value })} /></div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-2"><Label>Client ID *</Label><Input value={connForm.oauth_client_id} onChange={e => setConnForm({ ...connForm, oauth_client_id: e.target.value })} /></div>
+                      <div className="space-y-2"><Label>Client Secret *</Label><Input type="password" value={connForm.oauth_client_secret} onChange={e => setConnForm({ ...connForm, oauth_client_secret: e.target.value })} /></div>
+                    </div>
+                    <div className="space-y-2"><Label>Scope (opcional)</Label><Input placeholder="https://api.exemplo.com/.default" value={connForm.oauth_scope} onChange={e => setConnForm({ ...connForm, oauth_scope: e.target.value })} /></div>
                   </div>
                 )}
 
