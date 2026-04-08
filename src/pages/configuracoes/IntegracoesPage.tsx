@@ -120,6 +120,32 @@ export default function IntegracoesPage() {
 
   return (
     <div className="space-y-4">
+      {/* Connector Summary Card */}
+      <Card className="border-primary/20">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <Plug className="h-5 w-5 text-primary" />
+            <div><CardTitle className="text-base">Conectores de Aplicações</CardTitle><CardDescription>Integrações com sistemas externos (GLPI, SAP, etc.) para gestão de usuários</CardDescription></div>
+            <Badge className="ml-auto" variant="outline">{(connectorStats || []).length} ativo(s)</Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {(connectorStats || []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nenhuma aplicação com conector configurado. Configure na página de detalhe de cada aplicação.</p>
+          ) : (
+            <div className="space-y-2">
+              {(connectorStats || []).map((app: any) => (
+                <div key={app.id} className="flex items-center justify-between text-sm border rounded-md px-3 py-2 hover:bg-muted/50 cursor-pointer" onClick={() => navigate(`/aplicacoes/${app.id}`)}>
+                  <span className="font-medium">{app.nome}</span>
+                  <Badge variant="outline" className="bg-success/15 text-success border-success/30">{app.connector_type === "rest_api" ? "REST API" : app.connector_type === "scim" ? "SCIM" : app.connector_type}</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+          <Button variant="outline" size="sm" onClick={() => navigate("/aplicacoes")}>Ver todas as aplicações</Button>
+        </CardContent>
+      </Card>
+
       <Card className="border-primary/30 bg-primary/5">
         <CardHeader>
           <div className="flex items-center gap-3">
