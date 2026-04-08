@@ -381,7 +381,16 @@ export default function Dashboard() {
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Solicitações — Últimos 90 dias</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Solicitações</CardTitle>
+              <div className="flex gap-1">
+                {(["dia", "semana", "mes", "ano"] as Period[]).map(p => (
+                  <Button key={p} size="sm" variant={solicitPeriod === p ? "default" : "ghost"} className="h-7 px-2.5 text-xs" onClick={() => setSolicitPeriod(p)}>
+                    {PERIOD_LABELS[p]}
+                  </Button>
+                ))}
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             {(solicitStatus ?? []).length > 0 ? (
