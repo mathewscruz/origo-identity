@@ -148,16 +148,17 @@ function useProvisioningData(period: Period) {
   });
 }
 
-function useSolicitacoesByStatus() {
+function useSolicitacoesByStatus(period: Period) {
+  const cfg = getPeriodConfig(period);
   return useQuery({
-    queryKey: ["dashboard_solicit_status"],
+    queryKey: ["dashboard_solicit_status", period],
     queryFn: async () => {
-      const ninetyDaysAgo = new Date();
-      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      const since = new Date();
+      since.setDate(since.getDate() - cfg.daysBack);
       const { data } = await supabase
         .from("solicitacoes_acesso")
         .select("status")
-        .gte("created_at", ninetyDaysAgo.toISOString());
+        .gte("created_at", since.toISOString());
       const counts: Record<string, number> = {};
       (data ?? []).forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
       return Object.entries(counts)
