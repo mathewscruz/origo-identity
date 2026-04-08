@@ -183,7 +183,7 @@ export default function PrivilegiadosPage() {
           <div className="space-y-2">
             <h3 className="text-sm font-semibold">Membros ({roleMembers?.length || 0})</h3>
             {!roleMembers || roleMembers.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">Nenhum membro atribuído a esta role.</p>
+              <EmptyState message="Nenhum membro atribuído a esta role." />
             ) : (
               <Table>
                 <TableHeader>

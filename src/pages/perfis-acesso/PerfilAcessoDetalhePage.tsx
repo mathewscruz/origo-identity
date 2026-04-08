@@ -240,7 +240,7 @@ export default function PerfilAcessoDetalhePage() {
                 {appNames.map((name: string, i: number) => (
                   <tr key={i} className="border-b last:border-0"><td className="p-4 font-medium">{name}</td></tr>
                 ))}
-                {appNames.length === 0 && <tr><td className="p-8 text-center text-muted-foreground">Nenhuma aplicação vinculada.</td></tr>}
+                {appNames.length === 0 && <tr><td><EmptyState message="Nenhuma aplicação vinculada." /></td></tr>}
               </tbody>
             </table>
           </CardContent></Card>
@@ -262,7 +262,7 @@ export default function PerfilAcessoDetalhePage() {
                     <td className="p-4"><Badge variant="outline">{lic.em_uso}/{lic.total}</Badge></td>
                   </tr>
                 ))}
-                {licNames.length === 0 && <tr><td colSpan={3} className="p-8 text-center text-muted-foreground">Nenhuma licença vinculada.</td></tr>}
+                {licNames.length === 0 && <tr><td colSpan={3}><EmptyState message="Nenhuma licença vinculada." /></td></tr>}
               </tbody>
             </table>
           </CardContent></Card>
@@ -282,7 +282,7 @@ export default function PerfilAcessoDetalhePage() {
                     <td className="p-4 text-muted-foreground">{grp.descricao || "—"}</td>
                   </tr>
                 ))}
-                {grpNames.length === 0 && <tr><td colSpan={2} className="p-8 text-center text-muted-foreground">Nenhum grupo vinculado.</td></tr>}
+                {grpNames.length === 0 && <tr><td colSpan={2}><EmptyState message="Nenhum grupo vinculado." /></td></tr>}
               </tbody>
             </table>
           </CardContent></Card>
@@ -304,7 +304,7 @@ export default function PerfilAcessoDetalhePage() {
                     <td className="p-4 text-muted-foreground">{cargo.areas?.nome || "—"}</td>
                   </tr>
                 ))}
-                {cargos.length === 0 && <tr><td colSpan={2} className="p-8 text-center text-muted-foreground">Nenhum cargo vinculado a este perfil.</td></tr>}
+                {cargos.length === 0 && <tr><td colSpan={2}><EmptyState message="Nenhum cargo vinculado a este perfil." /></td></tr>}
               </tbody>
             </table>
           </CardContent></Card>
@@ -331,7 +331,7 @@ export default function PerfilAcessoDetalhePage() {
                     </tr>
                   );
                 })}
-                {(atribuicoes ?? []).length === 0 && <tr><td colSpan={4} className="p-8 text-center text-muted-foreground">Nenhuma pessoa atribuída.</td></tr>}
+                {(atribuicoes ?? []).length === 0 && <tr><td colSpan={4}><EmptyState message="Nenhuma pessoa atribuída." /></td></tr>}
               </tbody>
             </table>
           </CardContent></Card>
@@ -425,7 +425,7 @@ export default function PerfilAcessoDetalhePage() {
                       <span className="text-xs text-muted-foreground">({lic.em_uso}/{lic.total})</span>
                     </label>
                   ))}
-                  {(entraLicencas ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhuma licença encontrada.</p>}
+                  {(entraLicencas ?? []).length === 0 && <EmptyState message="Nenhuma licença encontrada." size="sm" />}
                 </div>
               </ScrollArea>
             </TabsContent>
@@ -446,7 +446,7 @@ export default function PerfilAcessoDetalhePage() {
                       </div>
                     </label>
                   ))}
-                  {(entraGrupos ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhum grupo encontrado.</p>}
+                  {(entraGrupos ?? []).length === 0 && <EmptyState message="Nenhum grupo encontrado." size="sm" />}
                 </div>
               </ScrollArea>
             </TabsContent>

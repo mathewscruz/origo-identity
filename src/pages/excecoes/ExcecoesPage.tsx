@@ -302,7 +302,7 @@ export default function ExcecoesPage() {
                       </tr>
                     );
                   })}
-                  {paginatedItems.length === 0 && <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">Nenhuma exceção.</td></tr>}
+                  {paginatedItems.length === 0 && <tr><td colSpan={9}><EmptyState message="Nenhuma exceção." /></td></tr>}
                 </tbody></table>
               )}
             </CardContent></Card>

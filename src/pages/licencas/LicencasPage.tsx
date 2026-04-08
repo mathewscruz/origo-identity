@@ -202,7 +202,7 @@ export default function LicencasPage() {
       {/* Table */}
       <Card><CardContent className="p-0">
         {isLoading ? <div className="p-4 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div> : filtered.length === 0 ? (
-          <div className="p-8 text-center text-muted-foreground">Nenhuma licença encontrada</div>
+          <EmptyState message="Nenhuma licença encontrada" size="lg" />
         ) : (
           <table className="w-full text-sm"><thead><tr className="border-b text-left text-muted-foreground">
             <th className="p-4 font-medium">Nome</th>

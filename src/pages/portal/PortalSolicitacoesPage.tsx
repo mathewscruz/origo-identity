@@ -308,7 +308,7 @@ export default function PortalSolicitacoesPage() {
                   </label>
                 ))}
                 {filteredApps.length === 0 && (
-                  <p className="text-sm text-muted-foreground py-2 text-center">Nenhuma aplicação encontrada</p>
+                  <EmptyState message="Nenhuma aplicação encontrada" size="sm" />
                 )}
               </ScrollArea>
             </div>
@@ -337,7 +337,7 @@ export default function PortalSolicitacoesPage() {
                   </label>
                 ))}
                 {filteredGrupos.length === 0 && (
-                  <p className="text-sm text-muted-foreground py-2 text-center">Nenhum grupo encontrado</p>
+                  <EmptyState message="Nenhum grupo encontrado" size="sm" />
                 )}
               </ScrollArea>
             </div>

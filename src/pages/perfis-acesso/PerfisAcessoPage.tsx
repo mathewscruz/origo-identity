@@ -411,7 +411,7 @@ export default function PerfisAcessoPage() {
                       <span className="text-sm">{a.nome}</span>
                     </label>
                   ))}
-                  {(aplicacoes ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhuma aplicação cadastrada.</p>}
+                  {(aplicacoes ?? []).length === 0 && <EmptyState message="Nenhuma aplicação cadastrada." size="sm" />}
                 </div>
               </ScrollArea>
             </TabsContent>
@@ -433,7 +433,7 @@ export default function PerfisAcessoPage() {
                       </div>
                     </label>
                   ))}
-                  {(entraLicencas ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhuma licença encontrada.</p>}
+                  {(entraLicencas ?? []).length === 0 && <EmptyState message="Nenhuma licença encontrada." size="sm" />}
                 </div>
               </ScrollArea>
             </TabsContent>
@@ -455,7 +455,7 @@ export default function PerfisAcessoPage() {
                       </div>
                     </label>
                   ))}
-                  {(entraGrupos ?? []).length === 0 && <p className="text-sm text-muted-foreground">Nenhum grupo encontrado.</p>}
+                  {(entraGrupos ?? []).length === 0 && <EmptyState message="Nenhum grupo encontrado." size="sm" />}
                 </div>
               </ScrollArea>
             </TabsContent>

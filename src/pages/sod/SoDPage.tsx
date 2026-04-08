@@ -278,7 +278,7 @@ export default function SoDPage() {
                 {loading ? (
                   <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
                 ) : filteredConflitos.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Nenhum conflito cadastrado</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6}><EmptyState message="Nenhum conflito cadastrado" /></TableCell></TableRow>
                 ) : filteredConflitos.map(c => (
                   <TableRow key={c.id}>
                     <TableCell className="font-medium">{perfilMap.get(c.perfil_a_id)?.nome || "—"}</TableCell>

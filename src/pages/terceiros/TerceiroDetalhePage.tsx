@@ -458,7 +458,7 @@ export default function TerceiroDetalhePage() {
                 <Button size="sm" onClick={() => setAtribuirOpen(true)}><Plus className="h-3 w-3 mr-1" /> Atribuir Perfil</Button>
               </div>
               {(atribuicoes || []).length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nenhum perfil atribuído.</p>
+                <EmptyState message="Nenhum perfil atribuído." />
               ) : (
                 <table className="w-full text-sm">
                   <thead><tr className="border-b text-left text-muted-foreground">
