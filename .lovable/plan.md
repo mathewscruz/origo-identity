@@ -1,59 +1,22 @@
 
 
-## Plano: Garantir que nenhuma sincronização automática do SharePoint está ativa
+## Plano: Remover card "Alertas de Terceiros" e fixar 45 dias no backend
 
-### Diagnóstico
+### Problema
 
-A migração `20260407120212` já executou:
-```sql
-SELECT cron.unschedule('sync-csv-diario');
-SELECT cron.unschedule('process-entra-queue-every-5min');
-```
+Existe um card "Alertas de Terceiros" com campo configurável de 30 dias na página de Parâmetros. Esse campo não será mais utilizado — a revalidação de terceiros já é fixa em 45 dias no backend (`auto-recertification`).
 
-Nenhuma migração posterior re-agendou esses jobs. A função `sync-sharepoint-csv` é chamada apenas manualmente pelo botão "Buscar Dados do SharePoint" na página de Integrações. Teoricamente, não há sincronização automática ativa.
+### Alterações
 
-Porém, como não é possível consultar `cron.job` diretamente para confirmar, a sincronização de ontem pode ter sido:
-1. Alguém clicou no botão manualmente
-2. O cron ainda estava ativo antes da migração ser aplicada
+**1. Remover card "Alertas de Terceiros" (`ParametrosPage.tsx`):**
+- Remover linhas 95-106 (card inteiro com título "Alertas de Terceiros" e input de dias)
 
-### Solução
-
-Criar uma migração de segurança que:
-1. Remove **todos** os cron jobs conhecidos (idempotente — ignora se já removidos)
-2. Lista os jobs restantes para log de auditoria
-
-### Migração
-
-```sql
--- Safety: ensure all known cron jobs are removed
-DO $$
-BEGIN
-  PERFORM cron.unschedule('sync-csv-diario');
-EXCEPTION WHEN OTHERS THEN NULL;
-END $$;
-
-DO $$
-BEGIN
-  PERFORM cron.unschedule('process-entra-queue-every-5min');
-EXCEPTION WHEN OTHERS THEN NULL;
-END $$;
-
--- Remove any other potential SharePoint-related jobs
-DO $$
-DECLARE
-  r RECORD;
-BEGIN
-  FOR r IN SELECT jobname FROM cron.job WHERE command ILIKE '%sync-sharepoint%' OR command ILIKE '%sync-csv%'
-  LOOP
-    PERFORM cron.unschedule(r.jobname);
-  END LOOP;
-EXCEPTION WHEN OTHERS THEN NULL;
-END $$;
-```
+**2. Confirmar backend fixo em 45 dias (`auto-recertification/index.ts`):**
+- O PART 3 já usa `daysSinceBase < 45` hardcoded — nenhuma alteração necessária no backend
 
 ### Arquivos
 
 | Acao | Arquivo |
 |---|---|
-| Migração | Remover qualquer cron job residual de sincronização SharePoint/CSV |
+| Editar | `src/pages/configuracoes/ParametrosPage.tsx` — remover card "Alertas de Terceiros" |
 
