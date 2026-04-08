@@ -5,11 +5,13 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
   RefreshCw, CheckCircle, AlertCircle, Cloud, Users,
-  FileUp, Trash2, AlertTriangle, FileSpreadsheet, Clock, Shield,
+  FileUp, Trash2, AlertTriangle, FileSpreadsheet, Clock, Shield, Plug,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSyncJobsCsv } from "@/hooks/useOrigoData";
 import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,

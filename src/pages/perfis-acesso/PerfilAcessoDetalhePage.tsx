@@ -379,12 +379,34 @@ export default function PerfilAcessoDetalhePage() {
               </div>
               <ScrollArea className="h-64 rounded-md border p-3">
                 <div className="space-y-2">
-                  {(aplicacoes ?? []).filter((a: any) => !buscaApps || a.nome.toLowerCase().includes(buscaApps.toLowerCase())).sort((a: any, b: any) => (editForm.aplicacao_ids.includes(a.id) ? 0 : 1) - (editForm.aplicacao_ids.includes(b.id) ? 0 : 1)).map((a: any) => (
-                    <label key={a.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
-                      <Checkbox checked={editForm.aplicacao_ids.includes(a.id)} onCheckedChange={() => toggleItem("aplicacao_ids", a.id)} />
-                      <span className="text-sm">{a.nome}</span>
-                    </label>
-                  ))}
+                  {(aplicacoes ?? []).filter((a: any) => !buscaApps || a.nome.toLowerCase().includes(buscaApps.toLowerCase())).sort((a: any, b: any) => (editForm.aplicacao_ids.includes(a.id) ? 0 : 1) - (editForm.aplicacao_ids.includes(b.id) ? 0 : 1)).map((a: any) => {
+                    const appProfiles = appsWithProfiles[a.id] || [];
+                    const isChecked = editForm.aplicacao_ids.includes(a.id);
+                    return (
+                      <div key={a.id} className="space-y-1">
+                        <label className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+                          <Checkbox checked={isChecked} onCheckedChange={() => toggleItem("aplicacao_ids", a.id)} />
+                          <span className="text-sm">{a.nome}</span>
+                          {appProfiles.length > 0 && <Badge variant="outline" className="text-xs ml-auto">{appProfiles.length} perfis</Badge>}
+                        </label>
+                        {isChecked && appProfiles.length > 0 && (
+                          <div className="ml-8">
+                            <Select
+                              value={editForm.perfil_interno_map[a.id] || ""}
+                              onValueChange={v => setEditForm(prev => ({ ...prev, perfil_interno_map: { ...prev.perfil_interno_map, [a.id]: v } }))}
+                            >
+                              <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Selecione perfil interno..." /></SelectTrigger>
+                              <SelectContent>
+                                {appProfiles.map((pi: any) => (
+                                  <SelectItem key={pi.id} value={pi.id}>{pi.nome_externo}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </ScrollArea>
             </TabsContent>
