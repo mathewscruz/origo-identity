@@ -21,6 +21,8 @@ import { logAuditoria } from "@/lib/auditLogger";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import AppIcon from "@/components/AppIcon";
 import EmptyState from "@/components/EmptyState";
+import OnboardingTour from "@/components/OnboardingTour";
+import { tourSteps } from "@/lib/tourSteps";
 
 const criticidadeColors: Record<string, string> = {
   baixa: "bg-muted text-muted-foreground",
@@ -139,7 +141,7 @@ export default function AplicacoesPage() {
       </div>
 
       {/* Counters */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div data-tour="kpi-cards" className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card><CardContent className="p-4 flex items-center gap-3">
           <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center"><Globe className="h-5 w-5 text-primary" /></div>
           <div><p className="text-2xl font-bold">{totalApps}</p><p className="text-xs text-muted-foreground">Total</p></div>
@@ -159,7 +161,7 @@ export default function AplicacoesPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-2 flex-wrap">
+      <div data-tour="search-filter" className="flex gap-2 flex-wrap">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Buscar aplicações..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
@@ -184,7 +186,7 @@ export default function AplicacoesPage() {
         </Select>
       </div>
 
-      <Card><CardContent className="p-0">
+      <Card data-tour="table"><CardContent className="p-0">
         {isLoading ? (
           <div className="p-4 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
         ) : paginatedItems.length === 0 ? (
@@ -272,6 +274,7 @@ export default function AplicacoesPage() {
           <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleDelete}>Excluir</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <OnboardingTour pageKey="aplicacoes" steps={tourSteps.aplicacoes} />
     </div>
   );
 }

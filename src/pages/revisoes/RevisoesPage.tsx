@@ -16,6 +16,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { logAuditoria } from "@/lib/auditLogger";
+import OnboardingTour from "@/components/OnboardingTour";
+import { tourSteps } from "@/lib/tourSteps";
 
 const statusColors: Record<string, string> = {
   em_andamento: "bg-info/15 text-info border-info/30",
@@ -124,7 +126,7 @@ export default function RevisoesPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Revisões de Acesso</h1>
           <p className="text-sm text-muted-foreground">Campanhas periódicas de recertificação</p>
         </div>
-        <Button onClick={() => setDialogOpen(true)}><Plus className="mr-1 h-4 w-4" />Nova Campanha</Button>
+        <div data-tour="actions"><Button onClick={() => setDialogOpen(true)}><Plus className="mr-1 h-4 w-4" />Nova Campanha</Button></div>
       </div>
 
       {/* Counters */}
@@ -153,7 +155,7 @@ export default function RevisoesPage() {
         <Input placeholder="Buscar por nome ou responsável..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="pl-9" />
       </div>
 
-      <Card><CardContent className="p-0">
+      <Card data-tour="table"><CardContent className="p-0">
         {isLoading ? (
           <div className="p-4 space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
         ) : (
@@ -215,6 +217,7 @@ export default function RevisoesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <OnboardingTour pageKey="revisoes" steps={tourSteps.revisoes} />
     </div>
   );
 }
