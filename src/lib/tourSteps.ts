@@ -3,8 +3,8 @@ import type { TourStep } from "@/components/OnboardingTour";
 export const tourSteps: Record<string, TourStep[]> = {
   dashboard: [
     { target: "[data-tour='kpi-cards']", title: "KPIs em Tempo Real", description: "Acompanhe os indicadores-chave: colaboradores ativos, alertas críticos, aplicações conectadas e revisões em andamento." },
-    { target: "[data-tour='chart-provisioning']", title: "Gráfico de Provisionamento", description: "Visualize as ações de provisionamento ao longo do tempo. Use os botões Dia, Semana, Mês e Ano para alterar o período.", position: "right" },
-    { target: "[data-tour='chart-requests']", title: "Gráfico de Solicitações", description: "Monitore as solicitações de acesso por status. Alterne entre períodos para identificar tendências.", position: "left" },
+    { target: "[data-tour='chart-provisioning']", title: "Gráfico de Provisionamento", description: "Visualize as ações de provisionamento ao longo do tempo. Use os botões Dia, Semana, Mês e Ano para alterar o período." },
+    { target: "[data-tour='chart-requests']", title: "Gráfico de Solicitações", description: "Monitore as solicitações de acesso por status. Alterne entre períodos para identificar tendências." },
     { target: "[data-tour='timeline']", title: "Atividades Recentes", description: "Linha do tempo com as últimas ações do sistema — provisionamentos e solicitações em tempo real." },
   ],
   colaboradores: [
