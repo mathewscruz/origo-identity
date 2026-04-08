@@ -3,6 +3,8 @@ import { NavLink } from "@/components/NavLink";
 import { Briefcase, Building2, MapPin, Network, Sliders, Cloud, FileText, Bell } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import OnboardingTour from "@/components/OnboardingTour";
+import { tourSteps } from "@/lib/tourSteps";
 
 const subNav = [
   { title: "Cargos", url: "/configuracoes/cargos", icon: Briefcase },
@@ -28,7 +30,7 @@ export default function ConfiguracoesLayout() {
       {isMobile ? (
         /* Mobile: horizontal scrollable tabs */
         <div className="space-y-4">
-          <ScrollArea className="w-full">
+          <ScrollArea data-tour="nav" className="w-full">
             <div className="flex gap-1 pb-2">
               {subNav.map((item) => (
                 <NavLink
@@ -44,14 +46,14 @@ export default function ConfiguracoesLayout() {
             </div>
             <ScrollBar orientation="horizontal" />
           </ScrollArea>
-          <div className="min-w-0">
+          <div data-tour="content" className="min-w-0">
             <Outlet />
           </div>
         </div>
       ) : (
         /* Desktop: sidebar layout */
         <div className="flex gap-6">
-          <nav className="flex w-48 shrink-0 flex-col gap-1">
+          <nav data-tour="nav" className="flex w-48 shrink-0 flex-col gap-1">
             {subNav.map((item) => (
               <NavLink
                 key={item.url}
@@ -64,11 +66,12 @@ export default function ConfiguracoesLayout() {
               </NavLink>
             ))}
           </nav>
-          <div className="flex-1 min-w-0">
+          <div data-tour="content" className="flex-1 min-w-0">
             <Outlet />
           </div>
         </div>
       )}
+      <OnboardingTour pageKey="configuracoes" steps={tourSteps.configuracoes} />
     </div>
   );
 }

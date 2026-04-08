@@ -15,6 +15,8 @@ import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { useEventosJML } from "@/hooks/useOrigoData";
 import EmptyState from "@/components/EmptyState";
+import OnboardingTour from "@/components/OnboardingTour";
+import { tourSteps } from "@/lib/tourSteps";
 
 // ---- Provisionamento configs ----
 const statusConfig: Record<string, { label: string; class: string }> = {
@@ -191,7 +193,7 @@ export default function FilaProvisionamentoPage() {
         )}
       </div>
 
-      <Tabs value={mainTab} onValueChange={setMainTab}>
+      <Tabs data-tour="tabs" value={mainTab} onValueChange={setMainTab}>
         <TabsList>
           <TabsTrigger value="provisionamento">Fila de Provisionamento ({items.length})</TabsTrigger>
           <TabsTrigger value="eventos-jml">
@@ -216,7 +218,7 @@ export default function FilaProvisionamentoPage() {
             })}
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div data-tour="search-filter" className="flex flex-wrap gap-2">
             <div className="relative flex-1 min-w-[200px] max-w-sm">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input placeholder="Buscar por nome, matrícula ou correlation ID..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
@@ -249,7 +251,7 @@ export default function FilaProvisionamentoPage() {
             </Select>
           </div>
 
-          <Card>
+          <Card data-tour="table">
             <CardContent className="p-0">
               {loading ? (
                 <div className="p-4 space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
@@ -369,6 +371,7 @@ export default function FilaProvisionamentoPage() {
           </Tabs>
         </TabsContent>
       </Tabs>
+      <OnboardingTour pageKey="fila_provisionamento" steps={tourSteps.fila_provisionamento} />
     </div>
   );
 }
