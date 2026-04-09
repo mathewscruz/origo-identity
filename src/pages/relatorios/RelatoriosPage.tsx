@@ -141,7 +141,7 @@ function AcessoReport() {
               <TableRow key={i}>
                 <TableCell className="font-medium">{r.colaborador}</TableCell>
                 <TableCell>{r.perfil}</TableCell>
-                <TableCell><Badge variant="outline">{r.origem}</Badge></TableCell>
+                <TableCell><Badge variant="outline">{r.origem ? r.origem.charAt(0).toUpperCase() + r.origem.slice(1) : r.origem}</Badge></TableCell>
                 <TableCell>{r.data}</TableCell>
               </TableRow>
             ))}
@@ -246,7 +246,7 @@ function HistoricoReport() {
                 <TableCell className="font-medium">{r.colaborador}</TableCell>
                 <TableCell>{r.perfil}</TableCell>
                 <TableCell><Badge variant={r.status === "Ativo" ? "default" : "secondary"}>{r.status}</Badge></TableCell>
-                <TableCell><Badge variant="outline">{r.origem}</Badge></TableCell>
+                <TableCell><Badge variant="outline">{r.origem ? r.origem.charAt(0).toUpperCase() + r.origem.slice(1) : r.origem}</Badge></TableCell>
                 <TableCell>{r.concessao}</TableCell>
                 <TableCell>{r.revogacao}</TableCell>
               </TableRow>

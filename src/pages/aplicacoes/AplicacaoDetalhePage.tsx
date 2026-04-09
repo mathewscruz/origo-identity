@@ -280,7 +280,7 @@ export default function AplicacaoDetalhePage() {
               <div className="flex items-center gap-3 flex-wrap">
                 <AppIcon url={app.url} origem={app.origem} size={32} />
                 <h1 className="text-2xl font-semibold">{app.nome}</h1>
-                <Badge variant="outline" className={criticidadeColors[app.criticidade]}>{app.criticidade}</Badge>
+                <Badge variant="outline" className={criticidadeColors[app.criticidade]}>{app.criticidade.charAt(0).toUpperCase() + app.criticidade.slice(1)}</Badge>
                 {(app as any).origem === "azure" ? (
                   <Badge variant="outline" className="bg-info/15 text-info border-info/30"><Cloud className="h-3 w-3 mr-1" />Azure SSO</Badge>
                 ) : (

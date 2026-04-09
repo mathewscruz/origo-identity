@@ -330,7 +330,7 @@ export default function PerfisAcessoPage() {
                           <Link to={`/perfis-acesso/${p.id}`} className="font-medium text-primary hover:underline">{p.nome}</Link>
                           {p.descricao && <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-xs">{p.descricao}</p>}
                         </td>
-                        <td className="p-4 hidden md:table-cell"><Badge variant="outline">{p.tipo}</Badge></td>
+                        <td className="p-4 hidden md:table-cell"><Badge variant="outline">{p.tipo.charAt(0).toUpperCase() + p.tipo.slice(1)}</Badge></td>
                         <td className="p-4 text-center hidden sm:table-cell"><span className="font-medium">{pessoasCount}</span></td>
                         <td className="p-4 text-center hidden sm:table-cell"><span className="font-medium">{apps.length}</span></td>
                         <td className="p-4 text-center hidden lg:table-cell"><span className="font-medium">{licCount}</span></td>

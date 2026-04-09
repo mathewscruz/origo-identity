@@ -208,7 +208,7 @@ export default function PerfilAcessoDetalhePage() {
         <div className="flex-1">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold tracking-tight">{perfil.nome}</h1>
-            <Badge variant="outline">{perfil.tipo}</Badge>
+            <Badge variant="outline">{perfil.tipo.charAt(0).toUpperCase() + perfil.tipo.slice(1)}</Badge>
             <Badge variant={perfil.ativo ? "default" : "secondary"}>{perfil.ativo ? "Ativo" : "Inativo"}</Badge>
           </div>
           <p className="text-sm text-muted-foreground mt-1">{perfil.descricao || "Sem descrição"}</p>
