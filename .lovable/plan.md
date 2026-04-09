@@ -1,69 +1,54 @@
 
 
-## Plano: Usuários/grupos por app via iam_queue + Owner como select de colaboradores + Workflow de aprovação pelo owner
+## Plano: Reformular "Nova Solicitação" com seleção direta de Apps, Grupos e Licenças + workflow de aprovação por owner
 
-### Contexto atual
+### Problema atual
 
-- A aba "Usuários" na página de detalhe da aplicação mostra apenas colaboradores vinculados via **perfis de acesso** (perfil_atribuicoes → perfil_aplicacoes). Não mostra quem tem acesso individual (via iam_queue/sync).
-- O campo **Owner** é texto livre (string na coluna `aplicacoes.owner`).
-- Quando um usuário solicita acesso a um app, a notificação vai para **todos os admins**, não para o owner do app.
+1. A página admin (`SolicitacoesPage`) só permite selecionar um **perfil de acesso** — não permite escolher apps, grupos ou licenças individualmente
+2. Não existe coluna `licencas_ids` na tabela `solicitacoes_acesso`
+3. A página portal (`PortalSolicitacoesPage`) permite apps e grupos mas não licenças
+4. O e-mail de decisão é enviado uma única vez para toda a solicitação, não item a item
 
 ### O que será feito
 
-**1. Mostrar usuários reais atrelados ao app (via iam_queue)**
+**1. Migração: adicionar coluna `licencas_ids` na tabela `solicitacoes_acesso`**
 
-Adicionar uma nova query que busca da `iam_queue` todos os registros `assign_app` com status `completed` cujo `payload_json->app_name` ou `payload_json->app_id` corresponde ao app atual. Isso mostra quem realmente tem o app provisionado, além dos que vieram por perfil.
-
-A aba "Usuários" passará a ter duas sub-seções ou será enriquecida com dados da iam_queue (sem duplicar quem já aparece via perfil).
-
-**2. Mostrar grupos vinculados ao app (via iam_queue)**
-
-Similar ao item 1, buscar `assign_group` completados vinculados a este app (via perfil_grupos do perfil que contém este app). Manter a aba Grupos existente e enriquecê-la.
-
-**3. Owner como select pesquisável de colaboradores**
-
-- Trocar o campo Owner no header por um componente `Popover` + `Command` (combobox pesquisável) que lista todos os colaboradores ativos
-- Ao selecionar, salva o `colaborador_id` como owner (continuará usando a coluna `owner` como texto, gravando `nome - email` ou apenas o email para manter compatibilidade)
-- Exibir o owner selecionado com nome e e-mail
-
-**4. Workflow de aprovação por e-mail para o Owner**
-
-Quando um usuário solicita acesso a um app que tem owner definido:
-- Na `SolicitacoesPage` e `PortalSolicitacoesPage`, ao criar a solicitação, verificar se o app solicitado tem owner
-- Se tiver, enviar e-mail de notificação (`solicitacao_criada`) para o e-mail do owner
-- O owner recebe o e-mail e pode acessar o painel para aprovar/reprovar
-- Manter o fluxo existente de notificação aos admins como fallback quando não há owner
-
-### Detalhes técnicos
-
-**Owner Combobox:**
-```tsx
-// Usar Command (cmdk) dentro de Popover para busca
-<Popover>
-  <PopoverTrigger>
-    <Button variant="outline">{ownerDisplay || "Selecionar owner..."}</Button>
-  </PopoverTrigger>
-  <PopoverContent>
-    <Command>
-      <CommandInput placeholder="Buscar colaborador..." />
-      <CommandList>
-        {colaboradores.map(c => <CommandItem onSelect={...} />)}
-      </CommandList>
-    </Command>
-  </PopoverContent>
-</Popover>
+```sql
+ALTER TABLE solicitacoes_acesso ADD COLUMN licencas_ids jsonb;
 ```
 
-**Notificação ao Owner na criação de solicitação:**
-- Buscar `aplicacoes.owner` para cada app solicitado
-- Extrair e-mail do owner (que será o e-mail do colaborador)
-- Chamar `sendNotificationEmail("solicitacao_criada", { destinatario_email: ownerEmail, ... })`
+**2. Reformular o dialog "Nova Solicitação" na `SolicitacoesPage`**
+
+Substituir o select de perfil por 3 seções com checkboxes (igual ao portal):
+- Aplicações (com busca e scroll)
+- Grupos (com busca e scroll)
+- Licenças (com busca e scroll) — novo
+
+Manter o select de colaborador. Remover o campo de perfil.
+
+**3. Adicionar licenças ao `PortalSolicitacoesPage`**
+
+Adicionar seção de licenças com checkboxes, busca e scroll (mesmo padrão das apps/grupos já existentes).
+
+**4. Notificação por item ao owner**
+
+Na criação da solicitação (ambas as páginas):
+- Para cada app solicitado que tem `owner` definido, enviar e-mail `solicitacao_criada` ao owner
+- Apps sem owner: fallback para admins
+
+**5. E-mail individual por item na decisão**
+
+Ao aprovar/rejeitar, além do e-mail geral ao solicitante, enviar e-mail `solicitacao_decidida` detalhando cada item (app/grupo/licença) e se foi aprovado ou rejeitado.
+
+**6. Provisionamento de licenças na aprovação**
+
+No `handleDecision`, além de apps e grupos, inserir itens `assign_license` na `iam_queue` para as licenças solicitadas.
 
 ### Arquivos
 
 | Ação | Arquivo |
 |---|---|
-| Editar | `src/pages/aplicacoes/AplicacaoDetalhePage.tsx` — combobox owner + query iam_queue para usuários reais |
-| Editar | `src/pages/solicitacoes/SolicitacoesPage.tsx` — enviar e-mail ao owner do app |
-| Editar | `src/pages/portal/PortalSolicitacoesPage.tsx` — enviar e-mail ao owner do app |
+| Migração | `solicitacoes_acesso` — adicionar coluna `licencas_ids jsonb` |
+| Editar | `src/pages/solicitacoes/SolicitacoesPage.tsx` — reformular dialog com checkboxes de apps/grupos/licenças + notificações por item |
+| Editar | `src/pages/portal/PortalSolicitacoesPage.tsx` — adicionar licenças + notificações por item |
 
