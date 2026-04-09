@@ -268,6 +268,15 @@ Deno.serve(async (req) => {
           operador: "sistema",
         });
 
+        // Send email to responsavel
+        if (t.responsavel && t.responsavel.includes("@")) {
+          await sendEmail({
+            to: t.responsavel,
+            subject: `Revalidação necessária — ${t.nome}`,
+            htmlContent: `<p>O terceiro <strong>${t.nome}</strong> precisa ser revalidado (45 dias desde última validação). Por favor, avalie se o acesso deve ser mantido ou revogado.</p>`,
+          });
+        }
+
         results.terceiros_revalidados++;
         console.log(`45-day revalidation triggered for ${t.nome}`);
       }
