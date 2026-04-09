@@ -1,50 +1,56 @@
 
-## Diagnóstico confirmado
 
-- O problema dos grupos está no backend, não na base local. A tabela `entra_grupos` já tem registros suficientes.
-- Os logs mostram o erro real: `transitiveMemberOf failed (400), falling back to memberOf`. Ou seja, a consulta atual de grupos no Entra ID está inválida, cai no fallback e por isso continua retornando `0 groups`.
-- A duplicação também está confirmada: o `sync-user-access` faz insert cego no `iam_queue` toda vez, e a tela de “Acessos Individuais” lista esse histórico bruto. Por isso apps/licenças reaparecem repetidos a cada sync.
+## Plano: Integrar envio de e-mails via SendGrid
 
-## O que será ajustado
+### Contexto
 
-1. **Corrigir a consulta de grupos no Entra ID**
-   - Editar `supabase/functions/sync-user-access/index.ts`
-   - Substituir a chamada atual de `transitiveMemberOf` por uma consulta compatível com Graph para grupos transitivos.
-   - Manter paginação e melhorar logs para mostrar:
-     - quantos grupos vieram do Entra ID
-     - quantos casaram com `entra_grupos`
-     - exemplos de grupos sem match local
+Hoje o sistema tem uma edge function `send-review-email` que apenas registra o e-mail na auditoria mas **não envia de fato**. Vamos integrá-la com o SendGrid para envio real, além de criar uma função utilitária reutilizável para outros e-mails futuros.
 
-2. **Tornar a sincronização idempotente**
-   - Ainda em `sync-user-access`, antes de inserir novos itens:
-     - buscar os acessos já importados com `requested_by = 'entra_sync'`
-     - montar uma chave única por recurso importado
-       - grupo: `assign_group + groupId`
-       - licença: `assign_license + skuId`
-       - app: `assign_app + appId + appRoleId`
-     - inserir apenas o que ainda não existe
-   - Assim o sync passa a “trazer o que falta” sem duplicar o que já foi importado.
+### Pré-requisito
 
-3. **Parar de exibir histórico duplicado como acesso atual**
-   - Editar `src/hooks/useOrigoData.ts`
-   - Ajustar `useColabIndividualQueue` para retornar o estado atual dos acessos individuais, e não todas as linhas históricas:
-     - considerar assign/remove do mesmo recurso
-     - manter só o item mais recente por chave
-     - exibir apenas o que estiver ativo
-   - Isso elimina os duplicados antigos da tela mesmo sem apagar histórico.
+Será necessário adicionar o secret `SENDGRID_API_KEY` ao projeto. Vou solicitar isso antes de implementar.
 
-4. **Ajustar a tela de detalhe se necessário**
-   - Revisar `src/pages/colaboradores/ColaboradorDetalhePage.tsx` apenas se o formato final do hook mudar.
-   - A ideia é manter a UX igual, só corrigindo o conteúdo mostrado.
+### Alterações
 
-## Resultado esperado
+**1. Adicionar secret `SENDGRID_API_KEY`**
+- Solicitar ao usuário via ferramenta de secrets
 
-- Os grupos passam a ser importados corretamente.
-- Apps, licenças e grupos deixam de duplicar a cada sincronização.
-- A seção “Acessos Individuais” mostra apenas os acessos atuais, sem repetir imports antigos.
+**2. Criar função utilitária `_shared/sendgrid.ts`**
+- Helper reutilizável que encapsula a chamada à API do SendGrid (`https://api.sendgrid.com/v3/mail/send`)
+- Aceita: `to`, `subject`, `htmlContent`, `from` (com default para um remetente padrão)
+- Retorna sucesso/erro
 
-## Arquivos
+**3. Atualizar `supabase/functions/send-review-email/index.ts`**
+- Importar o helper SendGrid
+- Montar HTML do e-mail de revisão com: nome da aplicação, link de revisão, data limite
+- Enviar de fato via SendGrid antes de registrar na auditoria
+- Registrar na auditoria se o envio foi bem-sucedido ou falhou
 
-- `supabase/functions/sync-user-access/index.ts`
-- `src/hooks/useOrigoData.ts`
-- `src/pages/colaboradores/ColaboradorDetalhePage.tsx` (se necessário)
+**4. Configurar remetente**
+- Usar o e-mail verificado no SendGrid como remetente (ex: `noreply@origoenergia.com.br`)
+- Preciso saber qual e-mail/domínio está verificado no SendGrid
+
+### Detalhes técnicos
+
+```text
+send-review-email
+  ├── Busca dados da revisão (já existe)
+  ├── Monta HTML do e-mail
+  ├── POST https://api.sendgrid.com/v3/mail/send
+  │     Authorization: Bearer $SENDGRID_API_KEY
+  │     Body: { from, to, subject, content }
+  ├── Registra resultado na auditoria
+  └── Retorna sucesso/erro
+```
+
+### Pergunta necessária
+
+Qual é o e-mail remetente verificado no SendGrid? (ex: `noreply@origoenergia.com.br`)
+
+### Arquivos
+
+| Ação | Arquivo |
+|---|---|
+| Criar | `supabase/functions/_shared/sendgrid.ts` — helper de envio |
+| Editar | `supabase/functions/send-review-email/index.ts` — envio real via SendGrid |
+
