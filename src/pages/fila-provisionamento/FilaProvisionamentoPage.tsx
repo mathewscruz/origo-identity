@@ -195,9 +195,9 @@ export default function FilaProvisionamentoPage() {
 
       <Tabs data-tour="tabs" value={mainTab} onValueChange={setMainTab}>
         <TabsList>
-          <TabsTrigger value="provisionamento">Fila de Provisionamento ({items.length})</TabsTrigger>
+          <TabsTrigger value="provisionamento">Fila de Provisionamento</TabsTrigger>
           <TabsTrigger value="eventos-jml">
-            Eventos JML ({jmlList.length})
+            Eventos JML
             {quarentenaCount > 0 && <Badge variant="destructive" className="ml-2 h-5 px-1.5 text-[10px]">{quarentenaCount}</Badge>}
           </TabsTrigger>
         </TabsList>
@@ -324,11 +324,11 @@ export default function FilaProvisionamentoPage() {
           <Tabs value={jmlTab} onValueChange={(v) => { setJmlTab(v as JmlTabKey); setJmlPage(1); }}>
             <div className="flex items-center justify-between">
               <TabsList>
-                <TabsTrigger value="pendentes">Pendentes ({jmlList.filter(jmlTabFilters.pendentes).length})</TabsTrigger>
-                <TabsTrigger value="quarentena">Quarentena ({quarentenaCount})</TabsTrigger>
-                <TabsTrigger value="executados">Executados ({jmlList.filter(jmlTabFilters.executados).length})</TabsTrigger>
-                <TabsTrigger value="erros">Erros ({jmlList.filter(jmlTabFilters.erros).length})</TabsTrigger>
-                <TabsTrigger value="todos">Todos ({jmlList.length})</TabsTrigger>
+                <TabsTrigger value="pendentes">Pendentes</TabsTrigger>
+                <TabsTrigger value="quarentena">Quarentena</TabsTrigger>
+                <TabsTrigger value="executados">Executados</TabsTrigger>
+                <TabsTrigger value="erros">Erros</TabsTrigger>
+                <TabsTrigger value="todos">Todos</TabsTrigger>
               </TabsList>
               <div className="relative max-w-xs">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
