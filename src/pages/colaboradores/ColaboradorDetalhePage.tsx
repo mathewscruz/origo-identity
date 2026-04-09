@@ -21,6 +21,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { logAuditoria, logAlerta } from "@/lib/auditLogger";
 import EmptyState from "@/components/EmptyState";
+import { sendNotificationEmail } from "@/lib/sendNotificationEmail";
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
@@ -375,6 +376,21 @@ export default function ColaboradorDetalhePage() {
                 }
 
                 toast({ title: "Solicitação de desativação enviada para processamento" });
+
+                // Notify gestor via email
+                if (pessoa.gestor_id) {
+                  const { data: gestorData } = await supabase.from("colaboradores").select("nome, email").eq("id", pessoa.gestor_id).single();
+                  if (gestorData?.email) {
+                    sendNotificationEmail("colaborador_desabilitado", {
+                      destinatario_email: gestorData.email,
+                      colaborador_nome: pessoa.nome,
+                      status_anterior: oldStatus,
+                      novo_status: newStatus,
+                      operador: profile?.nome || profile?.email || "Sistema",
+                      colaborador_id: id,
+                    });
+                  }
+                }
 
                 await createEventoJML({
                   colaboradorId: id!, colaboradorNome: pessoa.nome, tipo: "leaver",

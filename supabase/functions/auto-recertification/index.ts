@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { sendEmail } from "../_shared/sendgrid.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -207,6 +208,18 @@ Deno.serve(async (req) => {
           operador: "sistema",
         });
 
+        // Send email to responsavel
+        if (terceiro.email || t.responsavel) {
+          const responsavelEmail = t.responsavel && t.responsavel.includes("@") ? t.responsavel : terceiro.email;
+          if (responsavelEmail) {
+            await sendEmail({
+              to: responsavelEmail,
+              subject: `Contrato expirado — ${terceiro.nome}`,
+              htmlContent: `<p>O contrato do terceiro <strong>${terceiro.nome}</strong> expirou em ${terceiro.contrato_fim}. Todos os acessos foram revogados automaticamente.</p>`,
+            });
+          }
+        }
+
         results.terceiros_expirados++;
         console.log(`Third-party expired: ${terceiro.nome}`);
       }
@@ -216,7 +229,7 @@ Deno.serve(async (req) => {
 
     const { data: terceirosAtivos } = await sb
       .from("terceiros")
-      .select("id, nome, email, responsavel, contrato_inicio, contrato_fim, ultima_revalidacao, sam_account_name")
+      .select("id, nome, email, responsavel, contrato_inicio, contrato_fim, ultima_revalidacao")
       .eq("ativo", true)
       .not("contrato_fim", "is", null);
 
@@ -254,6 +267,15 @@ Deno.serve(async (req) => {
           resumo: `Revalidação de 45 dias disparada para terceiro ${t.nome}. Responsável: ${t.responsavel || "—"}.`,
           operador: "sistema",
         });
+
+        // Send email to responsavel
+        if (t.responsavel && t.responsavel.includes("@")) {
+          await sendEmail({
+            to: t.responsavel,
+            subject: `Revalidação necessária — ${t.nome}`,
+            htmlContent: `<p>O terceiro <strong>${t.nome}</strong> precisa ser revalidado (45 dias desde última validação). Por favor, avalie se o acesso deve ser mantido ou revogado.</p>`,
+          });
+        }
 
         results.terceiros_revalidados++;
         console.log(`45-day revalidation triggered for ${t.nome}`);

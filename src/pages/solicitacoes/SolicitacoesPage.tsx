@@ -15,6 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { queueFullProfileActions } from "@/lib/entraQueueHelper";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { HandHelping, Plus, Search, Clock, CheckCircle2, XCircle, Send, ExternalLink, AppWindow, Users } from "lucide-react";
+import { sendNotificationEmail } from "@/lib/sendNotificationEmail";
 import EmptyState from "@/components/EmptyState";
 import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
@@ -147,6 +148,23 @@ export default function SolicitacoesPage() {
     });
 
     toast({ title: "Solicitação criada com sucesso", description: etapas && etapas.length > 0 ? `Encaminhada para workflow com ${etapas.length} etapa(s) de aprovação.` : undefined });
+
+    // Send email notification to admins
+    const { data: adminRoles } = await supabase.from("user_roles").select("user_id").eq("role", "admin");
+    if (adminRoles && adminRoles.length > 0) {
+      const adminIds = adminRoles.map((r: any) => r.user_id);
+      const { data: adminProfiles } = await supabase.from("profiles").select("email").in("id", adminIds);
+      for (const ap of (adminProfiles || [])) {
+        sendNotificationEmail("solicitacao_criada", {
+          destinatario_email: ap.email,
+          colaborador_nome: colabNome,
+          itens: perfilNome,
+          justificativa: justificativa.trim(),
+          solicitante: profile?.nome || profile?.email || "Sistema",
+        });
+      }
+    }
+
     setDialogOpen(false);
     setSolicitanteId("");
     setPerfilId("");
@@ -251,6 +269,20 @@ export default function SolicitacoesPage() {
     });
 
     toast({ title: `Solicitação ${decisao === "aprovada" ? "aprovada" : "rejeitada"}` });
+
+    // Notify the person who created the request
+    const solicitanteEmail = colabMap.get(decisionDialog.solicitante_id)?.email;
+    if (solicitanteEmail) {
+      sendNotificationEmail("solicitacao_decidida", {
+        destinatario_email: solicitanteEmail,
+        colaborador_nome: colabNome,
+        itens: itensDesc,
+        status: decisao,
+        aprovador: profile?.nome || profile?.email || "Sistema",
+        comentario: comentario || undefined,
+      });
+    }
+
     setDecisionDialog(null);
     setDecisao("");
     setComentario("");

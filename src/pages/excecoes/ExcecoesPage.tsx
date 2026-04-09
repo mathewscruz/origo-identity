@@ -20,6 +20,7 @@ import { getPerfilResourceIds, generateEntraQueueForDiff } from "@/lib/entraQueu
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import EmptyState from "@/components/EmptyState";
+import { sendNotificationEmail } from "@/lib/sendNotificationEmail";
 
 const statusColors: Record<string, string> = {
   pendente: "bg-warning/15 text-warning border-warning/30",
@@ -142,6 +143,25 @@ export default function ExcecoesPage() {
     } as any);
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
     toast({ title: "Exceção solicitada" });
+
+    // Notify admins about the new exception
+    const { data: adminRoles } = await supabase.from("user_roles").select("user_id").eq("role", "admin");
+    if (adminRoles && adminRoles.length > 0) {
+      const adminIds = adminRoles.map((r: any) => r.user_id);
+      const { data: adminProfiles } = await supabase.from("profiles").select("email").in("id", adminIds);
+      for (const ap of (adminProfiles || [])) {
+        sendNotificationEmail("excecao_criada", {
+          destinatario_email: ap.email,
+          colaborador_nome: selectedColab?.nome || "—",
+          tipo_excecao: formTipoExcecao,
+          perfil: selectedPerfil?.nome || undefined,
+          justificativa: formJustificativa.trim(),
+          solicitante: profile?.nome || profile?.email || "Sistema",
+          validade: formValidade || undefined,
+        });
+      }
+    }
+
     qc.invalidateQueries({ queryKey: ["excecoes"] });
     setDialogOpen(false);
   };
@@ -203,6 +223,24 @@ export default function ExcecoesPage() {
       } as any);
 
       toast({ title: action === "aprovada" ? "Exceção aprovada" : "Exceção rejeitada" });
+
+      // Find the exception to get the solicitante email
+      const excecao = (excecoes as any[])?.find((e: any) => e.id === id);
+      if (excecao?.solicitante) {
+        // Try to find solicitante email from profiles
+        const { data: solProfile } = await supabase.from("profiles").select("email").eq("nome", excecao.solicitante).limit(1);
+        const solEmail = solProfile?.[0]?.email || excecao.solicitante;
+        if (solEmail && solEmail.includes("@")) {
+          sendNotificationEmail("excecao_decidida", {
+            destinatario_email: solEmail,
+            colaborador_nome: excecao.colaborador_nome || "—",
+            status: action,
+            aprovador: profile?.nome || profile?.email || "Sistema",
+            comentario: decisionComment || undefined,
+          });
+        }
+      }
+
       qc.invalidateQueries({ queryKey: ["excecoes"] });
       qc.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
     } catch (err: any) {
