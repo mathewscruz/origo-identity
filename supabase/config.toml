@@ -43,3 +43,6 @@ verify_jwt = false
 [functions.sync-user-access]
 verify_jwt = false
 
+[functions.send-notification-email]
+verify_jwt = false
+
