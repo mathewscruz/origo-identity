@@ -228,9 +228,12 @@ const ACTION_LABELS: Record<string, string> = {
   delete: "Exclusão",
 };
 
-function buildQueueLabel(q: { action_type: string; target_identity: string | null; payload_json: any }): string {
+function buildQueueLabel(
+  q: { action_type: string; target_identity: string | null; payload_json: any },
+  resolvedName?: string,
+): string {
   const p = q.payload_json || {};
-  const name = p.displayName || q.target_identity || "";
+  const name = resolvedName || p.displayName || q.target_identity || "";
   const at = q.action_type || "";
   if (at.includes("group") && p.groupName) return `${name} → ${p.groupName}`;
   if (at.includes("app") && p.appName) return `${name} → ${p.appName}`;
@@ -244,7 +247,7 @@ function useRecentActivity() {
     queryFn: async () => {
       const [queueRes, solicitRes] = await Promise.all([
         (supabase as any).from("iam_queue")
-          .select("id, action_type, target_identity, status, created_at, payload_json")
+          .select("id, action_type, target_identity, status, created_at, payload_json, colaborador_id")
           .not("status", "eq", "cancelled")
           .order("created_at", { ascending: false })
           .limit(5),
@@ -253,6 +256,27 @@ function useRecentActivity() {
           .order("created_at", { ascending: false })
           .limit(5),
       ]);
+
+      const colaboradorIds: string[] = Array.from(
+        new Set<string>(
+          (queueRes.data ?? [])
+            .map((q: any) => q.colaborador_id as string | null)
+            .filter((id): id is string => typeof id === "string" && id.length > 0),
+        ),
+      );
+      const colaboradorNames = new Map<string, string>();
+
+      if (colaboradorIds.length > 0) {
+        const { data: colaboradores } = await supabase
+          .from("colaboradores")
+          .select("id, nome")
+          .in("id", colaboradorIds);
+
+        (colaboradores ?? []).forEach((colaborador) => {
+          colaboradorNames.set(colaborador.id, colaborador.nome);
+        });
+      }
+
       type ActivityItem = {
         id: string; type: "queue" | "solicitacao"; label: string;
         sublabel: string; status: string; date: string; link: string;
@@ -260,7 +284,7 @@ function useRecentActivity() {
       const items: ActivityItem[] = [];
       (queueRes.data ?? []).forEach((q: any) => items.push({
         id: q.id, type: "queue",
-        label: buildQueueLabel(q),
+        label: buildQueueLabel(q, q.colaborador_id ? colaboradorNames.get(q.colaborador_id) : undefined),
         sublabel: ACTION_LABELS[q.action_type] || q.action_type,
         status: q.status, date: q.created_at,
         link: `/fila-provisionamento/${q.id}`,
