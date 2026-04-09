@@ -33,7 +33,7 @@ function baseLayout(title: string, body: string, actionUrl?: string, actionLabel
   ${actionBlock}
   <!-- Footer -->
   <tr><td style="padding:32px 40px;border-top:1px solid #e2e8f0;margin-top:24px;text-align:center;">
-    <p style="margin:0;color:#94a3b8;font-size:11px;font-weight:500;">Origo Identity — Gestão de Identidades e Acessos</p>
+    <p style="margin:0;color:#94a3b8;font-size:11px;font-weight:500;">Órigo Access & Identity — Gestão de Identidades e Acessos</p>
     <p style="margin:6px 0 0;color:#cbd5e1;font-size:10px;">Este é um e-mail automático. Não responda.</p>
   </td></tr>
 </table>
@@ -66,10 +66,10 @@ function buildEmail(tipo: NotificationType, p: Record<string, any>): { subject: 
     case "usuario_boas_vindas": {
       const roleLabels: Record<string, string> = { admin: "Administrador", operador: "Operador", viewer: "Visualizador" };
       return {
-        subject: `Bem-vindo ao Origo Identity — ${p.nome}`,
+        subject: `[Órigo Access & Identity] Bem-vindo — ${p.nome}`,
         html: baseLayout("Bem-vindo ao Sistema",
           `<p style="font-size:16px;">Olá <strong>${p.nome}</strong>,</p>
-          <p>Sua conta no <strong>Origo Identity</strong> foi criada com sucesso. Abaixo estão seus dados de acesso:</p>
+          <p>Sua conta no <strong>Órigo Access & Identity</strong> foi criada com sucesso. Abaixo estão seus dados de acesso:</p>
           ${infoTable([
             ["E-mail", p.email],
             ["Senha temporária", `<span style="font-family:'Courier New',monospace;font-size:15px;letter-spacing:1px;color:${BRAND_COLOR}">${p.senha}</span>`],
@@ -83,7 +83,7 @@ function buildEmail(tipo: NotificationType, p: Record<string, any>): { subject: 
     }
     case "solicitacao_criada":
       return {
-        subject: `Nova solicitação de acesso — ${p.colaborador_nome}`,
+        subject: `[Órigo Access & Identity] Nova solicitação de acesso — ${p.colaborador_nome}`,
         html: baseLayout("Nova Solicitação de Acesso",
           `<p>Uma nova solicitação de acesso foi criada e aguarda sua aprovação.</p>
           ${infoTable([
@@ -104,7 +104,7 @@ function buildEmail(tipo: NotificationType, p: Record<string, any>): { subject: 
       ];
       if (p.comentario) rows.push(["Comentário", p.comentario]);
       return {
-        subject: `Solicitação ${p.status} — ${p.colaborador_nome}`,
+        subject: `[Órigo Access & Identity] Solicitação ${p.status} — ${p.colaborador_nome}`,
         html: baseLayout("Decisão sobre Solicitação",
           `<p>A solicitação de acesso foi <strong style="color:${statusColor}">${statusLabel}</strong>.</p>
           ${infoTable(rows)}`,
@@ -121,7 +121,7 @@ function buildEmail(tipo: NotificationType, p: Record<string, any>): { subject: 
       rows.push(["Solicitante", p.solicitante || "—"]);
       if (p.validade) rows.push(["Validade", p.validade]);
       return {
-        subject: `Nova exceção de acesso — ${p.colaborador_nome}`,
+        subject: `[Órigo Access & Identity] Nova exceção de acesso — ${p.colaborador_nome}`,
         html: baseLayout("Nova Exceção de Acesso",
           `<p>Uma nova exceção de acesso foi solicitada e aguarda aprovação.</p>
           ${infoTable(rows)}`,
@@ -137,7 +137,7 @@ function buildEmail(tipo: NotificationType, p: Record<string, any>): { subject: 
       ];
       if (p.comentario) rows.push(["Comentário", p.comentario]);
       return {
-        subject: `Exceção ${p.status} — ${p.colaborador_nome}`,
+        subject: `[Órigo Access & Identity] Exceção ${p.status} — ${p.colaborador_nome}`,
         html: baseLayout("Decisão sobre Exceção",
           `<p>A exceção de acesso foi <strong style="color:${sc}">${sl}</strong>.</p>
           ${infoTable(rows)}`,
@@ -146,7 +146,7 @@ function buildEmail(tipo: NotificationType, p: Record<string, any>): { subject: 
     }
     case "colaborador_desabilitado":
       return {
-        subject: `Colaborador desabilitado — ${p.colaborador_nome}`,
+        subject: `[Órigo Access & Identity] Colaborador desabilitado — ${p.colaborador_nome}`,
         html: baseLayout("Colaborador Desabilitado",
           `<p>O colaborador abaixo teve seu status alterado e os acessos estão sendo processados.</p>
           ${infoTable([
@@ -159,7 +159,7 @@ function buildEmail(tipo: NotificationType, p: Record<string, any>): { subject: 
       };
     case "terceiro_expirando":
       return {
-        subject: `Contrato expirando — ${p.terceiro_nome}`,
+        subject: `[Órigo Access & Identity] Contrato expirando — ${p.terceiro_nome}`,
         html: baseLayout("Contrato de Terceiro Expirando",
           `<p>O contrato do terceiro abaixo está próximo do vencimento ou já expirou.</p>
           ${infoTable([
@@ -171,7 +171,7 @@ function buildEmail(tipo: NotificationType, p: Record<string, any>): { subject: 
       };
     case "alerta_critico":
       return {
-        subject: `⚠️ Alerta crítico — ${p.titulo}`,
+        subject: `[Órigo Access & Identity] ⚠️ Alerta crítico — ${p.titulo}`,
         html: baseLayout("Alerta Crítico",
           `<div style="background:#fef2f2;border-left:4px solid #dc2626;border-radius:0 8px 8px 0;padding:14px 18px;color:#991b1b;font-size:14px;margin:0 0 20px;line-height:1.6;font-weight:600">
             ⚠️ Um alerta crítico foi gerado no sistema.
@@ -184,7 +184,7 @@ function buildEmail(tipo: NotificationType, p: Record<string, any>): { subject: 
       };
     case "revisao_concluida":
       return {
-        subject: `Revisão concluída — ${p.revisao_nome}`,
+        subject: `[Órigo Access & Identity] Revisão concluída — ${p.revisao_nome}`,
         html: baseLayout("Revisão Concluída",
           `<p>A campanha de revisão de acesso foi concluída.</p>
           ${infoTable([
@@ -197,7 +197,7 @@ function buildEmail(tipo: NotificationType, p: Record<string, any>): { subject: 
       };
     case "revisao_lembrete":
       return {
-        subject: `⏰ Lembrete: revisão pendente — ${p.revisao_nome}`,
+        subject: `[Órigo Access & Identity] ⏰ Lembrete: revisão pendente — ${p.revisao_nome}`,
         html: baseLayout("Revisão Pendente",
           `<p>A revisão de acesso abaixo está com prazo próximo e ainda possui itens pendentes.</p>
           ${infoTable([

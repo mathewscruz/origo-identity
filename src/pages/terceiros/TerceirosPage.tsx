@@ -200,6 +200,8 @@ export default function TerceirosPage() {
             telephoneNumber: null,
             manager: null,
             ouPath: "",
+            password: "Origo@2026er",
+            changePasswordAtLogon: true,
           },
           target_identity: sam,
           requested_by: "sistema",

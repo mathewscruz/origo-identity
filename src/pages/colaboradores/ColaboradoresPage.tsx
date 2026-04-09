@@ -326,6 +326,8 @@ export default function ColaboradoresPage() {
             company: getNameById(empresas, form.empresa_id),
             telephoneNumber: null,
             ouPath: "",
+            password: "Origo@2026er",
+            changePasswordAtLogon: true,
           },
           requested_by: profile?.email || "sistema",
           colaborador_id: colaboradorId,

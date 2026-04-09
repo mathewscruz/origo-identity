@@ -203,17 +203,30 @@ export default function PortalSolicitacoesPage() {
         const queueItems = autoApproved.map(item => {
           const actionMap: Record<string, string> = { app: "assign_app", grupo: "assign_group", licenca: "assign_license" };
           const keyMap: Record<string, { id: string; name: string }> = {
-            app: { id: "app_id", name: "app_name" },
+            app: { id: "appId", name: "app_name" },
             grupo: { id: "group_id", name: "group_name" },
-            licenca: { id: "license_id", name: "license_name" },
+            licenca: { id: "skuId", name: "license_name" },
           };
           const keys = keyMap[item.tipo];
+          let resourceExternalId = item.recurso_id;
+          if (item.tipo === "app") {
+            const app = aplicacoes.find((a: any) => a.id === item.recurso_id);
+            resourceExternalId = app?.entra_id || item.recurso_id;
+          }
+          if (item.tipo === "grupo") {
+            const grupo = grupos.find((g: any) => g.id === item.recurso_id);
+            resourceExternalId = grupo?.entra_id || item.recurso_id;
+          }
+          if (item.tipo === "licenca") {
+            const lic = licencas.find((l: any) => l.id === item.recurso_id);
+            resourceExternalId = lic?.sku_id || item.recurso_id;
+          }
           return {
             action_type: actionMap[item.tipo],
             colaborador_id: colabData.id,
             target_identity: targetIdentity,
             status: "pending",
-            payload_json: { [keys.id]: item.recurso_id, [keys.name]: item.recurso_nome, reason: "solicitacao_acesso" },
+            payload_json: { [keys.id]: resourceExternalId, [keys.name]: item.recurso_nome, reason: "solicitacao_acesso" },
             requested_by: userEmail || "portal",
           };
         });
