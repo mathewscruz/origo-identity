@@ -194,21 +194,8 @@ async function provisionCargoAcessosServer(
   displayName: string,
   mail: string
 ) {
-  // Revoke old cargo-based assignments
+  // Revoke old cargo-based assignments (DB only — no Entra removal, access is additive)
   if (oldCargoId) {
-    const { data: activeAssignments } = await sb
-      .from("perfil_atribuicoes")
-      .select("perfil_id")
-      .eq("colaborador_id", colaboradorId)
-      .eq("origem", "cargo")
-      .eq("ativo", true);
-
-    if (activeAssignments && activeAssignments.length > 0 && samAccountName) {
-      for (const assignment of activeAssignments) {
-        await queueProfileAccess(sb, samAccountName, displayName, mail, assignment.perfil_id, "remove");
-      }
-    }
-
     await sb
       .from("perfil_atribuicoes")
       .update({ ativo: false, data_revogacao: new Date().toISOString() })
