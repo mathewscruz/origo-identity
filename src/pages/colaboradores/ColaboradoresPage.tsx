@@ -99,6 +99,24 @@ export default function ColaboradoresPage() {
   const { toast } = useToast();
   const { profile } = useAuth();
 
+  // Auto-generate email and sam_account_name when name changes (new collaborators only)
+  useEffect(() => {
+    if (editingId) return;
+    const nome = form.nome.trim();
+    if (!nome) {
+      setForm(prev => ({ ...prev, email: "", sam_account_name: "" }));
+      return;
+    }
+    const parts = nome.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .split(/\s+/).filter(p => !["de","da","do","dos","das","e"].includes(p) && p.length > 0);
+    if (parts.length === 0) return;
+    const first = parts[0];
+    const last = parts.length > 1 ? parts[parts.length - 1] : first;
+    const sam = `${first}.${last}`;
+    const email = `${sam}@origoenergia.com.br`;
+    setForm(prev => ({ ...prev, email, sam_account_name: sam }));
+  }, [form.nome, editingId]);
+
   // Quick-assign individual resource state
   const [quickAssignColab, setQuickAssignColab] = useState<any>(null);
   const [quickAssignType, setQuickAssignType] = useState<"grupo" | "licenca" | "app" | null>(null);
@@ -168,8 +186,6 @@ export default function ColaboradoresPage() {
 
   async function handleSave() {
     if (!form.nome.trim()) { toast({ title: "Nome é obrigatório", variant: "destructive" }); return; }
-    if (!form.sam_account_name.trim() && form.cargo_id) { toast({ title: "Nome de login AD é obrigatório para provisionamento de acessos", description: "Preencha o campo 'Nome de login AD' quando um cargo está atribuído.", variant: "destructive" }); return; }
-    if (!editingId && !form.sam_account_name.trim()) { toast({ title: "Nome de login AD é obrigatório para novos colaboradores", variant: "destructive" }); return; }
     setSaving(true);
     const payload: any = {
       nome: form.nome.trim(),
@@ -671,7 +687,7 @@ export default function ColaboradoresPage() {
             </div>
             <div>
               <Label>Email</Label>
-              <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+              <Input type="email" value={form.email} readOnly disabled className="bg-muted cursor-not-allowed" />
             </div>
             <div>
               <Label>CPF</Label>
@@ -682,8 +698,8 @@ export default function ColaboradoresPage() {
               <Input value={form.matricula} onChange={(e) => setForm({ ...form, matricula: e.target.value })} />
             </div>
             <div>
-              <Label>Nome de login AD {!editingId || form.cargo_id ? "*" : ""}</Label>
-              <Input placeholder="ex: joao.silva" value={form.sam_account_name} onChange={(e) => setForm({ ...form, sam_account_name: e.target.value })} />
+              <Label>Nome de login AD</Label>
+              <Input value={form.sam_account_name} readOnly disabled className="bg-muted cursor-not-allowed" />
             </div>
             <div>
               <Label>Status</Label>
