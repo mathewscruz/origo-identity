@@ -176,13 +176,17 @@ export default function SolicitacoesPage() {
     const payloadKeyMap: Record<string, { idKey: string; nameKey: string }> = {
       app: { idKey: "appId", nameKey: "app_name" },
       grupo: { idKey: "group_id", nameKey: "group_name" },
-      licenca: { idKey: "license_id", nameKey: "license_name" },
+      licenca: { idKey: "skuId", nameKey: "license_name" },
     };
 
     const keys = payloadKeyMap[item.tipo];
     let resourceExternalId = item.recurso_id;
     if (item.tipo === "app") resourceExternalId = appMap.get(item.recurso_id)?.entra_id || item.recurso_id;
     if (item.tipo === "grupo") resourceExternalId = grupoMap.get(item.recurso_id)?.entra_id || item.recurso_id;
+    if (item.tipo === "licenca") {
+      const lic = licencaMap.get(item.recurso_id);
+      resourceExternalId = lic?.sku_id || item.recurso_id;
+    }
 
     await supabase.from("iam_queue").insert({
       action_type: actionMap[item.tipo],

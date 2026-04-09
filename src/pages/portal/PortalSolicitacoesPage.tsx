@@ -205,7 +205,7 @@ export default function PortalSolicitacoesPage() {
           const keyMap: Record<string, { id: string; name: string }> = {
             app: { id: "appId", name: "app_name" },
             grupo: { id: "group_id", name: "group_name" },
-            licenca: { id: "license_id", name: "license_name" },
+            licenca: { id: "skuId", name: "license_name" },
           };
           const keys = keyMap[item.tipo];
           let resourceExternalId = item.recurso_id;
@@ -216,6 +216,10 @@ export default function PortalSolicitacoesPage() {
           if (item.tipo === "grupo") {
             const grupo = grupos.find((g: any) => g.id === item.recurso_id);
             resourceExternalId = grupo?.entra_id || item.recurso_id;
+          }
+          if (item.tipo === "licenca") {
+            const lic = licencas.find((l: any) => l.id === item.recurso_id);
+            resourceExternalId = lic?.sku_id || item.recurso_id;
           }
           return {
             action_type: actionMap[item.tipo],
