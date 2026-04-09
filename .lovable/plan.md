@@ -1,71 +1,26 @@
 
 
-## Plano: Equalizar status CSV com o sistema e ajustar ações por tipo
+## Plano: Corrigir sincronizacao de grupos no sync-user-access
 
-### Status encontrados no CSV
-- `Ativo` → `ativo`
-- `Demitido` → `desligado`
-- `Férias` → `ferias`
-- (Provavelmente) `Afastado`, `Inativo`, `Suspenso`, `Licença`, `Aposentado`, `Transferido`
+### Diagnostico
 
-### Status do sistema (enum `status_colaborador`)
-`ativo`, `inativo`, `ferias`, `afastado`, `desligado`
+A funcao `sync-user-access` importa corretamente apps (57 registros) e licencas (49 registros) do Entra ID, mas **zero grupos** foram registrados na `iam_queue`.
 
-### Mapeamento atual (`STATUS_MAP`) — já correto
-```
-ativo → ativo
-demitido → desligado
-desligado → desligado
-afastado → afastado
-férias → ferias
-ferias → ferias
-inativo → inativo
-suspenso → afastado
-licenca → afastado
-licença → afastado
-aposentado → desligado
-transferido → ativo
-```
+A funcao busca os grupos do usuario via `memberOf`, que retorna apenas membros **diretos**. Muitos usuarios recebem grupos por heranca (grupos aninhados), que so aparecem via `transitiveMemberOf`.
 
-### Problema identificado
+Alem disso, a funcao nao tem logging detalhado para diagnosticar quantos grupos foram encontrados no Entra vs quantos casaram com a tabela local `entra_grupos`.
 
-A lógica de desativação na importação CSV (linha 826) só trata `desligado` e `inativo`:
-```typescript
-const isDisabling = (newStatus === "desligado" || newStatus === "inativo") && oldStatus !== newStatus;
-```
+### Alteracoes
 
-**Férias e afastado não disparam nenhuma ação** — o colaborador continua com conta habilitada.
+**Editar `supabase/functions/sync-user-access/index.ts`:**
 
-### Regras solicitadas
+1. Trocar `memberOf` por `transitiveMemberOf` no `fetchUserGroups` para capturar grupos diretos e herdados
+2. Adicionar log detalhado mostrando quantos grupos vieram do Entra, quantos casaram com a tabela local, e quais nao casaram
+3. Fazer o match de grupos em batches caso o array de entra_ids seja muito grande (>50 items) para evitar URLs longas no Supabase query
 
-| Status | Conta AD/Entra | Grupos/Licenças/Apps |
-|--------|---------------|---------------------|
-| `desligado` / `inativo` | Desabilitar | Remover tudo |
-| `ferias` / `afastado` | Desabilitar | Manter tudo |
-| `ativo` (vindo de férias/afastado) | Reabilitar | Manter (já existem) |
+### Arquivo
 
-### Alterações
-
-**Editar `supabase/functions/sync-csv-colab/index.ts`:**
-
-1. Criar uma nova classificação tripartida no bloco de update (linha ~824):
-   - `isFullDisable` = `desligado` ou `inativo` → desabilita AD + Entra + remove todos os acessos (comportamento atual)
-   - `isSoftDisable` = `ferias` ou `afastado` → desabilita AD + Entra mas **não** remove grupos/licenças/apps
-   - `isReactivating` = status antigo era `ferias`/`afastado`/`desligado`/`inativo` e novo é `ativo` → reabilita conta (gera `enable_entra`)
-
-2. Para `isSoftDisable`: gerar apenas `disable` (AD) + `disable_entra` — sem chamar `provisionCargoAcessosServer` nem `queueProfileAccess` para remover recursos.
-
-3. Para `isReactivating`: gerar `enable_entra` para reabilitar a conta no Entra ID quando o colaborador volta de férias/afastamento.
-
-4. A lógica de leavers (ausentes no CSV, linha ~649) permanece como está — remove tudo e desabilita (tratamento mais agressivo para quem sumiu do CSV).
-
-**Editar `src/pages/colaboradores/ColaboradorDetalhePage.tsx` (se aplicável):**
-
-Garantir que a ação manual de desativar/reativar na UI segue as mesmas regras (verificar se já segue).
-
-### Arquivos
-
-| Ação | Arquivo |
+| Acao | Arquivo |
 |---|---|
-| Editar | `supabase/functions/sync-csv-colab/index.ts` — separar lógica de disable total vs parcial + reativação |
+| Editar | `supabase/functions/sync-user-access/index.ts` — trocar memberOf por transitiveMemberOf + logging |
 
