@@ -336,6 +336,7 @@ export default function ColaboradoresPage() {
             toast({ title: "Importando acessos atuais do Entra ID..." });
           } catch (e) { console.warn("[sync-user-access]", e); }
         }
+      }
 
       // 4. Queue update for edits (cargo/area change)
       if (editingId && (cargoChanged || areaChanged) && !becameInactive && !becameActive) {
