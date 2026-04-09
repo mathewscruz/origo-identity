@@ -245,8 +245,8 @@ Deno.serve(async (req) => {
         });
 
         // Send email to responsavel
-        if (terceiro.email || t.responsavel) {
-          const responsavelEmail = t.responsavel && t.responsavel.includes("@") ? t.responsavel : terceiro.email;
+        if (terceiro.email || (terceiro as any).responsavel) {
+          const responsavelEmail = (terceiro as any).responsavel && (terceiro as any).responsavel.includes("@") ? (terceiro as any).responsavel : terceiro.email;
           if (responsavelEmail) {
             await sendEmail({
               to: responsavelEmail,
