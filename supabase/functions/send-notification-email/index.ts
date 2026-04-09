@@ -7,11 +7,13 @@ const corsHeaders = {
 };
 
 const BASE_URL = Deno.env.get("SITE_URL") || "https://origo-identity.lovable.app";
+const BRAND_COLOR = "#16968D";
+const BRAND_DARK = "#0d8276";
 
 function baseLayout(title: string, body: string, actionUrl?: string, actionLabel?: string): string {
   const actionBlock = actionUrl && actionLabel ? `
     <tr><td style="padding:24px 40px 0">
-      <a href="${actionUrl}" style="display:inline-block;padding:12px 32px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;">${actionLabel}</a>
+      <a href="${actionUrl}" style="display:inline-block;padding:12px 32px;background:linear-gradient(135deg,${BRAND_COLOR},${BRAND_DARK});color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;">${actionLabel}</a>
     </td></tr>` : "";
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
@@ -19,7 +21,7 @@ function baseLayout(title: string, body: string, actionUrl?: string, actionLabel
 <tr><td align="center">
 <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08)">
   <tr><td style="background:linear-gradient(135deg,#1a1f2c,#2d3748);padding:32px 40px;">
-    <h1 style="margin:0;color:#fff;font-size:22px;font-weight:700;">🔐 Origo Identity</h1>
+    <h1 style="margin:0;color:#fff;font-size:22px;font-weight:700;">Origo Identity</h1>
     <p style="margin:8px 0 0;color:#a0aec0;font-size:13px;">${title}</p>
   </td></tr>
   <tr><td style="padding:32px 40px 24px;color:#1a202c;font-size:14px;line-height:1.7;">${body}</td></tr>
@@ -41,10 +43,29 @@ type NotificationType =
   | "terceiro_expirando"
   | "alerta_critico"
   | "revisao_concluida"
-  | "revisao_lembrete";
+  | "revisao_lembrete"
+  | "usuario_boas_vindas";
 
 function buildEmail(tipo: NotificationType, p: Record<string, any>): { subject: string; html: string } | null {
   switch (tipo) {
+    case "usuario_boas_vindas": {
+      const roleLabels: Record<string, string> = { admin: "Administrador", operador: "Operador", viewer: "Visualizador" };
+      return {
+        subject: `Bem-vindo ao Origo Identity — ${p.nome}`,
+        html: baseLayout("Bem-vindo ao Origo Identity",
+          `<p>Olá <strong>${p.nome}</strong>,</p>
+          <p>Sua conta no <strong>Origo Identity</strong> foi criada com sucesso. Abaixo estão seus dados de acesso:</p>
+          <table style="width:100%;border-collapse:collapse;margin:16px 0;background:#f7fafc;border-radius:8px;overflow:hidden">
+            <tr><td style="padding:12px 16px;color:#718096;width:140px;border-bottom:1px solid #e2e8f0">E-mail</td><td style="padding:12px 16px;font-weight:600;border-bottom:1px solid #e2e8f0">${p.email}</td></tr>
+            <tr><td style="padding:12px 16px;color:#718096;border-bottom:1px solid #e2e8f0">Senha temporária</td><td style="padding:12px 16px;font-weight:600;font-family:monospace;font-size:16px;letter-spacing:1px;border-bottom:1px solid #e2e8f0">${p.senha}</td></tr>
+            <tr><td style="padding:12px 16px;color:#718096">Perfil</td><td style="padding:12px 16px;font-weight:600">${roleLabels[p.role] || p.role}</td></tr>
+          </table>
+          <p style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:12px 16px;color:#856404;font-size:13px;margin:16px 0">
+            ⚠️ <strong>Importante:</strong> Ao realizar seu primeiro login, você será solicitado a alterar a senha temporária por uma de sua escolha.
+          </p>`,
+          p.link || BASE_URL, "Acessar o Sistema"),
+      };
+    }
     case "solicitacao_criada":
       return {
         subject: `Nova solicitação de acesso — ${p.colaborador_nome}`,
@@ -58,7 +79,7 @@ function buildEmail(tipo: NotificationType, p: Record<string, any>): { subject: 
           </table>`,
           `${BASE_URL}/solicitacoes`, "Ver Solicitação"),
       };
-    case "solicitacao_decidida":
+    case "solicitacao_decidida": {
       const statusColor = p.status === "aprovada" ? "#38a169" : "#e53e3e";
       const statusLabel = p.status === "aprovada" ? "Aprovada ✅" : "Rejeitada ❌";
       return {
@@ -73,6 +94,7 @@ function buildEmail(tipo: NotificationType, p: Record<string, any>): { subject: 
           </table>`,
           `${BASE_URL}/solicitacoes`, "Ver Detalhes"),
       };
+    }
     case "excecao_criada":
       return {
         subject: `Nova exceção de acesso — ${p.colaborador_nome}`,
@@ -120,7 +142,7 @@ function buildEmail(tipo: NotificationType, p: Record<string, any>): { subject: 
       return {
         subject: `Contrato expirando — ${p.terceiro_nome}`,
         html: baseLayout("Contrato de Terceiro Expirando",
-          `<p>O contrato do terceiro abaixo está próximo do vencimento ou já expirou. Por favor, tome as providências necessárias.</p>
+          `<p>O contrato do terceiro abaixo está próximo do vencimento ou já expirou.</p>
           <table style="width:100%;border-collapse:collapse;margin:16px 0">
             <tr><td style="padding:8px 0;color:#718096;width:140px">Terceiro</td><td style="padding:8px 0;font-weight:600">${p.terceiro_nome}</td></tr>
             <tr><td style="padding:8px 0;color:#718096">Data de Expiração</td><td style="padding:8px 0;font-weight:600;color:#e53e3e">${p.contrato_fim || "—"}</td></tr>

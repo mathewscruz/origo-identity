@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Pencil, Trash2, Key, Camera, Loader2 } from "lucide-react";
+import { sendNotificationEmail } from "@/lib/sendNotificationEmail";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
@@ -139,6 +140,15 @@ export default function UsuariosPage() {
       const result = await res.json();
       if (!res.ok) { toast({ title: "Erro", description: result.error || "Falha ao convidar usuário", variant: "destructive" }); return; }
       await logAuditoria({ acao: "criar_usuario", entidade: "profiles", entidade_id: result.user_id, resumo: `Criado: ${form.nome} (${form.email}), role: ${form.role}` });
+      // Enviar e-mail de boas-vindas
+      await sendNotificationEmail("usuario_boas_vindas" as any, {
+        destinatario_email: form.email.trim(),
+        nome: form.nome.trim(),
+        email: form.email.trim(),
+        senha: form.password,
+        role: form.role,
+        link: window.location.origin,
+      });
       toast({ title: "Usuário criado com sucesso", description: `${form.email} já pode acessar o sistema.` });
     }
     qc.invalidateQueries({ queryKey: ["admin_profiles"] });

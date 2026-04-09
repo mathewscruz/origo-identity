@@ -60,13 +60,13 @@ Deno.serve(async (req) => {
       </p>
       ${dataFim ? `<p style="color: #e53e3e; font-size: 14px; margin: 0 0 20px;"><strong>⏰ Prazo limite:</strong> ${dataFim}</p>` : ""}
       <div style="text-align: center; margin: 28px 0;">
-        <a href="${reviewUrl}" style="background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; padding: 14px 36px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 15px; display: inline-block;">
+        <a href="${reviewUrl}" style="background: linear-gradient(135deg, #16968D, #0d8276); color: #fff; padding: 14px 36px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 15px; display: inline-block;">
           Iniciar Revisão
         </a>
       </div>
       <p style="color: #718096; font-size: 13px; margin: 24px 0 0; padding-top: 20px; border-top: 1px solid #e2e8f0;">
         Se o botão não funcionar, copie e cole este link no navegador:<br>
-        <a href="${reviewUrl}" style="color: #667eea; word-break: break-all;">${reviewUrl}</a>
+        <a href="${reviewUrl}" style="color: #16968D; word-break: break-all;">${reviewUrl}</a>
       </p>
     </div>
     <div style="background: #f7fafc; padding: 16px 24px; text-align: center;">
