@@ -1,0 +1,1 @@
+ALTER TABLE public.solicitacoes_acesso ADD COLUMN IF NOT EXISTS licencas_ids jsonb;

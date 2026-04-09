@@ -1544,6 +1544,7 @@ export type Database = {
           grupos_ids: Json
           id: string
           justificativa: string
+          licencas_ids: Json | null
           perfil_id: string | null
           solicitante_id: string
           status: string
@@ -1559,6 +1560,7 @@ export type Database = {
           grupos_ids?: Json
           id?: string
           justificativa: string
+          licencas_ids?: Json | null
           perfil_id?: string | null
           solicitante_id: string
           status?: string
@@ -1574,6 +1576,7 @@ export type Database = {
           grupos_ids?: Json
           id?: string
           justificativa?: string
+          licencas_ids?: Json | null
           perfil_id?: string | null
           solicitante_id?: string
           status?: string
