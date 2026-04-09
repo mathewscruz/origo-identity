@@ -515,7 +515,7 @@ export default function Dashboard() {
                       {item.label}
                     </p>
                     <p className="text-[10px] text-muted-foreground">
-                      {item.type === "queue" ? "Provisionamento" : "Solicitação"} · {new Date(item.date).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                      {item.sublabel} · {new Date(item.date).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                     </p>
                   </div>
                   <Badge variant="outline" className="text-[10px] uppercase shrink-0">
