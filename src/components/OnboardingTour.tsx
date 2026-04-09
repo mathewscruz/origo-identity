@@ -81,6 +81,7 @@ export default function OnboardingTour({ pageKey, steps, delay = 800 }: Onboardi
   const maskId = useId().replace(/:/g, "_");
   const [currentStep, setCurrentStep] = useState(0);
   const [visible, setVisible] = useState(false);
+  const dismissedRef = useRef(false);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
   const [actualPosition, setActualPosition] = useState<"top" | "bottom" | "left" | "right">("bottom");
@@ -90,16 +91,26 @@ export default function OnboardingTour({ pageKey, steps, delay = 800 }: Onboardi
 
   const userId = user?.id;
 
-  // Show tour on first visit
+  // Show tour on first visit — only once per mount
   useEffect(() => {
-    if (!userId || steps.length === 0) return;
-    const seen = localStorage.getItem(getStorageKey(userId, pageKey));
-    if (seen) return;
-    const timer = setTimeout(() => setVisible(true), delay);
+    if (!userId || steps.length === 0 || dismissedRef.current) return;
+    const key = getStorageKey(userId, pageKey);
+    const seen = localStorage.getItem(key);
+    if (seen) {
+      dismissedRef.current = true;
+      return;
+    }
+    const timer = setTimeout(() => {
+      // Double-check right before showing (in case another instance marked it)
+      if (!localStorage.getItem(key) && !dismissedRef.current) {
+        setVisible(true);
+      }
+    }, delay);
     return () => clearTimeout(timer);
   }, [userId, pageKey, steps.length, delay]);
 
   const markSeen = useCallback(() => {
+    dismissedRef.current = true;
     if (userId) localStorage.setItem(getStorageKey(userId, pageKey), "true");
     setVisible(false);
   }, [userId, pageKey]);
