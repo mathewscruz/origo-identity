@@ -1,55 +1,47 @@
 
-Problema identificado: o erro acontece porque a fila de provisionamento processa ações de app esperando `payload_json.appId`, mas parte dos fluxos de solicitação ainda monta itens sem trazer o `entra_id` da aplicação/grupo/licença. Na prática, alguns registros acabam indo para a `iam_queue` com ID interno, incompleto, ou sem o campo externo correto, e o processador devolve `appId ausente no payload`, exatamente como aparece na fila.
 
-O que corrigir
+## Plano: Corrigir nomes na atividade recente + otimizacoes gerais
 
-1. Ajustar a origem dos dados nas telas de solicitação
-- `src/pages/solicitacoes/SolicitacoesPage.tsx`
-- `src/pages/portal/PortalSolicitacoesPage.tsx`
+### 1. Corrigir labels da Atividade Recente no Dashboard
 
-Essas telas precisam buscar também os identificadores externos usados no provisionamento:
-- aplicações: `entra_id`, `default_app_role_id`
-- grupos: `entra_id`
-- licenças: `sku_id`
+**Problema:** A query `useRecentActivity` busca apenas `target_identity` da `iam_queue`, que frequentemente e um UUID ou ID interno (como `2eefb39b-a992-42dd-803d-9ecd4d367569`). O label deveria mostrar o nome legivel do colaborador e a acao realizada.
 
-2. Padronizar o payload enviado para a `iam_queue`
-- Garantir que apps usem sempre:
-  - `appId`
-  - `appName`
-  - `appRoleId`
-- Garantir que grupos usem:
-  - `groupId`
-  - `groupName`
-- Garantir que licenças usem:
-  - `skuId`
-  - `licenseName`
+**Correcao:** Incluir `payload_json` na query e construir o label a partir dos campos do payload:
+- Para `assign_group`/`remove_group`: `"{displayName} → {groupName}"`
+- Para `assign_app`/`remove_app`: `"{displayName} → {appName}"`
+- Para `assign_license`/`remove_license`: `"{displayName} → {licenseName}"`
+- Para `create`/`disable`/`update`: `"{displayName || target_identity}"`
+- Fallback: `target_identity` ou `action_type`
 
-3. Corrigir o autoaprovado das solicitações
-Hoje o fluxo autoaprovado depende de dados carregados na tela. Como o portal/admin não trazem todos os campos externos, ele consegue criar a solicitação, mas gera item quebrado para provisionamento.
-- Atualizar a lógica de `provisionItem` e do `queueItems.map(...)` para sempre resolver o ID externo a partir dos dados completos carregados.
-- Para app, incluir também `appRoleId` quando existir.
+Tambem adicionar o mapeamento de `action_type` para texto legivel (ex: `assign_group` → "Atribuicao de Grupo") como subtipo na linha de descricao.
 
-4. Reforçar a leitura nas telas relacionadas
-- Revisar `src/pages/aplicacoes/AplicacaoDetalhePage.tsx` para manter leitura consistente de `appId/appName/groupId/groupName`.
-- Revisar `src/pages/fila-provisionamento/FilaProvisionamentoPage.tsx` e `src/pages/fila-provisionamento/SolicitacaoDetalhePage.tsx` apenas para exibir melhor o erro, se necessário, sem mudar a regra do backend.
+**Arquivo:** `src/pages/Dashboard.tsx` — funcao `useRecentActivity` (linhas 210-246) e renderizacao (linhas 470-491)
 
-5. Validar o comportamento esperado após correção
-Depois da implementação, os novos itens deverão:
-- sair da solicitação com payload correto
-- parar de cair em retry por falta de `appId`
-- ser processados normalmente pelo fluxo de apps/grupos/licenças
+### 2. Otimizacoes identificadas (seguras, sem risco de quebra)
 
-Causa raiz resumida
-- O processador está correto: ele exige `appId`.
-- O problema está principalmente nas páginas de solicitação, que ainda não carregam todos os campos externos necessários para montar o payload completo.
-- Por isso o item é criado, mas falha depois no processamento.
+**A. Remover arquivo legado nao utilizado**
+- `src/pages/PlaceholderPage.tsx` — nao e importado em nenhum lugar do projeto. Pode ser removido com seguranca.
 
-Arquivos envolvidos
-- `src/pages/solicitacoes/SolicitacoesPage.tsx`
-- `src/pages/portal/PortalSolicitacoesPage.tsx`
-- `src/pages/aplicacoes/AplicacaoDetalhePage.tsx`
-- possivelmente `src/pages/fila-provisionamento/FilaProvisionamentoPage.tsx`
-- possivelmente `src/pages/fila-provisionamento/SolicitacaoDetalhePage.tsx`
+**B. Reduzir polling excessivo no Dashboard**
+- O Dashboard tem 6 queries com `refetchInterval: 30000` (30s) que disparam simultaneamente. Para dados que mudam pouco (KPIs, acessos por app), aumentar para 60s. Manter 30s apenas para atividade recente e fila.
+- `useKpiCounts`: 30s → 60s
+- `useAccessByApp`: 60s (ja esta ok)
+- `useSolicitacoesByStatus`: 30s → 60s
+- `useRevisoesAtivas`: 30s → 60s
 
-Observação importante
-Também vale revisar os itens já quebrados na fila: corrigir o código evita novos erros, mas os registros antigos que já ficaram com payload inválido continuarão falhando até serem recriados ou ajustados no backend.
+**C. Adicionar `staleTime` nas queries do Dashboard**
+- Nenhuma query do Dashboard define `staleTime`, o que causa refetches desnecessarios ao navegar entre paginas. Adicionar `staleTime: 15000` (15s) nas 6 queries para evitar requisicoes duplicadas.
+
+**D. Otimizar query `useAccessByApp`**
+- Atualmente faz 3 queries encadeadas (atribuicoes → perfil_aplicacoes → aplicacoes). As duas ultimas usam `.slice(0, 200)` e `.slice(0, 50)` como limites arbitrarios. Manter os limites mas adicionar tratamento para quando o `.in()` recebe array vazio (evitar query desnecessaria).
+
+**E. Status label "success" na atividade recente**
+- O `STATUS_MAP` nao tem entrada para `"success"`, entao itens concluidos da fila aparecem como texto cru "success". Adicionar: `success: { label: "Concluido", color: "..." }` e tambem `pending` e `failed` ao mapa.
+
+### Resumo de arquivos
+
+| Acao | Arquivo |
+|---|---|
+| Editar | `src/pages/Dashboard.tsx` — corrigir labels + adicionar staleTime + ajustar refetchInterval + mapear status |
+| Remover | `src/pages/PlaceholderPage.tsx` — arquivo legado nao utilizado |
+
