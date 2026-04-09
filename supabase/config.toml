@@ -40,3 +40,6 @@ verify_jwt = false
 [functions.sync-app-profiles]
 verify_jwt = false
 
+[functions.sync-user-access]
+verify_jwt = false
+

@@ -62,21 +62,18 @@ export async function provisionCargoAcessos(
     newPerfilIds.length > 0 ? getMergedResourcesForPerfis(newPerfilIds) : { grupoIds: [], licencaIds: [], appIds: [] },
   ]);
 
-  // Calculate delta
+  // Calculate delta — only additions, never remove existing access
   const oldGrupoSet = new Set(oldResources.grupoIds);
-  const newGrupoSet = new Set(newResources.grupoIds);
   const oldLicencaSet = new Set(oldResources.licencaIds);
-  const newLicencaSet = new Set(newResources.licencaIds);
   const oldAppSet = new Set(oldResources.appIds);
-  const newAppSet = new Set(newResources.appIds);
 
   const diff = {
     addedGrupoIds: newResources.grupoIds.filter(id => !oldGrupoSet.has(id)),
-    removedGrupoIds: oldResources.grupoIds.filter(id => !newGrupoSet.has(id)),
+    removedGrupoIds: [] as string[],  // Never remove on cargo change
     addedLicencaIds: newResources.licencaIds.filter(id => !oldLicencaSet.has(id)),
-    removedLicencaIds: oldResources.licencaIds.filter(id => !newLicencaSet.has(id)),
+    removedLicencaIds: [] as string[],  // Never remove on cargo change
     addedAppIds: newResources.appIds.filter(id => !oldAppSet.has(id)),
-    removedAppIds: oldResources.appIds.filter(id => !newAppSet.has(id)),
+    removedAppIds: [] as string[],  // Never remove on cargo change
   };
 
   // Revoke old cargo-based perfil_atribuicoes
