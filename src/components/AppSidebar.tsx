@@ -65,23 +65,23 @@ export function AppSidebar() {
   return (
     <>
       <Sidebar collapsible="icon">
-        <SidebarHeader className="p-4">
+        <SidebarHeader className="p-2">
           <div className="flex items-center gap-2">
-            <img src={logoImg} alt="Access & Identity" className={`rounded-lg object-contain shrink-0 ${collapsed ? "h-6 w-6" : "h-8 w-8"}`} />
-            {!collapsed && <div className="flex flex-col"><span className="text-sm font-semibold text-sidebar-primary-foreground">Órigo Access & Identity</span><span className="text-[10px] text-sidebar-foreground/60">Sistema</span></div>}
+            <img src={logoImg} alt="Access & Identity" className={`rounded-lg object-contain shrink-0 ${collapsed ? "h-5 w-5" : "h-7 w-7"}`} />
+            {!collapsed && <div className="flex flex-col"><span className="text-xs font-semibold text-sidebar-primary-foreground">Órigo Access & Identity</span><span className="text-[9px] text-sidebar-foreground/60">Sistema</span></div>}
           </div>
         </SidebarHeader>
         <SidebarSeparator />
-        <SidebarContent>
+        <SidebarContent className="overflow-y-hidden">
           {sidebarGroups.map((group) => (
-            <SidebarGroup key={group.label}>
-              <SidebarGroupLabel className="text-sidebar-foreground/50 text-[10px] uppercase tracking-wider font-semibold">{group.label}</SidebarGroupLabel>
-              <SidebarGroupContent><SidebarMenu>
+            <SidebarGroup key={group.label} className="py-1 px-2">
+              <SidebarGroupLabel className="text-sidebar-foreground/50 text-[9px] uppercase tracking-wider font-semibold mb-0 pb-0">{group.label}</SidebarGroupLabel>
+              <SidebarGroupContent><SidebarMenu className="gap-0.5">
                 {group.items.map((item) => (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title}>
-                      <NavLink to={item.url} end={item.url === "/"} className="hover:bg-sidebar-accent/50" activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium">
-                        <item.icon className="h-4 w-4" />{!collapsed && <span>{item.title}</span>}
+                    <SidebarMenuButton size="sm" asChild isActive={isActive(item.url)} tooltip={item.title}>
+                      <NavLink to={item.url} end={item.url === "/"} className="hover:bg-sidebar-accent/50 text-xs" activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium">
+                        <item.icon className="h-3.5 w-3.5" />{!collapsed && <span>{item.title}</span>}
                       </NavLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -90,20 +90,20 @@ export function AppSidebar() {
             </SidebarGroup>
           ))}
         </SidebarContent>
-        <SidebarFooter className="p-3">
+        <SidebarFooter className="p-2">
           {!collapsed && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 rounded-lg bg-sidebar-accent/50 p-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar-primary text-xs font-semibold text-sidebar-primary-foreground overflow-hidden shrink-0">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 rounded-lg bg-sidebar-accent/50 p-1.5">
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-sidebar-primary text-[10px] font-semibold text-sidebar-primary-foreground overflow-hidden shrink-0">
                   {profile?.avatar_url ? <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" /> : initials}
                 </div>
-                <div className="flex flex-col text-xs flex-1 min-w-0">
+                <div className="flex flex-col text-[11px] flex-1 min-w-0">
                   <span className="font-medium text-sidebar-accent-foreground truncate">{profile?.nome || "Usuário"}</span>
-                  <span className="text-sidebar-foreground/50 truncate">{profile?.email || ""}</span>
+                  <span className="text-sidebar-foreground/50 truncate text-[10px]">{profile?.email || ""}</span>
                 </div>
               </div>
-              <Button variant="ghost" size="sm" className="w-full justify-start text-sidebar-foreground/60 hover:text-destructive hover:bg-sidebar-accent" onClick={() => setLogoutOpen(true)}>
-                <LogOut className="mr-2 h-4 w-4" />Sair
+              <Button variant="ghost" size="sm" className="w-full justify-start text-sidebar-foreground/60 hover:text-destructive hover:bg-sidebar-accent h-7 text-xs" onClick={() => setLogoutOpen(true)}>
+                <LogOut className="mr-2 h-3.5 w-3.5" />Sair
               </Button>
             </div>
           )}
