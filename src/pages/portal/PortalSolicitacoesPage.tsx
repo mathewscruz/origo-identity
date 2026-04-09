@@ -221,12 +221,17 @@ export default function PortalSolicitacoesPage() {
             const lic = licencas.find((l: any) => l.id === item.recurso_id);
             resourceExternalId = lic?.sku_id || item.recurso_id;
           }
+          const payload: Record<string, any> = { [keys.id]: resourceExternalId, [keys.name]: item.recurso_nome, reason: "solicitacao_acesso" };
+          if (item.tipo === "app") {
+            const app = aplicacoes.find((a: any) => a.id === item.recurso_id);
+            if (app?.default_app_role_id) payload.appRoleId = app.default_app_role_id;
+          }
           return {
             action_type: actionMap[item.tipo],
             colaborador_id: colabData.id,
             target_identity: targetIdentity,
             status: "pending",
-            payload_json: { [keys.id]: resourceExternalId, [keys.name]: item.recurso_nome, reason: "solicitacao_acesso" },
+            payload_json: payload,
             requested_by: userEmail || "portal",
           };
         });
