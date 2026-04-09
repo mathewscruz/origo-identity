@@ -12,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/hooks/use-toast";
 import { Plus, Clock, CheckCircle2, XCircle, Send, FileText, AppWindow, Users } from "lucide-react";
 import { format } from "date-fns";
+import { sendNotificationEmail } from "@/lib/sendNotificationEmail";
 import EmptyState from "@/components/EmptyState";
 
 export default function PortalSolicitacoesPage() {
@@ -134,6 +135,34 @@ export default function PortalSolicitacoesPage() {
       toast({ title: "Erro ao enviar solicitação", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Solicitação enviada com sucesso!" });
+
+      // Notify owners of requested apps
+      if (selectedApps.length > 0) {
+        const { data: appsWithOwner } = await supabase.from("aplicacoes").select("nome, owner").in("id", selectedApps);
+        const ownerEmails = new Set<string>();
+        for (const a of (appsWithOwner || [])) {
+          if (a.owner) {
+            const emailMatch = a.owner.match(/<(.+?)>/);
+            const email = emailMatch ? emailMatch[1] : a.owner;
+            if (email.includes("@")) ownerEmails.add(email);
+          }
+        }
+
+        const { data: colabInfo } = await supabase.from("colaboradores").select("nome").eq("id", solicitanteId).maybeSingle();
+        const colabNome = colabInfo?.nome || userEmail || "Colaborador";
+        const itensNomes = (appsWithOwner || []).map(a => a.nome).join(", ");
+
+        for (const ownerEmail of ownerEmails) {
+          sendNotificationEmail("solicitacao_criada", {
+            destinatario_email: ownerEmail,
+            colaborador_nome: colabNome,
+            itens: itensNomes,
+            justificativa: justificativa.trim(),
+            solicitante: colabNome,
+          });
+        }
+      }
+
       setDialogOpen(false);
       setSelectedApps([]);
       setSelectedGrupos([]);

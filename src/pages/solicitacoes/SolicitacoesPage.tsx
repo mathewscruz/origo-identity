@@ -149,19 +149,52 @@ export default function SolicitacoesPage() {
 
     toast({ title: "Solicitação criada com sucesso", description: etapas && etapas.length > 0 ? `Encaminhada para workflow com ${etapas.length} etapa(s) de aprovação.` : undefined });
 
-    // Send email notification to admins
-    const { data: adminRoles } = await supabase.from("user_roles").select("user_id").eq("role", "admin");
-    if (adminRoles && adminRoles.length > 0) {
-      const adminIds = adminRoles.map((r: any) => r.user_id);
-      const { data: adminProfiles } = await supabase.from("profiles").select("email").in("id", adminIds);
-      for (const ap of (adminProfiles || [])) {
-        sendNotificationEmail("solicitacao_criada", {
-          destinatario_email: ap.email,
-          colaborador_nome: colabNome,
-          itens: perfilNome,
-          justificativa: justificativa.trim(),
-          solicitante: profile?.nome || profile?.email || "Sistema",
-        });
+    // Send email notification to owner (if defined) or admins as fallback
+    const perfilInfo = perfilMap.get(perfilId);
+    let ownerNotified = false;
+
+    // Check if the perfil has linked apps with owners
+    if (perfilId) {
+      const { data: perfilApps } = await supabase.from("perfil_aplicacoes").select("aplicacao_id").eq("perfil_id", perfilId);
+      if (perfilApps && perfilApps.length > 0) {
+        const appIds = perfilApps.map((pa: any) => pa.aplicacao_id);
+        const { data: apps } = await supabase.from("aplicacoes").select("owner").in("id", appIds);
+        const ownerEmails = new Set<string>();
+        for (const a of (apps || [])) {
+          if (a.owner) {
+            const emailMatch = a.owner.match(/<(.+?)>/);
+            const email = emailMatch ? emailMatch[1] : a.owner;
+            if (email.includes("@")) ownerEmails.add(email);
+          }
+        }
+        for (const ownerEmail of ownerEmails) {
+          sendNotificationEmail("solicitacao_criada", {
+            destinatario_email: ownerEmail,
+            colaborador_nome: colabNome,
+            itens: perfilNome,
+            justificativa: justificativa.trim(),
+            solicitante: profile?.nome || profile?.email || "Sistema",
+          });
+          ownerNotified = true;
+        }
+      }
+    }
+
+    // Fallback: notify admins if no owner was notified
+    if (!ownerNotified) {
+      const { data: adminRoles } = await supabase.from("user_roles").select("user_id").eq("role", "admin");
+      if (adminRoles && adminRoles.length > 0) {
+        const adminIds = adminRoles.map((r: any) => r.user_id);
+        const { data: adminProfiles } = await supabase.from("profiles").select("email").in("id", adminIds);
+        for (const ap of (adminProfiles || [])) {
+          sendNotificationEmail("solicitacao_criada", {
+            destinatario_email: ap.email,
+            colaborador_nome: colabNome,
+            itens: perfilNome,
+            justificativa: justificativa.trim(),
+            solicitante: profile?.nome || profile?.email || "Sistema",
+          });
+        }
       }
     }
 
