@@ -243,7 +243,7 @@ export function useColabIndividualQueue(colaboradorId: string | undefined) {
         .from("iam_queue")
         .select("*")
         .eq("colaborador_id", colaboradorId!)
-        .eq("requested_by", "manual_individual")
+        .in("requested_by", ["manual_individual", "entra_sync"])
         .in("action_type", ["assign_group", "assign_license", "assign_app"])
         .order("created_at", { ascending: false });
       if (error) throw error;

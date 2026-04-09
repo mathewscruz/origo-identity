@@ -315,7 +315,7 @@ export async function reprovisionCargoCollaborators(
     totalQueued += queued;
   }
 
-  // Removed profiles: revoke perfil_atribuicoes + queue remove
+  // Removed profiles: revoke perfil_atribuicoes only (no Entra removal — additive only)
   for (const perfilId of removedPerfilIds) {
     const { data: revokedData } = await supabase
       .from("perfil_atribuicoes")
@@ -327,11 +327,8 @@ export async function reprovisionCargoCollaborators(
       .select("id");
     revoked += revokedData?.length || 0;
   }
-
-  if (removedPerfilIds.length > 0) {
-    const queued = await queueFullProfileActions(activeColabs, removedPerfilIds, "remove", { triggerImmediately: false });
-    totalQueued += queued;
-  }
+  // Note: intentionally NOT queuing remove_* actions for removed profiles.
+  // Access is additive — only deactivation (leaver) removes Entra resources.
 
   if (totalQueued > 0) {
     triggerEntraProcessing(true);
