@@ -177,11 +177,22 @@ Deno.serve(async (req) => {
     const identity = colab.email || colab.sam_account_name || "";
     const queueEntries: any[] = [];
 
-    // Match groups with local entra_grupos table
+    // Match groups with local entra_grupos table (batch .in() to avoid URL length limits)
     if (userGroups.length > 0) {
       const entraIds = userGroups.map(g => g.id);
-      const { data: localGroups } = await sb.from("entra_grupos").select("id, entra_id, nome").in("entra_id", entraIds);
-      for (const lg of (localGroups || [])) {
+      const BATCH_IN = 50;
+      const localGroups: any[] = [];
+      for (let b = 0; b < entraIds.length; b += BATCH_IN) {
+        const slice = entraIds.slice(b, b + BATCH_IN);
+        const { data, error } = await sb.from("entra_grupos").select("id, entra_id, nome").in("entra_id", slice);
+        if (error) console.error("entra_grupos query error:", error.message);
+        if (data) localGroups.push(...data);
+      }
+      console.log(`Groups: ${userGroups.length} from Entra, ${localGroups.length} matched locally. Sample Entra IDs: ${entraIds.slice(0, 5).join(", ")}`);
+      if (localGroups.length === 0 && userGroups.length > 0) {
+        console.warn(`No local group matches. First 5 Entra group names: ${userGroups.slice(0, 5).map(g => g.displayName).join(", ")}`);
+      }
+      for (const lg of localGroups) {
         queueEntries.push({
           action_type: "assign_group",
           target_identity: identity,
