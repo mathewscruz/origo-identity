@@ -239,15 +239,34 @@ export function useColabIndividualQueue(colaboradorId: string | undefined) {
     queryKey: ["colab_individual_queue", colaboradorId],
     enabled: !!colaboradorId,
     queryFn: async () => {
+      // Fetch all assign_* and remove_* entries to compute current state
       const { data, error } = await (supabase as any)
         .from("iam_queue")
         .select("*")
         .eq("colaborador_id", colaboradorId!)
         .in("requested_by", ["manual_individual", "entra_sync"])
-        .in("action_type", ["assign_group", "assign_license", "assign_app"])
-        .order("created_at", { ascending: false });
+        .in("action_type", ["assign_group", "assign_license", "assign_app", "remove_group", "remove_license", "remove_app"])
+        .order("created_at", { ascending: true });
       if (error) throw error;
-      return data ?? [];
+      if (!data) return [];
+
+      // Build current state: for each resource key, keep only the latest action
+      const stateMap = new Map<string, any>();
+      for (const row of data) {
+        const p = row.payload_json;
+        let key: string;
+        const at = row.action_type as string;
+        if (at.includes("group")) key = `group:${p?.groupId || ""}`;
+        else if (at.includes("license")) key = `license:${p?.skuId || ""}`;
+        else if (at.includes("app")) key = `app:${p?.appId || ""}:${p?.appRoleId || ""}`;
+        else key = `${at}:${row.id}`;
+        stateMap.set(key, row);
+      }
+
+      // Return only active assignments (assign_* that are the latest for their key)
+      return Array.from(stateMap.values()).filter(
+        (r) => r.action_type.startsWith("assign_")
+      );
     },
     ...REFETCH_OPTS,
   });
