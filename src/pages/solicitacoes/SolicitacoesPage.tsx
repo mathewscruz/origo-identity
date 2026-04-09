@@ -61,9 +61,9 @@ export default function SolicitacoesPage() {
     const [{ data: s }, { data: c }, { data: apps }, { data: grps }, { data: lics }, { data: itens }] = await Promise.all([
       supabase.from("solicitacoes_acesso").select("*").order("created_at", { ascending: false }),
       supabase.from("colaboradores").select("id, nome, email, sam_account_name, entra_id").eq("status", "ativo").order("nome"),
-      supabase.from("aplicacoes").select("id, nome, entra_id, owner").order("nome"),
+      supabase.from("aplicacoes").select("id, nome, entra_id, default_app_role_id, owner").order("nome"),
       supabase.from("entra_grupos").select("id, nome, entra_id, owner").order("nome"),
-      supabase.from("licencas").select("id, nome, owner").order("nome"),
+      supabase.from("licencas").select("id, nome, owner, aplicacao_id").order("nome"),
       supabase.from("solicitacao_itens").select("*").order("created_at"),
     ]);
     setSolicitacoes(s || []);
