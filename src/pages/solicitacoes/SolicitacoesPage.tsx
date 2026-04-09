@@ -188,16 +188,22 @@ export default function SolicitacoesPage() {
       resourceExternalId = lic?.sku_id || item.recurso_id;
     }
 
+    const payload: Record<string, any> = {
+      [keys.idKey]: resourceExternalId,
+      [keys.nameKey]: item.recurso_nome,
+      reason: "solicitacao_acesso",
+    };
+    if (item.tipo === "app") {
+      const app = appMap.get(item.recurso_id);
+      if (app?.default_app_role_id) payload.appRoleId = app.default_app_role_id;
+    }
+
     await supabase.from("iam_queue").insert({
       action_type: actionMap[item.tipo],
       colaborador_id: colab.id,
       target_identity: targetIdentity,
       status: "pending",
-      payload_json: {
-        [keys.idKey]: resourceExternalId,
-        [keys.nameKey]: item.recurso_nome,
-        reason: "solicitacao_acesso",
-      },
+      payload_json: payload,
       requested_by: profile?.email || "sistema",
     } as any);
   };

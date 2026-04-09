@@ -62,9 +62,9 @@ export default function PortalSolicitacoesPage() {
         .select("*")
         .eq("user_id", userId!)
         .order("created_at", { ascending: false }),
-      supabase.from("aplicacoes").select("id, nome, owner").order("nome"),
-      supabase.from("entra_grupos").select("id, nome, owner").order("nome"),
-      supabase.from("licencas").select("id, nome, owner").order("nome"),
+      supabase.from("aplicacoes").select("id, nome, entra_id, default_app_role_id, owner").order("nome"),
+      supabase.from("entra_grupos").select("id, nome, entra_id, owner").order("nome"),
+      supabase.from("licencas").select("id, nome, owner, aplicacao_id").order("nome"),
       supabase.from("solicitacao_itens").select("*").order("created_at"),
     ]);
     setSolicitacoes(solRes.data ?? []);
