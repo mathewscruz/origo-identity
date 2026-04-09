@@ -1,56 +1,85 @@
 
 
-## Plano: Integrar envio de e-mails via SendGrid
+## Plano: Configurar todos os e-mails da ferramenta via SendGrid
 
-### Contexto
+### Varredura dos modulos — E-mails necessarios
 
-Hoje o sistema tem uma edge function `send-review-email` que apenas registra o e-mail na auditoria mas **não envia de fato**. Vamos integrá-la com o SendGrid para envio real, além de criar uma função utilitária reutilizável para outros e-mails futuros.
+Apos analisar todos os modulos do sistema, identifiquei os seguintes pontos onde e-mails devem ser enviados:
 
-### Pré-requisito
+| # | Cenario | Destinatario | Existe hoje? |
+|---|---------|-------------|-------------|
+| 1 | Revisao de acesso criada | Owner da aplicacao | Sim (send-review-email) |
+| 2 | Solicitacao de acesso criada | Aprovador (gestor/owner) | Nao |
+| 3 | Solicitacao aprovada/rejeitada | Solicitante (colaborador/operador) | Nao |
+| 4 | Excecao de acesso criada | Aprovador | Nao |
+| 5 | Excecao aprovada/rejeitada | Solicitante | Nao |
+| 6 | Colaborador desligado/desabilitado | Gestor do colaborador | Nao |
+| 7 | Terceiro com contrato expirando | Responsavel pelo terceiro | Nao |
+| 8 | Alerta critico gerado | Admins do sistema | Nao |
+| 9 | Revisao de acesso concluida | Admin que criou a campanha | Nao |
+| 10 | Lembrete de revisao pendente (prazo proximo) | Owner da aplicacao | Nao |
 
-Será necessário adicionar o secret `SENDGRID_API_KEY` ao projeto. Vou solicitar isso antes de implementar.
+### Arquitetura
 
-### Alterações
-
-**1. Adicionar secret `SENDGRID_API_KEY`**
-- Solicitar ao usuário via ferramenta de secrets
-
-**2. Criar função utilitária `_shared/sendgrid.ts`**
-- Helper reutilizável que encapsula a chamada à API do SendGrid (`https://api.sendgrid.com/v3/mail/send`)
-- Aceita: `to`, `subject`, `htmlContent`, `from` (com default para um remetente padrão)
-- Retorna sucesso/erro
-
-**3. Atualizar `supabase/functions/send-review-email/index.ts`**
-- Importar o helper SendGrid
-- Montar HTML do e-mail de revisão com: nome da aplicação, link de revisão, data limite
-- Enviar de fato via SendGrid antes de registrar na auditoria
-- Registrar na auditoria se o envio foi bem-sucedido ou falhou
-
-**4. Configurar remetente**
-- Usar o e-mail verificado no SendGrid como remetente (ex: `noreply@origoenergia.com.br`)
-- Preciso saber qual e-mail/domínio está verificado no SendGrid
-
-### Detalhes técnicos
+Criar uma unica edge function generica `send-notification-email` que recebe um `tipo` e os dados necessarios, monta o template HTML correspondente e envia via SendGrid usando o helper `_shared/sendgrid.ts` ja existente.
 
 ```text
-send-review-email
-  ├── Busca dados da revisão (já existe)
-  ├── Monta HTML do e-mail
-  ├── POST https://api.sendgrid.com/v3/mail/send
-  │     Authorization: Bearer $SENDGRID_API_KEY
-  │     Body: { from, to, subject, content }
-  ├── Registra resultado na auditoria
-  └── Retorna sucesso/erro
+send-notification-email
+  ├── tipo: "revisao_criada" | "solicitacao_criada" | "solicitacao_decidida" | ...
+  ├── payload: { destinatario, dados contextuais }
+  ├── Seleciona template HTML pelo tipo
+  ├── Envia via _shared/sendgrid.ts
+  └── Registra na auditoria
 ```
 
-### Pergunta necessária
+### Alteracoes
 
-Qual é o e-mail remetente verificado no SendGrid? (ex: `noreply@origoenergia.com.br`)
+**1. Criar `supabase/functions/send-notification-email/index.ts`**
+- Edge function generica que aceita `{ tipo, payload }` 
+- Templates HTML para cada cenario, todos em portugues com visual consistente (gradiente escuro no header, botao de acao, rodape Origo Identity)
+- Tipos suportados:
+  - `solicitacao_criada` — avisa aprovador
+  - `solicitacao_decidida` — avisa solicitante do resultado
+  - `excecao_criada` — avisa aprovador
+  - `excecao_decidida` — avisa solicitante do resultado
+  - `colaborador_desabilitado` — avisa gestor
+  - `terceiro_expirando` — avisa responsavel
+  - `alerta_critico` — avisa admins
+  - `revisao_concluida` — avisa admin criador
+  - `revisao_lembrete` — lembrete de prazo ao owner
+
+**2. Integrar chamadas nos modulos existentes**
+
+- `src/pages/solicitacoes/SolicitacoesPage.tsx` — ao criar solicitacao e ao decidir (aprovar/rejeitar)
+- `src/pages/excecoes/ExcecoesPage.tsx` — ao criar excecao e ao decidir
+- `src/pages/colaboradores/ColaboradorDetalhePage.tsx` — ao mudar status para inativo/desligado/ferias/afastado
+- `src/pages/revisoes/RevisoesPage.tsx` — manter chamada existente ao send-review-email
+- `supabase/functions/auto-recertification/index.ts` — ao expirar terceiro, enviar e-mail ao responsavel
+- `src/pages/revisoes/RevisaoDetalhePage.tsx` ou `RevisaoExternaPage.tsx` — ao concluir revisao
+
+**3. Buscar e-mails dos admins para alertas criticos**
+- Consultar tabela `profiles` + `user_roles` para encontrar admins e enviar alertas criticos
+
+**4. Adicionar config em `supabase/config.toml`**
+- Registrar `send-notification-email` com `verify_jwt = false`
+
+### Detalhes tecnicos dos templates
+
+Todos os templates seguem o mesmo layout visual do e-mail de revisao ja existente:
+- Header com gradiente escuro (#1a1f2c → #2d3748)
+- Corpo branco com texto em portugues
+- Botao de acao com gradiente roxo quando aplicavel
+- Rodape cinza com "Origo Identity — Gestao de Identidades e Acessos"
+- Remetente: `noreply@origoenergia.com.br` / "Origo Identity"
 
 ### Arquivos
 
-| Ação | Arquivo |
+| Acao | Arquivo |
 |---|---|
-| Criar | `supabase/functions/_shared/sendgrid.ts` — helper de envio |
-| Editar | `supabase/functions/send-review-email/index.ts` — envio real via SendGrid |
+| Criar | `supabase/functions/send-notification-email/index.ts` |
+| Editar | `supabase/config.toml` — adicionar funcao |
+| Editar | `src/pages/solicitacoes/SolicitacoesPage.tsx` — enviar e-mails |
+| Editar | `src/pages/excecoes/ExcecoesPage.tsx` — enviar e-mails |
+| Editar | `src/pages/colaboradores/ColaboradorDetalhePage.tsx` — enviar e-mail ao desabilitar |
+| Editar | `supabase/functions/auto-recertification/index.ts` — enviar e-mail terceiro expirando |
 
