@@ -14,7 +14,7 @@ const BRAND_DARK = "#0d8276";
 function baseLayout(title: string, body: string, actionUrl?: string, actionLabel?: string): string {
   const actionBlock = actionUrl && actionLabel ? `
     <tr><td style="padding:28px 40px 0;text-align:center;">
-      <a href="${actionUrl}" style="display:inline-block;padding:14px 40px;background:linear-gradient(135deg,${BRAND_COLOR},${BRAND_DARK});color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;letter-spacing:0.3px;box-shadow:0 4px 14px rgba(22,150,141,0.3);">${actionLabel}</a>
+      <a href="${actionUrl}" style="display:inline-block;padding:14px 40px;background-color:${BRAND_COLOR};background:linear-gradient(135deg,${BRAND_COLOR},${BRAND_DARK});color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;letter-spacing:0.3px;box-shadow:0 4px 14px rgba(22,150,141,0.3);mso-padding-alt:14px 40px;">${actionLabel}</a>
     </td></tr>` : "";
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
