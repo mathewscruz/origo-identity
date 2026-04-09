@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
   </td></tr>
   <!-- CTA -->
   <tr><td style="padding:0 40px 36px;text-align:center;">
-    <a href="${reviewUrl}" style="display:inline-block;padding:14px 40px;background:linear-gradient(135deg,${BRAND_COLOR},${BRAND_DARK});color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;letter-spacing:0.3px;box-shadow:0 4px 14px rgba(22,150,141,0.3);">Iniciar Revisão</a>
+    <a href="${reviewUrl}" style="display:inline-block;padding:14px 40px;background-color:${BRAND_COLOR};background:linear-gradient(135deg,${BRAND_COLOR},${BRAND_DARK});color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;letter-spacing:0.3px;box-shadow:0 4px 14px rgba(22,150,141,0.3);mso-padding-alt:14px 40px;">Iniciar Revisão</a>
   </td></tr>
   <tr><td style="padding:0 40px 28px;">
     <p style="color:#94a3b8;font-size:12px;margin:0;text-align:center;">
