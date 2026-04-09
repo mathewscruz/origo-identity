@@ -315,7 +315,27 @@ export default function ColaboradoresPage() {
           target_identity: sam || null,
         });
         toast({ title: "Solicitação enviada para processamento" });
-      }
+
+        // Sync current Entra ID access as individual records
+        if (form.email.trim() || form.sam_account_name.trim()) {
+          try {
+            const syncUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-user-access`;
+            fetch(syncUrl, {
+              method: "POST",
+              headers: {
+                apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+                Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ colaborador_id: colaboradorId }),
+            }).then(r => r.json()).then(res => {
+              if (res.queued > 0) {
+                console.log(`[sync-user-access] Imported ${res.queued} access records from Entra ID`);
+              }
+            }).catch(e => console.warn("[sync-user-access]", e));
+            toast({ title: "Importando acessos atuais do Entra ID..." });
+          } catch (e) { console.warn("[sync-user-access]", e); }
+        }
 
       // 4. Queue update for edits (cargo/area change)
       if (editingId && (cargoChanged || areaChanged) && !becameInactive && !becameActive) {

@@ -593,12 +593,16 @@ export default function ColaboradorDetalhePage() {
                     {(individualQueue ?? []).map((item: any) => {
                       const Icon = actionTypeIcons[item.action_type] || Shield;
                       const statusClass = statusQueueColors[item.status] || "";
+                      const isEntraSync = item.requested_by === "entra_sync";
                       return (
                         <tr key={item.id} className="border-b last:border-0">
                           <td className="p-4">
                             <div className="flex items-center gap-2">
                               <Icon className="h-4 w-4 text-muted-foreground" />
                               <span>{actionTypeLabels[item.action_type] || item.action_type}</span>
+                              {isEntraSync && (
+                                <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/30">Importado</Badge>
+                              )}
                             </div>
                           </td>
                           <td className="p-4 font-medium">{getResourceName(item)}</td>
