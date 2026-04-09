@@ -168,6 +168,25 @@ Deno.serve(async (req) => {
           ref_tipo: "revisao",
         });
 
+        // Send review email to owner
+        if (ownerEmail) {
+          try {
+            const response = await fetch(`${SUPABASE_URL}/functions/v1/send-review-email`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${SERVICE_KEY}`,
+              },
+              body: JSON.stringify({ revisao_id: revisao.id }),
+            });
+            if (!response.ok) {
+              console.error(`Failed to send review email for ${app.nome}:`, await response.text());
+            }
+          } catch (emailErr) {
+            console.error(`Error sending review email for ${app.nome}:`, emailErr);
+          }
+        }
+
         results.revisoes_criadas++;
         console.log(`Auto-recertification created for ${app.nome}: ${atribuicoes.length} items`);
       }

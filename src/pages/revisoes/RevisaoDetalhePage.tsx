@@ -107,9 +107,9 @@ export default function RevisaoDetalhePage() {
               <td className="p-4 text-muted-foreground">{it.perfil_nome || "—"}</td>
               <td className="p-4">
                 {it.decisao ? (
-                  <Badge variant="outline" className={decisaoColors[it.decisao] || "bg-muted text-muted-foreground"}>{it.decisao}</Badge>
+                  <Badge variant="outline" className={decisaoColors[it.decisao] || "bg-muted text-muted-foreground"}>{decisaoLabel[it.decisao] || it.decisao}</Badge>
                 ) : (
-                  <Badge variant="outline" className="bg-muted text-muted-foreground">pendente</Badge>
+                  <Badge variant="outline" className="bg-muted text-muted-foreground">Pendente</Badge>
                 )}
               </td>
               <td className="p-4 text-muted-foreground text-xs">{it.decidido_em ? new Date(it.decidido_em).toLocaleString("pt-BR") : "—"}</td>
