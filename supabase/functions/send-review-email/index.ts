@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
   </td></tr>
   <!-- Footer -->
   <tr><td style="padding:24px 40px;border-top:1px solid #e2e8f0;text-align:center;">
-    <p style="margin:0;color:#94a3b8;font-size:11px;font-weight:500;">Origo Identity — Gestão de Identidades e Acessos</p>
+    <p style="margin:0;color:#94a3b8;font-size:11px;font-weight:500;">Órigo Access & Identity — Gestão de Identidades e Acessos</p>
     <p style="margin:6px 0 0;color:#cbd5e1;font-size:10px;">Este é um e-mail automático. Não responda.</p>
   </td></tr>
 </table>
@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
 
     const result = await sendEmail({
       to: ownerEmail,
-      subject: `Revisão de Acesso — ${appName}`,
+      subject: `[Órigo Access & Identity] Revisão de Acesso — ${appName}`,
       htmlContent,
     });
 
