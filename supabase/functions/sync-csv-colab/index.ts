@@ -794,6 +794,24 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
             ins.data.sam_account_name, ins.data.nome || "", ins.data.email || ""
           );
         }
+
+        // Sync current Entra ID access as individual records
+        if (ins.data.email || ins.data.sam_account_name) {
+          try {
+            const syncUrl = `${supabaseUrl}/functions/v1/sync-user-access`;
+            await fetch(syncUrl, {
+              method: "POST",
+              headers: {
+                apikey: serviceKey,
+                Authorization: `Bearer ${serviceKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ colaborador_id: ins.id }),
+            });
+          } catch (e) {
+            console.warn(`[sync-user-access] Error for ${ins.id}:`, e);
+          }
+        }
       }
     }
 
