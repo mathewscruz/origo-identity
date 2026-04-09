@@ -174,8 +174,7 @@ function IndividualAccessTabs({ individualQueue, actionTypeIcons, actionTypeLabe
     </div>
   );
 }
-
-
+export default function ColaboradorDetalhePage() {
   const { id } = useParams();
   const { data: pessoa, isLoading } = useColaborador(id);
   const { data: atribuicoes } = usePerfilAtribuicoes(undefined, id);
