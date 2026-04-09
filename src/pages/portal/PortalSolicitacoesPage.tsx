@@ -15,8 +15,16 @@ import { format } from "date-fns";
 import { sendNotificationEmail } from "@/lib/sendNotificationEmail";
 import EmptyState from "@/components/EmptyState";
 
+function extractOwnerEmail(owner: string | null): string | null {
+  if (!owner) return null;
+  const match = owner.match(/<(.+?)>/);
+  const email = match ? match[1] : owner;
+  return email.includes("@") ? email : null;
+}
+
 export default function PortalSolicitacoesPage() {
   const [solicitacoes, setSolicitacoes] = useState<any[]>([]);
+  const [solicitacaoItens, setSolicitacaoItens] = useState<any[]>([]);
   const [aplicacoes, setAplicacoes] = useState<any[]>([]);
   const [grupos, setGrupos] = useState<any[]>([]);
   const [licencas, setLicencas] = useState<any[]>([]);
@@ -48,26 +56,28 @@ export default function PortalSolicitacoesPage() {
 
   async function fetchData() {
     setLoading(true);
-    const [solRes, appRes, grpRes, licRes] = await Promise.all([
+    const [solRes, appRes, grpRes, licRes, itensRes] = await Promise.all([
       supabase
         .from("solicitacoes_acesso")
         .select("*")
         .eq("user_id", userId!)
         .order("created_at", { ascending: false }),
       supabase.from("aplicacoes").select("id, nome, owner").order("nome"),
-      supabase.from("entra_grupos").select("id, nome").order("nome"),
-      supabase.from("licencas").select("id, nome").order("nome"),
+      supabase.from("entra_grupos").select("id, nome, owner").order("nome"),
+      supabase.from("licencas").select("id, nome, owner").order("nome"),
+      supabase.from("solicitacao_itens").select("*").order("created_at"),
     ]);
     setSolicitacoes(solRes.data ?? []);
     setAplicacoes(appRes.data ?? []);
     setGrupos(grpRes.data ?? []);
     setLicencas(licRes.data ?? []);
+    setSolicitacaoItens(itensRes.data ?? []);
     setLoading(false);
   }
 
-  const appMap = new Map(aplicacoes.map(a => [a.id, a.nome]));
-  const grupoMap = new Map(grupos.map(g => [g.id, g.nome]));
-  const licencaMap = new Map(licencas.map(l => [l.id, l.nome]));
+  const appMap = new Map(aplicacoes.map(a => [a.id, a]));
+  const grupoMap = new Map(grupos.map(g => [g.id, g]));
+  const licencaMap = new Map(licencas.map(l => [l.id, l]));
 
   const statusBadge = (status: string) => {
     const map: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -82,6 +92,35 @@ export default function PortalSolicitacoesPage() {
 
   const toggleItem = (list: string[], setList: React.Dispatch<React.SetStateAction<string[]>>, id: string) => {
     setList(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const renderItemStatusBadges = (solicitacaoId: string) => {
+    const items = solicitacaoItens.filter(i => i.solicitacao_id === solicitacaoId);
+    if (items.length === 0) return null;
+
+    const iconMap: Record<string, any> = { app: AppWindow, grupo: Users, licenca: KeyRound };
+    const statusColors: Record<string, string> = {
+      pendente: "border-yellow-500 text-yellow-600",
+      aprovado: "border-green-500 text-green-600",
+      rejeitado: "border-red-500 text-red-600",
+    };
+
+    return (
+      <div className="flex flex-wrap gap-1">
+        {items.map((item: any) => {
+          const Icon = iconMap[item.tipo] || AppWindow;
+          return (
+            <Badge key={item.id} variant="outline" className={`text-xs ${statusColors[item.status] || ""}`}>
+              <Icon className="mr-1 h-3 w-3" />
+              {item.recurso_nome}
+              {item.status === "aprovado" && <CheckCircle2 className="ml-1 h-3 w-3" />}
+              {item.status === "rejeitado" && <XCircle className="ml-1 h-3 w-3" />}
+              {item.status === "pendente" && <Clock className="ml-1 h-3 w-3" />}
+            </Badge>
+          );
+        })}
+      </div>
+    );
   };
 
   const handleSubmit = async () => {
@@ -100,10 +139,10 @@ export default function PortalSolicitacoesPage() {
     if (userEmail) {
       const { data: colab } = await supabase
         .from("colaboradores")
-        .select("id")
+        .select("id, nome, email, entra_id, sam_account_name")
         .eq("email", userEmail)
         .maybeSingle();
-      solicitanteId = colab?.id ?? null;
+      if (colab) solicitanteId = colab.id;
     }
 
     if (!solicitanteId) {
@@ -112,80 +151,153 @@ export default function PortalSolicitacoesPage() {
       return;
     }
 
-    const { error } = await supabase.from("solicitacoes_acesso").insert({
+    // Build items to determine status
+    const itemRecords: any[] = [];
+    for (const appId of selectedApps) {
+      const app = appMap.get(appId);
+      const ownerEmail = extractOwnerEmail(app?.owner);
+      itemRecords.push({ tipo: "app", recurso_id: appId, recurso_nome: app?.nome || appId, owner_email: ownerEmail, status: ownerEmail ? "pendente" : "aprovado" });
+    }
+    for (const grpId of selectedGrupos) {
+      const grp = grupoMap.get(grpId);
+      const ownerEmail = extractOwnerEmail(grp?.owner);
+      itemRecords.push({ tipo: "grupo", recurso_id: grpId, recurso_nome: grp?.nome || grpId, owner_email: ownerEmail, status: ownerEmail ? "pendente" : "aprovado" });
+    }
+    for (const licId of selectedLicencas) {
+      const lic = licencaMap.get(licId);
+      const ownerEmail = extractOwnerEmail(lic?.owner);
+      itemRecords.push({ tipo: "licenca", recurso_id: licId, recurso_nome: lic?.nome || licId, owner_email: ownerEmail, status: ownerEmail ? "pendente" : "aprovado" });
+    }
+
+    const hasPending = itemRecords.some(i => i.status === "pendente");
+    const initialStatus = hasPending ? "em_aprovacao" : "aprovada";
+
+    const { data: inserted, error } = await supabase.from("solicitacoes_acesso").insert({
       solicitante_id: solicitanteId,
       perfil_id: null,
       aplicacoes_ids: selectedApps,
       grupos_ids: selectedGrupos,
       licencas_ids: selectedLicencas,
       justificativa: justificativa.trim(),
-      status: "pendente",
+      status: initialStatus,
       user_id: userId,
-    } as any);
+    } as any).select("id").single();
 
     if (error) {
       toast({ title: "Erro ao enviar solicitação", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Solicitação enviada com sucesso!" });
-
-      // Notify owners of requested apps
-      const ownerEmails = new Set<string>();
-      for (const appId of selectedApps) {
-        const app = aplicacoes.find(a => a.id === appId);
-        if (app?.owner) {
-          const emailMatch = app.owner.match(/<(.+?)>/);
-          const email = emailMatch ? emailMatch[1] : app.owner;
-          if (email.includes("@")) ownerEmails.add(email);
-        }
-      }
-
-      const { data: colabInfo } = await supabase.from("colaboradores").select("nome").eq("id", solicitanteId).maybeSingle();
-      const colabNome = colabInfo?.nome || userEmail || "Colaborador";
-
-      const allItemNames: string[] = [];
-      selectedApps.forEach(id => allItemNames.push(appMap.get(id) || id));
-      selectedGrupos.forEach(id => allItemNames.push(grupoMap.get(id) || id));
-      selectedLicencas.forEach(id => allItemNames.push(licencaMap.get(id) || id));
-      const itensNomes = allItemNames.join(", ");
-
-      for (const ownerEmail of ownerEmails) {
-        sendNotificationEmail("solicitacao_criada", {
-          destinatario_email: ownerEmail,
-          colaborador_nome: colabNome,
-          itens: itensNomes,
-          justificativa: justificativa.trim(),
-          solicitante: colabNome,
-        });
-      }
-
-      // Fallback: notify admins if no owner
-      if (ownerEmails.size === 0) {
-        const { data: adminRoles } = await supabase.from("user_roles").select("user_id").eq("role", "admin");
-        if (adminRoles && adminRoles.length > 0) {
-          const adminIds = adminRoles.map((r: any) => r.user_id);
-          const { data: adminProfiles } = await supabase.from("profiles").select("email").in("id", adminIds);
-          for (const ap of (adminProfiles || [])) {
-            sendNotificationEmail("solicitacao_criada", {
-              destinatario_email: ap.email,
-              colaborador_nome: colabNome,
-              itens: itensNomes,
-              justificativa: justificativa.trim(),
-              solicitante: colabNome,
-            });
-          }
-        }
-      }
-
-      setDialogOpen(false);
-      setSelectedApps([]);
-      setSelectedGrupos([]);
-      setSelectedLicencas([]);
-      setJustificativa("");
-      setBuscaApp("");
-      setBuscaGrupo("");
-      setBuscaLicenca("");
-      fetchData();
+      setSubmitting(false);
+      return;
     }
+
+    // Insert individual items
+    const itemsToInsert = itemRecords.map(i => ({ ...i, solicitacao_id: inserted!.id }));
+    await supabase.from("solicitacao_itens").insert(itemsToInsert as any);
+
+    // Auto-provision items without owner
+    const { data: colabData } = await supabase.from("colaboradores").select("id, nome, email, entra_id, sam_account_name").eq("id", solicitanteId).maybeSingle();
+    const autoApproved = itemRecords.filter(i => i.status === "aprovado");
+
+    if (colabData && autoApproved.length > 0) {
+      const targetIdentity = colabData.entra_id || colabData.email || colabData.sam_account_name;
+      if (targetIdentity) {
+        const queueItems = autoApproved.map(item => {
+          const actionMap: Record<string, string> = { app: "assign_app", grupo: "assign_group", licenca: "assign_license" };
+          const keyMap: Record<string, { id: string; name: string }> = {
+            app: { id: "app_id", name: "app_name" },
+            grupo: { id: "group_id", name: "group_name" },
+            licenca: { id: "license_id", name: "license_name" },
+          };
+          const keys = keyMap[item.tipo];
+          return {
+            action_type: actionMap[item.tipo],
+            colaborador_id: colabData.id,
+            target_identity: targetIdentity,
+            status: "pending",
+            payload_json: { [keys.id]: item.recurso_id, [keys.name]: item.recurso_nome, reason: "solicitacao_acesso" },
+            requested_by: userEmail || "portal",
+          };
+        });
+        await supabase.from("iam_queue").insert(queueItems as any);
+      }
+    }
+
+    // If all auto-approved, mark the request
+    if (!hasPending) {
+      await supabase.from("solicitacoes_acesso").update({
+        aprovador: "auto",
+        data_decisao: new Date().toISOString(),
+        comentario: "Aprovação automática — nenhum item possui owner definido",
+      } as any).eq("id", inserted!.id);
+    }
+
+    const colabNome = colabData?.nome || userEmail || "Colaborador";
+
+    // Notify owners grouped by email
+    const ownerGroups = new Map<string, string[]>();
+    for (const item of itemRecords) {
+      if (item.owner_email) {
+        const existing = ownerGroups.get(item.owner_email) || [];
+        existing.push(item.recurso_nome);
+        ownerGroups.set(item.owner_email, existing);
+      }
+    }
+
+    for (const [ownerEmail, ownerItems] of ownerGroups) {
+      sendNotificationEmail("solicitacao_criada", {
+        destinatario_email: ownerEmail,
+        colaborador_nome: colabNome,
+        itens: ownerItems.join(", "),
+        justificativa: justificativa.trim(),
+        solicitante: colabNome,
+      });
+    }
+
+    // Fallback: notify admins if no items have owners and there are pending items
+    if (ownerGroups.size === 0 && hasPending) {
+      const { data: adminRoles } = await supabase.from("user_roles").select("user_id").eq("role", "admin");
+      if (adminRoles && adminRoles.length > 0) {
+        const adminIds = adminRoles.map((r: any) => r.user_id);
+        const { data: adminProfiles } = await supabase.from("profiles").select("email").in("id", adminIds);
+        for (const ap of (adminProfiles || [])) {
+          sendNotificationEmail("solicitacao_criada", {
+            destinatario_email: ap.email,
+            colaborador_nome: colabNome,
+            itens: itemRecords.map(i => i.recurso_nome).join(", "),
+            justificativa: justificativa.trim(),
+            solicitante: colabNome,
+          });
+        }
+      }
+    }
+
+    // Notify requester about auto-approved items
+    if (autoApproved.length > 0 && colabData?.email) {
+      sendNotificationEmail("solicitacao_decidida", {
+        destinatario_email: colabData.email,
+        colaborador_nome: colabNome,
+        itens: autoApproved.map(i => i.recurso_nome).join(", "),
+        status: "aprovada",
+        aprovador: "Automático",
+        comentario: "Aprovação automática — sem owner definido",
+      });
+    }
+
+    toast({
+      title: "Solicitação enviada com sucesso!",
+      description: hasPending
+        ? `${autoApproved.length} item(ns) aprovado(s) automaticamente, ${itemRecords.length - autoApproved.length} aguardando aprovação.`
+        : "Todos os itens foram aprovados automaticamente.",
+    });
+
+    setDialogOpen(false);
+    setSelectedApps([]);
+    setSelectedGrupos([]);
+    setSelectedLicencas([]);
+    setJustificativa("");
+    setBuscaApp("");
+    setBuscaGrupo("");
+    setBuscaLicenca("");
+    fetchData();
     setSubmitting(false);
   };
 
@@ -299,29 +411,31 @@ export default function PortalSolicitacoesPage() {
                 {solicitacoes.map((s) => (
                   <TableRow key={s.id}>
                     <TableCell className="font-medium max-w-xs">
-                      <div className="flex flex-wrap gap-1">
-                        {(Array.isArray(s.aplicacoes_ids) ? s.aplicacoes_ids : []).map((id: string) => (
-                          <Badge key={id} variant="outline" className="text-xs">
-                            <AppWindow className="mr-1 h-3 w-3" />
-                            {appMap.get(id) || id}
-                          </Badge>
-                        ))}
-                        {(Array.isArray(s.grupos_ids) ? s.grupos_ids : []).map((id: string) => (
-                          <Badge key={id} variant="secondary" className="text-xs">
-                            <Users className="mr-1 h-3 w-3" />
-                            {grupoMap.get(id) || id}
-                          </Badge>
-                        ))}
-                        {(Array.isArray(s.licencas_ids) ? s.licencas_ids : []).map((id: string) => (
-                          <Badge key={id} variant="outline" className="text-xs border-primary/40">
-                            <KeyRound className="mr-1 h-3 w-3" />
-                            {licencaMap.get(id) || id}
-                          </Badge>
-                        ))}
-                        {!(s.aplicacoes_ids?.length || s.grupos_ids?.length || s.licencas_ids?.length) && (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </div>
+                      {renderItemStatusBadges(s.id) || (
+                        <div className="flex flex-wrap gap-1">
+                          {(Array.isArray(s.aplicacoes_ids) ? s.aplicacoes_ids : []).map((id: string) => (
+                            <Badge key={id} variant="outline" className="text-xs">
+                              <AppWindow className="mr-1 h-3 w-3" />
+                              {appMap.get(id)?.nome || id}
+                            </Badge>
+                          ))}
+                          {(Array.isArray(s.grupos_ids) ? s.grupos_ids : []).map((id: string) => (
+                            <Badge key={id} variant="secondary" className="text-xs">
+                              <Users className="mr-1 h-3 w-3" />
+                              {grupoMap.get(id)?.nome || id}
+                            </Badge>
+                          ))}
+                          {(Array.isArray(s.licencas_ids) ? s.licencas_ids : []).map((id: string) => (
+                            <Badge key={id} variant="outline" className="text-xs border-primary/40">
+                              <KeyRound className="mr-1 h-3 w-3" />
+                              {licencaMap.get(id)?.nome || id}
+                            </Badge>
+                          ))}
+                          {!(s.aplicacoes_ids?.length || s.grupos_ids?.length || s.licencas_ids?.length) && (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell className="max-w-xs truncate hidden md:table-cell">{s.justificativa}</TableCell>
                     <TableCell className="hidden sm:table-cell">{format(new Date(s.created_at), "dd/MM/yyyy HH:mm")}</TableCell>
@@ -356,6 +470,7 @@ export default function PortalSolicitacoesPage() {
                   <label key={a.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
                     <Checkbox checked={selectedApps.includes(a.id)} onCheckedChange={() => toggleItem(selectedApps, setSelectedApps, a.id)} />
                     <span className="text-sm">{a.nome}</span>
+                    {a.owner && <Badge variant="outline" className="text-xs ml-auto">Owner definido</Badge>}
                   </label>
                 ))}
                 {filteredApps.length === 0 && <EmptyState message="Nenhuma aplicação encontrada" size="sm" />}
@@ -376,6 +491,7 @@ export default function PortalSolicitacoesPage() {
                   <label key={g.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
                     <Checkbox checked={selectedGrupos.includes(g.id)} onCheckedChange={() => toggleItem(selectedGrupos, setSelectedGrupos, g.id)} />
                     <span className="text-sm">{g.nome}</span>
+                    {g.owner && <Badge variant="outline" className="text-xs ml-auto">Owner definido</Badge>}
                   </label>
                 ))}
                 {filteredGrupos.length === 0 && <EmptyState message="Nenhum grupo encontrado" size="sm" />}
@@ -396,6 +512,7 @@ export default function PortalSolicitacoesPage() {
                   <label key={l.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
                     <Checkbox checked={selectedLicencas.includes(l.id)} onCheckedChange={() => toggleItem(selectedLicencas, setSelectedLicencas, l.id)} />
                     <span className="text-sm">{l.nome}</span>
+                    {l.owner && <Badge variant="outline" className="text-xs ml-auto">Owner definido</Badge>}
                   </label>
                 ))}
                 {filteredLicencas.length === 0 && <EmptyState message="Nenhuma licença encontrada" size="sm" />}
