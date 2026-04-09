@@ -106,6 +106,19 @@ Deno.serve(async (req) => {
         const dataLimite = new Date();
         dataLimite.setDate(dataLimite.getDate() + 14); // 14 days to complete
 
+        const token = crypto.randomUUID();
+
+        // Resolve owner email from colaboradores
+        let ownerEmail: string | null = null;
+        if (app.owner) {
+          const { data: ownerColab } = await sb
+            .from("colaboradores")
+            .select("email")
+            .eq("id", app.owner)
+            .single();
+          ownerEmail = ownerColab?.email || null;
+        }
+
         const { data: revisao, error: revError } = await sb
           .from("revisoes")
           .insert({
@@ -117,6 +130,10 @@ Deno.serve(async (req) => {
             data_fim: dataLimite.toISOString().split("T")[0],
             total_itens: atribuicoes.length,
             itens_revisados: 0,
+            token,
+            aplicacao_id: app.id,
+            owner_email: ownerEmail,
+            tipo: "aplicacao",
           })
           .select("id")
           .single();

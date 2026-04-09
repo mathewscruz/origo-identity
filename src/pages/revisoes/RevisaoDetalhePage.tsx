@@ -15,6 +15,11 @@ const decisaoColors: Record<string, string> = {
   revogar: "bg-destructive/15 text-destructive border-destructive/30",
 };
 
+const decisaoLabel: Record<string, string> = {
+  manter: "Manter",
+  revogar: "Revogar",
+};
+
 export default function RevisaoDetalhePage() {
   const { id } = useParams();
   const { data: revisao, isLoading } = useRevisao(id);
