@@ -1,60 +1,55 @@
 
-Objetivo: corrigir o erro da fila de provisionamento mostrado na tela e alinhar o sistema inteiro aos nomes de status/campos realmente usados hoje.
+Problema identificado: o erro acontece porque a fila de provisionamento processa ações de app esperando `payload_json.appId`, mas parte dos fluxos de solicitação ainda monta itens sem trazer o `entra_id` da aplicação/grupo/licença. Na prática, alguns registros acabam indo para a `iam_queue` com ID interno, incompleto, ou sem o campo externo correto, e o processador devolve `appId ausente no payload`, exatamente como aparece na fila.
 
-O que identifiquei
-- A fila usa status `pending | processing | success | failed`, mas parte da UI ainda consulta `completed`.
-- Há vários fluxos gravando `payload_json` com chaves erradas para grupos e apps:
-  - correto no processador: `groupId`, `groupName`, `appId`, `appName`, `appRoleId`
-  - hoje existem pontos usando `group_id`, `group_name`, `app_name`, `app_id`, `groupEntraId`, `appEntraId`
-- Isso explica erros como o da imagem: itens `assign_app` ficam em retry/falha porque `process-iam-queue` procura `payload.appId` e não encontra.
-- Também há telas de aplicação lendo a fila com status/campos antigos, então mesmo quando o provisionamento funciona a exibição pode ficar errada.
+O que corrigir
 
-Plano de correção
-
-1. Corrigir geração dos payloads da fila
-- Editar `src/pages/solicitacoes/SolicitacoesPage.tsx`
-  - trocar `group_id/group_name` por `groupId/groupName`
-  - trocar `app_name` por `appName`
-  - manter `appId` e `skuId`
-  - para app, incluir `appRoleId` quando disponível
-- Editar `src/pages/portal/PortalSolicitacoesPage.tsx`
-  - mesma padronização
-- Editar `src/pages/terceiros/TerceiroDetalhePage.tsx`
-  - trocar `groupEntraId` por `groupId`
-- Editar `src/pages/revisoes/RevisaoExternaPage.tsx`
-  - trocar `groupEntraId` por `groupId`
-  - trocar `appEntraId` por `appId`
-
-2. Corrigir leitura da fila nas telas
-- Editar `src/pages/aplicacoes/AplicacaoDetalhePage.tsx`
-  - trocar filtros de `.eq("status", "completed")` para `.eq("status", "success")`
-  - trocar leituras antigas `app_name/app_id` para `appName/appId`
-  - trocar leituras antigas `group_id/group_name` para `groupId/groupName`
-
-3. Validar consistência visual da fila
-- Editar `src/pages/fila-provisionamento/FilaProvisionamentoPage.tsx` e/ou `src/pages/fila-provisionamento/SolicitacaoDetalhePage.tsx` apenas se necessário para exibir corretamente mensagens/resultados com os status atuais (`success/failed`) e os campos novos.
-
-4. Verificação técnica
-- Revisar todos os pontos que inserem `iam_queue` para garantir um padrão único:
-  - grupos: `groupId`, `groupName`
-  - licenças: `skuId`, `licenseName`
-  - apps: `appId`, `appName`, `appRoleId`
-- Garantir que os fluxos novos e antigos não fiquem misturados.
-
-Resultado esperado
-- Solicitações de app/grupo/licença deixam de falhar por campo ausente no payload.
-- A fila mostra progresso correto.
-- A tela de aplicações passa a listar corretamente usuários/grupos vindos da `iam_queue`.
-- Os itens em retry/falha novos passam a ser processáveis pelo backend.
-
-Arquivos
+1. Ajustar a origem dos dados nas telas de solicitação
 - `src/pages/solicitacoes/SolicitacoesPage.tsx`
 - `src/pages/portal/PortalSolicitacoesPage.tsx`
-- `src/pages/terceiros/TerceiroDetalhePage.tsx`
-- `src/pages/revisoes/RevisaoExternaPage.tsx`
+
+Essas telas precisam buscar também os identificadores externos usados no provisionamento:
+- aplicações: `entra_id`, `default_app_role_id`
+- grupos: `entra_id`
+- licenças: `sku_id`
+
+2. Padronizar o payload enviado para a `iam_queue`
+- Garantir que apps usem sempre:
+  - `appId`
+  - `appName`
+  - `appRoleId`
+- Garantir que grupos usem:
+  - `groupId`
+  - `groupName`
+- Garantir que licenças usem:
+  - `skuId`
+  - `licenseName`
+
+3. Corrigir o autoaprovado das solicitações
+Hoje o fluxo autoaprovado depende de dados carregados na tela. Como o portal/admin não trazem todos os campos externos, ele consegue criar a solicitação, mas gera item quebrado para provisionamento.
+- Atualizar a lógica de `provisionItem` e do `queueItems.map(...)` para sempre resolver o ID externo a partir dos dados completos carregados.
+- Para app, incluir também `appRoleId` quando existir.
+
+4. Reforçar a leitura nas telas relacionadas
+- Revisar `src/pages/aplicacoes/AplicacaoDetalhePage.tsx` para manter leitura consistente de `appId/appName/groupId/groupName`.
+- Revisar `src/pages/fila-provisionamento/FilaProvisionamentoPage.tsx` e `src/pages/fila-provisionamento/SolicitacaoDetalhePage.tsx` apenas para exibir melhor o erro, se necessário, sem mudar a regra do backend.
+
+5. Validar o comportamento esperado após correção
+Depois da implementação, os novos itens deverão:
+- sair da solicitação com payload correto
+- parar de cair em retry por falta de `appId`
+- ser processados normalmente pelo fluxo de apps/grupos/licenças
+
+Causa raiz resumida
+- O processador está correto: ele exige `appId`.
+- O problema está principalmente nas páginas de solicitação, que ainda não carregam todos os campos externos necessários para montar o payload completo.
+- Por isso o item é criado, mas falha depois no processamento.
+
+Arquivos envolvidos
+- `src/pages/solicitacoes/SolicitacoesPage.tsx`
+- `src/pages/portal/PortalSolicitacoesPage.tsx`
 - `src/pages/aplicacoes/AplicacaoDetalhePage.tsx`
 - possivelmente `src/pages/fila-provisionamento/FilaProvisionamentoPage.tsx`
 - possivelmente `src/pages/fila-provisionamento/SolicitacaoDetalhePage.tsx`
 
 Observação importante
-- Eu não consigo aplicar a correção neste modo somente leitura, mas o problema já está isolado com boa precisão: a causa principal é incompatibilidade de nomes entre o que a UI grava na `iam_queue` e o que `process-iam-queue` consome.
+Também vale revisar os itens já quebrados na fila: corrigir o código evita novos erros, mas os registros antigos que já ficaram com payload inválido continuarão falhando até serem recriados ou ajustados no backend.
