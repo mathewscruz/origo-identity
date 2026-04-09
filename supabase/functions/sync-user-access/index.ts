@@ -50,15 +50,34 @@ interface EntraLicense { skuId: string; }
 interface EntraAppRole { resourceId: string; resourceDisplayName: string; appRoleId: string; }
 
 async function fetchUserGroups(token: string, userId: string): Promise<EntraGroup[]> {
-  const headers = { Authorization: `Bearer ${token}` };
+  const headers = { Authorization: `Bearer ${token}`, ConsistencyLevel: "eventual" };
   const groups: EntraGroup[] = [];
-  let url: string | null = `https://graph.microsoft.com/v1.0/users/${userId}/memberOf?$select=id,displayName,@odata.type&$top=999`;
+  const seen = new Set<string>();
+  let url: string | null = `https://graph.microsoft.com/v1.0/users/${userId}/transitiveMemberOf?$select=id,displayName&$filter=isof('microsoft.graph.group')&$top=999`;
   while (url) {
     const res = await fetch(url, { headers });
-    if (!res.ok) break;
+    if (!res.ok) {
+      console.warn(`transitiveMemberOf failed (${res.status}), falling back to memberOf`);
+      // Fallback to memberOf if transitiveMemberOf fails
+      let fallbackUrl: string | null = `https://graph.microsoft.com/v1.0/users/${userId}/memberOf?$select=id,displayName,@odata.type&$top=999`;
+      while (fallbackUrl) {
+        const fbRes = await fetch(fallbackUrl, { headers: { Authorization: `Bearer ${token}` } });
+        if (!fbRes.ok) break;
+        const fbData = await fbRes.json();
+        for (const item of (fbData.value || [])) {
+          if (item["@odata.type"] === "#microsoft.graph.group" && !seen.has(item.id)) {
+            seen.add(item.id);
+            groups.push({ id: item.id, displayName: item.displayName });
+          }
+        }
+        fallbackUrl = fbData["@odata.nextLink"] || null;
+      }
+      return groups;
+    }
     const data = await res.json();
     for (const item of (data.value || [])) {
-      if (item["@odata.type"] === "#microsoft.graph.group") {
+      if (!seen.has(item.id)) {
+        seen.add(item.id);
         groups.push({ id: item.id, displayName: item.displayName });
       }
     }
