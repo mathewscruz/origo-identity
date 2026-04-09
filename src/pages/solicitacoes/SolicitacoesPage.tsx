@@ -9,12 +9,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/hooks/use-toast";
 import { logAuditoria } from "@/lib/auditLogger";
 import { useAuth } from "@/contexts/AuthContext";
-import { queueFullProfileActions } from "@/lib/entraQueueHelper";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
-import { HandHelping, Plus, Search, Clock, CheckCircle2, XCircle, Send, ExternalLink, AppWindow, Users } from "lucide-react";
+import { HandHelping, Plus, Search, Clock, CheckCircle2, XCircle, Send, ExternalLink, AppWindow, Users, KeyRound } from "lucide-react";
 import { sendNotificationEmail } from "@/lib/sendNotificationEmail";
 import EmptyState from "@/components/EmptyState";
 import OnboardingTour from "@/components/OnboardingTour";
@@ -23,10 +24,10 @@ import { tourSteps } from "@/lib/tourSteps";
 export default function SolicitacoesPage() {
   const { profile } = useAuth();
   const [solicitacoes, setSolicitacoes] = useState<any[]>([]);
-  const [perfis, setPerfis] = useState<any[]>([]);
   const [colaboradores, setColaboradores] = useState<any[]>([]);
   const [aplicacoes, setAplicacoes] = useState<any[]>([]);
   const [grupos, setGrupos] = useState<any[]>([]);
+  const [licencas, setLicencas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [decisionDialog, setDecisionDialog] = useState<any>(null);
@@ -34,10 +35,14 @@ export default function SolicitacoesPage() {
 
   // form
   const [solicitanteId, setSolicitanteId] = useState("");
-  const [perfilId, setPerfilId] = useState("");
+  const [selectedApps, setSelectedApps] = useState<string[]>([]);
+  const [selectedGrupos, setSelectedGrupos] = useState<string[]>([]);
+  const [selectedLicencas, setSelectedLicencas] = useState<string[]>([]);
   const [justificativa, setJustificativa] = useState("");
   const [buscaColab, setBuscaColab] = useState("");
-  const [buscaPerfil, setBuscaPerfil] = useState("");
+  const [buscaApp, setBuscaApp] = useState("");
+  const [buscaGrupo, setBuscaGrupo] = useState("");
+  const [buscaLicenca, setBuscaLicenca] = useState("");
 
   // decision
   const [decisao, setDecisao] = useState("");
@@ -45,45 +50,46 @@ export default function SolicitacoesPage() {
 
   const fetchData = async () => {
     setLoading(true);
-    const [{ data: s }, { data: p }, { data: c }, { data: apps }, { data: grps }] = await Promise.all([
+    const [{ data: s }, { data: c }, { data: apps }, { data: grps }, { data: lics }] = await Promise.all([
       supabase.from("solicitacoes_acesso").select("*").order("created_at", { ascending: false }),
-      supabase.from("perfis_acesso").select("id, nome, tipo").eq("ativo", true).order("nome"),
       supabase.from("colaboradores").select("id, nome, email, sam_account_name, entra_id").eq("status", "ativo").order("nome"),
-      supabase.from("aplicacoes").select("id, nome, entra_id").order("nome"),
+      supabase.from("aplicacoes").select("id, nome, entra_id, owner").order("nome"),
       supabase.from("entra_grupos").select("id, nome, entra_id").order("nome"),
+      supabase.from("licencas").select("id, nome").order("nome"),
     ]);
     setSolicitacoes(s || []);
-    setPerfis(p || []);
     setColaboradores(c || []);
     setAplicacoes(apps || []);
     setGrupos(grps || []);
+    setLicencas(lics || []);
     setLoading(false);
   };
 
   useEffect(() => { fetchData(); }, []);
 
   const colabMap = new Map(colaboradores.map(c => [c.id, c]));
-  const perfilMap = new Map(perfis.map(p => [p.id, p]));
   const appMap = new Map(aplicacoes.map(a => [a.id, a]));
   const grupoMap = new Map(grupos.map(g => [g.id, g]));
+  const licencaMap = new Map(licencas.map(l => [l.id, l]));
 
   const getItensSolicitados = (s: any) => {
     const appIds = Array.isArray(s.aplicacoes_ids) ? s.aplicacoes_ids : [];
     const grpIds = Array.isArray(s.grupos_ids) ? s.grupos_ids : [];
-    if (appIds.length === 0 && grpIds.length === 0 && s.perfil_id) {
-      return perfilMap.get(s.perfil_id)?.nome || "—";
-    }
+    const licIds = Array.isArray(s.licencas_ids) ? s.licencas_ids : [];
     const items: string[] = [];
     appIds.forEach((id: string) => items.push(appMap.get(id)?.nome || id));
     grpIds.forEach((id: string) => items.push(grupoMap.get(id)?.nome || id));
+    licIds.forEach((id: string) => items.push(licencaMap.get(id)?.nome || id));
+    if (items.length === 0 && s.perfil_id) return "Perfil de acesso";
     return items.join(", ") || "—";
   };
 
   const renderItensBadges = (s: any) => {
     const appIds = Array.isArray(s.aplicacoes_ids) ? s.aplicacoes_ids : [];
     const grpIds = Array.isArray(s.grupos_ids) ? s.grupos_ids : [];
-    if (appIds.length === 0 && grpIds.length === 0) {
-      return <span>{perfilMap.get(s.perfil_id)?.nome || "—"}</span>;
+    const licIds = Array.isArray(s.licencas_ids) ? s.licencas_ids : [];
+    if (appIds.length === 0 && grpIds.length === 0 && licIds.length === 0) {
+      return <span className="text-muted-foreground">—</span>;
     }
     return (
       <div className="flex flex-wrap gap-1">
@@ -97,13 +103,30 @@ export default function SolicitacoesPage() {
             <Users className="mr-1 h-3 w-3" />{grupoMap.get(id)?.nome || id}
           </Badge>
         ))}
+        {licIds.map((id: string) => (
+          <Badge key={id} variant="outline" className="text-xs border-primary/40">
+            <KeyRound className="mr-1 h-3 w-3" />{licencaMap.get(id)?.nome || id}
+          </Badge>
+        ))}
       </div>
     );
   };
 
+  const toggleItem = (list: string[], setList: React.Dispatch<React.SetStateAction<string[]>>, id: string) => {
+    setList(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
   const handleSubmit = async () => {
-    if (!solicitanteId || !perfilId || !justificativa.trim()) {
-      toast({ title: "Preencha todos os campos", variant: "destructive" });
+    if (!solicitanteId) {
+      toast({ title: "Selecione o colaborador", variant: "destructive" });
+      return;
+    }
+    if (selectedApps.length === 0 && selectedGrupos.length === 0 && selectedLicencas.length === 0) {
+      toast({ title: "Selecione ao menos uma aplicação, grupo ou licença", variant: "destructive" });
+      return;
+    }
+    if (!justificativa.trim()) {
+      toast({ title: "Preencha a justificativa", variant: "destructive" });
       return;
     }
 
@@ -116,7 +139,9 @@ export default function SolicitacoesPage() {
 
     const { data: inserted, error } = await supabase.from("solicitacoes_acesso").insert({
       solicitante_id: solicitanteId,
-      perfil_id: perfilId,
+      aplicacoes_ids: selectedApps,
+      grupos_ids: selectedGrupos,
+      licencas_ids: selectedLicencas,
       justificativa: justificativa.trim(),
       status: (etapas && etapas.length > 0) ? "em_aprovacao" : "pendente",
     } as any).select("id").single();
@@ -137,51 +162,45 @@ export default function SolicitacoesPage() {
     }
 
     const colabNome = colabMap.get(solicitanteId)?.nome || "—";
-    const perfilNome = perfilMap.get(perfilId)?.nome || "—";
+    const allItemNames: string[] = [];
+    selectedApps.forEach(id => allItemNames.push(appMap.get(id)?.nome || id));
+    selectedGrupos.forEach(id => allItemNames.push(grupoMap.get(id)?.nome || id));
+    selectedLicencas.forEach(id => allItemNames.push(licencaMap.get(id)?.nome || id));
+    const itensDesc = allItemNames.join(", ");
 
     await logAuditoria({
       acao: "criar",
       entidade: "solicitacao_acesso",
       entidade_id: inserted?.id,
-      resumo: `Solicitação de acesso: ${colabNome} → ${perfilNome}${etapas && etapas.length > 0 ? ` (workflow: ${etapas.length} etapas)` : ""}`,
+      resumo: `Solicitação de acesso: ${colabNome} → ${itensDesc}`,
       operador: profile?.email || "sistema",
     });
 
     toast({ title: "Solicitação criada com sucesso", description: etapas && etapas.length > 0 ? `Encaminhada para workflow com ${etapas.length} etapa(s) de aprovação.` : undefined });
 
-    // Send email notification to owner (if defined) or admins as fallback
-    const perfilInfo = perfilMap.get(perfilId);
-    let ownerNotified = false;
-
-    // Check if the perfil has linked apps with owners
-    if (perfilId) {
-      const { data: perfilApps } = await supabase.from("perfil_aplicacoes").select("aplicacao_id").eq("perfil_id", perfilId);
-      if (perfilApps && perfilApps.length > 0) {
-        const appIds = perfilApps.map((pa: any) => pa.aplicacao_id);
-        const { data: apps } = await supabase.from("aplicacoes").select("owner").in("id", appIds);
-        const ownerEmails = new Set<string>();
-        for (const a of (apps || [])) {
-          if (a.owner) {
-            const emailMatch = a.owner.match(/<(.+?)>/);
-            const email = emailMatch ? emailMatch[1] : a.owner;
-            if (email.includes("@")) ownerEmails.add(email);
-          }
-        }
-        for (const ownerEmail of ownerEmails) {
-          sendNotificationEmail("solicitacao_criada", {
-            destinatario_email: ownerEmail,
-            colaborador_nome: colabNome,
-            itens: perfilNome,
-            justificativa: justificativa.trim(),
-            solicitante: profile?.nome || profile?.email || "Sistema",
-          });
-          ownerNotified = true;
-        }
+    // Notify owners of requested apps
+    const ownerEmails = new Set<string>();
+    for (const appId of selectedApps) {
+      const app = appMap.get(appId);
+      if (app?.owner) {
+        const emailMatch = app.owner.match(/<(.+?)>/);
+        const email = emailMatch ? emailMatch[1] : app.owner;
+        if (email.includes("@")) ownerEmails.add(email);
       }
     }
 
+    for (const ownerEmail of ownerEmails) {
+      sendNotificationEmail("solicitacao_criada", {
+        destinatario_email: ownerEmail,
+        colaborador_nome: colabNome,
+        itens: itensDesc,
+        justificativa: justificativa.trim(),
+        solicitante: profile?.nome || profile?.email || "Sistema",
+      });
+    }
+
     // Fallback: notify admins if no owner was notified
-    if (!ownerNotified) {
+    if (ownerEmails.size === 0) {
       const { data: adminRoles } = await supabase.from("user_roles").select("user_id").eq("role", "admin");
       if (adminRoles && adminRoles.length > 0) {
         const adminIds = adminRoles.map((r: any) => r.user_id);
@@ -190,7 +209,7 @@ export default function SolicitacoesPage() {
           sendNotificationEmail("solicitacao_criada", {
             destinatario_email: ap.email,
             colaborador_nome: colabNome,
-            itens: perfilNome,
+            itens: itensDesc,
             justificativa: justificativa.trim(),
             solicitante: profile?.nome || profile?.email || "Sistema",
           });
@@ -200,10 +219,14 @@ export default function SolicitacoesPage() {
 
     setDialogOpen(false);
     setSolicitanteId("");
-    setPerfilId("");
+    setSelectedApps([]);
+    setSelectedGrupos([]);
+    setSelectedLicencas([]);
     setJustificativa("");
     setBuscaColab("");
-    setBuscaPerfil("");
+    setBuscaApp("");
+    setBuscaGrupo("");
+    setBuscaLicenca("");
     fetchData();
   };
 
@@ -226,26 +249,8 @@ export default function SolicitacoesPage() {
       const colab = colabMap.get(decisionDialog.solicitante_id);
       const appIds = Array.isArray(decisionDialog.aplicacoes_ids) ? decisionDialog.aplicacoes_ids : [];
       const grpIds = Array.isArray(decisionDialog.grupos_ids) ? decisionDialog.grupos_ids : [];
+      const licIds = Array.isArray(decisionDialog.licencas_ids) ? decisionDialog.licencas_ids : [];
 
-      // Legacy: perfil-based approval
-      if (decisionDialog.perfil_id && appIds.length === 0 && grpIds.length === 0) {
-        await supabase.from("perfil_atribuicoes").insert({
-          colaborador_id: decisionDialog.solicitante_id,
-          perfil_id: decisionDialog.perfil_id,
-          origem: "solicitacao",
-          ativo: true,
-        } as any);
-
-        if (colab && (colab.email || colab.sam_account_name)) {
-          await queueFullProfileActions(
-            [{ id: colab.id, nome: colab.nome, email: colab.email, sam_account_name: colab.sam_account_name }],
-            [decisionDialog.perfil_id],
-            "assign"
-          );
-        }
-      }
-
-      // Apps/Groups provisioning
       if (colab && (colab.email || colab.sam_account_name || colab.entra_id)) {
         const targetIdentity = colab.entra_id || colab.email || colab.sam_account_name;
         const queueItems: any[] = [];
@@ -260,9 +265,9 @@ export default function SolicitacoesPage() {
             payload_json: {
               app_id: app?.entra_id || appId,
               app_name: app?.nome || appId,
-              reason: "solicitacao_portal",
+              reason: "solicitacao_acesso",
             },
-            requested_by: profile?.email || "portal",
+            requested_by: profile?.email || "sistema",
           });
         }
 
@@ -276,9 +281,25 @@ export default function SolicitacoesPage() {
             payload_json: {
               group_id: grp?.entra_id || grpId,
               group_name: grp?.nome || grpId,
-              reason: "solicitacao_portal",
+              reason: "solicitacao_acesso",
             },
-            requested_by: profile?.email || "portal",
+            requested_by: profile?.email || "sistema",
+          });
+        }
+
+        for (const licId of licIds) {
+          const lic = licencaMap.get(licId);
+          queueItems.push({
+            action_type: "assign_license",
+            colaborador_id: colab.id,
+            target_identity: targetIdentity,
+            status: "pending",
+            payload_json: {
+              license_id: licId,
+              license_name: lic?.nome || licId,
+              reason: "solicitacao_acesso",
+            },
+            requested_by: profile?.email || "sistema",
           });
         }
 
@@ -303,7 +324,7 @@ export default function SolicitacoesPage() {
 
     toast({ title: `Solicitação ${decisao === "aprovada" ? "aprovada" : "rejeitada"}` });
 
-    // Notify the person who created the request
+    // Notify requester about the decision
     const solicitanteEmail = colabMap.get(decisionDialog.solicitante_id)?.email;
     if (solicitanteEmail) {
       sendNotificationEmail("solicitacao_decidida", {
@@ -322,8 +343,8 @@ export default function SolicitacoesPage() {
     fetchData();
   };
 
-  const pendentes = solicitacoes.filter(s => s.status === "pendente");
-  const decididas = solicitacoes.filter(s => s.status !== "pendente");
+  const pendentes = solicitacoes.filter(s => s.status === "pendente" || s.status === "em_aprovacao");
+  const decididas = solicitacoes.filter(s => s.status === "aprovada" || s.status === "rejeitada");
 
   const filtered = (list: any[]) => list.filter(s => {
     if (!busca) return true;
@@ -336,6 +357,7 @@ export default function SolicitacoesPage() {
   const statusBadge = (status: string) => {
     switch (status) {
       case "pendente": return <Badge variant="outline" className="border-yellow-500 text-yellow-600"><Clock className="mr-1 h-3 w-3" />Pendente</Badge>;
+      case "em_aprovacao": return <Badge variant="outline" className="border-yellow-500 text-yellow-600"><Clock className="mr-1 h-3 w-3" />Em Aprovação</Badge>;
       case "aprovada": return <Badge className="bg-green-600"><CheckCircle2 className="mr-1 h-3 w-3" />Aprovada</Badge>;
       case "rejeitada": return <Badge variant="destructive"><XCircle className="mr-1 h-3 w-3" />Rejeitada</Badge>;
       default: return <Badge variant="secondary">{status}</Badge>;
@@ -343,7 +365,30 @@ export default function SolicitacoesPage() {
   };
 
   const filteredColabs = colaboradores.filter(c => !buscaColab || c.nome.toLowerCase().includes(buscaColab.toLowerCase()));
-  const filteredPerfis = perfis.filter(p => !buscaPerfil || p.nome.toLowerCase().includes(buscaPerfil.toLowerCase()));
+
+  const filteredApps = aplicacoes
+    .filter(a => !buscaApp || a.nome.toLowerCase().includes(buscaApp.toLowerCase()))
+    .sort((a, b) => {
+      const aS = selectedApps.includes(a.id) ? 0 : 1;
+      const bS = selectedApps.includes(b.id) ? 0 : 1;
+      return aS - bS || a.nome.localeCompare(b.nome);
+    });
+
+  const filteredGrupos = grupos
+    .filter(g => !buscaGrupo || g.nome.toLowerCase().includes(buscaGrupo.toLowerCase()))
+    .sort((a, b) => {
+      const aS = selectedGrupos.includes(a.id) ? 0 : 1;
+      const bS = selectedGrupos.includes(b.id) ? 0 : 1;
+      return aS - bS || a.nome.localeCompare(b.nome);
+    });
+
+  const filteredLicencas = licencas
+    .filter(l => !buscaLicenca || l.nome.toLowerCase().includes(buscaLicenca.toLowerCase()))
+    .sort((a, b) => {
+      const aS = selectedLicencas.includes(a.id) ? 0 : 1;
+      const bS = selectedLicencas.includes(b.id) ? 0 : 1;
+      return aS - bS || a.nome.localeCompare(b.nome);
+    });
 
   return (
     <div className="space-y-6">
@@ -456,9 +501,10 @@ export default function SolicitacoesPage() {
 
       {/* Nova Solicitação */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Nova Solicitação de Acesso</DialogTitle></DialogHeader>
           <div className="space-y-4">
+            {/* Colaborador */}
             <div>
               <label className="text-sm font-medium">Colaborador</label>
               <Input placeholder="Buscar colaborador..." value={buscaColab} onChange={e => setBuscaColab(e.target.value)} className="mb-2" />
@@ -471,18 +517,62 @@ export default function SolicitacoesPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <label className="text-sm font-medium">Perfil de Acesso</label>
-              <Input placeholder="Buscar perfil..." value={buscaPerfil} onChange={e => setBuscaPerfil(e.target.value)} className="mb-2" />
-              <Select value={perfilId} onValueChange={setPerfilId}>
-                <SelectTrigger><SelectValue placeholder="Selecione o perfil" /></SelectTrigger>
-                <SelectContent>
-                  {filteredPerfis.map(p => (
-                    <SelectItem key={p.id} value={p.id}>{p.nome} ({p.tipo})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+
+            {/* Aplicações */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-2">
+                <AppWindow className="h-4 w-4" /> Aplicações
+                {selectedApps.length > 0 && <Badge variant="secondary" className="text-xs">{selectedApps.length} selecionada(s)</Badge>}
+              </label>
+              <Input placeholder="Buscar aplicação..." value={buscaApp} onChange={e => setBuscaApp(e.target.value)} />
+              <ScrollArea className="h-36 rounded-md border p-2">
+                {filteredApps.map(a => (
+                  <label key={a.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
+                    <Checkbox checked={selectedApps.includes(a.id)} onCheckedChange={() => toggleItem(selectedApps, setSelectedApps, a.id)} />
+                    <span className="text-sm">{a.nome}</span>
+                  </label>
+                ))}
+                {filteredApps.length === 0 && <EmptyState message="Nenhuma aplicação encontrada" size="sm" />}
+              </ScrollArea>
             </div>
+
+            {/* Grupos */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-2">
+                <Users className="h-4 w-4" /> Grupos
+                {selectedGrupos.length > 0 && <Badge variant="secondary" className="text-xs">{selectedGrupos.length} selecionado(s)</Badge>}
+              </label>
+              <Input placeholder="Buscar grupo..." value={buscaGrupo} onChange={e => setBuscaGrupo(e.target.value)} />
+              <ScrollArea className="h-36 rounded-md border p-2">
+                {filteredGrupos.map(g => (
+                  <label key={g.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
+                    <Checkbox checked={selectedGrupos.includes(g.id)} onCheckedChange={() => toggleItem(selectedGrupos, setSelectedGrupos, g.id)} />
+                    <span className="text-sm">{g.nome}</span>
+                  </label>
+                ))}
+                {filteredGrupos.length === 0 && <EmptyState message="Nenhum grupo encontrado" size="sm" />}
+              </ScrollArea>
+            </div>
+
+            {/* Licenças */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-2">
+                <KeyRound className="h-4 w-4" /> Licenças
+                {selectedLicencas.length > 0 && <Badge variant="secondary" className="text-xs">{selectedLicencas.length} selecionada(s)</Badge>}
+              </label>
+              <Input placeholder="Buscar licença..." value={buscaLicenca} onChange={e => setBuscaLicenca(e.target.value)} />
+              <ScrollArea className="h-36 rounded-md border p-2">
+                {filteredLicencas.map(l => (
+                  <label key={l.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
+                    <Checkbox checked={selectedLicencas.includes(l.id)} onCheckedChange={() => toggleItem(selectedLicencas, setSelectedLicencas, l.id)} />
+                    <span className="text-sm">{l.nome}</span>
+                  </label>
+                ))}
+                {filteredLicencas.length === 0 && <EmptyState message="Nenhuma licença encontrada" size="sm" />}
+              </ScrollArea>
+            </div>
+
+            {/* Justificativa */}
             <div>
               <label className="text-sm font-medium">Justificativa</label>
               <Textarea value={justificativa} onChange={e => setJustificativa(e.target.value)} placeholder="Explique por que este acesso é necessário..." />
@@ -527,4 +617,3 @@ export default function SolicitacoesPage() {
     </div>
   );
 }
-
