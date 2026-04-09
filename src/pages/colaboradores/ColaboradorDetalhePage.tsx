@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import TablePagination, { usePagination } from "@/components/TablePagination";
 import { useParams, Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -69,7 +70,110 @@ const statusQueueColors: Record<string, string> = {
   success: "bg-success/15 text-success border-success/30",
   failed: "bg-destructive/15 text-destructive border-destructive/30",
 };
+function IndividualAccessTabs({ individualQueue, actionTypeIcons, actionTypeLabels, statusQueueColors, getResourceName, handleRevogarIndividual }: {
+  individualQueue: any[] | undefined;
+  actionTypeIcons: Record<string, typeof Shield>;
+  actionTypeLabels: Record<string, string>;
+  statusQueueColors: Record<string, string>;
+  getResourceName: (item: any) => string;
+  handleRevogarIndividual: (item: any) => void;
+}) {
+  const [pageLic, setPageLic] = useState(1);
+  const [pageGrp, setPageGrp] = useState(1);
+  const [pageApp, setPageApp] = useState(1);
+  const PAGE_SIZE = 25;
 
+  const items = individualQueue ?? [];
+  const licenses = useMemo(() => items.filter((i: any) => i.action_type === "assign_license"), [items]);
+  const groups = useMemo(() => items.filter((i: any) => i.action_type === "assign_group"), [items]);
+  const apps = useMemo(() => items.filter((i: any) => i.action_type === "assign_app"), [items]);
+
+  const licPage = usePagination(licenses, pageLic, PAGE_SIZE);
+  const grpPage = usePagination(groups, pageGrp, PAGE_SIZE);
+  const appPage = usePagination(apps, pageApp, PAGE_SIZE);
+
+  const renderTable = (data: any[], isEntraSync: boolean = false) => (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="border-b text-left text-muted-foreground">
+          <th className="p-4 font-medium">Recurso</th>
+          <th className="p-4 font-medium">Status</th>
+          <th className="p-4 font-medium">Data</th>
+          <th className="p-4 font-medium">Ação</th>
+        </tr>
+      </thead>
+      <tbody>
+        {data.map((item: any) => {
+          const Icon = actionTypeIcons[item.action_type] || Shield;
+          const statusClass = statusQueueColors[item.status] || "";
+          const imported = item.requested_by === "entra_sync";
+          return (
+            <tr key={item.id} className="border-b last:border-0">
+              <td className="p-4">
+                <div className="flex items-center gap-2">
+                  <Icon className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium">{getResourceName(item)}</span>
+                  {imported && (
+                    <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/30">Importado</Badge>
+                  )}
+                </div>
+              </td>
+              <td className="p-4">
+                <Badge variant="outline" className={statusClass}>{({ pending: "Pendente", processing: "Processando", success: "Concluído", failed: "Falhou" } as Record<string, string>)[item.status] || item.status}</Badge>
+              </td>
+              <td className="p-4 text-muted-foreground">{new Date(item.created_at).toLocaleDateString("pt-BR")}</td>
+              <td className="p-4">
+                <Button variant="ghost" size="sm" className="h-7 text-destructive hover:text-destructive" onClick={() => handleRevogarIndividual(item)}>
+                  <XCircle className="mr-1 h-3 w-3" /> Revogar
+                </Button>
+              </td>
+            </tr>
+          );
+        })}
+        {data.length === 0 && (
+          <tr><td colSpan={4}><EmptyState message="Nenhum registro." /></td></tr>
+        )}
+      </tbody>
+    </table>
+  );
+
+  return (
+    <div>
+      <h3 className="text-sm font-medium text-muted-foreground mb-2">Acessos Individuais</h3>
+      <Card>
+        <CardContent className="p-0">
+          <Tabs defaultValue="licencas" className="w-full">
+            <div className="px-4 pt-4">
+              <TabsList>
+                <TabsTrigger value="licencas">Licenças ({licenses.length})</TabsTrigger>
+                <TabsTrigger value="grupos">Grupos ({groups.length})</TabsTrigger>
+                <TabsTrigger value="apps">Aplicações ({apps.length})</TabsTrigger>
+              </TabsList>
+            </div>
+            <TabsContent value="licencas" className="mt-0">
+              {renderTable(licPage.paginatedItems)}
+              <div className="px-4">
+                <TablePagination totalItems={licenses.length} pageSize={PAGE_SIZE} currentPage={licPage.safePage} onPageChange={setPageLic} />
+              </div>
+            </TabsContent>
+            <TabsContent value="grupos" className="mt-0">
+              {renderTable(grpPage.paginatedItems)}
+              <div className="px-4">
+                <TablePagination totalItems={groups.length} pageSize={PAGE_SIZE} currentPage={grpPage.safePage} onPageChange={setPageGrp} />
+              </div>
+            </TabsContent>
+            <TabsContent value="apps" className="mt-0">
+              {renderTable(appPage.paginatedItems)}
+              <div className="px-4">
+                <TablePagination totalItems={apps.length} pageSize={PAGE_SIZE} currentPage={appPage.safePage} onPageChange={setPageApp} />
+              </div>
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 export default function ColaboradorDetalhePage() {
   const { id } = useParams();
   const { data: pessoa, isLoading } = useColaborador(id);
@@ -590,58 +694,15 @@ export default function ColaboradorDetalhePage() {
             </Card>
           </div>
 
-          {/* Individual assignments */}
-          <div>
-            <h3 className="text-sm font-medium text-muted-foreground mb-2">Acessos Individuais</h3>
-            <Card>
-              <CardContent className="p-0">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-muted-foreground">
-                      <th className="p-4 font-medium">Tipo</th>
-                      <th className="p-4 font-medium">Recurso</th>
-                      <th className="p-4 font-medium">Status</th>
-                      <th className="p-4 font-medium">Data</th>
-                      <th className="p-4 font-medium">Ação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(individualQueue ?? []).map((item: any) => {
-                      const Icon = actionTypeIcons[item.action_type] || Shield;
-                      const statusClass = statusQueueColors[item.status] || "";
-                      const isEntraSync = item.requested_by === "entra_sync";
-                      return (
-                        <tr key={item.id} className="border-b last:border-0">
-                          <td className="p-4">
-                            <div className="flex items-center gap-2">
-                              <Icon className="h-4 w-4 text-muted-foreground" />
-                              <span>{actionTypeLabels[item.action_type] || item.action_type}</span>
-                              {isEntraSync && (
-                                <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/30">Importado</Badge>
-                              )}
-                            </div>
-                          </td>
-                          <td className="p-4 font-medium">{getResourceName(item)}</td>
-                          <td className="p-4">
-                            <Badge variant="outline" className={statusClass}>{({ pending: "Pendente", processing: "Processando", success: "Concluído", failed: "Falhou" } as Record<string, string>)[item.status] || item.status}</Badge>
-                          </td>
-                          <td className="p-4 text-muted-foreground">{new Date(item.created_at).toLocaleDateString("pt-BR")}</td>
-                          <td className="p-4">
-                            <Button variant="ghost" size="sm" className="h-7 text-destructive hover:text-destructive" onClick={() => handleRevogarIndividual(item)}>
-                              <XCircle className="mr-1 h-3 w-3" /> Revogar
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {(!individualQueue || individualQueue.length === 0) && (
-                      <tr><td colSpan={5}><EmptyState message="Nenhum acesso individual." /></td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
-          </div>
+          {/* Individual assignments - tabs */}
+          <IndividualAccessTabs
+            individualQueue={individualQueue}
+            actionTypeIcons={actionTypeIcons}
+            actionTypeLabels={actionTypeLabels}
+            statusQueueColors={statusQueueColors}
+            getResourceName={getResourceName}
+            handleRevogarIndividual={handleRevogarIndividual}
+          />
         </TabsContent>
 
         <TabsContent value="jml" className="mt-4">
