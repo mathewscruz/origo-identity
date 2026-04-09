@@ -471,6 +471,36 @@ export default function ColaboradoresPage() {
     setDeleteId(null);
     triggerEntraProcessing();
   }
+  async function handleSyncAll() {
+    const eligible = (colaboradores || []).filter(
+      (c: any) => (c.status === "ativo" || c.status === "ferias" || c.status === "afastado") && (c.email || c.sam_account_name)
+    );
+    if (eligible.length === 0) {
+      toast({ title: "Nenhum colaborador elegível para sincronização" });
+      return;
+    }
+    setSyncing(true);
+    toast({ title: `Sincronizando acessos de ${eligible.length} colaboradores...` });
+    let ok = 0;
+    let fail = 0;
+    const BATCH = 5;
+    for (let i = 0; i < eligible.length; i += BATCH) {
+      const batch = eligible.slice(i, i + BATCH);
+      const results = await Promise.allSettled(
+        batch.map((c: any) =>
+          supabase.functions.invoke("sync-user-access", { body: { colaborador_id: c.id } })
+        )
+      );
+      for (const r of results) {
+        if (r.status === "fulfilled" && !r.value.error) ok++;
+        else fail++;
+      }
+    }
+    setSyncing(false);
+    queryClient.invalidateQueries({ queryKey: ["colaboradores"] });
+    queryClient.invalidateQueries({ queryKey: ["iam_queue"] });
+    toast({ title: `Sincronização concluída: ${ok} sucesso, ${fail} falhas` });
+  }
 
   return (
     <div className="space-y-6">
@@ -480,6 +510,16 @@ export default function ColaboradoresPage() {
           <p className="text-sm text-muted-foreground">Gestão de funcionários internos</p>
         </div>
         <div data-tour="actions" className="flex flex-wrap gap-2">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="icon" disabled={syncing} onClick={handleSyncAll}>
+                  <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Sincronizar acessos do Entra ID</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <Button variant="outline" onClick={() => navigate("/configuracoes/integracoes")}><Upload className="mr-1 h-4 w-4" />Importar Base</Button>
           <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Colaborador</Button>
         </div>
