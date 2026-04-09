@@ -1455,6 +1455,7 @@ export type Database = {
       }
       revisoes: {
         Row: {
+          aplicacao_id: string | null
           created_at: string
           data_fim: string | null
           data_inicio: string | null
@@ -1462,12 +1463,16 @@ export type Database = {
           id: string
           itens_revisados: number
           nome: string
+          owner_email: string | null
           responsavel: string | null
           status: Database["public"]["Enums"]["status_revisao"]
+          tipo: string | null
+          token: string | null
           total_itens: number
           updated_at: string
         }
         Insert: {
+          aplicacao_id?: string | null
           created_at?: string
           data_fim?: string | null
           data_inicio?: string | null
@@ -1475,12 +1480,16 @@ export type Database = {
           id?: string
           itens_revisados?: number
           nome: string
+          owner_email?: string | null
           responsavel?: string | null
           status?: Database["public"]["Enums"]["status_revisao"]
+          tipo?: string | null
+          token?: string | null
           total_itens?: number
           updated_at?: string
         }
         Update: {
+          aplicacao_id?: string | null
           created_at?: string
           data_fim?: string | null
           data_inicio?: string | null
@@ -1488,8 +1497,11 @@ export type Database = {
           id?: string
           itens_revisados?: number
           nome?: string
+          owner_email?: string | null
           responsavel?: string | null
           status?: Database["public"]["Enums"]["status_revisao"]
+          tipo?: string | null
+          token?: string | null
           total_itens?: number
           updated_at?: string
         }
