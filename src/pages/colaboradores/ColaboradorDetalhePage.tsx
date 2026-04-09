@@ -591,58 +591,15 @@ export default function ColaboradorDetalhePage() {
             </Card>
           </div>
 
-          {/* Individual assignments */}
-          <div>
-            <h3 className="text-sm font-medium text-muted-foreground mb-2">Acessos Individuais</h3>
-            <Card>
-              <CardContent className="p-0">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-muted-foreground">
-                      <th className="p-4 font-medium">Tipo</th>
-                      <th className="p-4 font-medium">Recurso</th>
-                      <th className="p-4 font-medium">Status</th>
-                      <th className="p-4 font-medium">Data</th>
-                      <th className="p-4 font-medium">Ação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(individualQueue ?? []).map((item: any) => {
-                      const Icon = actionTypeIcons[item.action_type] || Shield;
-                      const statusClass = statusQueueColors[item.status] || "";
-                      const isEntraSync = item.requested_by === "entra_sync";
-                      return (
-                        <tr key={item.id} className="border-b last:border-0">
-                          <td className="p-4">
-                            <div className="flex items-center gap-2">
-                              <Icon className="h-4 w-4 text-muted-foreground" />
-                              <span>{actionTypeLabels[item.action_type] || item.action_type}</span>
-                              {isEntraSync && (
-                                <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/30">Importado</Badge>
-                              )}
-                            </div>
-                          </td>
-                          <td className="p-4 font-medium">{getResourceName(item)}</td>
-                          <td className="p-4">
-                            <Badge variant="outline" className={statusClass}>{({ pending: "Pendente", processing: "Processando", success: "Concluído", failed: "Falhou" } as Record<string, string>)[item.status] || item.status}</Badge>
-                          </td>
-                          <td className="p-4 text-muted-foreground">{new Date(item.created_at).toLocaleDateString("pt-BR")}</td>
-                          <td className="p-4">
-                            <Button variant="ghost" size="sm" className="h-7 text-destructive hover:text-destructive" onClick={() => handleRevogarIndividual(item)}>
-                              <XCircle className="mr-1 h-3 w-3" /> Revogar
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {(!individualQueue || individualQueue.length === 0) && (
-                      <tr><td colSpan={5}><EmptyState message="Nenhum acesso individual." /></td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
-          </div>
+          {/* Individual assignments - tabs */}
+          <IndividualAccessTabs
+            individualQueue={individualQueue}
+            actionTypeIcons={actionTypeIcons}
+            actionTypeLabels={actionTypeLabels}
+            statusQueueColors={statusQueueColors}
+            getResourceName={getResourceName}
+            handleRevogarIndividual={handleRevogarIndividual}
+          />
         </TabsContent>
 
         <TabsContent value="jml" className="mt-4">
