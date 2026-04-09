@@ -1,31 +1,69 @@
 
 
-## Plano: Separar Acessos Individuais em abas com paginacao
+## Plano: Usuários/grupos por app via iam_queue + Owner como select de colaboradores + Workflow de aprovação pelo owner
 
-### O que sera feito
+### Contexto atual
 
-Na secao "Acessos Individuais" da pagina de detalhe do colaborador, substituir a tabela unica por um componente com 3 abas:
+- A aba "Usuários" na página de detalhe da aplicação mostra apenas colaboradores vinculados via **perfis de acesso** (perfil_atribuicoes → perfil_aplicacoes). Não mostra quem tem acesso individual (via iam_queue/sync).
+- O campo **Owner** é texto livre (string na coluna `aplicacoes.owner`).
+- Quando um usuário solicita acesso a um app, a notificação vai para **todos os admins**, não para o owner do app.
 
-- **Licencas** — filtra `assign_license`
-- **Grupos** — filtra `assign_group`  
-- **Aplicacoes** — filtra `assign_app`
+### O que será feito
 
-Cada aba tera sua propria tabela com paginacao (25 itens por pagina), usando o `TablePagination` e `usePagination` ja existentes no projeto.
+**1. Mostrar usuários reais atrelados ao app (via iam_queue)**
 
-### Alteracoes
+Adicionar uma nova query que busca da `iam_queue` todos os registros `assign_app` com status `completed` cujo `payload_json->app_name` ou `payload_json->app_id` corresponde ao app atual. Isso mostra quem realmente tem o app provisionado, além dos que vieram por perfil.
 
-**Editar `src/pages/colaboradores/ColaboradorDetalhePage.tsx`:**
+A aba "Usuários" passará a ter duas sub-seções ou será enriquecida com dados da iam_queue (sem duplicar quem já aparece via perfil).
 
-1. Na secao "Acessos Individuais" (linha ~593), envolver o conteudo em um sub-`Tabs` com 3 `TabsTrigger` (Licencas, Grupos, Aplicacoes) mostrando contadores entre parenteses
-2. Em cada `TabsContent`, renderizar a tabela filtrada pelo `action_type` correspondente
-3. Adicionar estado de paginacao independente para cada aba (`pageLicencas`, `pageGrupos`, `pageApps`)
-4. Usar `usePagination` para fatiar os dados e `TablePagination` no rodape de cada tabela
-5. Manter o `EmptyState` quando a aba estiver vazia
-6. Manter o botao "Revogar" e os badges de origem (Importado) em cada linha
+**2. Mostrar grupos vinculados ao app (via iam_queue)**
 
-### Arquivo
+Similar ao item 1, buscar `assign_group` completados vinculados a este app (via perfil_grupos do perfil que contém este app). Manter a aba Grupos existente e enriquecê-la.
 
-| Acao | Arquivo |
+**3. Owner como select pesquisável de colaboradores**
+
+- Trocar o campo Owner no header por um componente `Popover` + `Command` (combobox pesquisável) que lista todos os colaboradores ativos
+- Ao selecionar, salva o `colaborador_id` como owner (continuará usando a coluna `owner` como texto, gravando `nome - email` ou apenas o email para manter compatibilidade)
+- Exibir o owner selecionado com nome e e-mail
+
+**4. Workflow de aprovação por e-mail para o Owner**
+
+Quando um usuário solicita acesso a um app que tem owner definido:
+- Na `SolicitacoesPage` e `PortalSolicitacoesPage`, ao criar a solicitação, verificar se o app solicitado tem owner
+- Se tiver, enviar e-mail de notificação (`solicitacao_criada`) para o e-mail do owner
+- O owner recebe o e-mail e pode acessar o painel para aprovar/reprovar
+- Manter o fluxo existente de notificação aos admins como fallback quando não há owner
+
+### Detalhes técnicos
+
+**Owner Combobox:**
+```tsx
+// Usar Command (cmdk) dentro de Popover para busca
+<Popover>
+  <PopoverTrigger>
+    <Button variant="outline">{ownerDisplay || "Selecionar owner..."}</Button>
+  </PopoverTrigger>
+  <PopoverContent>
+    <Command>
+      <CommandInput placeholder="Buscar colaborador..." />
+      <CommandList>
+        {colaboradores.map(c => <CommandItem onSelect={...} />)}
+      </CommandList>
+    </Command>
+  </PopoverContent>
+</Popover>
+```
+
+**Notificação ao Owner na criação de solicitação:**
+- Buscar `aplicacoes.owner` para cada app solicitado
+- Extrair e-mail do owner (que será o e-mail do colaborador)
+- Chamar `sendNotificationEmail("solicitacao_criada", { destinatario_email: ownerEmail, ... })`
+
+### Arquivos
+
+| Ação | Arquivo |
 |---|---|
-| Editar | `src/pages/colaboradores/ColaboradorDetalhePage.tsx` — abas + paginacao nos acessos individuais |
+| Editar | `src/pages/aplicacoes/AplicacaoDetalhePage.tsx` — combobox owner + query iam_queue para usuários reais |
+| Editar | `src/pages/solicitacoes/SolicitacoesPage.tsx` — enviar e-mail ao owner do app |
+| Editar | `src/pages/portal/PortalSolicitacoesPage.tsx` — enviar e-mail ao owner do app |
 
