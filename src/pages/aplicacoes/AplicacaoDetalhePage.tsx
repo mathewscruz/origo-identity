@@ -10,10 +10,13 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ArrowLeft, CheckCircle, ExternalLink, Globe, Cloud, Users, Shield, Layers, Settings, Key, RefreshCw, Plus, Trash2, TestTube } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
+import { ArrowLeft, CheckCircle, ExternalLink, Globe, Cloud, Users, Shield, Layers, Settings, Key, RefreshCw, Plus, Trash2, TestTube, ChevronsUpDown, Check } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import AppIcon from "@/components/AppIcon";
 import EmptyState from "@/components/EmptyState";
 
@@ -36,6 +39,7 @@ export default function AplicacaoDetalhePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [ownerOpen, setOwnerOpen] = useState(false);
 
   const { data: app, isLoading } = useQuery({
     queryKey: ["aplicacao", id],
@@ -86,6 +90,70 @@ export default function AplicacaoDetalhePage() {
       return data;
     },
     enabled: !!perfisData && perfisData.length > 0,
+  });
+
+  // Real users from iam_queue (assign_app completed for this app)
+  const { data: iamAppUsers } = useQuery({
+    queryKey: ["aplicacao-iam-users", id, app?.nome],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("iam_queue")
+        .select("colaborador_id, target_identity, payload_json, created_at")
+        .eq("action_type", "assign_app")
+        .eq("status", "completed");
+      if (error) throw error;
+      // Filter by app name or entra_id in payload
+      return (data || []).filter((item: any) => {
+        const p = item.payload_json;
+        return p?.app_name === app?.nome || p?.app_id === app?.entra_id;
+      });
+    },
+    enabled: !!app,
+  });
+
+  // Fetch collaborator details for iam_queue users
+  const iamColabIds = [...new Set((iamAppUsers || []).map((i: any) => i.colaborador_id).filter(Boolean))];
+  const { data: iamColabs } = useQuery({
+    queryKey: ["iam-colabs", iamColabIds],
+    queryFn: async () => {
+      if (iamColabIds.length === 0) return [];
+      const { data, error } = await supabase
+        .from("colaboradores")
+        .select("id, nome, email, status, cargo_id, cargos(nome)")
+        .in("id", iamColabIds);
+      if (error) throw error;
+      return data;
+    },
+    enabled: iamColabIds.length > 0,
+  });
+
+  // Real groups from iam_queue (assign_group completed)
+  const { data: iamGroupItems } = useQuery({
+    queryKey: ["aplicacao-iam-groups", id, app?.nome],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("iam_queue")
+        .select("colaborador_id, target_identity, payload_json, created_at")
+        .eq("action_type", "assign_group")
+        .eq("status", "completed");
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!app,
+  });
+
+  // All collaborators for owner select
+  const { data: allColaboradores } = useQuery({
+    queryKey: ["all-colaboradores-owner"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("colaboradores")
+        .select("id, nome, email")
+        .eq("status", "ativo")
+        .order("nome");
+      if (error) throw error;
+      return data || [];
+    },
   });
 
   // Internal profiles for this app
@@ -252,6 +320,29 @@ export default function AplicacaoDetalhePage() {
     }
   };
 
+  const handleUpdateOwner = async (colab: { id: string; nome: string; email: string | null }) => {
+    const ownerValue = colab.email ? `${colab.nome} <${colab.email}>` : colab.nome;
+    const { error } = await supabase.from("aplicacoes").update({ owner: ownerValue } as any).eq("id", id!);
+    if (error) {
+      toast({ title: "Erro ao atualizar owner", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Owner atualizado" });
+      queryClient.invalidateQueries({ queryKey: ["aplicacao", id] });
+    }
+    setOwnerOpen(false);
+  };
+
+  const handleClearOwner = async () => {
+    const { error } = await supabase.from("aplicacoes").update({ owner: null } as any).eq("id", id!);
+    if (error) {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Owner removido" });
+      queryClient.invalidateQueries({ queryKey: ["aplicacao", id] });
+    }
+    setOwnerOpen(false);
+  };
+
   if (isLoading) {
     return <div className="space-y-4"><Skeleton className="h-8 w-64" /><Skeleton className="h-40 w-full" /></div>;
   }
@@ -265,6 +356,33 @@ export default function AplicacaoDetalhePage() {
   const grupos = (gruposData || []).filter((g: any) => g.entra_grupos);
   const connType = (app as any).connector_type || "manual";
   const hasConnector = connType !== "manual";
+
+  // Merge profile-based users with iam_queue users (deduplicated)
+  const profileColabIds = new Set(colabList.map((c: any) => c.colaboradores.id));
+  const iamColabMap = new Map((iamColabs || []).map((c: any) => [c.id, c]));
+  const extraIamUsers = (iamAppUsers || [])
+    .filter((item: any) => item.colaborador_id && !profileColabIds.has(item.colaborador_id))
+    .reduce((acc: Map<string, any>, item: any) => {
+      if (!acc.has(item.colaborador_id)) acc.set(item.colaborador_id, item);
+      return acc;
+    }, new Map());
+
+  const totalUsers = colabList.length + extraIamUsers.size;
+
+  // Groups from iam_queue that match this app's perfil groups
+  const perfilGrupoIds = new Set(grupos.map((g: any) => g.entra_grupos?.entra_id));
+  const extraIamGroups = (iamGroupItems || [])
+    .filter((item: any) => {
+      const p = item.payload_json;
+      return p?.group_id && !perfilGrupoIds.has(p.group_id);
+    })
+    .reduce((acc: Map<string, any>, item: any) => {
+      const key = item.payload_json?.group_id;
+      if (key && !acc.has(key)) acc.set(key, item);
+      return acc;
+    }, new Map());
+
+  const totalGroups = grupos.length + extraIamGroups.size;
 
   return (
     <div className="space-y-6">
@@ -290,10 +408,50 @@ export default function AplicacaoDetalhePage() {
                   <Settings className="h-3 w-3 mr-1" />{connectorTypeLabels[connType] || connType}
                 </Badge>
               </div>
-              <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+              <div className="flex flex-wrap gap-4 text-sm text-muted-foreground items-center">
                 {app.tipo_auth && <span><strong>Auth:</strong> {app.tipo_auth}</span>}
-                {app.owner && <span><strong>Owner:</strong> {app.owner}</span>}
-                {!app.owner && <span className="text-warning"><strong>Owner:</strong> Não definido</span>}
+                <div className="flex items-center gap-1">
+                  <strong>Owner:</strong>
+                  <Popover open={ownerOpen} onOpenChange={setOwnerOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-7 gap-1 font-normal">
+                        {app.owner ? (
+                          <span className="truncate max-w-[200px]">{app.owner}</span>
+                        ) : (
+                          <span className="text-warning">Não definido</span>
+                        )}
+                        <ChevronsUpDown className="h-3 w-3 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-80 p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Buscar colaborador..." />
+                        <CommandList>
+                          <CommandEmpty>Nenhum colaborador encontrado</CommandEmpty>
+                          <CommandGroup>
+                            {app.owner && (
+                              <CommandItem onSelect={handleClearOwner} className="text-destructive">
+                                Remover owner
+                              </CommandItem>
+                            )}
+                            {(allColaboradores || []).map((c: any) => (
+                              <CommandItem
+                                key={c.id}
+                                value={`${c.nome} ${c.email || ""}`}
+                                onSelect={() => handleUpdateOwner(c)}
+                              >
+                                <div className="flex flex-col">
+                                  <span>{c.nome}</span>
+                                  {c.email && <span className="text-xs text-muted-foreground">{c.email}</span>}
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
                 {app.entra_id && <span><strong>Entra ID:</strong> <code className="text-xs bg-muted px-1 rounded">{app.entra_id}</code></span>}
               </div>
               <div className="flex gap-4 flex-wrap">
@@ -325,33 +483,46 @@ export default function AplicacaoDetalhePage() {
       {/* Tabs */}
       <Tabs defaultValue="usuarios">
         <TabsList className="flex-wrap h-auto gap-1">
-          <TabsTrigger value="usuarios"><Users className="h-4 w-4 mr-1" />Usuários ({colabList.length})</TabsTrigger>
+          <TabsTrigger value="usuarios"><Users className="h-4 w-4 mr-1" />Usuários ({totalUsers})</TabsTrigger>
           <TabsTrigger value="perfis"><Shield className="h-4 w-4 mr-1" />Perfis ({perfis.length})</TabsTrigger>
-          <TabsTrigger value="grupos"><Layers className="h-4 w-4 mr-1" />Grupos ({grupos.length})</TabsTrigger>
+          <TabsTrigger value="grupos"><Layers className="h-4 w-4 mr-1" />Grupos ({totalGroups})</TabsTrigger>
           <TabsTrigger value="conector"><Settings className="h-4 w-4 mr-1" />Conector</TabsTrigger>
           <TabsTrigger value="perfis-internos"><Key className="h-4 w-4 mr-1" />Perfis Internos ({(perfisInternos || []).length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="usuarios">
           <Card><CardContent className="p-0">
-            {colabList.length === 0 ? (
+            {totalUsers === 0 ? (
               <EmptyState message="Nenhum usuário atribuído a esta aplicação" size="lg" />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead><tr className="border-b text-left text-muted-foreground">
-                    <th className="p-4 font-medium">Nome</th><th className="p-4 font-medium hidden sm:table-cell">E-mail</th><th className="p-4 font-medium hidden md:table-cell">Cargo</th><th className="p-4 font-medium">Perfil</th><th className="p-4 font-medium hidden sm:table-cell">Status</th>
+                    <th className="p-4 font-medium">Nome</th><th className="p-4 font-medium hidden sm:table-cell">E-mail</th><th className="p-4 font-medium hidden md:table-cell">Cargo</th><th className="p-4 font-medium">Origem</th><th className="p-4 font-medium hidden sm:table-cell">Status</th>
                   </tr></thead>
                   <tbody>
                     {colabList.map((c: any, i: number) => (
-                      <tr key={i} className="border-b last:border-0 hover:bg-muted/50 cursor-pointer" onClick={() => navigate(`/colaboradores/${c.colaboradores.id}`)}>
+                      <tr key={`perfil-${i}`} className="border-b last:border-0 hover:bg-muted/50 cursor-pointer" onClick={() => navigate(`/colaboradores/${c.colaboradores.id}`)}>
                         <td className="p-4 font-medium text-primary">{c.colaboradores.nome}</td>
                         <td className="p-4 text-muted-foreground hidden sm:table-cell">{c.colaboradores.email || "—"}</td>
                         <td className="p-4 text-muted-foreground hidden md:table-cell">{c.colaboradores.cargos?.nome || "—"}</td>
-                        <td className="p-4"><Badge variant="outline">{(c as any).perfis_acesso?.nome || "—"}</Badge></td>
+                        <td className="p-4"><Badge variant="outline">{(c as any).perfis_acesso?.nome || "Perfil"}</Badge></td>
                         <td className="p-4 hidden sm:table-cell"><Badge variant={c.colaboradores.status === "ativo" ? "outline" : "destructive"} className={c.colaboradores.status === "ativo" ? "bg-success/15 text-success border-success/30" : ""}>{({ ativo: "Ativo", inativo: "Inativo", ferias: "Férias", afastado: "Afastado", desligado: "Desligado" } as Record<string, string>)[c.colaboradores.status] || c.colaboradores.status}</Badge></td>
                       </tr>
                     ))}
+                    {[...extraIamUsers.values()].map((item: any) => {
+                      const colab = iamColabMap.get(item.colaborador_id);
+                      if (!colab) return null;
+                      return (
+                        <tr key={`iam-${item.colaborador_id}`} className="border-b last:border-0 hover:bg-muted/50 cursor-pointer" onClick={() => navigate(`/colaboradores/${colab.id}`)}>
+                          <td className="p-4 font-medium text-primary">{colab.nome}</td>
+                          <td className="p-4 text-muted-foreground hidden sm:table-cell">{colab.email || "—"}</td>
+                          <td className="p-4 text-muted-foreground hidden md:table-cell">{colab.cargos?.nome || "—"}</td>
+                          <td className="p-4"><Badge variant="secondary">Individual</Badge></td>
+                          <td className="p-4 hidden sm:table-cell"><Badge variant={colab.status === "ativo" ? "outline" : "destructive"} className={colab.status === "ativo" ? "bg-success/15 text-success border-success/30" : ""}>{({ ativo: "Ativo", inativo: "Inativo", ferias: "Férias", afastado: "Afastado", desligado: "Desligado" } as Record<string, string>)[colab.status] || colab.status}</Badge></td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -373,7 +544,7 @@ export default function AplicacaoDetalhePage() {
                     {perfis.map((p: any) => (
                       <tr key={p.id} className="border-b last:border-0 hover:bg-muted/50 cursor-pointer" onClick={() => navigate(`/perfis-acesso/${p.id}`)}>
                         <td className="p-4 font-medium text-primary">{p.nome}</td>
-                        <td className="p-4"><Badge variant="outline">{p.tipo}</Badge></td>
+                        <td className="p-4"><Badge variant="outline">{p.tipo.charAt(0).toUpperCase() + p.tipo.slice(1)}</Badge></td>
                         <td className="p-4">{p.ativo ? <Badge variant="outline" className="bg-success/15 text-success border-success/30">Ativo</Badge> : <Badge variant="outline" className="bg-muted text-muted-foreground">Inativo</Badge>}</td>
                       </tr>
                     ))}
@@ -386,20 +557,27 @@ export default function AplicacaoDetalhePage() {
 
         <TabsContent value="grupos">
           <Card><CardContent className="p-0">
-            {grupos.length === 0 ? (
+            {totalGroups === 0 ? (
               <EmptyState message="Nenhum grupo vinculado a esta aplicação" size="lg" />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead><tr className="border-b text-left text-muted-foreground">
-                    <th className="p-4 font-medium">Grupo</th><th className="p-4 font-medium hidden sm:table-cell">Entra ID</th><th className="p-4 font-medium">Via Perfil</th>
+                    <th className="p-4 font-medium">Grupo</th><th className="p-4 font-medium hidden sm:table-cell">Entra ID</th><th className="p-4 font-medium">Origem</th>
                   </tr></thead>
                   <tbody>
                     {grupos.map((g: any, i: number) => (
                       <tr key={i} className="border-b last:border-0 hover:bg-muted/50">
                         <td className="p-4 font-medium">{g.entra_grupos.nome}</td>
                         <td className="p-4 text-muted-foreground hidden sm:table-cell"><code className="text-xs bg-muted px-1 rounded">{g.entra_grupos.entra_id}</code></td>
-                        <td className="p-4"><Badge variant="outline">{(g as any).perfis_acesso?.nome || "—"}</Badge></td>
+                        <td className="p-4"><Badge variant="outline">{(g as any).perfis_acesso?.nome || "Perfil"}</Badge></td>
+                      </tr>
+                    ))}
+                    {[...extraIamGroups.values()].map((item: any) => (
+                      <tr key={`iam-grp-${item.payload_json.group_id}`} className="border-b last:border-0 hover:bg-muted/50">
+                        <td className="p-4 font-medium">{item.payload_json.group_name || item.payload_json.group_id}</td>
+                        <td className="p-4 text-muted-foreground hidden sm:table-cell"><code className="text-xs bg-muted px-1 rounded">{item.payload_json.group_id}</code></td>
+                        <td className="p-4"><Badge variant="secondary">Individual</Badge></td>
                       </tr>
                     ))}
                   </tbody>
