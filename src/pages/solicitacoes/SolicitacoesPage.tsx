@@ -61,9 +61,9 @@ export default function SolicitacoesPage() {
     const [{ data: s }, { data: c }, { data: apps }, { data: grps }, { data: lics }, { data: itens }] = await Promise.all([
       supabase.from("solicitacoes_acesso").select("*").order("created_at", { ascending: false }),
       supabase.from("colaboradores").select("id, nome, email, sam_account_name, entra_id").eq("status", "ativo").order("nome"),
-      supabase.from("aplicacoes").select("id, nome, entra_id, owner").order("nome"),
+      supabase.from("aplicacoes").select("id, nome, entra_id, default_app_role_id, owner").order("nome"),
       supabase.from("entra_grupos").select("id, nome, entra_id, owner").order("nome"),
-      supabase.from("licencas").select("id, nome, owner").order("nome"),
+      supabase.from("licencas").select("id, nome, owner, aplicacao_id").order("nome"),
       supabase.from("solicitacao_itens").select("*").order("created_at"),
     ]);
     setSolicitacoes(s || []);
@@ -188,16 +188,22 @@ export default function SolicitacoesPage() {
       resourceExternalId = lic?.sku_id || item.recurso_id;
     }
 
+    const payload: Record<string, any> = {
+      [keys.idKey]: resourceExternalId,
+      [keys.nameKey]: item.recurso_nome,
+      reason: "solicitacao_acesso",
+    };
+    if (item.tipo === "app") {
+      const app = appMap.get(item.recurso_id);
+      if (app?.default_app_role_id) payload.appRoleId = app.default_app_role_id;
+    }
+
     await supabase.from("iam_queue").insert({
       action_type: actionMap[item.tipo],
       colaborador_id: colab.id,
       target_identity: targetIdentity,
       status: "pending",
-      payload_json: {
-        [keys.idKey]: resourceExternalId,
-        [keys.nameKey]: item.recurso_nome,
-        reason: "solicitacao_acesso",
-      },
+      payload_json: payload,
       requested_by: profile?.email || "sistema",
     } as any);
   };
