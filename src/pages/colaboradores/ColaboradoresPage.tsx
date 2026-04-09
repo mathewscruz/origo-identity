@@ -99,6 +99,24 @@ export default function ColaboradoresPage() {
   const { toast } = useToast();
   const { profile } = useAuth();
 
+  // Auto-generate email and sam_account_name when name changes (new collaborators only)
+  useEffect(() => {
+    if (editingId) return;
+    const nome = form.nome.trim();
+    if (!nome) {
+      setForm(prev => ({ ...prev, email: "", sam_account_name: "" }));
+      return;
+    }
+    const parts = nome.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .split(/\s+/).filter(p => !["de","da","do","dos","das","e"].includes(p) && p.length > 0);
+    if (parts.length === 0) return;
+    const first = parts[0];
+    const last = parts.length > 1 ? parts[parts.length - 1] : first;
+    const sam = `${first}.${last}`;
+    const email = `${sam}@origoenergia.com.br`;
+    setForm(prev => ({ ...prev, email, sam_account_name: sam }));
+  }, [form.nome, editingId]);
+
   // Quick-assign individual resource state
   const [quickAssignColab, setQuickAssignColab] = useState<any>(null);
   const [quickAssignType, setQuickAssignType] = useState<"grupo" | "licenca" | "app" | null>(null);

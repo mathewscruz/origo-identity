@@ -518,14 +518,17 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     function buildColabData(row: CsvRow) {
       const statusMapped = STATUS_MAP[(row.status || "ativo").toLowerCase()] || "ativo";
       let email = row.mail || "";
-      let samAccountName = email.includes("@") ? email.split("@")[0] : (row.employID || "").trim();
+      // Prioritize sAMAccountName from CSV when available
+      const csvSam = (row.sAMAccountName || "").trim();
+      let samAccountName = csvSam || (email.includes("@") ? email.split("@")[0] : (row.employID || "").trim());
 
       // Generate corporate email if not @origoenergia.com.br
       if (email && !email.toLowerCase().endsWith("@origoenergia.com.br")) {
         const generated = generateOrigoEmail(row.displayName || "", existingEmails);
         if (generated) {
           email = generated;
-          samAccountName = generated.split("@")[0];
+          // Only override samAccountName if CSV didn't provide one
+          if (!csvSam) samAccountName = generated.split("@")[0];
           existingEmails.add(generated.toLowerCase());
           console.log(`Generated corporate email for "${row.displayName}": ${generated}`);
         }
@@ -533,7 +536,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         const generated = generateOrigoEmail(row.displayName, existingEmails);
         if (generated) {
           email = generated;
-          samAccountName = generated.split("@")[0];
+          if (!csvSam) samAccountName = generated.split("@")[0];
           existingEmails.add(generated.toLowerCase());
           console.log(`Generated corporate email (no original) for "${row.displayName}": ${generated}`);
         }
