@@ -823,10 +823,13 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
         const newStatus = item.data.status;
         const oldStatus = item.oldStatus;
-        const isDisabling = (newStatus === "desligado" || newStatus === "inativo") && oldStatus !== newStatus;
+        const isFullDisable = (newStatus === "desligado" || newStatus === "inativo") && oldStatus !== newStatus;
+        const isSoftDisable = (newStatus === "ferias" || newStatus === "afastado") && oldStatus !== newStatus;
+        const disabledStatuses = ["desligado", "inativo", "ferias", "afastado"];
+        const isReactivating = newStatus === "ativo" && oldStatus !== "ativo" && disabledStatuses.includes(oldStatus);
 
-        if (isDisabling) {
-          // Disable action for AD
+        if (isFullDisable) {
+          // Full disable: disable AD + Entra + remove ALL access
           await sb.from("iam_queue").insert({
             action_type: "disable",
             payload_json: {
@@ -865,6 +868,70 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
           // Disable Entra ID account
           await sb.from("iam_queue").insert({
             action_type: "disable_entra",
+            payload_json: {
+              mail: item.data.email || "",
+              samAccountName: sam,
+              displayName: item.data.nome || "",
+            },
+            target_identity: sam,
+            colaborador_id: item.id,
+            requested_by: "importacao_csv",
+            status: "pending",
+          });
+        } else if (isSoftDisable) {
+          // Soft disable (férias/afastado): disable AD + Entra but KEEP all access
+          await sb.from("iam_queue").insert({
+            action_type: "disable",
+            payload_json: {
+              samAccountName: sam,
+              mail: item.data.email || "",
+              displayName: item.data.nome || "",
+              status: "disabled",
+              status_anterior: oldStatus,
+              status_novo: newStatus,
+              changed_fields: ["status"],
+              new_values: { status: "disabled" },
+            },
+            target_identity: sam,
+            colaborador_id: item.id,
+            requested_by: "importacao_csv",
+            status: "pending",
+          });
+
+          await sb.from("iam_queue").insert({
+            action_type: "disable_entra",
+            payload_json: {
+              mail: item.data.email || "",
+              samAccountName: sam,
+              displayName: item.data.nome || "",
+            },
+            target_identity: sam,
+            colaborador_id: item.id,
+            requested_by: "importacao_csv",
+            status: "pending",
+          });
+        } else if (isReactivating) {
+          // Reactivating from disabled state: re-enable AD + Entra
+          await sb.from("iam_queue").insert({
+            action_type: "create_if_not_exists",
+            payload_json: {
+              samAccountName: sam,
+              mail: item.data.email || "",
+              displayName: item.data.nome || "",
+              status: "enabled",
+              status_anterior: oldStatus,
+              status_novo: "ativo",
+              changed_fields: ["status"],
+              new_values: { status: "enabled" },
+            },
+            target_identity: sam,
+            colaborador_id: item.id,
+            requested_by: "importacao_csv",
+            status: "pending",
+          });
+
+          await sb.from("iam_queue").insert({
+            action_type: "enable_entra",
             payload_json: {
               mail: item.data.email || "",
               samAccountName: sam,
