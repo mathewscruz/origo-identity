@@ -257,7 +257,13 @@ function useRecentActivity() {
           .limit(5),
       ]);
 
-      const colaboradorIds = [...new Set((queueRes.data ?? []).map((q: any) => q.colaborador_id).filter(Boolean))];
+      const colaboradorIds = [
+        ...new Set(
+          (queueRes.data ?? [])
+            .map((q: any) => q.colaborador_id)
+            .filter((id: string | null): id is string => Boolean(id)),
+        ),
+      ];
       const colaboradorNames = new Map<string, string>();
 
       if (colaboradorIds.length > 0) {
