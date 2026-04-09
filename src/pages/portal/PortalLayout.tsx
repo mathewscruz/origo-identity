@@ -8,11 +8,13 @@ import logoImg from "@/assets/logo.png";
 import PageTransition from "@/components/PageTransition";
 import { toast } from "sonner";
 import type { User } from "@supabase/supabase-js";
+import ForcePasswordChangeDialog from "@/components/ForcePasswordChangeDialog";
 
 export default function PortalLayout() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [logoutOpen, setLogoutOpen] = useState(false);
+  const [mustChangePwd, setMustChangePwd] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -24,10 +26,13 @@ export default function PortalLayout() {
       setLoading(false);
     });
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setUser(session?.user ?? null);
       if (!session?.user) {
         navigate("/portal/login", { replace: true });
+      } else {
+        const { data: p } = await supabase.from("profiles").select("must_change_password").eq("id", session.user.id).maybeSingle();
+        setMustChangePwd(!!(p as any)?.must_change_password);
       }
       setLoading(false);
     });
@@ -91,6 +96,8 @@ export default function PortalLayout() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ForcePasswordChangeDialog open={mustChangePwd} onComplete={() => setMustChangePwd(false)} />
     </div>
   );
 }
