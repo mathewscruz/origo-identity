@@ -21,9 +21,17 @@ import EmptyState from "@/components/EmptyState";
 import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
 
+function extractOwnerEmail(owner: string | null): string | null {
+  if (!owner) return null;
+  const match = owner.match(/<(.+?)>/);
+  const email = match ? match[1] : owner;
+  return email.includes("@") ? email : null;
+}
+
 export default function SolicitacoesPage() {
   const { profile } = useAuth();
   const [solicitacoes, setSolicitacoes] = useState<any[]>([]);
+  const [solicitacaoItens, setSolicitacaoItens] = useState<any[]>([]);
   const [colaboradores, setColaboradores] = useState<any[]>([]);
   const [aplicacoes, setAplicacoes] = useState<any[]>([]);
   const [grupos, setGrupos] = useState<any[]>([]);
@@ -31,6 +39,7 @@ export default function SolicitacoesPage() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [decisionDialog, setDecisionDialog] = useState<any>(null);
+  const [decisionItens, setDecisionItens] = useState<any[]>([]);
   const [busca, setBusca] = useState("");
 
   // form
@@ -45,23 +54,24 @@ export default function SolicitacoesPage() {
   const [buscaLicenca, setBuscaLicenca] = useState("");
 
   // decision
-  const [decisao, setDecisao] = useState("");
   const [comentario, setComentario] = useState("");
 
   const fetchData = async () => {
     setLoading(true);
-    const [{ data: s }, { data: c }, { data: apps }, { data: grps }, { data: lics }] = await Promise.all([
+    const [{ data: s }, { data: c }, { data: apps }, { data: grps }, { data: lics }, { data: itens }] = await Promise.all([
       supabase.from("solicitacoes_acesso").select("*").order("created_at", { ascending: false }),
       supabase.from("colaboradores").select("id, nome, email, sam_account_name, entra_id").eq("status", "ativo").order("nome"),
       supabase.from("aplicacoes").select("id, nome, entra_id, owner").order("nome"),
-      supabase.from("entra_grupos").select("id, nome, entra_id").order("nome"),
-      supabase.from("licencas").select("id, nome").order("nome"),
+      supabase.from("entra_grupos").select("id, nome, entra_id, owner").order("nome"),
+      supabase.from("licencas").select("id, nome, owner").order("nome"),
+      supabase.from("solicitacao_itens").select("*").order("created_at"),
     ]);
     setSolicitacoes(s || []);
     setColaboradores(c || []);
     setAplicacoes(apps || []);
     setGrupos(grps || []);
     setLicencas(lics || []);
+    setSolicitacaoItens(itens || []);
     setLoading(false);
   };
 
@@ -116,6 +126,78 @@ export default function SolicitacoesPage() {
     setList(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
+  // Build item records with owner resolution
+  const buildItensRecords = (solicitacaoId: string) => {
+    const records: any[] = [];
+    for (const appId of selectedApps) {
+      const app = appMap.get(appId);
+      const ownerEmail = extractOwnerEmail(app?.owner);
+      records.push({
+        solicitacao_id: solicitacaoId,
+        tipo: "app",
+        recurso_id: appId,
+        recurso_nome: app?.nome || appId,
+        owner_email: ownerEmail,
+        status: ownerEmail ? "pendente" : "aprovado",
+      });
+    }
+    for (const grpId of selectedGrupos) {
+      const grp = grupoMap.get(grpId);
+      const ownerEmail = extractOwnerEmail(grp?.owner);
+      records.push({
+        solicitacao_id: solicitacaoId,
+        tipo: "grupo",
+        recurso_id: grpId,
+        recurso_nome: grp?.nome || grpId,
+        owner_email: ownerEmail,
+        status: ownerEmail ? "pendente" : "aprovado",
+      });
+    }
+    for (const licId of selectedLicencas) {
+      const lic = licencaMap.get(licId);
+      const ownerEmail = extractOwnerEmail(lic?.owner);
+      records.push({
+        solicitacao_id: solicitacaoId,
+        tipo: "licenca",
+        recurso_id: licId,
+        recurso_nome: lic?.nome || licId,
+        owner_email: ownerEmail,
+        status: ownerEmail ? "pendente" : "aprovado",
+      });
+    }
+    return records;
+  };
+
+  const provisionItem = async (item: { tipo: string; recurso_id: string; recurso_nome: string }, colab: any) => {
+    const targetIdentity = colab.entra_id || colab.email || colab.sam_account_name;
+    if (!targetIdentity) return;
+
+    const actionMap: Record<string, string> = { app: "assign_app", grupo: "assign_group", licenca: "assign_license" };
+    const payloadKeyMap: Record<string, { idKey: string; nameKey: string }> = {
+      app: { idKey: "app_id", nameKey: "app_name" },
+      grupo: { idKey: "group_id", nameKey: "group_name" },
+      licenca: { idKey: "license_id", nameKey: "license_name" },
+    };
+
+    const keys = payloadKeyMap[item.tipo];
+    let resourceExternalId = item.recurso_id;
+    if (item.tipo === "app") resourceExternalId = appMap.get(item.recurso_id)?.entra_id || item.recurso_id;
+    if (item.tipo === "grupo") resourceExternalId = grupoMap.get(item.recurso_id)?.entra_id || item.recurso_id;
+
+    await supabase.from("iam_queue").insert({
+      action_type: actionMap[item.tipo],
+      colaborador_id: colab.id,
+      target_identity: targetIdentity,
+      status: "pending",
+      payload_json: {
+        [keys.idKey]: resourceExternalId,
+        [keys.nameKey]: item.recurso_nome,
+        reason: "solicitacao_acesso",
+      },
+      requested_by: profile?.email || "sistema",
+    } as any);
+  };
+
   const handleSubmit = async () => {
     if (!solicitanteId) {
       toast({ title: "Selecione o colaborador", variant: "destructive" });
@@ -130,12 +212,10 @@ export default function SolicitacoesPage() {
       return;
     }
 
-    const { data: etapas } = await supabase
-      .from("workflow_etapas")
-      .select("*")
-      .eq("entidade_tipo", "solicitacao")
-      .eq("ativo", true)
-      .order("ordem");
+    // Build items first to determine initial status
+    const tempItems = buildItensRecords("temp");
+    const hasPending = tempItems.some(i => i.status === "pendente");
+    const initialStatus = hasPending ? "em_aprovacao" : "aprovada";
 
     const { data: inserted, error } = await supabase.from("solicitacoes_acesso").insert({
       solicitante_id: solicitanteId,
@@ -143,7 +223,7 @@ export default function SolicitacoesPage() {
       grupos_ids: selectedGrupos,
       licencas_ids: selectedLicencas,
       justificativa: justificativa.trim(),
-      status: (etapas && etapas.length > 0) ? "em_aprovacao" : "pendente",
+      status: initialStatus,
     } as any).select("id").single();
 
     if (error) {
@@ -151,21 +231,32 @@ export default function SolicitacoesPage() {
       return;
     }
 
-    if (etapas && etapas.length > 0 && inserted?.id) {
-      const execucoes = etapas.map((et: any) => ({
-        entidade_id: inserted.id,
-        entidade_tipo: "solicitacao",
-        etapa_id: et.id,
-        status: "pendente",
-      }));
-      await supabase.from("workflow_execucoes").insert(execucoes as any);
+    // Insert individual items
+    const itemRecords = buildItensRecords(inserted!.id);
+    await supabase.from("solicitacao_itens").insert(itemRecords as any);
+
+    // Auto-provision items without owner
+    const colab = colabMap.get(solicitanteId);
+    const autoApproved = itemRecords.filter(i => i.status === "aprovado");
+    if (colab && autoApproved.length > 0) {
+      for (const item of autoApproved) {
+        await provisionItem(item, colab);
+      }
+      triggerEntraProcessing();
+    }
+
+    // If all items auto-approved, mark as approved with auto-approval
+    if (!hasPending) {
+      await supabase.from("solicitacoes_acesso").update({
+        status: "aprovada",
+        aprovador: "auto",
+        data_decisao: new Date().toISOString(),
+        comentario: "Aprovação automática — nenhum item possui owner definido",
+      } as any).eq("id", inserted!.id);
     }
 
     const colabNome = colabMap.get(solicitanteId)?.nome || "—";
-    const allItemNames: string[] = [];
-    selectedApps.forEach(id => allItemNames.push(appMap.get(id)?.nome || id));
-    selectedGrupos.forEach(id => allItemNames.push(grupoMap.get(id)?.nome || id));
-    selectedLicencas.forEach(id => allItemNames.push(licencaMap.get(id)?.nome || id));
+    const allItemNames = itemRecords.map(i => i.recurso_nome);
     const itensDesc = allItemNames.join(", ");
 
     await logAuditoria({
@@ -176,31 +267,28 @@ export default function SolicitacoesPage() {
       operador: profile?.email || "sistema",
     });
 
-    toast({ title: "Solicitação criada com sucesso", description: etapas && etapas.length > 0 ? `Encaminhada para workflow com ${etapas.length} etapa(s) de aprovação.` : undefined });
-
-    // Notify owners of requested apps
-    const ownerEmails = new Set<string>();
-    for (const appId of selectedApps) {
-      const app = appMap.get(appId);
-      if (app?.owner) {
-        const emailMatch = app.owner.match(/<(.+?)>/);
-        const email = emailMatch ? emailMatch[1] : app.owner;
-        if (email.includes("@")) ownerEmails.add(email);
+    // Notify owners grouped by email
+    const ownerGroups = new Map<string, string[]>();
+    for (const item of itemRecords) {
+      if (item.owner_email) {
+        const existing = ownerGroups.get(item.owner_email) || [];
+        existing.push(item.recurso_nome);
+        ownerGroups.set(item.owner_email, existing);
       }
     }
 
-    for (const ownerEmail of ownerEmails) {
+    for (const [ownerEmail, ownerItems] of ownerGroups) {
       sendNotificationEmail("solicitacao_criada", {
         destinatario_email: ownerEmail,
         colaborador_nome: colabNome,
-        itens: itensDesc,
+        itens: ownerItems.join(", "),
         justificativa: justificativa.trim(),
         solicitante: profile?.nome || profile?.email || "Sistema",
       });
     }
 
-    // Fallback: notify admins if no owner was notified
-    if (ownerEmails.size === 0) {
+    // Notify admins only if NO items have owners
+    if (ownerGroups.size === 0 && hasPending) {
       const { data: adminRoles } = await supabase.from("user_roles").select("user_id").eq("role", "admin");
       if (adminRoles && adminRoles.length > 0) {
         const adminIds = adminRoles.map((r: any) => r.user_id);
@@ -217,6 +305,28 @@ export default function SolicitacoesPage() {
       }
     }
 
+    // Notify requester about auto-approved items
+    if (autoApproved.length > 0) {
+      const solicitanteEmail = colab?.email;
+      if (solicitanteEmail) {
+        sendNotificationEmail("solicitacao_decidida", {
+          destinatario_email: solicitanteEmail,
+          colaborador_nome: colabNome,
+          itens: autoApproved.map(i => i.recurso_nome).join(", "),
+          status: "aprovada",
+          aprovador: "Automático",
+          comentario: "Aprovação automática — sem owner definido",
+        });
+      }
+    }
+
+    toast({
+      title: "Solicitação criada com sucesso",
+      description: hasPending
+        ? `${autoApproved.length} item(ns) aprovado(s) automaticamente, ${itemRecords.length - autoApproved.length} aguardando aprovação do owner.`
+        : "Todos os itens foram aprovados automaticamente.",
+    });
+
     setDialogOpen(false);
     setSolicitanteId("");
     setSelectedApps([]);
@@ -230,117 +340,124 @@ export default function SolicitacoesPage() {
     fetchData();
   };
 
-  const handleDecision = async () => {
-    if (!decisionDialog || !decisao) return;
+  const openDecisionDialog = async (s: any) => {
+    // Load items for this request
+    const { data: itens } = await supabase
+      .from("solicitacao_itens")
+      .select("*")
+      .eq("solicitacao_id", s.id)
+      .eq("status", "pendente")
+      .order("created_at");
+    setDecisionItens(itens || []);
+    setDecisionDialog(s);
+  };
 
-    const { error } = await supabase.from("solicitacoes_acesso").update({
-      status: decisao,
-      aprovador: profile?.email || "sistema",
-      comentario: comentario || null,
-      data_decisao: new Date().toISOString(),
-    } as any).eq("id", decisionDialog.id);
+  const handleDecision = async (decisao: "aprovada" | "rejeitada") => {
+    if (!decisionDialog || decisionItens.length === 0) return;
 
-    if (error) {
-      toast({ title: "Erro", description: error.message, variant: "destructive" });
-      return;
-    }
+    const colab = colabMap.get(decisionDialog.solicitante_id);
+    const colabNome = colab?.nome || "—";
 
-    if (decisao === "aprovada") {
-      const colab = colabMap.get(decisionDialog.solicitante_id);
-      const appIds = Array.isArray(decisionDialog.aplicacoes_ids) ? decisionDialog.aplicacoes_ids : [];
-      const grpIds = Array.isArray(decisionDialog.grupos_ids) ? decisionDialog.grupos_ids : [];
-      const licIds = Array.isArray(decisionDialog.licencas_ids) ? decisionDialog.licencas_ids : [];
+    // Update all pending items
+    const itemIds = decisionItens.map(i => i.id);
+    await supabase.from("solicitacao_itens").update({
+      status: decisao === "aprovada" ? "aprovado" : "rejeitado",
+      decidido_por: profile?.email || "sistema",
+      decidido_em: new Date().toISOString(),
+    } as any).in("id", itemIds);
 
-      if (colab && (colab.email || colab.sam_account_name || colab.entra_id)) {
-        const targetIdentity = colab.entra_id || colab.email || colab.sam_account_name;
-        const queueItems: any[] = [];
-
-        for (const appId of appIds) {
-          const app = appMap.get(appId);
-          queueItems.push({
-            action_type: "assign_app",
-            colaborador_id: colab.id,
-            target_identity: targetIdentity,
-            status: "pending",
-            payload_json: {
-              app_id: app?.entra_id || appId,
-              app_name: app?.nome || appId,
-              reason: "solicitacao_acesso",
-            },
-            requested_by: profile?.email || "sistema",
-          });
-        }
-
-        for (const grpId of grpIds) {
-          const grp = grupoMap.get(grpId);
-          queueItems.push({
-            action_type: "assign_group",
-            colaborador_id: colab.id,
-            target_identity: targetIdentity,
-            status: "pending",
-            payload_json: {
-              group_id: grp?.entra_id || grpId,
-              group_name: grp?.nome || grpId,
-              reason: "solicitacao_acesso",
-            },
-            requested_by: profile?.email || "sistema",
-          });
-        }
-
-        for (const licId of licIds) {
-          const lic = licencaMap.get(licId);
-          queueItems.push({
-            action_type: "assign_license",
-            colaborador_id: colab.id,
-            target_identity: targetIdentity,
-            status: "pending",
-            payload_json: {
-              license_id: licId,
-              license_name: lic?.nome || licId,
-              reason: "solicitacao_acesso",
-            },
-            requested_by: profile?.email || "sistema",
-          });
-        }
-
-        if (queueItems.length > 0) {
-          await supabase.from("iam_queue").insert(queueItems);
-          triggerEntraProcessing();
-        }
+    // Provision approved items
+    if (decisao === "aprovada" && colab) {
+      for (const item of decisionItens) {
+        await provisionItem(item, colab);
       }
+      triggerEntraProcessing();
     }
 
-    const colabNome = colabMap.get(decisionDialog.solicitante_id)?.nome || "—";
-    const itensDesc = getItensSolicitados(decisionDialog);
+    // Check if all items are now decided
+    const { data: allItens } = await supabase
+      .from("solicitacao_itens")
+      .select("status")
+      .eq("solicitacao_id", decisionDialog.id);
 
-    await logAuditoria({
-      acao: decisao === "aprovada" ? "aprovar" : "rejeitar",
-      entidade: "solicitacao_acesso",
-      entidade_id: decisionDialog.id,
-      resumo: `Solicitação ${decisao}: ${colabNome} → ${itensDesc}`,
-      operador: profile?.email || "sistema",
-      detalhes: { comentario },
-    });
+    const allDecided = (allItens || []).every((i: any) => i.status !== "pendente");
+    if (allDecided) {
+      const hasRejected = (allItens || []).some((i: any) => i.status === "rejeitado");
+      const hasApproved = (allItens || []).some((i: any) => i.status === "aprovado");
+      let finalStatus = "aprovada";
+      if (hasRejected && !hasApproved) finalStatus = "rejeitada";
+      else if (hasRejected && hasApproved) finalStatus = "aprovada"; // partial
 
-    toast({ title: `Solicitação ${decisao === "aprovada" ? "aprovada" : "rejeitada"}` });
+      await supabase.from("solicitacoes_acesso").update({
+        status: finalStatus,
+        aprovador: profile?.email || "sistema",
+        comentario: comentario || null,
+        data_decisao: new Date().toISOString(),
+      } as any).eq("id", decisionDialog.id);
+    }
 
-    // Notify requester about the decision
-    const solicitanteEmail = colabMap.get(decisionDialog.solicitante_id)?.email;
+    // Notify requester
+    const solicitanteEmail = colab?.email;
     if (solicitanteEmail) {
+      const itensNomes = decisionItens.map(i => i.recurso_nome).join(", ");
       sendNotificationEmail("solicitacao_decidida", {
         destinatario_email: solicitanteEmail,
         colaborador_nome: colabNome,
-        itens: itensDesc,
+        itens: itensNomes,
         status: decisao,
         aprovador: profile?.nome || profile?.email || "Sistema",
         comentario: comentario || undefined,
       });
     }
 
+    await logAuditoria({
+      acao: decisao === "aprovada" ? "aprovar" : "rejeitar",
+      entidade: "solicitacao_acesso",
+      entidade_id: decisionDialog.id,
+      resumo: `Itens ${decisao === "aprovada" ? "aprovados" : "rejeitados"}: ${decisionItens.map(i => i.recurso_nome).join(", ")}`,
+      operador: profile?.email || "sistema",
+      detalhes: { comentario },
+    });
+
+    toast({ title: `Itens ${decisao === "aprovada" ? "aprovados" : "rejeitados"} com sucesso` });
+
     setDecisionDialog(null);
-    setDecisao("");
+    setDecisionItens([]);
     setComentario("");
     fetchData();
+  };
+
+  const getItemStatusForSolicitacao = (solicitacaoId: string) => {
+    return solicitacaoItens.filter(i => i.solicitacao_id === solicitacaoId);
+  };
+
+  const renderItemStatusBadges = (solicitacaoId: string) => {
+    const items = getItemStatusForSolicitacao(solicitacaoId);
+    if (items.length === 0) return null;
+
+    const iconMap: Record<string, any> = { app: AppWindow, grupo: Users, licenca: KeyRound };
+    const statusColors: Record<string, string> = {
+      pendente: "border-yellow-500 text-yellow-600",
+      aprovado: "border-green-500 text-green-600",
+      rejeitado: "border-red-500 text-red-600",
+    };
+
+    return (
+      <div className="flex flex-wrap gap-1">
+        {items.map((item: any) => {
+          const Icon = iconMap[item.tipo] || AppWindow;
+          return (
+            <Badge key={item.id} variant="outline" className={`text-xs ${statusColors[item.status] || ""}`}>
+              <Icon className="mr-1 h-3 w-3" />
+              {item.recurso_nome}
+              {item.status === "aprovado" && <CheckCircle2 className="ml-1 h-3 w-3" />}
+              {item.status === "rejeitado" && <XCircle className="ml-1 h-3 w-3" />}
+              {item.status === "pendente" && <Clock className="ml-1 h-3 w-3" />}
+            </Badge>
+          );
+        })}
+      </div>
+    );
   };
 
   const pendentes = solicitacoes.filter(s => s.status === "pendente" || s.status === "em_aprovacao");
@@ -438,7 +555,7 @@ export default function SolicitacoesPage() {
             <Table>
               <TableHeader><TableRow>
                 <TableHead>Solicitante</TableHead>
-                <TableHead>Itens Solicitados</TableHead>
+                <TableHead>Itens</TableHead>
                 <TableHead className="hidden md:table-cell">Justificativa</TableHead>
                 <TableHead className="hidden sm:table-cell">Data</TableHead>
                 <TableHead>Status</TableHead>
@@ -452,14 +569,13 @@ export default function SolicitacoesPage() {
                 ) : filtered(pendentes).map(s => (
                   <TableRow key={s.id}>
                     <TableCell className="font-medium">{colabMap.get(s.solicitante_id)?.nome || "—"}</TableCell>
-                    <TableCell className="max-w-[250px]">{renderItensBadges(s)}</TableCell>
+                    <TableCell className="max-w-[300px]">{renderItemStatusBadges(s.id) || renderItensBadges(s)}</TableCell>
                     <TableCell className="max-w-[200px] truncate text-muted-foreground hidden md:table-cell">{s.justificativa}</TableCell>
                     <TableCell className="hidden sm:table-cell">{new Date(s.created_at).toLocaleDateString("pt-BR")}</TableCell>
                     <TableCell>{statusBadge(s.status)}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button size="sm" variant="outline" className="text-green-600" onClick={() => { setDecisionDialog(s); setDecisao("aprovada"); }}>Aprovar</Button>
-                        <Button size="sm" variant="outline" className="text-destructive" onClick={() => { setDecisionDialog(s); setDecisao("rejeitada"); }}>Rejeitar</Button>
+                        <Button size="sm" variant="outline" className="text-green-600" onClick={() => openDecisionDialog(s)}>Decidir</Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -474,7 +590,7 @@ export default function SolicitacoesPage() {
             <Table>
               <TableHeader><TableRow>
                 <TableHead>Solicitante</TableHead>
-                <TableHead>Itens Solicitados</TableHead>
+                <TableHead>Itens</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="hidden md:table-cell">Aprovador</TableHead>
                 <TableHead className="hidden lg:table-cell">Comentário</TableHead>
@@ -486,7 +602,7 @@ export default function SolicitacoesPage() {
                 ) : filtered(decididas).map(s => (
                   <TableRow key={s.id}>
                     <TableCell className="font-medium">{colabMap.get(s.solicitante_id)?.nome || "—"}</TableCell>
-                    <TableCell className="max-w-[250px]">{renderItensBadges(s)}</TableCell>
+                    <TableCell className="max-w-[300px]">{renderItemStatusBadges(s.id) || renderItensBadges(s)}</TableCell>
                     <TableCell>{statusBadge(s.status)}</TableCell>
                     <TableCell className="hidden md:table-cell">{s.aprovador || "—"}</TableCell>
                     <TableCell className="max-w-[200px] truncate text-muted-foreground hidden lg:table-cell">{s.comentario || "—"}</TableCell>
@@ -530,6 +646,7 @@ export default function SolicitacoesPage() {
                   <label key={a.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
                     <Checkbox checked={selectedApps.includes(a.id)} onCheckedChange={() => toggleItem(selectedApps, setSelectedApps, a.id)} />
                     <span className="text-sm">{a.nome}</span>
+                    {a.owner && <Badge variant="outline" className="text-xs ml-auto">Owner definido</Badge>}
                   </label>
                 ))}
                 {filteredApps.length === 0 && <EmptyState message="Nenhuma aplicação encontrada" size="sm" />}
@@ -548,6 +665,7 @@ export default function SolicitacoesPage() {
                   <label key={g.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
                     <Checkbox checked={selectedGrupos.includes(g.id)} onCheckedChange={() => toggleItem(selectedGrupos, setSelectedGrupos, g.id)} />
                     <span className="text-sm">{g.nome}</span>
+                    {g.owner && <Badge variant="outline" className="text-xs ml-auto">Owner definido</Badge>}
                   </label>
                 ))}
                 {filteredGrupos.length === 0 && <EmptyState message="Nenhum grupo encontrado" size="sm" />}
@@ -566,6 +684,7 @@ export default function SolicitacoesPage() {
                   <label key={l.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
                     <Checkbox checked={selectedLicencas.includes(l.id)} onCheckedChange={() => toggleItem(selectedLicencas, setSelectedLicencas, l.id)} />
                     <span className="text-sm">{l.nome}</span>
+                    {l.owner && <Badge variant="outline" className="text-xs ml-auto">Owner definido</Badge>}
                   </label>
                 ))}
                 {filteredLicencas.length === 0 && <EmptyState message="Nenhuma licença encontrada" size="sm" />}
@@ -585,30 +704,54 @@ export default function SolicitacoesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Decision Dialog */}
-      <Dialog open={!!decisionDialog} onOpenChange={() => setDecisionDialog(null)}>
-        <DialogContent>
+      {/* Decision Dialog — per-item */}
+      <Dialog open={!!decisionDialog} onOpenChange={() => { setDecisionDialog(null); setDecisionItens([]); setComentario(""); }}>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{decisao === "aprovada" ? "Aprovar" : "Rejeitar"} Solicitação</DialogTitle>
+            <DialogTitle>Decidir Solicitação</DialogTitle>
           </DialogHeader>
           {decisionDialog && (
             <div className="space-y-4">
               <div className="rounded-lg border p-3 space-y-1 text-sm">
                 <p><strong>Solicitante:</strong> {colabMap.get(decisionDialog.solicitante_id)?.nome || "—"}</p>
-                <p><strong>Itens:</strong></p>
-                <div className="ml-2">{renderItensBadges(decisionDialog)}</div>
                 <p><strong>Justificativa:</strong> {decisionDialog.justificativa}</p>
               </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Itens pendentes de aprovação:</p>
+                {decisionItens.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nenhum item pendente</p>
+                ) : (
+                  <div className="space-y-1">
+                    {decisionItens.map((item: any) => {
+                      const iconMap: Record<string, any> = { app: AppWindow, grupo: Users, licenca: KeyRound };
+                      const Icon = iconMap[item.tipo] || AppWindow;
+                      const tipoLabel: Record<string, string> = { app: "Aplicação", grupo: "Grupo", licenca: "Licença" };
+                      return (
+                        <div key={item.id} className="flex items-center gap-2 p-2 rounded border">
+                          <Icon className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm font-medium">{item.recurso_nome}</span>
+                          <Badge variant="outline" className="text-xs ml-auto">{tipoLabel[item.tipo] || item.tipo}</Badge>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               <div>
                 <label className="text-sm font-medium">Comentário (opcional)</label>
                 <Textarea value={comentario} onChange={e => setComentario(e.target.value)} placeholder="Adicione um comentário sobre a decisão..." />
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDecisionDialog(null)}>Cancelar</Button>
-            <Button variant={decisao === "aprovada" ? "default" : "destructive"} onClick={handleDecision}>
-              {decisao === "aprovada" ? "Confirmar Aprovação" : "Confirmar Rejeição"}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setDecisionDialog(null); setDecisionItens([]); setComentario(""); }}>Cancelar</Button>
+            <Button variant="destructive" onClick={() => handleDecision("rejeitada")} disabled={decisionItens.length === 0}>
+              <XCircle className="mr-2 h-4 w-4" />Rejeitar Todos
+            </Button>
+            <Button onClick={() => handleDecision("aprovada")} disabled={decisionItens.length === 0}>
+              <CheckCircle2 className="mr-2 h-4 w-4" />Aprovar Todos
             </Button>
           </DialogFooter>
         </DialogContent>
