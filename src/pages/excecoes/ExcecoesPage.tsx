@@ -396,7 +396,7 @@ export default function ExcecoesPage() {
                   <div className="border rounded-md max-h-32 overflow-y-auto">
                     {filteredPerfis.map((p: any) => (
                       <button key={p.id} className="w-full text-left px-3 py-1.5 hover:bg-muted text-sm" onClick={() => { setFormPerfilId(p.id); setFormPerfilSearch(p.nome); }}>
-                        {p.nome} <Badge variant="outline" className="ml-2 text-[10px]">{p.tipo}</Badge>
+                        {p.nome} <Badge variant="outline" className="ml-2 text-[10px]">{p.tipo.charAt(0).toUpperCase() + p.tipo.slice(1)}</Badge>
                       </button>
                     ))}
                     {filteredPerfis.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum resultado</p>}
