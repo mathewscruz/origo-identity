@@ -113,9 +113,6 @@ function IndividualAccessTabs({ individualQueue, actionTypeIcons, actionTypeLabe
                 <div className="flex items-center gap-2">
                   <Icon className="h-4 w-4 text-muted-foreground" />
                   <span className="font-medium">{getResourceName(item)}</span>
-                  {imported && (
-                    <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/30">Importado</Badge>
-                  )}
                 </div>
               </td>
               <td className="p-4">
