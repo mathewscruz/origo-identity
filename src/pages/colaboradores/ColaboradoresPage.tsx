@@ -701,7 +701,6 @@ export default function ColaboradoresPage() {
               <Label>Nome de login AD</Label>
               <Input value={form.sam_account_name} readOnly disabled className="bg-muted cursor-not-allowed" />
             </div>
-            </div>
             <div>
               <Label>Status</Label>
               <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
