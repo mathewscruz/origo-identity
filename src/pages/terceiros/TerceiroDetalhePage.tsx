@@ -93,7 +93,7 @@ export default function TerceiroDetalhePage() {
           samAccountName: sam,
           displayName: terceiro?.nome || "",
           groupName: g.entra_grupos?.nome || "",
-          groupEntraId: g.entra_grupos?.entra_id || "",
+          groupId: g.entra_grupos?.entra_id || "",
         },
         target_identity: sam,
         requested_by: "sistema",

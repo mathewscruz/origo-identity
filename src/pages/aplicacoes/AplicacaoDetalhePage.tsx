@@ -100,12 +100,12 @@ export default function AplicacaoDetalhePage() {
         .from("iam_queue")
         .select("colaborador_id, target_identity, payload_json, created_at")
         .eq("action_type", "assign_app")
-        .eq("status", "completed");
+        .eq("status", "success");
       if (error) throw error;
       // Filter by app name or entra_id in payload
       return (data || []).filter((item: any) => {
         const p = item.payload_json;
-        return p?.app_name === app?.nome || p?.app_id === app?.entra_id;
+        return p?.appName === app?.nome || p?.appId === app?.entra_id;
       });
     },
     enabled: !!app,
@@ -135,7 +135,7 @@ export default function AplicacaoDetalhePage() {
         .from("iam_queue")
         .select("colaborador_id, target_identity, payload_json, created_at")
         .eq("action_type", "assign_group")
-        .eq("status", "completed");
+        .eq("status", "success");
       if (error) throw error;
       return data || [];
     },
@@ -374,10 +374,10 @@ export default function AplicacaoDetalhePage() {
   const extraIamGroups = (iamGroupItems || [])
     .filter((item: any) => {
       const p = item.payload_json;
-      return p?.group_id && !perfilGrupoIds.has(p.group_id);
+      return p?.groupId && !perfilGrupoIds.has(p.groupId);
     })
     .reduce((acc: Map<string, any>, item: any) => {
-      const key = item.payload_json?.group_id;
+      const key = item.payload_json?.groupId;
       if (key && !acc.has(key)) acc.set(key, item);
       return acc;
     }, new Map());
