@@ -30,9 +30,13 @@ const COLORS = [
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   pendente:     { label: "Pendente",     color: "hsl(38, 92%, 50%)" },
+  pending:      { label: "Pendente",     color: "hsl(38, 92%, 50%)" },
   em_aprovacao: { label: "Em Aprovação", color: "hsl(199, 89%, 48%)" },
+  processing:   { label: "Processando", color: "hsl(199, 89%, 48%)" },
   aprovada:     { label: "Aprovada",     color: "hsl(142, 71%, 45%)" },
+  success:      { label: "Concluído",   color: "hsl(142, 71%, 45%)" },
   rejeitada:    { label: "Rejeitada",    color: "hsl(0, 84%, 60%)" },
+  failed:       { label: "Falhou",       color: "hsl(0, 84%, 60%)" },
 };
 
 type Period = "dia" | "semana" | "mes" | "ano";
@@ -90,7 +94,8 @@ function useKpiCounts() {
         alertasNaoLidos: alertas.count ?? 0,
       };
     },
-    refetchInterval: 30000,
+    staleTime: 15000,
+    refetchInterval: 60000,
   });
 }
 
@@ -187,7 +192,8 @@ function useSolicitacoesByStatus(period: Period) {
         }))
         .filter(d => d.value > 0);
     },
-    refetchInterval: 30000,
+    staleTime: 15000,
+    refetchInterval: 60000,
   });
 }
 
@@ -203,8 +209,33 @@ function useRevisoesAtivas() {
         .limit(4);
       return data ?? [];
     },
-    refetchInterval: 30000,
+    staleTime: 15000,
+    refetchInterval: 60000,
   });
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  assign_group: "Atribuição de Grupo",
+  remove_group: "Remoção de Grupo",
+  assign_app: "Atribuição de App",
+  remove_app: "Remoção de App",
+  assign_license: "Atribuição de Licença",
+  remove_license: "Remoção de Licença",
+  create: "Criação de Conta",
+  create_if_not_exists: "Criação de Conta",
+  update: "Atualização",
+  disable: "Desativação",
+  delete: "Exclusão",
+};
+
+function buildQueueLabel(q: { action_type: string; target_identity: string | null; payload_json: any }): string {
+  const p = q.payload_json || {};
+  const name = p.displayName || q.target_identity || "";
+  const at = q.action_type || "";
+  if (at.includes("group") && p.groupName) return `${name} → ${p.groupName}`;
+  if (at.includes("app") && p.appName) return `${name} → ${p.appName}`;
+  if (at.includes("license") && p.licenseName) return `${name} → ${p.licenseName}`;
+  return name || ACTION_LABELS[at] || at;
 }
 
 function useRecentActivity() {
@@ -212,8 +243,8 @@ function useRecentActivity() {
     queryKey: ["dashboard_activity"],
     queryFn: async () => {
       const [queueRes, solicitRes] = await Promise.all([
-        supabase.from("iam_queue")
-          .select("id, action_type, target_identity, status, created_at")
+        (supabase as any).from("iam_queue")
+          .select("id, action_type, target_identity, status, created_at, payload_json")
           .not("status", "eq", "cancelled")
           .order("created_at", { ascending: false })
           .limit(5),
@@ -224,23 +255,26 @@ function useRecentActivity() {
       ]);
       type ActivityItem = {
         id: string; type: "queue" | "solicitacao"; label: string;
-        status: string; date: string; link: string;
+        sublabel: string; status: string; date: string; link: string;
       };
       const items: ActivityItem[] = [];
-      (queueRes.data ?? []).forEach(q => items.push({
+      (queueRes.data ?? []).forEach((q: any) => items.push({
         id: q.id, type: "queue",
-        label: q.target_identity || q.action_type,
+        label: buildQueueLabel(q),
+        sublabel: ACTION_LABELS[q.action_type] || q.action_type,
         status: q.status, date: q.created_at,
         link: `/fila-provisionamento/${q.id}`,
       }));
-      (solicitRes.data ?? []).forEach(s => items.push({
+      (solicitRes.data ?? []).forEach((s: any) => items.push({
         id: s.id, type: "solicitacao",
         label: (s.justificativa || "Solicitação").slice(0, 60),
+        sublabel: "Solicitação de Acesso",
         status: s.status, date: s.created_at,
         link: "/solicitacoes",
       }));
       return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 8);
     },
+    staleTime: 15000,
     refetchInterval: 30000,
   });
 }
@@ -481,7 +515,7 @@ export default function Dashboard() {
                       {item.label}
                     </p>
                     <p className="text-[10px] text-muted-foreground">
-                      {item.type === "queue" ? "Provisionamento" : "Solicitação"} · {new Date(item.date).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                      {item.sublabel} · {new Date(item.date).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                     </p>
                   </div>
                   <Badge variant="outline" className="text-[10px] uppercase shrink-0">
