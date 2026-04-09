@@ -1,75 +1,53 @@
 
 
-## Plano: Corrigir fluxo de revisoes — colunas faltantes no banco
+## Plano: Senha padrao no AD + Assunto dos e-mails + Diagnostico da fila
 
-### Problema critico encontrado
+### 1. Senha padrao "Origo@2026er" e troca obrigatoria no AD
 
-A tabela `revisoes` esta **faltando 4 colunas** que o codigo usa extensivamente:
+Ao criar colaborador ou terceiro, o payload enviado para a `iam_queue` (action_type `create`) nao inclui senha nem flag de troca obrigatoria. Sera adicionado em ambos os fluxos:
 
-| Coluna | Usado em |
-|---|---|
-| `token` (text) | RevisoesPage (gera UUID), RevisaoDetalhePage (link externo), RevisaoExternaPage (busca por token), send-review-email (monta URL) |
-| `aplicacao_id` (uuid) | RevisoesPage (insere ao criar campanha) |
-| `owner_email` (text) | RevisoesPage (insere ao criar), RevisaoExternaPage (audit), send-review-email (envia e-mail ao owner) |
-| `tipo` (text) | RevisoesPage (insere "aplicacao") |
+**Arquivos a editar:**
+- `src/pages/colaboradores/ColaboradoresPage.tsx` — no insert da `iam_queue`, adicionar ao `payload_json`: `password: "Origo@2026er"` e `changePasswordAtLogon: true`
+- `src/pages/terceiros/TerceirosPage.tsx` — mesma alteracao
 
-Isso significa que **criar uma campanha falha silenciosamente** (insert com colunas inexistentes), o link externo nunca funciona, e o e-mail de revisao nao consegue encontrar o owner.
+O agente PowerShell que consome essas acoes via `iam-agent-api` ja deve interpretar esses campos ao criar o usuario no AD. O payload sera padronizado para que o agente saiba aplicar `-ChangePasswordAtLogon $true`.
 
-### Validacao completa do fluxo
+### 2. Alterar assunto de todos os e-mails para "Origo Access & Identity"
 
-| Etapa | Status | Problema |
-|---|---|---|
-| Lista de revisoes (`/revisoes`) | UI OK | Insert falha por colunas faltantes |
-| Nova campanha (dialog) | UI OK | Insert falha — `token`, `aplicacao_id`, `owner_email`, `tipo` nao existem |
-| Detalhe da revisao (`/revisoes/:id`) | UI OK | Link externo nao funciona (sem `token`) |
-| Pagina externa (`/revisao-externa/:token`) | UI OK | Query por token falha (coluna inexistente) |
-| E-mail ao owner (`send-review-email`) | OK | Depende de `owner_email` e `token` na revisao |
-| Auditoria na criacao | OK | `logAuditoria` chamado |
-| Auditoria na revisao externa | OK | Insert em `auditoria` com resumo e detalhes |
-| Revogacao com iam_queue | OK | Insere remove_group/license/app |
-| Auto-recertificacao | Parcial | Cria revisao sem `token`/`owner_email` — e-mail nao pode ser enviado |
-| RLS anon (pagina externa) | OK | `anon` tem SELECT e UPDATE em `revisoes` e `revisao_itens` |
-| Anon INSERT em `auditoria` | **Falta** | Pagina externa faz insert em `auditoria` como anon mas nao ha policy anon para INSERT |
-| Anon INSERT em `iam_queue` | **Falta** | Revogacoes da pagina externa inserem na iam_queue como anon |
-| Anon INSERT em `perfil_atribuicoes` update | **Falta** | Pagina externa faz update como anon |
+Atualmente os assuntos sao como "Nova solicitacao de acesso — Fulano". O prefixo sera padronizado para incluir o nome da ferramenta.
 
-### O que sera feito
+**Arquivos a editar:**
+- `supabase/functions/send-notification-email/index.ts` — prefixar todos os `subject` com `[Órigo Access & Identity]`, e trocar mencoes a "Origo Identity" no corpo para "Órigo Access & Identity"
+- `supabase/functions/send-review-email/index.ts` — prefixar subject e atualizar footer
 
-**1. Migracao SQL**
+Exemplos de assuntos apos a mudanca:
+- `[Órigo Access & Identity] Bem-vindo — Nome`
+- `[Órigo Access & Identity] Nova solicitação de acesso — Nome`
+- `[Órigo Access & Identity] Revisão de Acesso — App`
 
-Adicionar as 4 colunas faltantes em `revisoes`:
-```sql
-ALTER TABLE revisoes ADD COLUMN IF NOT EXISTS token text;
-ALTER TABLE revisoes ADD COLUMN IF NOT EXISTS aplicacao_id uuid;
-ALTER TABLE revisoes ADD COLUMN IF NOT EXISTS owner_email text;
-ALTER TABLE revisoes ADD COLUMN IF NOT EXISTS tipo text DEFAULT 'aplicacao';
-```
+### 3. Diagnostico e correcao da fila de provisionamento
 
-Adicionar policies anon para as tabelas que a pagina externa precisa escrever:
-```sql
--- auditoria: anon INSERT
-CREATE POLICY "Anon can insert auditoria" ON auditoria FOR INSERT TO anon WITH CHECK (true);
+A analise dos itens pendentes revelou dois problemas distintos:
 
--- iam_queue: anon INSERT
-CREATE POLICY "Anon can insert iam_queue" ON iam_queue FOR INSERT TO anon WITH CHECK (true);
+**Problema A: `create_if_not_exists` nao reconhecido pelo agente AD**
+- Varios itens com `action_type: "create_if_not_exists"` estao falhando com erro `action_type invalido: create_if_not_exists`
+- O agente AD (`iam-agent-api`) so reconhece `create`, `update`, `disable`, `delete`
+- **Correcao:** Na edge function `iam-agent-api`, adicionar `create_if_not_exists` a lista `AD_LOCAL_ACTION_TYPES` e trata-lo como alias de `create` (com logica de verificacao previa se o usuario ja existe)
 
--- perfil_atribuicoes: anon UPDATE
-CREATE POLICY "Anon can update perfil_atribuicoes" ON perfil_atribuicoes FOR UPDATE TO anon USING (true);
-```
+**Problema B: `assign_app` com `appId` no formato errado**
+- Itens `assign_app` falham com "appId ausente no payload"
+- O payload usa `app_id` (com underscore, que e o UUID interno do banco), mas a `process-iam-queue` espera `appId` (camelCase, que e o Entra ID/Client ID da aplicacao)
+- **Correcao:** Nos fluxos que inserem `assign_app` na `iam_queue` (SolicitacoesPage e PortalSolicitacoesPage), garantir que o campo `appId` contenha o `entra_id` da aplicacao (nao o UUID interno), e que `app_id` (interno) tambem esteja presente para referencia
 
-**2. Corrigir auto-recertification**
-
-A edge function `auto-recertification` cria revisoes sem `token` e sem `owner_email`, impedindo o envio de e-mail. Adicionar geracao de token e preenchimento de `owner_email` e `aplicacao_id` ao criar a revisao, e chamar `send-review-email` apos criacao.
-
-**3. Corrigir decisao labels na pagina de detalhe**
-
-Na `RevisaoDetalhePage`, os badges de decisao mostram "manter"/"revogar" em minuscula — padronizar para "Manter"/"Revogar" com primeira letra maiuscula.
-
-### Arquivos
+### Resumo de arquivos
 
 | Acao | Arquivo |
 |---|---|
-| Migracao | Adicionar colunas `token`, `aplicacao_id`, `owner_email`, `tipo` em `revisoes` + policies anon |
-| Editar | `supabase/functions/auto-recertification/index.ts` — incluir `token`, `owner_email`, `aplicacao_id` + enviar e-mail |
-| Editar | `src/pages/revisoes/RevisaoDetalhePage.tsx` — capitalizar labels de decisao |
+| Editar | `src/pages/colaboradores/ColaboradoresPage.tsx` — adicionar password e changePasswordAtLogon no payload |
+| Editar | `src/pages/terceiros/TerceirosPage.tsx` — mesma alteracao |
+| Editar | `supabase/functions/send-notification-email/index.ts` — prefixar assuntos com [Órigo Access & Identity] |
+| Editar | `supabase/functions/send-review-email/index.ts` — prefixar assunto |
+| Editar | `supabase/functions/iam-agent-api/index.ts` — suportar `create_if_not_exists` |
+| Editar | `src/pages/solicitacoes/SolicitacoesPage.tsx` — corrigir payload `assign_app` com `appId` correto |
+| Editar | `src/pages/portal/PortalSolicitacoesPage.tsx` — mesma correcao |
 
