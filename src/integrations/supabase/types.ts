@@ -515,6 +515,7 @@ export type Database = {
           id: string
           nome: string
           on_premises_sync: boolean
+          owner: string | null
           updated_at: string
         }
         Insert: {
@@ -523,6 +524,7 @@ export type Database = {
           id?: string
           nome: string
           on_premises_sync?: boolean
+          owner?: string | null
           updated_at?: string
         }
         Update: {
@@ -531,6 +533,7 @@ export type Database = {
           id?: string
           nome?: string
           on_premises_sync?: boolean
+          owner?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -906,6 +909,7 @@ export type Database = {
           em_uso: number
           id: string
           nome: string
+          owner: string | null
           renovacao: string | null
           tipo: string | null
           total: number
@@ -918,6 +922,7 @@ export type Database = {
           em_uso?: number
           id?: string
           nome: string
+          owner?: string | null
           renovacao?: string | null
           tipo?: string | null
           total?: number
@@ -930,6 +935,7 @@ export type Database = {
           em_uso?: number
           id?: string
           nome?: string
+          owner?: string | null
           renovacao?: string | null
           tipo?: string | null
           total?: number
@@ -1530,6 +1536,53 @@ export type Database = {
             columns: ["perfil_b_id"]
             isOneToOne: false
             referencedRelation: "perfis_acesso"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      solicitacao_itens: {
+        Row: {
+          created_at: string | null
+          decidido_em: string | null
+          decidido_por: string | null
+          id: string
+          owner_email: string | null
+          recurso_id: string
+          recurso_nome: string | null
+          solicitacao_id: string
+          status: string
+          tipo: string
+        }
+        Insert: {
+          created_at?: string | null
+          decidido_em?: string | null
+          decidido_por?: string | null
+          id?: string
+          owner_email?: string | null
+          recurso_id: string
+          recurso_nome?: string | null
+          solicitacao_id: string
+          status?: string
+          tipo: string
+        }
+        Update: {
+          created_at?: string | null
+          decidido_em?: string | null
+          decidido_por?: string | null
+          id?: string
+          owner_email?: string | null
+          recurso_id?: string
+          recurso_nome?: string | null
+          solicitacao_id?: string
+          status?: string
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "solicitacao_itens_solicitacao_id_fkey"
+            columns: ["solicitacao_id"]
+            isOneToOne: false
+            referencedRelation: "solicitacoes_acesso"
             referencedColumns: ["id"]
           },
         ]
