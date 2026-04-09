@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/hooks/use-toast";
-import { Plus, Clock, CheckCircle2, XCircle, Send, FileText, AppWindow, Users } from "lucide-react";
+import { Plus, Clock, CheckCircle2, XCircle, Send, FileText, AppWindow, Users, KeyRound } from "lucide-react";
 import { format } from "date-fns";
 import { sendNotificationEmail } from "@/lib/sendNotificationEmail";
 import EmptyState from "@/components/EmptyState";
@@ -19,16 +19,19 @@ export default function PortalSolicitacoesPage() {
   const [solicitacoes, setSolicitacoes] = useState<any[]>([]);
   const [aplicacoes, setAplicacoes] = useState<any[]>([]);
   const [grupos, setGrupos] = useState<any[]>([]);
+  const [licencas, setLicencas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedApps, setSelectedApps] = useState<string[]>([]);
   const [selectedGrupos, setSelectedGrupos] = useState<string[]>([]);
+  const [selectedLicencas, setSelectedLicencas] = useState<string[]>([]);
   const [justificativa, setJustificativa] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [buscaApp, setBuscaApp] = useState("");
   const [buscaGrupo, setBuscaGrupo] = useState("");
+  const [buscaLicenca, setBuscaLicenca] = useState("");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -45,34 +48,26 @@ export default function PortalSolicitacoesPage() {
 
   async function fetchData() {
     setLoading(true);
-    const [solRes, appRes, grpRes] = await Promise.all([
+    const [solRes, appRes, grpRes, licRes] = await Promise.all([
       supabase
         .from("solicitacoes_acesso")
         .select("*")
         .eq("user_id", userId!)
         .order("created_at", { ascending: false }),
-      supabase.from("aplicacoes").select("id, nome").order("nome"),
+      supabase.from("aplicacoes").select("id, nome, owner").order("nome"),
       supabase.from("entra_grupos").select("id, nome").order("nome"),
+      supabase.from("licencas").select("id, nome").order("nome"),
     ]);
     setSolicitacoes(solRes.data ?? []);
     setAplicacoes(appRes.data ?? []);
     setGrupos(grpRes.data ?? []);
+    setLicencas(licRes.data ?? []);
     setLoading(false);
   }
 
-  // Build maps for display
   const appMap = new Map(aplicacoes.map(a => [a.id, a.nome]));
   const grupoMap = new Map(grupos.map(g => [g.id, g.nome]));
-
-  const getItensSolicitados = (s: any) => {
-    const items: string[] = [];
-    const appIds = Array.isArray(s.aplicacoes_ids) ? s.aplicacoes_ids : [];
-    const grpIds = Array.isArray(s.grupos_ids) ? s.grupos_ids : [];
-    appIds.forEach((id: string) => items.push(`📱 ${appMap.get(id) || id}`));
-    grpIds.forEach((id: string) => items.push(`👥 ${grupoMap.get(id) || id}`));
-    if (items.length === 0 && s.perfil_id) return "Perfil de acesso";
-    return items.join(", ") || "—";
-  };
+  const licencaMap = new Map(licencas.map(l => [l.id, l.nome]));
 
   const statusBadge = (status: string) => {
     const map: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -85,17 +80,13 @@ export default function PortalSolicitacoesPage() {
     return <Badge variant={info.variant}>{info.label}</Badge>;
   };
 
-  const toggleApp = (id: string) => {
-    setSelectedApps(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  };
-
-  const toggleGrupo = (id: string) => {
-    setSelectedGrupos(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleItem = (list: string[], setList: React.Dispatch<React.SetStateAction<string[]>>, id: string) => {
+    setList(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
   const handleSubmit = async () => {
-    if (selectedApps.length === 0 && selectedGrupos.length === 0) {
-      toast({ title: "Selecione ao menos uma aplicação ou grupo", variant: "destructive" });
+    if (selectedApps.length === 0 && selectedGrupos.length === 0 && selectedLicencas.length === 0) {
+      toast({ title: "Selecione ao menos uma aplicação, grupo ou licença", variant: "destructive" });
       return;
     }
     if (!justificativa.trim()) {
@@ -126,6 +117,7 @@ export default function PortalSolicitacoesPage() {
       perfil_id: null,
       aplicacoes_ids: selectedApps,
       grupos_ids: selectedGrupos,
+      licencas_ids: selectedLicencas,
       justificativa: justificativa.trim(),
       status: "pendente",
       user_id: userId,
@@ -137,38 +129,61 @@ export default function PortalSolicitacoesPage() {
       toast({ title: "Solicitação enviada com sucesso!" });
 
       // Notify owners of requested apps
-      if (selectedApps.length > 0) {
-        const { data: appsWithOwner } = await supabase.from("aplicacoes").select("nome, owner").in("id", selectedApps);
-        const ownerEmails = new Set<string>();
-        for (const a of (appsWithOwner || [])) {
-          if (a.owner) {
-            const emailMatch = a.owner.match(/<(.+?)>/);
-            const email = emailMatch ? emailMatch[1] : a.owner;
-            if (email.includes("@")) ownerEmails.add(email);
-          }
+      const ownerEmails = new Set<string>();
+      for (const appId of selectedApps) {
+        const app = aplicacoes.find(a => a.id === appId);
+        if (app?.owner) {
+          const emailMatch = app.owner.match(/<(.+?)>/);
+          const email = emailMatch ? emailMatch[1] : app.owner;
+          if (email.includes("@")) ownerEmails.add(email);
         }
+      }
 
-        const { data: colabInfo } = await supabase.from("colaboradores").select("nome").eq("id", solicitanteId).maybeSingle();
-        const colabNome = colabInfo?.nome || userEmail || "Colaborador";
-        const itensNomes = (appsWithOwner || []).map(a => a.nome).join(", ");
+      const { data: colabInfo } = await supabase.from("colaboradores").select("nome").eq("id", solicitanteId).maybeSingle();
+      const colabNome = colabInfo?.nome || userEmail || "Colaborador";
 
-        for (const ownerEmail of ownerEmails) {
-          sendNotificationEmail("solicitacao_criada", {
-            destinatario_email: ownerEmail,
-            colaborador_nome: colabNome,
-            itens: itensNomes,
-            justificativa: justificativa.trim(),
-            solicitante: colabNome,
-          });
+      const allItemNames: string[] = [];
+      selectedApps.forEach(id => allItemNames.push(appMap.get(id) || id));
+      selectedGrupos.forEach(id => allItemNames.push(grupoMap.get(id) || id));
+      selectedLicencas.forEach(id => allItemNames.push(licencaMap.get(id) || id));
+      const itensNomes = allItemNames.join(", ");
+
+      for (const ownerEmail of ownerEmails) {
+        sendNotificationEmail("solicitacao_criada", {
+          destinatario_email: ownerEmail,
+          colaborador_nome: colabNome,
+          itens: itensNomes,
+          justificativa: justificativa.trim(),
+          solicitante: colabNome,
+        });
+      }
+
+      // Fallback: notify admins if no owner
+      if (ownerEmails.size === 0) {
+        const { data: adminRoles } = await supabase.from("user_roles").select("user_id").eq("role", "admin");
+        if (adminRoles && adminRoles.length > 0) {
+          const adminIds = adminRoles.map((r: any) => r.user_id);
+          const { data: adminProfiles } = await supabase.from("profiles").select("email").in("id", adminIds);
+          for (const ap of (adminProfiles || [])) {
+            sendNotificationEmail("solicitacao_criada", {
+              destinatario_email: ap.email,
+              colaborador_nome: colabNome,
+              itens: itensNomes,
+              justificativa: justificativa.trim(),
+              solicitante: colabNome,
+            });
+          }
         }
       }
 
       setDialogOpen(false);
       setSelectedApps([]);
       setSelectedGrupos([]);
+      setSelectedLicencas([]);
       setJustificativa("");
       setBuscaApp("");
       setBuscaGrupo("");
+      setBuscaLicenca("");
       fetchData();
     }
     setSubmitting(false);
@@ -181,7 +196,6 @@ export default function PortalSolicitacoesPage() {
     rejeitadas: solicitacoes.filter(s => s.status === "rejeitada").length,
   };
 
-  // Sort: selected items first
   const filteredApps = aplicacoes
     .filter(a => !buscaApp || a.nome.toLowerCase().includes(buscaApp.toLowerCase()))
     .sort((a, b) => {
@@ -195,6 +209,14 @@ export default function PortalSolicitacoesPage() {
     .sort((a, b) => {
       const aS = selectedGrupos.includes(a.id) ? 0 : 1;
       const bS = selectedGrupos.includes(b.id) ? 0 : 1;
+      return aS - bS || a.nome.localeCompare(b.nome);
+    });
+
+  const filteredLicencas = licencas
+    .filter(l => !buscaLicenca || l.nome.toLowerCase().includes(buscaLicenca.toLowerCase()))
+    .sort((a, b) => {
+      const aS = selectedLicencas.includes(a.id) ? 0 : 1;
+      const bS = selectedLicencas.includes(b.id) ? 0 : 1;
       return aS - bS || a.nome.localeCompare(b.nome);
     });
 
@@ -290,8 +312,14 @@ export default function PortalSolicitacoesPage() {
                             {grupoMap.get(id) || id}
                           </Badge>
                         ))}
-                        {!(s.aplicacoes_ids?.length || s.grupos_ids?.length) && s.perfil_id && (
-                          <span className="text-muted-foreground">Perfil de acesso</span>
+                        {(Array.isArray(s.licencas_ids) ? s.licencas_ids : []).map((id: string) => (
+                          <Badge key={id} variant="outline" className="text-xs border-primary/40">
+                            <KeyRound className="mr-1 h-3 w-3" />
+                            {licencaMap.get(id) || id}
+                          </Badge>
+                        ))}
+                        {!(s.aplicacoes_ids?.length || s.grupos_ids?.length || s.licencas_ids?.length) && (
+                          <span className="text-muted-foreground">—</span>
                         )}
                       </div>
                     </TableCell>
@@ -322,24 +350,15 @@ export default function PortalSolicitacoesPage() {
                   <Badge variant="secondary" className="text-xs">{selectedApps.length} selecionada(s)</Badge>
                 )}
               </label>
-              <Input
-                placeholder="Buscar aplicação..."
-                value={buscaApp}
-                onChange={(e) => setBuscaApp(e.target.value)}
-              />
-              <ScrollArea className="h-40 rounded-md border p-2">
+              <Input placeholder="Buscar aplicação..." value={buscaApp} onChange={(e) => setBuscaApp(e.target.value)} />
+              <ScrollArea className="h-36 rounded-md border p-2">
                 {filteredApps.map((a) => (
                   <label key={a.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
-                    <Checkbox
-                      checked={selectedApps.includes(a.id)}
-                      onCheckedChange={() => toggleApp(a.id)}
-                    />
+                    <Checkbox checked={selectedApps.includes(a.id)} onCheckedChange={() => toggleItem(selectedApps, setSelectedApps, a.id)} />
                     <span className="text-sm">{a.nome}</span>
                   </label>
                 ))}
-                {filteredApps.length === 0 && (
-                  <EmptyState message="Nenhuma aplicação encontrada" size="sm" />
-                )}
+                {filteredApps.length === 0 && <EmptyState message="Nenhuma aplicação encontrada" size="sm" />}
               </ScrollArea>
             </div>
 
@@ -351,24 +370,35 @@ export default function PortalSolicitacoesPage() {
                   <Badge variant="secondary" className="text-xs">{selectedGrupos.length} selecionado(s)</Badge>
                 )}
               </label>
-              <Input
-                placeholder="Buscar grupo..."
-                value={buscaGrupo}
-                onChange={(e) => setBuscaGrupo(e.target.value)}
-              />
-              <ScrollArea className="h-40 rounded-md border p-2">
+              <Input placeholder="Buscar grupo..." value={buscaGrupo} onChange={(e) => setBuscaGrupo(e.target.value)} />
+              <ScrollArea className="h-36 rounded-md border p-2">
                 {filteredGrupos.map((g) => (
                   <label key={g.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
-                    <Checkbox
-                      checked={selectedGrupos.includes(g.id)}
-                      onCheckedChange={() => toggleGrupo(g.id)}
-                    />
+                    <Checkbox checked={selectedGrupos.includes(g.id)} onCheckedChange={() => toggleItem(selectedGrupos, setSelectedGrupos, g.id)} />
                     <span className="text-sm">{g.nome}</span>
                   </label>
                 ))}
-                {filteredGrupos.length === 0 && (
-                  <EmptyState message="Nenhum grupo encontrado" size="sm" />
+                {filteredGrupos.length === 0 && <EmptyState message="Nenhum grupo encontrado" size="sm" />}
+              </ScrollArea>
+            </div>
+
+            {/* Licenças */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-2">
+                <KeyRound className="h-4 w-4" /> Licenças
+                {selectedLicencas.length > 0 && (
+                  <Badge variant="secondary" className="text-xs">{selectedLicencas.length} selecionada(s)</Badge>
                 )}
+              </label>
+              <Input placeholder="Buscar licença..." value={buscaLicenca} onChange={(e) => setBuscaLicenca(e.target.value)} />
+              <ScrollArea className="h-36 rounded-md border p-2">
+                {filteredLicencas.map((l) => (
+                  <label key={l.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
+                    <Checkbox checked={selectedLicencas.includes(l.id)} onCheckedChange={() => toggleItem(selectedLicencas, setSelectedLicencas, l.id)} />
+                    <span className="text-sm">{l.nome}</span>
+                  </label>
+                ))}
+                {filteredLicencas.length === 0 && <EmptyState message="Nenhuma licença encontrada" size="sm" />}
               </ScrollArea>
             </div>
 
@@ -394,4 +424,3 @@ export default function PortalSolicitacoesPage() {
     </div>
   );
 }
-
