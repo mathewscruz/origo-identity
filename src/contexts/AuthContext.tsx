@@ -6,14 +6,15 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  profile: { nome: string; email: string; ativo: boolean; avatar_url?: string | null } | null;
+  profile: { nome: string; email: string; ativo: boolean; avatar_url?: string | null; must_change_password?: boolean } | null;
   role: string | null;
+  mustChangePassword: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
-  user: null, session: null, loading: true, profile: null, role: null, signOut: async () => {}, refreshProfile: async () => {},
+  user: null, session: null, loading: true, profile: null, role: null, mustChangePassword: false, signOut: async () => {}, refreshProfile: async () => {},
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -72,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, profile, role, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ user, session, loading, profile, role, mustChangePassword: !!profile?.must_change_password, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
