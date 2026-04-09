@@ -574,9 +574,9 @@ export default function AplicacaoDetalhePage() {
                       </tr>
                     ))}
                     {[...extraIamGroups.values()].map((item: any) => (
-                      <tr key={`iam-grp-${item.payload_json.group_id}`} className="border-b last:border-0 hover:bg-muted/50">
-                        <td className="p-4 font-medium">{item.payload_json.group_name || item.payload_json.group_id}</td>
-                        <td className="p-4 text-muted-foreground hidden sm:table-cell"><code className="text-xs bg-muted px-1 rounded">{item.payload_json.group_id}</code></td>
+                      <tr key={`iam-grp-${item.payload_json.groupId}`} className="border-b last:border-0 hover:bg-muted/50">
+                        <td className="p-4 font-medium">{item.payload_json.groupName || item.payload_json.groupId}</td>
+                        <td className="p-4 text-muted-foreground hidden sm:table-cell"><code className="text-xs bg-muted px-1 rounded">{item.payload_json.groupId}</code></td>
                         <td className="p-4"><Badge variant="secondary">Individual</Badge></td>
                       </tr>
                     ))}
