@@ -133,7 +133,7 @@ export default function RevisaoExternaPage() {
           for (const g of (grupos || [])) {
             await supabase.from("iam_queue" as any).insert({
               action_type: "remove_group",
-              payload_json: { samAccountName: sam, displayName: colab?.nome || item.colaborador_nome || "", groupName: g.entra_grupos?.nome || "", groupEntraId: g.entra_grupos?.entra_id || "" },
+              payload_json: { samAccountName: sam, displayName: colab?.nome || item.colaborador_nome || "", groupName: g.entra_grupos?.nome || "", groupId: g.entra_grupos?.entra_id || "" },
               target_identity: sam, requested_by: revisao.owner_email || "revisao_externa", colaborador_id: item.colaborador_id, status: "pending",
             });
           }
@@ -152,7 +152,7 @@ export default function RevisaoExternaPage() {
             if (a.aplicacoes?.entra_id) {
               await supabase.from("iam_queue" as any).insert({
                 action_type: "remove_app",
-                payload_json: { samAccountName: sam, displayName: colab?.nome || item.colaborador_nome || "", appName: a.aplicacoes?.nome || "", appEntraId: a.aplicacoes?.entra_id || "", userEmail: colab?.email || "" },
+                payload_json: { samAccountName: sam, displayName: colab?.nome || item.colaborador_nome || "", appName: a.aplicacoes?.nome || "", appId: a.aplicacoes?.entra_id || "", userEmail: colab?.email || "" },
                 target_identity: sam, requested_by: revisao.owner_email || "revisao_externa", colaborador_id: item.colaborador_id, status: "pending",
               });
             }

@@ -203,9 +203,9 @@ export default function PortalSolicitacoesPage() {
         const queueItems = autoApproved.map(item => {
           const actionMap: Record<string, string> = { app: "assign_app", grupo: "assign_group", licenca: "assign_license" };
           const keyMap: Record<string, { id: string; name: string }> = {
-            app: { id: "appId", name: "app_name" },
-            grupo: { id: "group_id", name: "group_name" },
-            licenca: { id: "skuId", name: "license_name" },
+            app: { id: "appId", name: "appName" },
+            grupo: { id: "groupId", name: "groupName" },
+            licenca: { id: "skuId", name: "licenseName" },
           };
           const keys = keyMap[item.tipo];
           let resourceExternalId = item.recurso_id;

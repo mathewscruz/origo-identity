@@ -174,9 +174,9 @@ export default function SolicitacoesPage() {
 
     const actionMap: Record<string, string> = { app: "assign_app", grupo: "assign_group", licenca: "assign_license" };
     const payloadKeyMap: Record<string, { idKey: string; nameKey: string }> = {
-      app: { idKey: "appId", nameKey: "app_name" },
-      grupo: { idKey: "group_id", nameKey: "group_name" },
-      licenca: { idKey: "skuId", nameKey: "license_name" },
+      app: { idKey: "appId", nameKey: "appName" },
+      grupo: { idKey: "groupId", nameKey: "groupName" },
+      licenca: { idKey: "skuId", nameKey: "licenseName" },
     };
 
     const keys = payloadKeyMap[item.tipo];
