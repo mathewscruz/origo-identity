@@ -24,6 +24,7 @@ import { provisionCargoAcessos } from "@/lib/provisionCargoAcessos";
 import { createEventoJML } from "@/lib/createEventoJML";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { logAuditoria, logAlerta } from "@/lib/auditLogger";
+import { handleStatusChange } from "@/lib/colaboradorLifecycle";
 import EmptyState from "@/components/EmptyState";
 import SortableHeader, { SortDirection, useSortableData } from "@/components/SortableHeader";
 import OnboardingTour from "@/components/OnboardingTour";
@@ -225,8 +226,8 @@ export default function ColaboradoresPage() {
       const becameInactive = statusChanged && editingStatus === "ativo" && form.status !== "ativo";
       const becameActive = statusChanged && editingStatus !== "ativo" && form.status === "ativo";
 
-      // 1. Provision cargo access profiles
-      if (cargoChanged || !editingId || becameActive) {
+      // 1. Provision cargo access profiles (only for cargo changes, new users, or non-status changes)
+      if ((cargoChanged || !editingId) && !becameInactive) {
         const result = await provisionCargoAcessos(colaboradorId, form.cargo_id || null, editingId ? (editingCargoId || null) : null);
         if (result.skippedDirectory) {
           toast({ title: "⚠️ Provisionamento de diretório ignorado", description: "O campo 'Nome de login AD' está vazio. Grupos e licenças não serão atribuídos no Entra ID.", variant: "destructive" });
@@ -236,71 +237,35 @@ export default function ColaboradoresPage() {
         }
       }
 
-      // 2. Queue disable/enable requests
-      if (becameInactive) {
-        const sam = form.sam_account_name.trim();
-        await supabase.from("iam_queue" as any).insert({
-          action_type: "disable",
-          payload_json: {
-            samAccountName: sam,
-            mail: form.email.trim() || null,
-            displayName: form.nome.trim(),
-            status: "disabled",
-            status_anterior: editingStatus || "ativo",
-            status_novo: form.status,
-            changed_fields: ["status"],
-            new_values: { status: "disabled" },
+      // 2. Handle status changes via unified lifecycle helper
+      if (becameInactive || becameActive) {
+        const lifecycleResult = await handleStatusChange({
+          colab: {
+            id: colaboradorId,
+            nome: form.nome.trim(),
+            email: form.email.trim() || null,
+            sam_account_name: form.sam_account_name.trim() || null,
+            cargo_id: form.cargo_id || null,
+            gestor_id: null,
+            origem: editingOrigem || "manual",
           },
-          requested_by: profile?.email || "sistema",
-          colaborador_id: colaboradorId,
-          target_identity: sam || null,
+          oldStatus: editingStatus || "ativo",
+          newStatus: form.status,
+          operadorEmail: profile?.email || null,
+          operadorNome: profile?.nome || null,
+          skipStatusUpdate: true, // parent save already updated the status
         });
-        // Also disable in Entra ID simultaneously
-        const entraIdentityDisable = form.email.trim() || sam;
-        if (entraIdentityDisable) {
-          await supabase.from("iam_queue" as any).insert({
-            action_type: "disable_entra",
-            payload_json: { mail: form.email.trim() || null, samAccountName: sam, displayName: form.nome.trim() },
-            requested_by: profile?.email || "sistema",
-            colaborador_id: colaboradorId,
-            target_identity: entraIdentityDisable,
-          });
-        }
-        toast({ title: "Solicitação de desativação enviada para processamento" });
-      } else if (becameActive) {
-        const sam = form.sam_account_name.trim();
-        await supabase.from("iam_queue" as any).insert({
-          action_type: "update",
-          payload_json: {
-            samAccountName: sam,
-            mail: form.email.trim() || null,
-            displayName: form.nome.trim(),
-            status: "enabled",
-            status_anterior: editingStatus || "inativo",
-            status_novo: "ativo",
-            changed_fields: ["status"],
-            new_values: { status: "enabled" },
-          },
-          requested_by: profile?.email || "sistema",
-          colaborador_id: colaboradorId,
-          target_identity: sam || null,
-        });
-        // Also enable in Entra ID simultaneously
-        const entraIdentity = form.email.trim() || sam;
-        if (entraIdentity) {
-          await supabase.from("iam_queue" as any).insert({
-            action_type: "enable_entra",
-            payload_json: { mail: form.email.trim() || null, samAccountName: sam, displayName: form.nome.trim() },
-            requested_by: profile?.email || "sistema",
-            colaborador_id: colaboradorId,
-            target_identity: entraIdentity,
-          });
-        }
-        toast({ title: "Solicitação de reativação enviada para processamento" });
 
-        // Re-provision cargo access
-        if (form.cargo_id) {
-          await provisionCargoAcessos(colaboradorId, form.cargo_id, null);
+        if (!lifecycleResult.success) {
+          toast({ title: "Erro no ciclo de vida", description: lifecycleResult.error, variant: "destructive" });
+          setSaving(false);
+          return;
+        }
+
+        if (becameInactive) {
+          toast({ title: "Solicitação de desativação enviada para processamento" });
+        } else {
+          toast({ title: "Solicitação de reativação enviada para processamento" });
         }
       }
 
@@ -400,7 +365,7 @@ export default function ColaboradoresPage() {
         toast({ title: "Solicitação de atualização enviada para processamento" });
       }
 
-      // 5. Generate JML events
+      // 5. Generate JML events (only for non-status-change scenarios; status changes are handled by lifecycle helper)
       if (!editingId) {
         await createEventoJML({
           colaboradorId,
@@ -408,23 +373,7 @@ export default function ColaboradoresPage() {
           tipo: "joiner",
           dadosDepois: { cargo_id: form.cargo_id, area_id: form.area_id, status: form.status },
         });
-      } else if (becameInactive) {
-        await createEventoJML({
-          colaboradorId,
-          colaboradorNome: form.nome.trim(),
-          tipo: "leaver",
-          dadosAntes: { status: editingStatus },
-          dadosDepois: { status: form.status },
-        });
-      } else if (becameActive) {
-        await createEventoJML({
-          colaboradorId,
-          colaboradorNome: form.nome.trim(),
-          tipo: "joiner",
-          dadosAntes: { status: editingStatus },
-          dadosDepois: { status: form.status },
-        });
-      } else if (cargoChanged || areaChanged) {
+      } else if (!becameInactive && !becameActive && (cargoChanged || areaChanged)) {
         await createEventoJML({
           colaboradorId,
           colaboradorNome: form.nome.trim(),
