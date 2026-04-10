@@ -24,6 +24,7 @@ import { provisionCargoAcessos } from "@/lib/provisionCargoAcessos";
 import { createEventoJML } from "@/lib/createEventoJML";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { logAuditoria, logAlerta } from "@/lib/auditLogger";
+import { handleStatusChange } from "@/lib/colaboradorLifecycle";
 import EmptyState from "@/components/EmptyState";
 import SortableHeader, { SortDirection, useSortableData } from "@/components/SortableHeader";
 import OnboardingTour from "@/components/OnboardingTour";
