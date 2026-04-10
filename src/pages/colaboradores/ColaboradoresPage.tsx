@@ -267,6 +267,120 @@ export default function ColaboradoresPage() {
           toast({ title: "Solicitação de reativação enviada para processamento" });
         }
       }
+
+      // 3. Queue create request for new collaborators
+      if (!editingId && form.status === "ativo") {
+        const nameParts = form.nome.trim().split(" ");
+        const givenName = nameParts[0] || "";
+        const surname = nameParts.slice(1).join(" ") || givenName;
+        const sam = form.sam_account_name.trim();
+
+        await supabase.from("iam_queue" as any).insert({
+          action_type: "create",
+          payload_json: {
+            givenName,
+            surname,
+            displayName: form.nome.trim(),
+            samAccountName: sam,
+            userPrincipalName: `${sam}@ebessolar.local`,
+            mail: form.email.trim() || null,
+            department: getNameById(areas, form.area_id),
+            title: getNameById(cargos, form.cargo_id),
+            manager: null,
+            company: getNameById(empresas, form.empresa_id),
+            telephoneNumber: null,
+            ouPath: "",
+            password: "Origo@2026er",
+            changePasswordAtLogon: true,
+          },
+          requested_by: profile?.email || "sistema",
+          colaborador_id: colaboradorId,
+          target_identity: sam || null,
+        });
+        toast({ title: "Solicitação enviada para processamento" });
+
+        // Sync current Entra ID access as individual records
+        if (form.email.trim() || form.sam_account_name.trim()) {
+          try {
+            const syncUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-user-access`;
+            fetch(syncUrl, {
+              method: "POST",
+              headers: {
+                apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+                Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ colaborador_id: colaboradorId }),
+            }).then(r => r.json()).then(res => {
+              if (res.queued > 0) {
+                console.log(`[sync-user-access] Imported ${res.queued} access records from Entra ID`);
+              }
+            }).catch(e => console.warn("[sync-user-access]", e));
+            toast({ title: "Importando acessos atuais do Entra ID..." });
+          } catch (e) { console.warn("[sync-user-access]", e); }
+        }
+      }
+
+      // 4. Queue update for edits (cargo/area change)
+      if (editingId && (cargoChanged || areaChanged) && !becameInactive && !becameActive) {
+        const sam = form.sam_account_name.trim();
+        const changedFieldsList: string[] = [];
+        const newValues: Record<string, string> = {};
+        if (cargoChanged) { changedFieldsList.push("title"); newValues.title = getNameById(cargos, form.cargo_id); }
+        if (areaChanged) { changedFieldsList.push("department"); newValues.department = getNameById(areas, form.area_id); }
+
+        await supabase.from("iam_queue" as any).insert({
+          action_type: "update",
+          payload_json: {
+            samAccountName: sam,
+            mail: form.email.trim() || null,
+            displayName: form.nome.trim(),
+            status: "enabled",
+            changed_fields: changedFieldsList,
+            new_values: newValues,
+          },
+          requested_by: profile?.email || "sistema",
+          colaborador_id: colaboradorId,
+          target_identity: sam || null,
+        });
+        // Also update Entra ID simultaneously
+        const entraIdentityUpdate = form.email.trim() || sam;
+        if (entraIdentityUpdate) {
+          await supabase.from("iam_queue" as any).insert({
+            action_type: "update_entra",
+            payload_json: {
+              mail: form.email.trim() || null,
+              samAccountName: sam,
+              displayName: form.nome.trim(),
+              department: newValues.department || null,
+              jobTitle: newValues.title || null,
+              companyName: getNameById(empresas, form.empresa_id) || null,
+            },
+            requested_by: profile?.email || "sistema",
+            colaborador_id: colaboradorId,
+            target_identity: entraIdentityUpdate,
+          });
+        }
+        toast({ title: "Solicitação de atualização enviada para processamento" });
+      }
+
+      // 5. Generate JML events (only for non-status-change scenarios; status changes are handled by lifecycle helper)
+      if (!editingId) {
+        await createEventoJML({
+          colaboradorId,
+          colaboradorNome: form.nome.trim(),
+          tipo: "joiner",
+          dadosDepois: { cargo_id: form.cargo_id, area_id: form.area_id, status: form.status },
+        });
+      } else if (!becameInactive && !becameActive && (cargoChanged || areaChanged)) {
+        await createEventoJML({
+          colaboradorId,
+          colaboradorNome: form.nome.trim(),
+          tipo: "mover",
+          dadosAntes: { cargo_id: editingCargoId, area_id: editingAreaId },
+          dadosDepois: { cargo_id: form.cargo_id, area_id: form.area_id },
+        });
+      }
     } else if (colaboradorId) {
       // Non-manual: keep existing cargo provisioning only
       const cargoChanged = form.cargo_id !== (editingCargoId || "");
