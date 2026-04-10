@@ -430,6 +430,9 @@ export default function ColaboradorDetalhePage() {
               }
               
               if (oldStatus === "ativo" && newStatus !== "ativo") {
+                const isHardDisable = newStatus === "desligado" || newStatus === "inativo";
+
+                // Always disable login in AD + Entra
                 await supabase.from("iam_queue" as any).insert({
                   action_type: "disable",
                   payload_json: { samAccountName: sam, mail: pessoa.email || null, displayName: pessoa.nome, status: "disabled", status_anterior: oldStatus, status_novo: newStatus, changed_fields: ["status"], new_values: { status: "disabled" } },
@@ -437,34 +440,6 @@ export default function ColaboradorDetalhePage() {
                   colaborador_id: id,
                   target_identity: sam || null,
                 });
-
-                const { data: activeAtribuicoes } = await supabase.from("perfil_atribuicoes").select("perfil_id").eq("colaborador_id", id!).eq("ativo", true);
-                const activePerfilIds = (activeAtribuicoes ?? []).map((a: any) => a.perfil_id).filter(Boolean);
-                if (activePerfilIds.length > 0 && (pessoa.email || sam)) {
-                  await queueFullProfileActions([getColabIdentity()], activePerfilIds, "remove", { triggerImmediately: false });
-                }
-
-                // Also remove individually assigned resources
-                const { data: individualItems } = await (supabase as any).from("iam_queue")
-                  .select("action_type, payload_json, target_identity")
-                  .eq("colaborador_id", id!)
-                  .eq("requested_by", "manual_individual")
-                  .eq("status", "success")
-                  .in("action_type", ["assign_group", "assign_license", "assign_app"]);
-
-                const individualSnapshot: any[] = [];
-                const reverseMap: Record<string, string> = { assign_group: "remove_group", assign_license: "remove_license", assign_app: "remove_app" };
-                for (const item of (individualItems ?? [])) {
-                  individualSnapshot.push({ action_type: item.action_type, payload_json: item.payload_json, target_identity: item.target_identity });
-                  await supabase.from("iam_queue" as any).insert({
-                    action_type: reverseMap[item.action_type],
-                    payload_json: item.payload_json,
-                    requested_by: "sistema_desativacao",
-                    colaborador_id: id,
-                    target_identity: item.target_identity,
-                    status: "pending",
-                  });
-                }
 
                 if (pessoa.email || sam) {
                   await supabase.from("iam_queue" as any).insert({
@@ -475,6 +450,48 @@ export default function ColaboradorDetalhePage() {
                     target_identity: pessoa.email || sam || null,
                   });
                 }
+
+                let activePerfilIds: string[] = [];
+                const individualSnapshot: any[] = [];
+
+                if (isHardDisable) {
+                  // 1. Get active perfil_atribuicoes BEFORE deactivating them (for snapshot)
+                  const { data: activeAtribuicoes } = await supabase.from("perfil_atribuicoes").select("perfil_id").eq("colaborador_id", id!).eq("ativo", true);
+                  activePerfilIds = (activeAtribuicoes ?? []).map((a: any) => a.perfil_id).filter(Boolean);
+
+                  // 2. Deactivate ALL perfil_atribuicoes in the database
+                  await supabase.from("perfil_atribuicoes")
+                    .update({ ativo: false, data_revogacao: new Date().toISOString() } as any)
+                    .eq("colaborador_id", id!)
+                    .eq("ativo", true);
+
+                  // 3. Queue remove_* for profile-based resources
+                  if (activePerfilIds.length > 0 && (pessoa.email || sam)) {
+                    await queueFullProfileActions([getColabIdentity()], activePerfilIds, "remove", { triggerImmediately: false });
+                  }
+
+                  // 4. Also remove individually assigned resources
+                  const { data: individualItems } = await (supabase as any).from("iam_queue")
+                    .select("action_type, payload_json, target_identity")
+                    .eq("colaborador_id", id!)
+                    .eq("requested_by", "manual_individual")
+                    .eq("status", "success")
+                    .in("action_type", ["assign_group", "assign_license", "assign_app"]);
+
+                  const reverseMap: Record<string, string> = { assign_group: "remove_group", assign_license: "remove_license", assign_app: "remove_app" };
+                  for (const item of (individualItems ?? [])) {
+                    individualSnapshot.push({ action_type: item.action_type, payload_json: item.payload_json, target_identity: item.target_identity });
+                    await supabase.from("iam_queue" as any).insert({
+                      action_type: reverseMap[item.action_type],
+                      payload_json: item.payload_json,
+                      requested_by: "sistema_desativacao",
+                      colaborador_id: id,
+                      target_identity: item.target_identity,
+                      status: "pending",
+                    });
+                  }
+                }
+                // Soft disable (férias/afastado): only disable login, preserve all resources
 
                 toast({ title: "Solicitação de desativação enviada para processamento" });
 
@@ -495,12 +512,13 @@ export default function ColaboradorDetalhePage() {
 
                 await createEventoJML({
                   colaboradorId: id!, colaboradorNome: pessoa.nome, tipo: "leaver",
-                  dadosAntes: { status: oldStatus, perfis: activePerfilIds, recursos_individuais: individualSnapshot },
+                  dadosAntes: { status: oldStatus, tipo_desativacao: isHardDisable ? "hard" : "soft", perfis: activePerfilIds, recursos_individuais: individualSnapshot },
                   dadosDepois: { status: newStatus },
                 });
               }
 
               if (oldStatus !== "ativo" && newStatus === "ativo") {
+                // Enable accounts in AD + Entra
                 await supabase.from("iam_queue" as any).insert({
                   action_type: "update",
                   payload_json: { samAccountName: sam, mail: pessoa.email || null, displayName: pessoa.nome, status: "enabled", status_anterior: oldStatus, status_novo: "ativo", changed_fields: ["status"], new_values: { status: "enabled" } },
@@ -521,12 +539,17 @@ export default function ColaboradorDetalhePage() {
 
                 toast({ title: "Solicitação de reativação enviada para processamento" });
 
-                // Re-provision cargo-based profiles (always, not just manual)
-                if (pessoa.cargo_id) {
+                // Check if this was a hard disable (perfil_atribuicoes were revoked)
+                const { data: existingActive } = await supabase.from("perfil_atribuicoes").select("id").eq("colaborador_id", id!).eq("ativo", true).limit(1);
+                const hasActiveProfiles = (existingActive?.length ?? 0) > 0;
+
+                if (!hasActiveProfiles && pessoa.cargo_id) {
+                  // Hard disable recovery: re-provision cargo-based profiles
                   await provisionCargoAcessos(id!, pessoa.cargo_id, null);
                 }
+                // Soft disable: profiles are still active, no re-provisioning needed
 
-                // Restore individually assigned resources from last leaver event
+                // Restore individually assigned resources from last hard leaver event
                 const { data: lastLeaver } = await supabase
                   .from("eventos_jml")
                   .select("dados_antes")
@@ -535,7 +558,10 @@ export default function ColaboradorDetalhePage() {
                   .order("created_at", { ascending: false })
                   .limit(1);
 
-                const savedIndividuals = (lastLeaver?.[0]?.dados_antes as any)?.recursos_individuais || [];
+                const leaverData = lastLeaver?.[0]?.dados_antes as any;
+                const wasHardDisable = leaverData?.tipo_desativacao === "hard";
+                const savedIndividuals = wasHardDisable ? (leaverData?.recursos_individuais || []) : [];
+
                 for (const item of savedIndividuals) {
                   await supabase.from("iam_queue" as any).insert({
                     action_type: item.action_type,
