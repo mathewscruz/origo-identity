@@ -440,6 +440,20 @@ export default function ColaboradorDetalhePage() {
               <SelectItem value="desligado">Desligado</SelectItem>
             </SelectContent>
           </Select>
+          <Button variant="outline" size="sm" onClick={async () => {
+            toast({ title: "Sincronizando acessos do Entra ID..." });
+            const res = await syncSingleUserAccess(id!);
+            if (res.success) {
+              const msg = res.message || `Grupos: ${res.groups}, Licenças: ${res.licenses}, Apps: ${res.apps} — ${res.queued} importados`;
+              toast({ title: "Sincronização concluída", description: msg });
+              queryClient.invalidateQueries({ queryKey: ["iam_queue"] });
+              queryClient.invalidateQueries({ queryKey: ["colaborador", id] });
+            } else {
+              toast({ title: "Erro na sincronização", description: res.message, variant: "destructive" });
+            }
+          }}>
+            <RefreshCw className="mr-1 h-3 w-3" /> Sync Entra
+          </Button>
           <Button variant="outline" size="sm" onClick={() => { setTempPassword(null); setResetDialogOpen(true); }}>
             <KeyRound className="mr-1 h-3 w-3" /> Resetar Senha
           </Button>
