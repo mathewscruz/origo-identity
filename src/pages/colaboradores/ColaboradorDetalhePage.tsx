@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Pencil, XCircle, Plus, KeyRound, ChevronDown, Shield, Award, AppWindow, RefreshCw } from "lucide-react";
 import { useColaborador, usePerfilAtribuicoes, useEventosJML, usePerfisAcesso, useEntraGrupos, useEntraLicencas, useAplicacoes, useColabIndividualQueue } from "@/hooks/useOrigoData";
-import { generateEntraQueueForDiff } from "@/lib/entraQueueHelper";
+import { queueFullProfileActions, generateEntraQueueForDiff } from "@/lib/entraQueueHelper";
 import { handleStatusChange, syncSingleUserAccess } from "@/lib/colaboradorLifecycle";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
