@@ -397,193 +397,38 @@ export default function ColaboradorDetalhePage() {
             value={pessoa.status}
             onValueChange={async (newStatus) => {
               const oldStatus = pessoa.status;
-              const isManual = pessoa.origem === "manual";
-              const sam = (pessoa as any)?.sam_account_name || "";
 
-              // Check for active "manter_ativo" exception before deactivating
-              if (oldStatus === "ativo" && newStatus !== "ativo") {
-                const today = new Date().toISOString().slice(0, 10);
-                const { data: activeExcecoes } = await (supabase as any).from("excecoes")
-                  .select("id, justificativa, validade, solicitante")
-                  .eq("colaborador_id", id!)
-                  .eq("tipo_excecao", "manter_ativo")
-                  .eq("status", "aprovada")
-                  .gte("validade", today);
-                if (activeExcecoes && activeExcecoes.length > 0) {
-                  const exc = activeExcecoes[0];
-                  toast({
-                    title: "Exceção ativa impede desativação",
-                    description: `Existe uma exceção "Manter Ativo" aprovada até ${new Date(exc.validade).toLocaleDateString("pt-BR")} (Solicitante: ${exc.solicitante}). Remova ou aguarde a expiração da exceção para desativar este colaborador.`,
-                    variant: "destructive",
-                  });
-                  return;
-                }
+              const result = await handleStatusChange({
+                colab: {
+                  id: id!,
+                  nome: pessoa.nome,
+                  email: pessoa.email || null,
+                  sam_account_name: (pessoa as any)?.sam_account_name || null,
+                  cargo_id: pessoa.cargo_id || null,
+                  gestor_id: pessoa.gestor_id || null,
+                  origem: pessoa.origem || null,
+                },
+                oldStatus,
+                newStatus,
+                operadorEmail: profile?.email || null,
+                operadorNome: profile?.nome || null,
+              });
+
+              if (!result.success) {
+                toast({ title: result.error?.includes("exceção") ? "Exceção ativa impede desativação" : "Erro ao alterar status", description: result.error, variant: "destructive" });
+                return;
               }
 
-              const { error } = await supabase.from("colaboradores").update({ status: newStatus as any }).eq("id", id!);
-              if (error) { toast({ title: "Erro ao alterar status", description: error.message, variant: "destructive" }); return; }
-              await logAuditoria({ acao: "alterar_status_colaborador", entidade: "colaboradores", entidade_id: id!, resumo: `Status: ${oldStatus} → ${newStatus} — ${pessoa.nome}`, operador: profile?.email });
               if (oldStatus === "ativo" && newStatus !== "ativo") {
-                await logAlerta({ titulo: "Colaborador desabilitado", mensagem: `${pessoa.nome} teve o status alterado para ${newStatus}`, severidade: "aviso", tipo: "colaborador_desabilitado", ref_url: `/colaboradores/${id}` });
-              }
-              
-              if (oldStatus === "ativo" && newStatus !== "ativo") {
-                const isHardDisable = newStatus === "desligado" || newStatus === "inativo";
-
-                // Always disable login in AD + Entra
-                await supabase.from("iam_queue" as any).insert({
-                  action_type: "disable",
-                  payload_json: { samAccountName: sam, mail: pessoa.email || null, displayName: pessoa.nome, status: "disabled", status_anterior: oldStatus, status_novo: newStatus, changed_fields: ["status"], new_values: { status: "disabled" } },
-                  requested_by: profile?.email || "sistema",
-                  colaborador_id: id,
-                  target_identity: sam || null,
-                });
-
-                if (pessoa.email || sam) {
-                  await supabase.from("iam_queue" as any).insert({
-                    action_type: "disable_entra",
-                    payload_json: { mail: pessoa.email || null, samAccountName: sam, displayName: pessoa.nome },
-                    requested_by: profile?.email || "sistema",
-                    colaborador_id: id,
-                    target_identity: pessoa.email || sam || null,
-                  });
-                }
-
-                let activePerfilIds: string[] = [];
-                const individualSnapshot: any[] = [];
-
-                if (isHardDisable) {
-                  // 1. Get active perfil_atribuicoes BEFORE deactivating them (for snapshot)
-                  const { data: activeAtribuicoes } = await supabase.from("perfil_atribuicoes").select("perfil_id").eq("colaborador_id", id!).eq("ativo", true);
-                  activePerfilIds = (activeAtribuicoes ?? []).map((a: any) => a.perfil_id).filter(Boolean);
-
-                  // 2. Deactivate ALL perfil_atribuicoes in the database
-                  await supabase.from("perfil_atribuicoes")
-                    .update({ ativo: false, data_revogacao: new Date().toISOString() } as any)
-                    .eq("colaborador_id", id!)
-                    .eq("ativo", true);
-
-                  // 3. Queue remove_* for profile-based resources
-                  if (activePerfilIds.length > 0 && (pessoa.email || sam)) {
-                    await queueFullProfileActions([getColabIdentity()], activePerfilIds, "remove", { triggerImmediately: false });
-                  }
-
-                  // 4. Also remove individually assigned resources
-                  const { data: individualItems } = await (supabase as any).from("iam_queue")
-                    .select("action_type, payload_json, target_identity")
-                    .eq("colaborador_id", id!)
-                    .eq("requested_by", "manual_individual")
-                    .eq("status", "success")
-                    .in("action_type", ["assign_group", "assign_license", "assign_app"]);
-
-                  const reverseMap: Record<string, string> = { assign_group: "remove_group", assign_license: "remove_license", assign_app: "remove_app" };
-                  for (const item of (individualItems ?? [])) {
-                    individualSnapshot.push({ action_type: item.action_type, payload_json: item.payload_json, target_identity: item.target_identity });
-                    await supabase.from("iam_queue" as any).insert({
-                      action_type: reverseMap[item.action_type],
-                      payload_json: item.payload_json,
-                      requested_by: "sistema_desativacao",
-                      colaborador_id: id,
-                      target_identity: item.target_identity,
-                      status: "pending",
-                    });
-                  }
-                }
-                // Soft disable (férias/afastado): only disable login, preserve all resources
-
                 toast({ title: "Solicitação de desativação enviada para processamento" });
-
-                // Notify gestor via email
-                if (pessoa.gestor_id) {
-                  const { data: gestorData } = await supabase.from("colaboradores").select("nome, email").eq("id", pessoa.gestor_id).single();
-                  if (gestorData?.email) {
-                    sendNotificationEmail("colaborador_desabilitado", {
-                      destinatario_email: gestorData.email,
-                      colaborador_nome: pessoa.nome,
-                      status_anterior: oldStatus,
-                      novo_status: newStatus,
-                      operador: profile?.nome || profile?.email || "Sistema",
-                      colaborador_id: id,
-                    });
-                  }
-                }
-
-                await createEventoJML({
-                  colaboradorId: id!, colaboradorNome: pessoa.nome, tipo: "leaver",
-                  dadosAntes: { status: oldStatus, tipo_desativacao: isHardDisable ? "hard" : "soft", perfis: activePerfilIds, recursos_individuais: individualSnapshot },
-                  dadosDepois: { status: newStatus },
-                });
-              }
-
-              if (oldStatus !== "ativo" && newStatus === "ativo") {
-                // Enable accounts in AD + Entra
-                await supabase.from("iam_queue" as any).insert({
-                  action_type: "update",
-                  payload_json: { samAccountName: sam, mail: pessoa.email || null, displayName: pessoa.nome, status: "enabled", status_anterior: oldStatus, status_novo: "ativo", changed_fields: ["status"], new_values: { status: "enabled" } },
-                  requested_by: profile?.email || "sistema",
-                  colaborador_id: id,
-                  target_identity: sam || null,
-                });
-
-                if (pessoa.email || sam) {
-                  await supabase.from("iam_queue" as any).insert({
-                    action_type: "enable_entra",
-                    payload_json: { mail: pessoa.email || null, samAccountName: sam, displayName: pessoa.nome },
-                    requested_by: profile?.email || "sistema",
-                    colaborador_id: id,
-                    target_identity: pessoa.email || sam || null,
-                  });
-                }
-
+              } else if (oldStatus !== "ativo" && newStatus === "ativo") {
                 toast({ title: "Solicitação de reativação enviada para processamento" });
-
-                // Check if this was a hard disable (perfil_atribuicoes were revoked)
-                const { data: existingActive } = await supabase.from("perfil_atribuicoes").select("id").eq("colaborador_id", id!).eq("ativo", true).limit(1);
-                const hasActiveProfiles = (existingActive?.length ?? 0) > 0;
-
-                if (!hasActiveProfiles && pessoa.cargo_id) {
-                  // Hard disable recovery: re-provision cargo-based profiles
-                  await provisionCargoAcessos(id!, pessoa.cargo_id, null);
-                }
-                // Soft disable: profiles are still active, no re-provisioning needed
-
-                // Restore individually assigned resources from last hard leaver event
-                const { data: lastLeaver } = await supabase
-                  .from("eventos_jml")
-                  .select("dados_antes")
-                  .eq("colaborador_id", id!)
-                  .eq("tipo", "leaver")
-                  .order("created_at", { ascending: false })
-                  .limit(1);
-
-                const leaverData = lastLeaver?.[0]?.dados_antes as any;
-                const wasHardDisable = leaverData?.tipo_desativacao === "hard";
-                const savedIndividuals = wasHardDisable ? (leaverData?.recursos_individuais || []) : [];
-
-                for (const item of savedIndividuals) {
-                  await supabase.from("iam_queue" as any).insert({
-                    action_type: item.action_type,
-                    payload_json: item.payload_json,
-                    requested_by: "manual_individual",
-                    colaborador_id: id,
-                    target_identity: item.target_identity,
-                    status: "pending",
-                  });
-                }
-
-                await createEventoJML({
-                  colaboradorId: id!, colaboradorNome: pessoa.nome, tipo: "joiner",
-                  dadosAntes: { status: oldStatus },
-                  dadosDepois: { status: newStatus, recursos_individuais_restaurados: savedIndividuals.length },
-                });
-
-                await logAlerta({ titulo: "Colaborador reativado", mensagem: `${pessoa.nome} foi reativado`, severidade: "info", tipo: "colaborador_reativado", ref_url: `/colaboradores/${id}` });
               }
-              
+
               queryClient.invalidateQueries({ queryKey: ["colaborador", id] });
               queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
               queryClient.invalidateQueries({ queryKey: ["eventos_jml"] });
-              triggerEntraProcessing();
+              queryClient.invalidateQueries({ queryKey: ["iam_queue"] });
             }}
           >
             <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
