@@ -92,6 +92,13 @@ export type Database = {
             referencedRelation: "aplicacoes"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "aplicacao_perfis_internos_aplicacao_id_fkey"
+            columns: ["aplicacao_id"]
+            isOneToOne: false
+            referencedRelation: "aplicacoes_safe"
+            referencedColumns: ["id"]
+          },
         ]
       }
       aplicacoes: {
@@ -949,6 +956,13 @@ export type Database = {
             referencedRelation: "aplicacoes"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "licencas_aplicacao_id_fkey"
+            columns: ["aplicacao_id"]
+            isOneToOne: false
+            referencedRelation: "aplicacoes_safe"
+            referencedColumns: ["id"]
+          },
         ]
       }
       localidades: {
@@ -1038,6 +1052,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "perfil_aplicacoes_aplicacao_id_fkey"
+            columns: ["aplicacao_id"]
+            isOneToOne: false
+            referencedRelation: "aplicacoes_safe"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "perfil_aplicacoes_perfil_id_fkey"
             columns: ["perfil_id"]
             isOneToOne: false
@@ -1074,6 +1095,13 @@ export type Database = {
             columns: ["aplicacao_id"]
             isOneToOne: false
             referencedRelation: "aplicacoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "perfil_apps_internos_aplicacao_id_fkey"
+            columns: ["aplicacao_id"]
+            isOneToOne: false
+            referencedRelation: "aplicacoes_safe"
             referencedColumns: ["id"]
           },
           {
@@ -1882,7 +1910,60 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      aplicacoes_safe: {
+        Row: {
+          aprovacao_necessaria: boolean | null
+          connector_config: Json | null
+          connector_type: string | null
+          created_at: string | null
+          criticidade: Database["public"]["Enums"]["criticidade"] | null
+          default_app_role_id: string | null
+          entra_id: string | null
+          id: string | null
+          integracao_ativa: boolean | null
+          nome: string | null
+          origem: string | null
+          owner: string | null
+          tipo_auth: string | null
+          updated_at: string | null
+          url: string | null
+        }
+        Insert: {
+          aprovacao_necessaria?: boolean | null
+          connector_config?: never
+          connector_type?: string | null
+          created_at?: string | null
+          criticidade?: Database["public"]["Enums"]["criticidade"] | null
+          default_app_role_id?: string | null
+          entra_id?: string | null
+          id?: string | null
+          integracao_ativa?: boolean | null
+          nome?: string | null
+          origem?: string | null
+          owner?: string | null
+          tipo_auth?: string | null
+          updated_at?: string | null
+          url?: string | null
+        }
+        Update: {
+          aprovacao_necessaria?: boolean | null
+          connector_config?: never
+          connector_type?: string | null
+          created_at?: string | null
+          criticidade?: Database["public"]["Enums"]["criticidade"] | null
+          default_app_role_id?: string | null
+          entra_id?: string | null
+          id?: string | null
+          integracao_ativa?: boolean | null
+          nome?: string | null
+          origem?: string | null
+          owner?: string | null
+          tipo_auth?: string | null
+          updated_at?: string | null
+          url?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       has_role: {
