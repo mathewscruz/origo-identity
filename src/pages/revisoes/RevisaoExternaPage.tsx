@@ -40,11 +40,8 @@ export default function RevisaoExternaPage() {
   useEffect(() => {
     if (!token) return;
     (async () => {
-      const { data: rev, error: revErr } = await (supabase as any)
-        .from("revisoes")
-        .select("*, aplicacoes(nome)")
-        .eq("token", token)
-        .single();
+      // Use RPC functions for token-based access (no anon RLS needed)
+      const { data: rev, error: revErr } = await supabase.rpc("get_revisao_by_token" as any, { p_token: token });
       if (revErr || !rev) {
         setError("Revisão não encontrada ou token inválido.");
         setLoading(false);
@@ -54,10 +51,7 @@ export default function RevisaoExternaPage() {
       if (rev.status === "concluida") {
         setCompleted(true);
       }
-      const { data: items } = await supabase
-        .from("revisao_itens")
-        .select("*")
-        .eq("revisao_id", rev.id);
+      const { data: items } = await supabase.rpc("get_revisao_itens_by_token" as any, { p_token: token });
       setItens(items || []);
       const existing: Record<string, string> = {};
       (items || []).forEach((it: any) => { if (it.decisao) existing[it.id] = it.decisao; });
@@ -105,90 +99,33 @@ export default function RevisaoExternaPage() {
 
   const handleSave = async () => {
     setSaving(true);
-    const now = new Date().toISOString();
-    let mantidos = 0;
-    let revogados = 0;
 
-    for (const item of itens) {
-      const decisao = decisions[item.id];
-      if (!decisao) continue;
-      await supabase
-        .from("revisao_itens")
-        .update({ decisao, decidido_em: now })
-        .eq("id", item.id);
-      if (decisao === "manter") mantidos++;
-      if (decisao === "revogar") revogados++;
+    try {
+      // Call edge function to save decisions securely (uses service_role)
+      const { data, error: fnError } = await supabase.functions.invoke("save-external-review", {
+        body: { token, decisions },
+      });
 
-      if (decisao === "revogar" && item.colaborador_id && item.perfil_id) {
-        await supabase.from("perfil_atribuicoes").update({
-          ativo: false,
-          data_revogacao: now,
-        }).eq("colaborador_id", item.colaborador_id).eq("perfil_id", item.perfil_id).eq("ativo", true);
+      if (fnError) throw fnError;
 
-        const { data: colab } = await (supabase as any).from("colaboradores").select("sam_account_name, nome, email").eq("id", item.colaborador_id).single();
-        const sam = colab?.sam_account_name || "";
-        const identity = colab?.email || sam;
-        if (identity) {
-          // Remove groups
-          const { data: grupos } = await supabase.from("perfil_grupos").select("*, entra_grupos(nome, entra_id)").eq("perfil_id", item.perfil_id);
-          for (const g of (grupos || [])) {
-            await supabase.from("iam_queue" as any).insert({
-              action_type: "remove_group",
-              payload_json: { displayName: colab?.nome || item.colaborador_nome || "", mail: colab?.email || "", groupName: g.entra_grupos?.nome || "", groupId: g.entra_grupos?.entra_id || "" },
-              target_identity: identity, requested_by: revisao.owner_email || "revisao_externa", colaborador_id: item.colaborador_id, status: "pending",
-            });
-          }
-          // Remove licenses
-          const { data: licencas } = await supabase.from("perfil_licencas").select("*, entra_licencas(nome, sku_id)").eq("perfil_id", item.perfil_id);
-          for (const l of (licencas || [])) {
-            await supabase.from("iam_queue" as any).insert({
-              action_type: "remove_license",
-              payload_json: { displayName: colab?.nome || item.colaborador_nome || "", mail: colab?.email || "", licenseName: l.entra_licencas?.nome || "", skuId: l.entra_licencas?.sku_id || "" },
-              target_identity: identity, requested_by: revisao.owner_email || "revisao_externa", colaborador_id: item.colaborador_id, status: "pending",
-            });
-          }
-          // Remove apps
-          const { data: apps } = await supabase.from("perfil_aplicacoes").select("*, aplicacoes(nome, entra_id)").eq("perfil_id", item.perfil_id);
-          for (const a of (apps || [])) {
-            if (a.aplicacoes?.entra_id) {
-              await supabase.from("iam_queue" as any).insert({
-                action_type: "remove_app",
-                payload_json: { displayName: colab?.nome || item.colaborador_nome || "", mail: colab?.email || "", appName: a.aplicacoes?.nome || "", appId: a.aplicacoes?.entra_id || "" },
-                target_identity: identity, requested_by: revisao.owner_email || "revisao_externa", colaborador_id: item.colaborador_id, status: "pending",
-              });
-            }
-          }
-        }
-      }
+      const mantidos = data?.mantidos ?? 0;
+      const revogados = data?.revogados ?? 0;
+
+      setCompleted(true);
+      toast({ title: "Revisão salva com sucesso", description: `${mantidos} mantidos, ${revogados} revogados.` });
+
+      if (revogados > 0) triggerEntraProcessing();
+    } catch (err: any) {
+      toast({ title: "Erro ao salvar", description: err?.message || "Tente novamente.", variant: "destructive" });
     }
 
-    // Mark review as completed
-    const revisados = Object.keys(decisions).length;
-    await supabase.from("revisoes").update({
-      itens_revisados: revisados,
-      status: "concluida" as any,
-    }).eq("id", revisao.id);
-
-    // Audit
-    await supabase.from("auditoria").insert({
-      entidade: "revisao",
-      entidade_id: revisao.id,
-      acao: "revisao_externa",
-      operador: revisao.owner_email || "owner",
-      resumo: `Revisão externa concluída: ${mantidos} mantidos, ${revogados} revogados`,
-      detalhes: { mantidos, revogados, total: itens.length, decisoes: decisions },
-    });
-
-    setCompleted(true);
-    toast({ title: "Revisão salva com sucesso", description: `${mantidos} mantidos, ${revogados} revogados.` });
     setSaving(false);
-    if (revogados > 0) triggerEntraProcessing();
   };
 
   if (loading) return <div className="flex items-center justify-center min-h-screen"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   if (error) return <div className="flex items-center justify-center min-h-screen"><Card className="max-w-md"><CardContent className="pt-6 text-center"><p className="text-muted-foreground">{error}</p></CardContent></Card></div>;
 
-  const appName = (revisao as any)?.aplicacoes?.nome || "Aplicação";
+  const appName = revisao?.aplicacoes?.nome || revisao?.nome || "Revisão de Acesso";
   const allDecided = itens.length > 0 && itens.every((it) => decisions[it.id]);
   const revogarCount = Object.values(decisions).filter((d) => d === "revogar").length;
   const manterCount = Object.values(decisions).filter((d) => d === "manter").length;
@@ -210,20 +147,27 @@ export default function RevisaoExternaPage() {
               </div>
             </div>
             <CardDescription>
-              {completed ? (
-                <span className="text-success font-medium">✓ Esta revisão foi concluída. Os resultados estão registrados abaixo.</span>
-              ) : (
-                <>Revise cada acesso abaixo e decida manter ou revogar. {dataFim && <span className="font-medium">Data limite: {dataFim}</span>}</>
-              )}
+              Revise os acessos abaixo e decida manter ou revogar cada um.
+              {dataFim && <span className="ml-1">Prazo: <strong>{dataFim}</strong></span>}
             </CardDescription>
           </CardHeader>
         </Card>
 
-        {/* Summary counters */}
+        {completed && (
+          <Card className="border-success/30 bg-success/5">
+            <CardContent className="pt-6 text-center">
+              <Check className="h-8 w-8 text-success mx-auto mb-2" />
+              <p className="font-medium text-success">Revisão concluída com sucesso!</p>
+              <p className="text-sm text-muted-foreground mt-1">Obrigado pela sua análise. Ações de revogação serão processadas automaticamente.</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Summary */}
         <div className="grid grid-cols-3 gap-4">
           <Card><CardContent className="pt-5 pb-4 text-center">
             <p className="text-2xl font-bold">{itens.length}</p>
-            <p className="text-xs text-muted-foreground">Total</p>
+            <p className="text-xs text-muted-foreground">Total de Acessos</p>
           </CardContent></Card>
           <Card><CardContent className="pt-5 pb-4 text-center">
             <p className="text-2xl font-bold text-success">{manterCount}</p>
@@ -235,69 +179,73 @@ export default function RevisaoExternaPage() {
           </CardContent></Card>
         </div>
 
-        {/* Toolbar */}
         {!completed && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative flex-1 min-w-[200px]">
+          <>
+            {/* Bulk actions */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button variant="outline" size="sm" onClick={toggleSelectAll}>
+                <CheckSquare className="h-3 w-3 mr-1" />
+                {selected.size === filteredItens.length ? "Desmarcar Todos" : "Selecionar Todos"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => bulkDecision("manter")} className="text-success border-success/30 hover:bg-success/10">
+                <Check className="h-3 w-3 mr-1" /> Manter {selected.size > 0 ? `(${selected.size})` : "Todos"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => bulkDecision("revogar")} className="text-destructive border-destructive/30 hover:bg-destructive/10">
+                <X className="h-3 w-3 mr-1" /> Revogar {selected.size > 0 ? `(${selected.size})` : "Todos"}
+              </Button>
+            </div>
+
+            {/* Search */}
+            <div className="relative max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input placeholder="Buscar por nome..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
             </div>
-            <Button variant="outline" size="sm" onClick={() => bulkDecision("manter")}>
-              <CheckSquare className="h-3 w-3 mr-1" /> Manter {selected.size > 0 ? `(${selected.size})` : "Todos"}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => bulkDecision("revogar")} className="text-destructive border-destructive/30 hover:bg-destructive/10">
-              <XSquare className="h-3 w-3 mr-1" /> Revogar {selected.size > 0 ? `(${selected.size})` : "Todos"}
-            </Button>
-          </div>
+          </>
         )}
 
-        {/* Table */}
-        <Card>
-          <CardContent className="p-0">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  {!completed && (
-                    <th className="p-4 w-10">
-                      <Checkbox checked={selected.size === filteredItens.length && filteredItens.length > 0} onCheckedChange={toggleSelectAll} />
-                    </th>
-                  )}
-                  <th className="p-4 font-medium">Pessoa</th>
-                  <th className="p-4 font-medium">Perfil</th>
-                  <th className="p-4 font-medium text-center">Decisão</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredItens.map((it) => (
-                  <tr key={it.id} className="border-b last:border-0">
+        {/* Items */}
+        <Card><CardContent className="p-0">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-muted-foreground">
+                {!completed && <th className="p-4 w-10"><Checkbox checked={selected.size === filteredItens.length && filteredItens.length > 0} onCheckedChange={toggleSelectAll} /></th>}
+                <th className="p-4 font-medium">Pessoa</th>
+                <th className="p-4 font-medium">Perfil de Acesso</th>
+                <th className="p-4 font-medium text-center">Decisão</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredItens.map((it) => {
+                const dec = decisions[it.id];
+                return (
+                  <tr key={it.id} className="border-b last:border-0 hover:bg-muted/50">
                     {!completed && (
-                      <td className="p-4">
-                        <Checkbox checked={selected.has(it.id)} onCheckedChange={() => toggleSelect(it.id)} />
-                      </td>
+                      <td className="p-4"><Checkbox checked={selected.has(it.id)} onCheckedChange={() => toggleSelect(it.id)} /></td>
                     )}
                     <td className="p-4 font-medium">{it.colaborador_nome || "—"}</td>
                     <td className="p-4 text-muted-foreground">{it.perfil_nome || "—"}</td>
                     <td className="p-4">
                       {completed ? (
                         <div className="flex justify-center">
-                          {decisions[it.id] === "manter" && <Badge variant="outline" className="bg-success/15 text-success border-success/30">Mantido</Badge>}
-                          {decisions[it.id] === "revogar" && <Badge variant="outline" className="bg-destructive/15 text-destructive border-destructive/30">Revogado</Badge>}
-                          {!decisions[it.id] && <Badge variant="outline" className="bg-muted text-muted-foreground">Pendente</Badge>}
+                          {dec === "manter" && <Badge variant="outline" className="bg-success/15 text-success border-success/30">Manter</Badge>}
+                          {dec === "revogar" && <Badge variant="outline" className="bg-destructive/15 text-destructive border-destructive/30">Revogar</Badge>}
+                          {!dec && <Badge variant="outline" className="bg-muted text-muted-foreground">Pendente</Badge>}
                         </div>
                       ) : (
-                        <div className="flex items-center justify-center gap-2">
+                        <div className="flex items-center justify-center gap-1">
                           <Button
-                            variant={decisions[it.id] === "manter" ? "default" : "outline"}
+                            variant={dec === "manter" ? "default" : "outline"}
                             size="sm"
-                            className={decisions[it.id] === "manter" ? "bg-success hover:bg-success/90 text-success-foreground" : ""}
                             onClick={() => setDecision(it.id, "manter")}
+                            className={dec === "manter" ? "bg-success hover:bg-success/90 text-white" : "text-success border-success/30 hover:bg-success/10"}
                           >
                             <Check className="h-3 w-3 mr-1" /> Manter
                           </Button>
                           <Button
-                            variant={decisions[it.id] === "revogar" ? "destructive" : "outline"}
+                            variant={dec === "revogar" ? "default" : "outline"}
                             size="sm"
                             onClick={() => setDecision(it.id, "revogar")}
+                            className={dec === "revogar" ? "bg-destructive hover:bg-destructive/90 text-white" : "text-destructive border-destructive/30 hover:bg-destructive/10"}
                           >
                             <X className="h-3 w-3 mr-1" /> Revogar
                           </Button>
@@ -305,42 +253,43 @@ export default function RevisaoExternaPage() {
                       )}
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
+                );
+              })}
+            </tbody>
+          </table>
+        </CardContent></Card>
 
-        {/* Footer */}
+        {/* Submit */}
         {!completed && (
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              {Object.keys(decisions).length} de {itens.length} decididos
-              {revogarCount > 0 && <span className="text-destructive font-medium ml-2">({revogarCount} revogações)</span>}
+              {Object.keys(decisions).length} de {itens.length} itens decididos
             </p>
-            <Button onClick={() => setConfirmOpen(true)} disabled={!allDecided || saving}>
+            <Button
+              onClick={() => { if (revogarCount > 0) setConfirmOpen(true); else handleSave(); }}
+              disabled={!allDecided || saving}
+              size="lg"
+            >
               {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Salvar Revisão
+              Enviar Revisão
             </Button>
           </div>
         )}
 
-        {/* Confirmation dialog */}
+        {/* Confirmation dialog for revocations */}
         <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Confirmar Revisão</AlertDialogTitle>
+              <AlertDialogTitle>Confirmar Revogações</AlertDialogTitle>
               <AlertDialogDescription>
-                Você está prestes a salvar a revisão de acesso para <strong>{appName}</strong>.<br /><br />
-                <span className="text-success font-medium">{manterCount} acessos serão mantidos</span><br />
-                {revogarCount > 0 && <span className="text-destructive font-medium">{revogarCount} acessos serão revogados (remoção automática no Entra ID)</span>}
-                <br /><br />
-                Esta ação não pode ser desfeita.
+                Você está prestes a revogar <strong>{revogarCount}</strong> acesso(s). Esta ação será processada automaticamente e não pode ser desfeita facilmente. Deseja continuar?
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={handleSave}>Confirmar e Salvar</AlertDialogAction>
+              <AlertDialogAction onClick={() => { setConfirmOpen(false); handleSave(); }} className="bg-destructive hover:bg-destructive/90">
+                Confirmar Revogações
+              </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
