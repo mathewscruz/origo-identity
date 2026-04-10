@@ -1,81 +1,115 @@
 
+Objetivo: corrigir a desativação para realmente remover grupos/licenças/apps, fazer a sincronização de acessos do EntraID trazer os itens corretos e garantir que a comunicação Cargo → Perfil → Colaborador use uma única regra em todo o sistema.
 
-# Plano: Corrigir duplicacao de perfis e falha na revogacao de recursos
+1. Diagnóstico confirmado
+- O vínculo Cargo → Perfil está correto para o caso analisado:
+  - cargo `Especialista em Segurança da Informação`
+  - perfil `Especialista em Segurança da Informação`
+  - perfil contém 1 grupo e 1 licença
+- O problema principal está no fluxo de status:
+  - `ColaboradorDetalhePage.tsx` já tem lógica nova de hard/soft disable.
+  - `ColaboradoresPage.tsx` ainda usa a lógica antiga, que só envia `disable` + `disable_entra`, sem:
+    - revogar `perfil_atribuicoes`
+    - gerar `remove_group/remove_license/remove_app`
+    - salvar snapshot completo
+    - tratar reativação com segurança
+- Evidência no caso “Teste IAM 7”:
+  - usuário está `inativo`
+  - ainda existe 1 `perfil_atribuicao` ativa
+  - últimos itens da `iam_queue` têm apenas `disable`/`disable_entra`
+  - não houve `remove_group` nem `remove_license` no último ciclo
+- A sincronização de acessos do EntraID também não alimentou esse colaborador:
+  - existem 0 registros `requested_by = 'entra_sync'` para ele
+  - no `/colaboradores`, o botão de sincronização em lote ignora usuários `inativo/desligado`
+- Há mais uma lacuna funcional:
+  - no hard disable atual, a remoção de acessos individuais considera só `manual_individual`
+  - acessos importados via `entra_sync` também podem continuar existindo no diretório e não serem revogados
 
-## Problemas identificados (confirmados via dados)
+2. Correção proposta
+A. Unificar o fluxo de ciclo de vida do colaborador
+- Extrair a lógica de:
+  - hard disable
+  - soft disable
+  - reativação
+  - snapshot/restauração
+  - revogação/provisionamento por cargo
+- Colocar tudo em um helper único e reutilizar em:
+  - `src/pages/colaboradores/ColaboradorDetalhePage.tsx`
+  - `src/pages/colaboradores/ColaboradoresPage.tsx`
+- Assim eliminamos a divergência entre “editar no detalhe” e “editar pela lista”.
 
-**1. Desativacao NAO revoga `perfil_atribuicoes`**
-O fluxo de desativacao no `ColaboradorDetalhePage.tsx` (linhas 432-501) enfileira `remove_*` via `queueFullProfileActions`, mas nunca executa `perfil_atribuicoes.update({ ativo: false })`. Os registros permanecem `ativo: true` no banco.
+B. Corrigir a desativação real
+No hard disable (`inativo` / `desligado`):
+- desativar `perfil_atribuicoes`
+- buscar os perfis ativos antes da revogação
+- gerar `remove_*` dos recursos vindos dos perfis
+- sincronizar/considerar também os acessos individuais efetivos do usuário
+- incluir tanto:
+  - `manual_individual`
+  - `entra_sync`
+- deduplicar recursos antes de enfileirar revogações
+- salvar snapshot completo no evento JML
 
-**2. Desativacao NAO remove recursos individuais nem de perfil**
-Nos dados reais, a ultima desativacao (18:38) gerou apenas `disable` + `disable_entra`. Nenhum `remove_group`, `remove_license` ou `remove_app` foi criado. Isso indica que o `queueFullProfileActions` falhou silenciosamente ou nao foi chamado — provavelmente porque a query de `activeAtribuicoes` retornou vazio (os registros ja tinham sido revogados de ciclos anteriores, mas novos foram criados sem revogacao).
+C. Corrigir a reativação
+- Parar de reativar com fluxo cego na tela de lista
+- Na volta para `ativo`:
+  - se ainda houver perfis ativos: tratar como soft disable
+  - se não houver perfis ativos: reprovisionar pelo cargo
+  - restaurar recursos individuais salvos no snapshot do hard disable
 
-**3. Reativacao cria duplicatas**
-`provisionCargoAcessos(id, cargo_id, null)` recebe `oldCargoId = null`, entao o bloco de revogacao (linha 80) e ignorado. Novos registros sao inseridos sem desativar os existentes. No banco: 2 registros `ativo: true` para o mesmo perfil e colaborador.
+D. Corrigir a sincronização do EntraID
+- Ajustar a experiência de sincronização para o colaborador analisado:
+  - permitir sincronização individual mesmo se o usuário estiver `inativo/desligado`
+  - opcionalmente adicionar ação de sync no detalhe do colaborador
+- Melhorar a função `sync-user-access` para diagnosticar melhor:
+  - quantos grupos/licenças/apps vieram do EntraID
+  - quantos casaram com catálogo local
+  - quantos ficaram sem correspondência local
+- Isso evita “sincronizou mas não trouxe nada” sem explicação visível.
 
-**4. Sem diferenciacao hard/soft disable**
-O bloco de desativacao executa revogacao total para QUALQUER status nao-ativo (incluindo ferias/afastado), quando deveria apenas desabilitar login nesses casos.
+3. Arquivos a ajustar
+- `src/pages/colaboradores/ColaboradoresPage.tsx`
+  - remover o fluxo legado de disable/enable
+  - reutilizar a mesma rotina do detalhe
+  - corrigir reativação e sincronização
+- `src/pages/colaboradores/ColaboradorDetalhePage.tsx`
+  - ampliar snapshot/revogação para incluir `entra_sync`
+  - manter a regra hard/soft, agora centralizada
+- `src/lib/provisionCargoAcessos.ts`
+  - preservar a proteção contra duplicidade
+  - alinhar com o fluxo centralizado
+- Novo helper compartilhado
+  - para encapsular o ciclo de vida do colaborador
+- `supabase/functions/sync-user-access/index.ts`
+  - melhorar matching/logs/retorno para troubleshooting
+  - manter importação de grupos/licenças/apps já existentes no diretório
 
-## Correcoes
+4. Validação que farei após implementar
+- Caso real “Teste IAM 7”
+  - sincronizar acessos atuais
+  - confirmar importação de grupos/licenças/apps
+  - desativar e validar criação de:
+    - `disable`
+    - `disable_entra`
+    - `remove_group`
+    - `remove_license`
+    - `remove_app` quando existir
+  - confirmar `perfil_atribuicoes` inativas
+  - reativar e confirmar que não duplica perfis
+- Testar os 2 caminhos de UI:
+  - alteração pela lista `/colaboradores`
+  - alteração pela tela de detalhe
+- Validar que Cargo → Perfil → Colaborador continua funcionando sem quebrar provisão aditiva.
 
-### Arquivo 1: `src/pages/colaboradores/ColaboradorDetalhePage.tsx`
+5. Remediação do dado atual
+Depois da correção:
+- executar uma sincronização direcionada para o usuário afetado
+- rodar um novo ciclo controlado de desativação/reativação
+- confirmar no diretório que os acessos residuais foram removidos
+- se restar algum resíduo histórico fora do catálogo, tratar com remoção técnica pontual
 
-**A. Separar hard disable vs soft disable no handler de status**
-
-```text
-Status "ativo" → "desligado" ou "inativo" = HARD DISABLE:
-  1. Inserir disable + disable_entra
-  2. Desativar TODOS os perfil_atribuicoes (ativo = false)  ← NOVO
-  3. Enfileirar remove_* para perfis e individuais
-  4. Criar evento JML leaver com snapshot
-
-Status "ativo" → "ferias" ou "afastado" = SOFT DISABLE:
-  1. Inserir disable + disable_entra (apenas bloqueia login)
-  2. NAO revogar perfis nem recursos
-  3. Criar evento JML leaver com tipo "soft"
-```
-
-**B. No hard disable, adicionar revogacao de `perfil_atribuicoes`**
-
-Antes de chamar `queueFullProfileActions`, executar:
-```sql
-UPDATE perfil_atribuicoes 
-SET ativo = false, data_revogacao = now()
-WHERE colaborador_id = :id AND ativo = true
-```
-
-Isso garante que os registros sao desativados E que a query de perfis retorna os IDs corretos para o snapshot.
-
-**C. Na reativacao, buscar perfis do snapshot em vez de re-provisionar cegamente**
-
-Inverter a ordem: primeiro verificar se ja existem `perfil_atribuicoes` ativas. Se existirem (soft disable), nao re-provisionar. Se nao existirem (hard disable), usar `provisionCargoAcessos`.
-
-### Arquivo 2: `src/lib/provisionCargoAcessos.ts`
-
-**D. Prevenir duplicatas no insert**
-
-Antes de inserir novos `perfil_atribuicoes` de cargo, desativar qualquer registro ativo existente para os mesmos perfil_ids + colaborador_id + origem="cargo":
-
-```typescript
-// Before inserting, deactivate any existing active cargo atribuicoes
-await supabase
-  .from("perfil_atribuicoes")
-  .update({ ativo: false, data_revogacao: new Date().toISOString() })
-  .eq("colaborador_id", colaboradorId)
-  .eq("origem", "cargo")
-  .eq("ativo", true);
-```
-
-Isso funciona como uma salvaguarda independente de qual fluxo chamou a funcao.
-
-## Resumo de alteracoes
-
-| Arquivo | Alteracao |
-|---|---|
-| `ColaboradorDetalhePage.tsx` | Diferenciar hard/soft disable; adicionar revogacao de perfil_atribuicoes no hard disable; prevenir re-provisionamento duplicado na reativacao |
-| `provisionCargoAcessos.ts` | Adicionar desativacao preventiva de cargo atribuicoes existentes antes de inserir novas |
-
-## Dados para limpeza (pos-deploy)
-
-O usuario "Teste IAM 7" tem 2 registros `perfil_atribuicoes` ativos duplicados. Uma migration pode limpar isso, ou o proximo ciclo de desativacao/reativacao corrigira automaticamente com a nova logica.
-
+Resultado esperado
+- desativar realmente remove acessos técnicos
+- reativar não duplica perfil
+- a sincronização do EntraID passa a preencher os itens do colaborador corretamente
+- editar status na lista e no detalhe passa a produzir exatamente o mesmo comportamento
