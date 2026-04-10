@@ -106,10 +106,6 @@ export function usePerfilAcesso(id: string | undefined) {
   });
 }
 
-// perfil_composicao table was removed — hook kept as no-op for compatibility
-export function usePerfilComposicao(_perfilId: string | undefined) {
-  return useQuery({ queryKey: ["perfil_composicao_deprecated"], queryFn: async () => [] as any[], enabled: false });
-}
 
 export function usePerfilAtribuicoes(perfilId?: string, colaboradorId?: string) {
   return useQuery({
@@ -123,20 +119,6 @@ export function usePerfilAtribuicoes(perfilId?: string, colaboradorId?: string) 
       return data;
     },
   });
-}
-
-// Regras module removed — hooks kept as no-ops
-export function useRegras() {
-  return useQuery({ queryKey: ["regras_deprecated"], queryFn: async () => [] as any[], enabled: false });
-}
-export function useRegra(_id: string | undefined) {
-  return useQuery({ queryKey: ["regra_deprecated"], queryFn: async () => null, enabled: false });
-}
-export function useRegraCondicoes(_regraId: string | undefined) {
-  return useQuery({ queryKey: ["regra_condicoes_deprecated"], queryFn: async () => [] as any[], enabled: false });
-}
-export function useRegraResultados(_regraId: string | undefined) {
-  return useQuery({ queryKey: ["regra_resultados_deprecated"], queryFn: async () => [] as any[], enabled: false });
 }
 
 export function useEventosJML() {

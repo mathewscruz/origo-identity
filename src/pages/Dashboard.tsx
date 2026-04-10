@@ -325,7 +325,7 @@ function StatusIcon({ status }: { status: string }) {
   switch (status) {
     case "pending": case "pendente": case "em_aprovacao":
       return <Clock className="h-4 w-4 text-warning" />;
-    case "completed": case "aprovada":
+    case "success": case "completed": case "aprovada":
       return <CheckCircle2 className="h-4 w-4 text-success" />;
     case "failed": case "permanent_failure": case "rejeitada":
       return <XCircle className="h-4 w-4 text-destructive" />;

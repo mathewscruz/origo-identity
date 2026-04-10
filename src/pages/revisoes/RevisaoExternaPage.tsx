@@ -127,14 +127,15 @@ export default function RevisaoExternaPage() {
 
         const { data: colab } = await (supabase as any).from("colaboradores").select("sam_account_name, nome, email").eq("id", item.colaborador_id).single();
         const sam = colab?.sam_account_name || "";
-        if (sam) {
+        const identity = colab?.email || sam;
+        if (identity) {
           // Remove groups
           const { data: grupos } = await supabase.from("perfil_grupos").select("*, entra_grupos(nome, entra_id)").eq("perfil_id", item.perfil_id);
           for (const g of (grupos || [])) {
             await supabase.from("iam_queue" as any).insert({
               action_type: "remove_group",
-              payload_json: { samAccountName: sam, displayName: colab?.nome || item.colaborador_nome || "", groupName: g.entra_grupos?.nome || "", groupId: g.entra_grupos?.entra_id || "" },
-              target_identity: sam, requested_by: revisao.owner_email || "revisao_externa", colaborador_id: item.colaborador_id, status: "pending",
+              payload_json: { displayName: colab?.nome || item.colaborador_nome || "", mail: colab?.email || "", groupName: g.entra_grupos?.nome || "", groupId: g.entra_grupos?.entra_id || "" },
+              target_identity: identity, requested_by: revisao.owner_email || "revisao_externa", colaborador_id: item.colaborador_id, status: "pending",
             });
           }
           // Remove licenses
@@ -142,8 +143,8 @@ export default function RevisaoExternaPage() {
           for (const l of (licencas || [])) {
             await supabase.from("iam_queue" as any).insert({
               action_type: "remove_license",
-              payload_json: { samAccountName: sam, displayName: colab?.nome || item.colaborador_nome || "", licenseName: l.entra_licencas?.nome || "", skuId: l.entra_licencas?.sku_id || "" },
-              target_identity: sam, requested_by: revisao.owner_email || "revisao_externa", colaborador_id: item.colaborador_id, status: "pending",
+              payload_json: { displayName: colab?.nome || item.colaborador_nome || "", mail: colab?.email || "", licenseName: l.entra_licencas?.nome || "", skuId: l.entra_licencas?.sku_id || "" },
+              target_identity: identity, requested_by: revisao.owner_email || "revisao_externa", colaborador_id: item.colaborador_id, status: "pending",
             });
           }
           // Remove apps
@@ -152,8 +153,8 @@ export default function RevisaoExternaPage() {
             if (a.aplicacoes?.entra_id) {
               await supabase.from("iam_queue" as any).insert({
                 action_type: "remove_app",
-                payload_json: { samAccountName: sam, displayName: colab?.nome || item.colaborador_nome || "", appName: a.aplicacoes?.nome || "", appId: a.aplicacoes?.entra_id || "", userEmail: colab?.email || "" },
-                target_identity: sam, requested_by: revisao.owner_email || "revisao_externa", colaborador_id: item.colaborador_id, status: "pending",
+                payload_json: { displayName: colab?.nome || item.colaborador_nome || "", mail: colab?.email || "", appName: a.aplicacoes?.nome || "", appId: a.aplicacoes?.entra_id || "" },
+                target_identity: identity, requested_by: revisao.owner_email || "revisao_externa", colaborador_id: item.colaborador_id, status: "pending",
               });
             }
           }
