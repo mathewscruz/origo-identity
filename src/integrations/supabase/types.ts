@@ -1966,6 +1966,8 @@ export type Database = {
       }
     }
     Functions: {
+      get_revisao_by_token: { Args: { p_token: string }; Returns: Json }
+      get_revisao_itens_by_token: { Args: { p_token: string }; Returns: Json }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
