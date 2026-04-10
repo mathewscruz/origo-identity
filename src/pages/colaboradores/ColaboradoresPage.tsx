@@ -253,6 +253,7 @@ export default function ColaboradoresPage() {
           newStatus: form.status,
           operadorEmail: profile?.email || null,
           operadorNome: profile?.nome || null,
+          skipStatusUpdate: true, // parent save already updated the status
         });
 
         if (!lifecycleResult.success) {
