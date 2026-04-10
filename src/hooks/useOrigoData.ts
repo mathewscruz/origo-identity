@@ -121,7 +121,7 @@ export function usePerfilAtribuicoes(perfilId?: string, colaboradorId?: string) 
   });
 }
 
-
+export function useEventosJML() {
   return useQuery({ queryKey: ["eventos_jml"], queryFn: () => fetchAll("eventos_jml", "*", "created_at", false), ...REFETCH_OPTS });
 }
 
