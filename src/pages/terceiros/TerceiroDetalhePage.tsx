@@ -82,41 +82,12 @@ export default function TerceiroDetalhePage() {
 
   const sam = (terceiro as any)?.sam_account_name || "";
 
-  const generateProfileIamQueue = async (perfilId: string, action: "assign" | "remove") => {
-    if (!sam) return;
-    // Fetch groups for this profile
-    const { data: grupos } = await supabase.from("perfil_grupos").select("*, entra_grupos(nome, entra_id)").eq("perfil_id", perfilId);
-    for (const g of (grupos || [])) {
-      await supabase.from("iam_queue" as any).insert({
-        action_type: action === "assign" ? "assign_group" : "remove_group",
-        payload_json: {
-          samAccountName: sam,
-          displayName: terceiro?.nome || "",
-          groupName: g.entra_grupos?.nome || "",
-          groupId: g.entra_grupos?.entra_id || "",
-        },
-        target_identity: sam,
-        requested_by: "sistema",
-        status: "pending",
-      });
-    }
-    // Fetch licenses for this profile
-    const { data: licencas } = await supabase.from("perfil_licencas").select("*, entra_licencas(nome, sku_id)").eq("perfil_id", perfilId);
-    for (const l of (licencas || [])) {
-      await supabase.from("iam_queue" as any).insert({
-        action_type: action === "assign" ? "assign_license" : "remove_license",
-        payload_json: {
-          samAccountName: sam,
-          displayName: terceiro?.nome || "",
-          licenseName: l.entra_licencas?.nome || "",
-          skuId: l.entra_licencas?.sku_id || "",
-        },
-        target_identity: sam,
-        requested_by: "sistema",
-        status: "pending",
-      });
-    }
-  };
+  const getTerceiroIdentity = () => ({
+    id: id!,
+    nome: terceiro?.nome || "",
+    email: terceiro?.email || null,
+    sam_account_name: sam || null,
+  });
 
   const handleAtribuirPerfil = async () => {
     if (!selectedPerfil || !id) return;
@@ -128,8 +99,8 @@ export default function TerceiroDetalhePage() {
       ativo: true,
     });
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
-    // Generate iam_queue for groups/licenses
-    await generateProfileIamQueue(selectedPerfil, "assign");
+    // Generate iam_queue for groups/licenses/apps
+    await queueFullProfileActions([getTerceiroIdentity()], [selectedPerfil], "assign", { triggerImmediately: false });
     await logAuditoria({ acao: "atribuir_perfil_terceiro", entidade: "perfil_atribuicoes", entidade_id: id, resumo: `Perfil "${perfilNome}" atribuído ao terceiro ${terceiro.nome}`, operador: profile?.email });
     toast({ title: "Perfil atribuído — solicitações de acesso enviadas" });
     qc.invalidateQueries({ queryKey: ["terceiro_atribuicoes", id] });
@@ -140,9 +111,9 @@ export default function TerceiroDetalhePage() {
 
   const handleRevogar = async (atribuicaoId: string, perfilId?: string) => {
     await supabase.from("perfil_atribuicoes").update({ ativo: false, data_revogacao: new Date().toISOString() }).eq("id", atribuicaoId);
-    // Generate iam_queue to remove groups/licenses
+    // Generate iam_queue to remove groups/licenses/apps
     if (perfilId) {
-      await generateProfileIamQueue(perfilId, "remove");
+      await queueFullProfileActions([getTerceiroIdentity()], [perfilId], "remove", { triggerImmediately: false });
     }
     await logAuditoria({ acao: "revogar_perfil_terceiro", entidade: "perfil_atribuicoes", entidade_id: id!, resumo: `Perfil revogado do terceiro ${terceiro.nome}`, operador: profile?.email });
     toast({ title: "Perfil revogado — solicitações de remoção enviadas" });
