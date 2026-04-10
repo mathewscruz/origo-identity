@@ -22,6 +22,8 @@ interface StatusChangeParams {
   newStatus: string;
   operadorEmail: string | null;
   operadorNome: string | null;
+  /** If true, skip the colaboradores.update({status}) — caller already did it */
+  skipStatusUpdate?: boolean;
 }
 
 /**
