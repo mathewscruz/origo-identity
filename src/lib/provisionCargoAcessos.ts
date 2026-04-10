@@ -90,6 +90,14 @@ export async function provisionCargoAcessos(
 
   // Create new cargo-based perfil_atribuicoes
   if (newCargoId && newPerfilIds.length > 0) {
+    // Safeguard: deactivate any existing active cargo atribuicoes to prevent duplicates
+    await supabase
+      .from("perfil_atribuicoes")
+      .update({ ativo: false, data_revogacao: new Date().toISOString() } as any)
+      .eq("colaborador_id", colaboradorId)
+      .eq("origem", "cargo")
+      .eq("ativo", true);
+
     const inserts = newPerfilIds.map((perfilId: string) => ({
       perfil_id: perfilId,
       colaborador_id: colaboradorId,
