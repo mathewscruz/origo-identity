@@ -54,9 +54,11 @@ export async function handleStatusChange(params: StatusChangeParams): Promise<{ 
     }
   }
 
-  // Update status in database
-  const { error: updateErr } = await supabase.from("colaboradores").update({ status: newStatus as any }).eq("id", colab.id);
-  if (updateErr) return { success: false, error: updateErr.message };
+  // Update status in database (skip if caller already did it)
+  if (!params.skipStatusUpdate) {
+    const { error: updateErr } = await supabase.from("colaboradores").update({ status: newStatus as any }).eq("id", colab.id);
+    if (updateErr) return { success: false, error: updateErr.message };
+  }
 
   // Audit log
   await logAuditoria({
