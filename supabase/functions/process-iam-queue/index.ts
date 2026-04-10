@@ -274,18 +274,26 @@ async function executeAction(
         const errText = await res.text();
         return { success: false, message: `Erro: ${errText}` };
       }
-      const listRes = await fetch(`${graphBase}/servicePrincipals/${spObjectId}/appRoleAssignedTo?$filter=principalId eq '${userId}'`, { headers });
-      if (listRes.ok) {
-        const listData = await listRes.json();
-        if (listData.value && listData.value.length > 0) {
-          for (const assignment of listData.value) {
-            await fetch(`${graphBase}/servicePrincipals/${spObjectId}/appRoleAssignedTo/${assignment.id}`, { method: "DELETE", headers });
-          }
-          return { success: true, message: `App removido` };
-        }
-        return { success: true, message: `Usuário já não tinha acesso`, alreadyExists: true };
+      // List all assignments and filter client-side (Graph API doesn't support $filter on this endpoint in all tenants)
+      const listRes = await fetch(`${graphBase}/servicePrincipals/${spObjectId}/appRoleAssignedTo?$top=999`, { headers });
+      if (!listRes.ok) {
+        const errText = await listRes.text();
+        console.error(`[remove_app] Failed to list assignments (${listRes.status}): ${errText.substring(0, 300)}`);
+        return { success: false, message: `Erro ao listar assignments: ${listRes.status}` };
       }
-      return { success: false, message: `Erro ao listar assignments` };
+      const listData = await listRes.json();
+      const userAssignments = (listData.value || []).filter((a: any) => a.principalId === userId);
+      if (userAssignments.length > 0) {
+        for (const assignment of userAssignments) {
+          const delRes = await fetch(`${graphBase}/servicePrincipals/${spObjectId}/appRoleAssignedTo/${assignment.id}`, { method: "DELETE", headers });
+          if (delRes.status !== 204 && !delRes.ok) {
+            const delErr = await delRes.text();
+            console.warn(`[remove_app] Failed to delete assignment ${assignment.id}: ${delErr.substring(0, 200)}`);
+          }
+        }
+        return { success: true, message: `App removido (${userAssignments.length} assignment(s))` };
+      }
+      return { success: true, message: `Usuário já não tinha acesso`, alreadyExists: true };
     }
 
     case "disable_entra": {
