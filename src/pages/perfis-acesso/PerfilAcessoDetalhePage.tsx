@@ -57,6 +57,9 @@ export default function PerfilAcessoDetalhePage() {
       return data ?? [];
     },
   });
+  const { data: sharepointSites } = useSharepointSites();
+  const { data: allPastas } = useAllSharepointPastas();
+  const { data: perfilSharepoint } = usePerfilSharepoint(id);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
