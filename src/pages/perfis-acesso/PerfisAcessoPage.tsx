@@ -7,10 +7,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Search, Pencil, Trash2, Shield, ShieldCheck, ShieldAlert } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Link } from "react-router-dom";
 import { usePerfisAcesso, useAplicacoes, useEntraLicencas, useEntraGrupos, useSharepointSites, useAllSharepointPastas } from "@/hooks/useOrigoData";
+import SharepointFolderTree, { type SpPermission } from "@/components/SharepointFolderTree";
 import { Skeleton } from "@/components/ui/skeleton";
 import TablePagination, { usePagination } from "@/components/TablePagination";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -98,15 +97,8 @@ export default function PerfisAcessoPage() {
   const { toast } = useToast();
 
   // SharePoint state for new/edit dialog
-  const [spItems, setSpItems] = useState<Array<{ site_id: string; pasta_nivel1_id: string | null; pasta_nivel2_id: string | null; permissao: string }>>([]);
-  const [spNewSite, setSpNewSite] = useState("");
-  const [spNewPasta1, setSpNewPasta1] = useState("");
-  const [spNewPasta2, setSpNewPasta2] = useState("");
-  const [spNewPerm, setSpNewPerm] = useState("leitura");
+  const [spItems, setSpItems] = useState<SpPermission[]>([]);
   const [spFolderLoading, setSpFolderLoading] = useState(false);
-  const [spSitePopoverOpen, setSpSitePopoverOpen] = useState(false);
-  const spPastasNivel1 = useMemo(() => (allPastas ?? []).filter((p: any) => p.site_db_id === spNewSite && !p.parent_id), [allPastas, spNewSite]);
-  const spPastasNivel2 = useMemo(() => (allPastas ?? []).filter((p: any) => p.parent_id === spNewPasta1), [allPastas, spNewPasta1]);
 
   const syncFoldersForSite = useCallback(async (siteDbId: string) => {
     // Check if folders already loaded
@@ -141,7 +133,7 @@ export default function PerfisAcessoPage() {
   const ativosPerfis = allPerfis.filter((p: any) => p.ativo).length;
   const privilegiadosPerfis = allPerfis.filter((p: any) => p.tipo === "privilegiado").length;
 
-  const openNew = () => { setForm(emptyForm); setEditingId(null); setBuscaApps(""); setBuscaLicencas(""); setBuscaGrupos(""); setSpItems([]); setSpNewSite(""); setSpNewPasta1(""); setSpNewPasta2(""); setSpNewPerm("leitura"); setDialogOpen(true); };
+  const openNew = () => { setForm(emptyForm); setEditingId(null); setBuscaApps(""); setBuscaLicencas(""); setBuscaGrupos(""); setSpItems([]); setDialogOpen(true); };
   const openEdit = async (p: any) => {
     const [appsRes, licsRes, grpsRes, spRes] = await Promise.all([
       (supabase as any).from("perfil_aplicacoes").select("aplicacao_id").eq("perfil_id", p.id),
@@ -158,7 +150,7 @@ export default function PerfisAcessoPage() {
     });
     setSpItems((spRes.data ?? []).map((s: any) => ({ site_id: s.site_id, pasta_nivel1_id: s.pasta_nivel1_id, pasta_nivel2_id: s.pasta_nivel2_id, permissao: s.permissao })));
     setEditingId(p.id);
-    setBuscaApps(""); setBuscaLicencas(""); setBuscaGrupos(""); setSpNewSite(""); setSpNewPasta1(""); setSpNewPasta2(""); setSpNewPerm("leitura");
+    setBuscaApps(""); setBuscaLicencas(""); setBuscaGrupos("");
     setDialogOpen(true);
   };
 
@@ -509,107 +501,14 @@ export default function PerfisAcessoPage() {
             </TabsContent>
 
             <TabsContent value="sharepoint" className="mt-4 overflow-auto flex-1">
-              <p className="text-xs text-muted-foreground mb-2">Defina os sites e pastas do SharePoint que este perfil pode acessar.</p>
-              <div className="space-y-3 mb-3 rounded-md border p-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Site</Label>
-                   <Popover open={spSitePopoverOpen} onOpenChange={setSpSitePopoverOpen}>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" role="combobox" className="w-full justify-between font-normal h-10">
-                          {spNewSite ? (sharepointSites ?? []).find((s: any) => s.id === spNewSite)?.nome || "Site" : "Selecione o site"}
-                          <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[320px] p-0" align="start">
-                        <Command>
-                          <CommandInput placeholder="Buscar site..." />
-                          <CommandList>
-                            <CommandEmpty>Nenhum site encontrado.</CommandEmpty>
-                            <CommandGroup>
-                              {(sharepointSites ?? []).map((s: any) => (
-                                <CommandItem key={s.id} value={s.nome} onSelect={() => { setSpNewSite(s.id); setSpNewPasta1(""); setSpNewPasta2(""); syncFoldersForSite(s.id); setSpSitePopoverOpen(false); }}>
-                                  {s.nome}
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Permissão</Label>
-                    <Select value={spNewPerm} onValueChange={setSpNewPerm}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="leitura">Leitura</SelectItem>
-                        <SelectItem value="escrita">Escrita</SelectItem>
-                        <SelectItem value="controle_total">Controle Total</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                {spNewSite && (spFolderLoading ? <p className="text-xs text-muted-foreground animate-pulse">Carregando pastas...</p> : spPastasNivel1.length > 0) && !spFolderLoading && (
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Pasta Nível 1 (opcional)</Label>
-                      <Select value={spNewPasta1} onValueChange={v => { setSpNewPasta1(v); setSpNewPasta2(""); }}>
-                        <SelectTrigger><SelectValue placeholder="Todas" /></SelectTrigger>
-                        <SelectContent>
-                          {spPastasNivel1.map((p: any) => (
-                            <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {spNewPasta1 && spPastasNivel2.length > 0 && (
-                      <div className="space-y-1">
-                        <Label className="text-xs">Pasta Nível 2 (opcional)</Label>
-                        <Select value={spNewPasta2} onValueChange={setSpNewPasta2}>
-                          <SelectTrigger><SelectValue placeholder="Todas" /></SelectTrigger>
-                          <SelectContent>
-                            {spPastasNivel2.map((p: any) => (
-                              <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                  </div>
-                )}
-                <Button size="sm" disabled={!spNewSite} onClick={() => {
-                  setSpItems(prev => [...prev, { site_id: spNewSite, pasta_nivel1_id: spNewPasta1 || null, pasta_nivel2_id: spNewPasta2 || null, permissao: spNewPerm }]);
-                  setSpNewSite(""); setSpNewPasta1(""); setSpNewPasta2(""); setSpNewPerm("leitura");
-                }}><Plus className="mr-1 h-3 w-3" />Adicionar</Button>
-              </div>
-              <ScrollArea className="h-48 rounded-md border p-3">
-                {spItems.length === 0 ? (
-                  <EmptyState message="Nenhuma permissão SharePoint adicionada." size="sm" />
-                ) : (
-                  <div className="space-y-2">
-                    {spItems.map((item, idx) => {
-                      const site = (sharepointSites ?? []).find((s: any) => s.id === item.site_id);
-                      const p1 = item.pasta_nivel1_id ? (allPastas ?? []).find((p: any) => p.id === item.pasta_nivel1_id) : null;
-                      const p2 = item.pasta_nivel2_id ? (allPastas ?? []).find((p: any) => p.id === item.pasta_nivel2_id) : null;
-                      const permLabel = item.permissao === "controle_total" ? "Controle Total" : item.permissao.charAt(0).toUpperCase() + item.permissao.slice(1);
-                      return (
-                        <div key={idx} className="flex items-center justify-between bg-muted/50 rounded px-2 py-1.5 text-sm">
-                          <div className="flex-1 min-w-0">
-                            <span className="font-medium">{site?.nome || "Site"}</span>
-                            {p1 && <span className="text-muted-foreground"> / {p1.nome}</span>}
-                            {p2 && <span className="text-muted-foreground"> / {p2.nome}</span>}
-                            <Badge variant="outline" className="ml-2 text-xs">{permLabel}</Badge>
-                          </div>
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSpItems(prev => prev.filter((_, i) => i !== idx))}>
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </ScrollArea>
+              <SharepointFolderTree
+                sites={sharepointSites ?? []}
+                allPastas={allPastas ?? []}
+                spItems={spItems}
+                onItemsChange={setSpItems}
+                onSyncFolders={syncFoldersForSite}
+                folderLoading={spFolderLoading}
+              />
             </TabsContent>
           </Tabs>
 
