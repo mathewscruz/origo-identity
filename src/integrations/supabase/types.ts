@@ -1244,6 +1244,65 @@ export type Database = {
           },
         ]
       }
+      perfil_sharepoint: {
+        Row: {
+          created_at: string
+          id: string
+          pasta_nivel1_id: string | null
+          pasta_nivel2_id: string | null
+          perfil_id: string
+          permissao: string
+          site_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          pasta_nivel1_id?: string | null
+          pasta_nivel2_id?: string | null
+          perfil_id: string
+          permissao?: string
+          site_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          pasta_nivel1_id?: string | null
+          pasta_nivel2_id?: string | null
+          perfil_id?: string
+          permissao?: string
+          site_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "perfil_sharepoint_pasta_nivel1_id_fkey"
+            columns: ["pasta_nivel1_id"]
+            isOneToOne: false
+            referencedRelation: "sharepoint_pastas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "perfil_sharepoint_pasta_nivel2_id_fkey"
+            columns: ["pasta_nivel2_id"]
+            isOneToOne: false
+            referencedRelation: "sharepoint_pastas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "perfil_sharepoint_perfil_id_fkey"
+            columns: ["perfil_id"]
+            isOneToOne: false
+            referencedRelation: "perfis_acesso"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "perfil_sharepoint_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sharepoint_sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       perfis_acesso: {
         Row: {
           ativo: boolean
@@ -1532,6 +1591,75 @@ export type Database = {
           token?: string | null
           total_itens?: number
           updated_at?: string
+        }
+        Relationships: []
+      }
+      sharepoint_pastas: {
+        Row: {
+          caminho: string | null
+          created_at: string
+          drive_item_id: string | null
+          id: string
+          nome: string
+          parent_id: string | null
+          site_db_id: string
+        }
+        Insert: {
+          caminho?: string | null
+          created_at?: string
+          drive_item_id?: string | null
+          id?: string
+          nome: string
+          parent_id?: string | null
+          site_db_id: string
+        }
+        Update: {
+          caminho?: string | null
+          created_at?: string
+          drive_item_id?: string | null
+          id?: string
+          nome?: string
+          parent_id?: string | null
+          site_db_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sharepoint_pastas_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "sharepoint_pastas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sharepoint_pastas_site_db_id_fkey"
+            columns: ["site_db_id"]
+            isOneToOne: false
+            referencedRelation: "sharepoint_sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sharepoint_sites: {
+        Row: {
+          created_at: string
+          id: string
+          nome: string
+          site_id: string
+          url: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          nome: string
+          site_id: string
+          url?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          nome?: string
+          site_id?: string
+          url?: string | null
         }
         Relationships: []
       }
