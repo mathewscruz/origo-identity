@@ -220,6 +220,24 @@ export default function IntegracoesPage() {
       <Card className="border-primary/20">
         <CardHeader>
           <div className="flex items-center gap-3">
+            <FolderOpen className="h-5 w-5 text-primary" />
+            <div><CardTitle className="text-base">Sincronizar Sites — SharePoint</CardTitle><CardDescription>Importa sites e pastas (2 níveis) do SharePoint via Microsoft Graph para uso nos perfis de acesso</CardDescription></div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="text-sm text-muted-foreground space-y-1">
+            <p>Lista todos os sites do tenant e suas pastas até 2 níveis de profundidade.</p>
+            <p>Os sites e pastas importados ficam disponíveis para vincular aos <strong>Perfis de Acesso</strong>.</p>
+          </div>
+          <Button onClick={handleSyncSharepointSites} disabled={spSiteSyncing}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${spSiteSyncing ? "animate-spin" : ""}`} />{spSiteSyncing ? "Sincronizando sites..." : "Sincronizar Sites do SharePoint"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="border-primary/20">
+        <CardHeader>
+          <div className="flex items-center gap-3">
             <FileSpreadsheet className="h-5 w-5 text-primary" />
             <div><CardTitle className="text-base">Importação CSV — Upload Manual</CardTitle><CardDescription>Fallback: envie um CSV manualmente caso a rotina automática falhe</CardDescription></div>
             <Badge className="ml-auto" variant="outline">Fallback</Badge>
