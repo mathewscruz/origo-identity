@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
   RefreshCw, CheckCircle, AlertCircle, Cloud, Users,
-  FileUp, Trash2, AlertTriangle, FileSpreadsheet, Clock, Shield, Plug,
+  FileUp, Trash2, AlertTriangle, FileSpreadsheet, Clock, Shield, Plug, FolderOpen,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSyncJobsCsv } from "@/hooks/useOrigoData";
