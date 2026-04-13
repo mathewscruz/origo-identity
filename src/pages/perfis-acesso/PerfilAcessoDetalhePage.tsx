@@ -237,10 +237,11 @@ export default function PerfilAcessoDetalhePage() {
         <Button variant="outline" size="sm" onClick={openEdit}><Pencil className="mr-1 h-3 w-3" />Editar</Button>
       </div>
 
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-6 gap-4">
         <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Aplicações</p><p className="text-lg font-semibold">{appNames.length}</p></CardContent></Card>
         <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Licenças</p><p className="text-lg font-semibold">{licNames.length}</p></CardContent></Card>
         <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Grupos</p><p className="text-lg font-semibold">{grpNames.length}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">SharePoint</p><p className="text-lg font-semibold">{(perfilSharepoint ?? []).length}</p></CardContent></Card>
         <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Cargos</p><p className="text-lg font-semibold">{cargos.length}</p></CardContent></Card>
         <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Pessoas</p><p className="text-lg font-semibold">{atribuicoes?.length ?? 0}</p></CardContent></Card>
       </div>
