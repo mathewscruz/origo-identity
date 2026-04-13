@@ -1,37 +1,57 @@
 
 
-# Plano: Filtrar sites SharePoint principais e melhorar UX de seleção
+# Plano: Permissionamento individual por pasta/subpasta no SharePoint
 
-## Diagnóstico
-A sincronização está funcionando corretamente — importou 4.594 sites, incluindo "Segurança da Informação". Porém:
-- **3.418 sites são pessoais** (OneDrive, URLs com `-my.sharepoint.com`) — devem ser excluídos
-- Os 1.174 sites restantes são sites reais (`/sites/...`)
-- Os campos de pasta já aparecem condicionalmente após selecionar um site (código OK), mas o volume de sites pessoais polui a lista
+## Problema atual
+O fluxo atual exige selecionar site, pasta e permissao separadamente e adicionar um item por vez. Nao permite definir permissoes diferentes para pastas diferentes dentro do mesmo site de forma intuitiva.
 
-## Solução
+## Solucao: Arvore de pastas com permissao por item
 
-### 1. Edge Function: filtrar sites pessoais na importação
-Modificar `sync-sharepoint-sites/index.ts` para excluir sites com URL contendo `-my.sharepoint.com` (OneDrive pessoal) antes do upsert. Isso reduz de ~4.600 para ~1.174 sites.
+Redesenhar a aba SharePoint para mostrar uma **arvore hierarquica de pastas** apos selecionar o site. Cada pasta/subpasta tera um seletor de permissao individual ao lado (Leitura / Escrita / Controle Total / Nenhuma).
 
-### 2. Limpar sites pessoais já importados
-Criar uma migration para deletar os registros existentes de sites pessoais da tabela `sharepoint_sites`.
+### Fluxo do usuario
+1. Seleciona o site SharePoint (combobox com busca, como ja existe)
+2. As pastas do site carregam automaticamente em formato de arvore expandivel
+3. Cada pasta mostra um seletor de permissao ao lado (dropdown ou badges clicaveis)
+4. O usuario define a permissao desejada para cada pasta/subpasta individualmente
+5. Subpastas herdam a permissao do pai por padrao, mas podem ser sobrescritas
+6. As permissoes definidas aparecem em um resumo abaixo
 
-### 3. Frontend: adicionar busca no select de sites
-Com ~1.174 sites, o dropdown ainda é grande. Adicionar um campo de busca/filtro dentro do Select de sites no `PerfisAcessoPage.tsx` e `PerfilAcessoDetalhePage.tsx` para facilitar a localização.
+### UI proposta
+```text
+[Site: Seguranca da Informacao     v] [Buscar...]
 
-### 4. Confirmar que pastas só aparecem após seleção
-O código atual já condiciona os campos de pasta a `spNewSite` estar preenchido (linha 535). Nenhuma alteração necessária neste ponto.
+Pastas do site:
+  > Documentos           [Leitura v]
+    > Politicas          [Escrita v]  (sobrescrito)
+    > Templates          [--herda--]
+  > Relatórios           [Nenhuma  ]
+  > Projetos             [Controle Total v]
+    > 2024               [--herda--]
 
-## Arquivos impactados
-| Arquivo | Alteração |
+Resumo de permissoes adicionadas:
+  SI / Documentos            Leitura    [x]
+  SI / Documentos / Politicas  Escrita  [x]
+  SI / Projetos              Controle Total [x]
+```
+
+### Mudancas tecnicas
+
+| Arquivo | Alteracao |
 |---|---|
-| `supabase/functions/sync-sharepoint-sites/index.ts` | Filtrar URLs `-my.sharepoint.com` antes do upsert |
-| Migration SQL | `DELETE FROM sharepoint_sites WHERE url LIKE '%-my.sharepoint.com/%'` |
-| `src/pages/perfis-acesso/PerfisAcessoPage.tsx` | Adicionar busca no Select de sites |
-| `src/pages/perfis-acesso/PerfilAcessoDetalhePage.tsx` | Mesmo ajuste de busca |
+| `src/pages/perfis-acesso/PerfisAcessoPage.tsx` | Reescrever a aba SharePoint: arvore de pastas com permissao individual por item, heranca do pai, resumo de permissoes |
+| `src/pages/perfis-acesso/PerfilAcessoDetalhePage.tsx` | Mesmo ajuste na visualizacao/edicao de permissoes SharePoint |
 
-## Resultado esperado
-- Apenas sites SharePoint reais (~1.174) aparecem para seleção
-- Campo de busca facilita encontrar sites como "Segurança da Informação"
-- Pastas só aparecem após selecionar um site (já funciona)
+### Detalhes de implementacao
+- Componente de arvore usando `Collapsible` para expandir/colapsar pastas
+- Cada no da arvore tem um `Select` com opcoes: "Nenhuma", "Leitura", "Escrita", "Controle Total"
+- Ao definir permissao em uma pasta, todas subpastas mostram "(herda: Leitura)" ate que sejam sobrescritas
+- `spItems` continua sendo o array salvo no banco, mas agora cada pasta pode ter sua propria permissao
+- O site inteiro pode receber permissao (sem pasta selecionada = acesso ao site completo)
+- Pastas sem permissao explicita nao geram registro em `perfil_sharepoint`
+
+### Resultado esperado
+- Controle granular de permissoes por pasta e subpasta
+- Heranca visual clara entre niveis
+- Interface intuitiva sem necessidade de adicionar itens manualmente um a um
 
