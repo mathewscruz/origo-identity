@@ -120,20 +120,24 @@ export default function PerfisAcessoPage() {
   const ativosPerfis = allPerfis.filter((p: any) => p.ativo).length;
   const privilegiadosPerfis = allPerfis.filter((p: any) => p.tipo === "privilegiado").length;
 
-  const openNew = () => { setForm(emptyForm); setEditingId(null); setBuscaApps(""); setBuscaLicencas(""); setBuscaGrupos(""); setDialogOpen(true); };
+  const openNew = () => { setForm(emptyForm); setEditingId(null); setBuscaApps(""); setBuscaLicencas(""); setBuscaGrupos(""); setSpItems([]); setSpNewSite(""); setSpNewPasta1(""); setSpNewPasta2(""); setSpNewPerm("leitura"); setDialogOpen(true); };
   const openEdit = async (p: any) => {
-    const { data: apps } = await (supabase as any).from("perfil_aplicacoes").select("aplicacao_id").eq("perfil_id", p.id);
-    const { data: lics } = await (supabase as any).from("perfil_licencas").select("licenca_id").eq("perfil_id", p.id);
-    const { data: grps } = await (supabase as any).from("perfil_grupos").select("grupo_id").eq("perfil_id", p.id);
+    const [appsRes, licsRes, grpsRes, spRes] = await Promise.all([
+      (supabase as any).from("perfil_aplicacoes").select("aplicacao_id").eq("perfil_id", p.id),
+      (supabase as any).from("perfil_licencas").select("licenca_id").eq("perfil_id", p.id),
+      (supabase as any).from("perfil_grupos").select("grupo_id").eq("perfil_id", p.id),
+      (supabase as any).from("perfil_sharepoint").select("site_id, pasta_nivel1_id, pasta_nivel2_id, permissao").eq("perfil_id", p.id),
+    ]);
     setForm({
       nome: p.nome, descricao: p.descricao || "",
-      aplicacao_ids: (apps ?? []).map((a: any) => a.aplicacao_id),
-      licenca_ids: (lics ?? []).map((l: any) => l.licenca_id),
-      grupo_ids: (grps ?? []).map((g: any) => g.grupo_id),
+      aplicacao_ids: (appsRes.data ?? []).map((a: any) => a.aplicacao_id),
+      licenca_ids: (licsRes.data ?? []).map((l: any) => l.licenca_id),
+      grupo_ids: (grpsRes.data ?? []).map((g: any) => g.grupo_id),
       tipo: p.tipo, ativo: p.ativo,
     });
+    setSpItems((spRes.data ?? []).map((s: any) => ({ site_id: s.site_id, pasta_nivel1_id: s.pasta_nivel1_id, pasta_nivel2_id: s.pasta_nivel2_id, permissao: s.permissao })));
     setEditingId(p.id);
-    setBuscaApps(""); setBuscaLicencas(""); setBuscaGrupos("");
+    setBuscaApps(""); setBuscaLicencas(""); setBuscaGrupos(""); setSpNewSite(""); setSpNewPasta1(""); setSpNewPasta2(""); setSpNewPerm("leitura");
     setDialogOpen(true);
   };
 
