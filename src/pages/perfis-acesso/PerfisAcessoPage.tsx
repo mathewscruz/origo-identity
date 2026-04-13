@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Search, Pencil, Trash2, Shield, ShieldCheck, ShieldAlert } from "lucide-react";
 import { Link } from "react-router-dom";
-import { usePerfisAcesso, useAplicacoes, useEntraLicencas, useEntraGrupos } from "@/hooks/useOrigoData";
+import { usePerfisAcesso, useAplicacoes, useEntraLicencas, useEntraGrupos, useSharepointSites, useAllSharepointPastas } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
 import TablePagination, { usePagination } from "@/components/TablePagination";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -45,6 +45,8 @@ export default function PerfisAcessoPage() {
   const { data: aplicacoes } = useAplicacoes();
   const { data: entraLicencas } = useEntraLicencas();
   const { data: entraGrupos } = useEntraGrupos();
+  const { data: sharepointSites } = useSharepointSites();
+  const { data: allPastas } = useAllSharepointPastas();
 
   // Fetch counts for extra columns
   const { data: atribuicoesCounts } = useQuery({
@@ -93,6 +95,15 @@ export default function PerfisAcessoPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  // SharePoint state for new/edit dialog
+  const [spItems, setSpItems] = useState<Array<{ site_id: string; pasta_nivel1_id: string | null; pasta_nivel2_id: string | null; permissao: string }>>([]);
+  const [spNewSite, setSpNewSite] = useState("");
+  const [spNewPasta1, setSpNewPasta1] = useState("");
+  const [spNewPasta2, setSpNewPasta2] = useState("");
+  const [spNewPerm, setSpNewPerm] = useState("leitura");
+  const spPastasNivel1 = useMemo(() => (allPastas ?? []).filter((p: any) => p.site_db_id === spNewSite && !p.parent_id), [allPastas, spNewSite]);
+  const spPastasNivel2 = useMemo(() => (allPastas ?? []).filter((p: any) => p.parent_id === spNewPasta1), [allPastas, spNewPasta1]);
+
   const allPerfis = perfis ?? [];
   const list = allPerfis.filter((p: any) => {
     if (busca && !p.nome.toLowerCase().includes(busca.toLowerCase())) return false;
@@ -109,20 +120,24 @@ export default function PerfisAcessoPage() {
   const ativosPerfis = allPerfis.filter((p: any) => p.ativo).length;
   const privilegiadosPerfis = allPerfis.filter((p: any) => p.tipo === "privilegiado").length;
 
-  const openNew = () => { setForm(emptyForm); setEditingId(null); setBuscaApps(""); setBuscaLicencas(""); setBuscaGrupos(""); setDialogOpen(true); };
+  const openNew = () => { setForm(emptyForm); setEditingId(null); setBuscaApps(""); setBuscaLicencas(""); setBuscaGrupos(""); setSpItems([]); setSpNewSite(""); setSpNewPasta1(""); setSpNewPasta2(""); setSpNewPerm("leitura"); setDialogOpen(true); };
   const openEdit = async (p: any) => {
-    const { data: apps } = await (supabase as any).from("perfil_aplicacoes").select("aplicacao_id").eq("perfil_id", p.id);
-    const { data: lics } = await (supabase as any).from("perfil_licencas").select("licenca_id").eq("perfil_id", p.id);
-    const { data: grps } = await (supabase as any).from("perfil_grupos").select("grupo_id").eq("perfil_id", p.id);
+    const [appsRes, licsRes, grpsRes, spRes] = await Promise.all([
+      (supabase as any).from("perfil_aplicacoes").select("aplicacao_id").eq("perfil_id", p.id),
+      (supabase as any).from("perfil_licencas").select("licenca_id").eq("perfil_id", p.id),
+      (supabase as any).from("perfil_grupos").select("grupo_id").eq("perfil_id", p.id),
+      (supabase as any).from("perfil_sharepoint").select("site_id, pasta_nivel1_id, pasta_nivel2_id, permissao").eq("perfil_id", p.id),
+    ]);
     setForm({
       nome: p.nome, descricao: p.descricao || "",
-      aplicacao_ids: (apps ?? []).map((a: any) => a.aplicacao_id),
-      licenca_ids: (lics ?? []).map((l: any) => l.licenca_id),
-      grupo_ids: (grps ?? []).map((g: any) => g.grupo_id),
+      aplicacao_ids: (appsRes.data ?? []).map((a: any) => a.aplicacao_id),
+      licenca_ids: (licsRes.data ?? []).map((l: any) => l.licenca_id),
+      grupo_ids: (grpsRes.data ?? []).map((g: any) => g.grupo_id),
       tipo: p.tipo, ativo: p.ativo,
     });
+    setSpItems((spRes.data ?? []).map((s: any) => ({ site_id: s.site_id, pasta_nivel1_id: s.pasta_nivel1_id, pasta_nivel2_id: s.pasta_nivel2_id, permissao: s.permissao })));
     setEditingId(p.id);
-    setBuscaApps(""); setBuscaLicencas(""); setBuscaGrupos("");
+    setBuscaApps(""); setBuscaLicencas(""); setBuscaGrupos(""); setSpNewSite(""); setSpNewPasta1(""); setSpNewPasta2(""); setSpNewPerm("leitura");
     setDialogOpen(true);
   };
 
@@ -173,7 +188,11 @@ export default function PerfisAcessoPage() {
       await (supabase as any).from("perfil_grupos").delete().eq("perfil_id", perfilId);
       if (form.grupo_ids.length > 0) await (supabase as any).from("perfil_grupos").insert(form.grupo_ids.map(gid => ({ perfil_id: perfilId, grupo_id: gid })));
 
-      // Entra ID provisioning diff
+      // Save SharePoint permissions
+      await (supabase as any).from("perfil_sharepoint").delete().eq("perfil_id", perfilId);
+      if (spItems.length > 0) await (supabase as any).from("perfil_sharepoint").insert(spItems.map(sp => ({ perfil_id: perfilId, site_id: sp.site_id, pasta_nivel1_id: sp.pasta_nivel1_id || null, pasta_nivel2_id: sp.pasta_nivel2_id || null, permissao: sp.permissao })));
+
+
       if (perfilId) {
         const diff = {
           addedGrupoIds: form.grupo_ids.filter(id => !oldGrupoIds.includes(id)),
@@ -231,8 +250,8 @@ export default function PerfisAcessoPage() {
         (supabase as any).from("perfil_aplicacoes").delete().eq("perfil_id", perfId),
         (supabase as any).from("perfil_licencas").delete().eq("perfil_id", perfId),
         (supabase as any).from("perfil_grupos").delete().eq("perfil_id", perfId),
+        (supabase as any).from("perfil_sharepoint").delete().eq("perfil_id", perfId),
         (supabase as any).from("cargo_perfis").delete().eq("perfil_id", perfId),
-        // perfil_composicao table removed
       ]);
 
       const { error } = await supabase.from("perfis_acesso").delete().eq("id", perfId);
@@ -370,11 +389,12 @@ export default function PerfisAcessoPage() {
           <DialogHeader><DialogTitle>{editingId ? "Editar Perfil" : "Novo Perfil de Acesso"}</DialogTitle></DialogHeader>
           
           <Tabs defaultValue="geral" className="flex-1 overflow-hidden flex flex-col">
-            <TabsList className="w-full justify-start">
+            <TabsList className="w-full justify-start flex-wrap">
               <TabsTrigger value="geral">Geral</TabsTrigger>
               <TabsTrigger value="aplicacoes">Aplicações ({form.aplicacao_ids.length})</TabsTrigger>
               <TabsTrigger value="licencas">Licenças ({form.licenca_ids.length})</TabsTrigger>
               <TabsTrigger value="grupos">Grupos ({form.grupo_ids.length})</TabsTrigger>
+              <TabsTrigger value="sharepoint">SharePoint ({spItems.length})</TabsTrigger>
             </TabsList>
 
             <TabsContent value="geral" className="mt-4 space-y-4 overflow-auto flex-1">
@@ -464,6 +484,95 @@ export default function PerfisAcessoPage() {
                   ))}
                   {(entraGrupos ?? []).length === 0 && <EmptyState message="Nenhum grupo encontrado." size="sm" />}
                 </div>
+              </ScrollArea>
+            </TabsContent>
+
+            <TabsContent value="sharepoint" className="mt-4 overflow-auto flex-1">
+              <p className="text-xs text-muted-foreground mb-2">Defina os sites e pastas do SharePoint que este perfil pode acessar.</p>
+              <div className="space-y-3 mb-3 rounded-md border p-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Site</Label>
+                    <Select value={spNewSite} onValueChange={v => { setSpNewSite(v); setSpNewPasta1(""); setSpNewPasta2(""); }}>
+                      <SelectTrigger><SelectValue placeholder="Selecione o site" /></SelectTrigger>
+                      <SelectContent>
+                        {(sharepointSites ?? []).map((s: any) => (
+                          <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Permissão</Label>
+                    <Select value={spNewPerm} onValueChange={setSpNewPerm}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="leitura">Leitura</SelectItem>
+                        <SelectItem value="escrita">Escrita</SelectItem>
+                        <SelectItem value="controle_total">Controle Total</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {spNewSite && spPastasNivel1.length > 0 && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Pasta Nível 1 (opcional)</Label>
+                      <Select value={spNewPasta1} onValueChange={v => { setSpNewPasta1(v); setSpNewPasta2(""); }}>
+                        <SelectTrigger><SelectValue placeholder="Todas" /></SelectTrigger>
+                        <SelectContent>
+                          {spPastasNivel1.map((p: any) => (
+                            <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {spNewPasta1 && spPastasNivel2.length > 0 && (
+                      <div className="space-y-1">
+                        <Label className="text-xs">Pasta Nível 2 (opcional)</Label>
+                        <Select value={spNewPasta2} onValueChange={setSpNewPasta2}>
+                          <SelectTrigger><SelectValue placeholder="Todas" /></SelectTrigger>
+                          <SelectContent>
+                            {spPastasNivel2.map((p: any) => (
+                              <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <Button size="sm" disabled={!spNewSite} onClick={() => {
+                  setSpItems(prev => [...prev, { site_id: spNewSite, pasta_nivel1_id: spNewPasta1 || null, pasta_nivel2_id: spNewPasta2 || null, permissao: spNewPerm }]);
+                  setSpNewSite(""); setSpNewPasta1(""); setSpNewPasta2(""); setSpNewPerm("leitura");
+                }}><Plus className="mr-1 h-3 w-3" />Adicionar</Button>
+              </div>
+              <ScrollArea className="h-48 rounded-md border p-3">
+                {spItems.length === 0 ? (
+                  <EmptyState message="Nenhuma permissão SharePoint adicionada." size="sm" />
+                ) : (
+                  <div className="space-y-2">
+                    {spItems.map((item, idx) => {
+                      const site = (sharepointSites ?? []).find((s: any) => s.id === item.site_id);
+                      const p1 = item.pasta_nivel1_id ? (allPastas ?? []).find((p: any) => p.id === item.pasta_nivel1_id) : null;
+                      const p2 = item.pasta_nivel2_id ? (allPastas ?? []).find((p: any) => p.id === item.pasta_nivel2_id) : null;
+                      const permLabel = item.permissao === "controle_total" ? "Controle Total" : item.permissao.charAt(0).toUpperCase() + item.permissao.slice(1);
+                      return (
+                        <div key={idx} className="flex items-center justify-between bg-muted/50 rounded px-2 py-1.5 text-sm">
+                          <div className="flex-1 min-w-0">
+                            <span className="font-medium">{site?.nome || "Site"}</span>
+                            {p1 && <span className="text-muted-foreground"> / {p1.nome}</span>}
+                            {p2 && <span className="text-muted-foreground"> / {p2.nome}</span>}
+                            <Badge variant="outline" className="ml-2 text-xs">{permLabel}</Badge>
+                          </div>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSpItems(prev => prev.filter((_, i) => i !== idx))}>
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </ScrollArea>
             </TabsContent>
           </Tabs>
