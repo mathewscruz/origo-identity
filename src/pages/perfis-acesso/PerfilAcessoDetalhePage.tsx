@@ -322,31 +322,25 @@ export default function PerfilAcessoDetalhePage() {
         </TabsContent>
 
         <TabsContent value="sharepoint" className="mt-4">
-          <Card><CardContent className="p-0">
-            <table className="w-full text-sm">
-              <thead><tr className="border-b text-left text-muted-foreground">
-                <th className="p-4 font-medium">Site</th>
-                <th className="p-4 font-medium">Pasta Nível 1</th>
-                <th className="p-4 font-medium">Pasta Nível 2</th>
-                <th className="p-4 font-medium">Permissão</th>
-              </tr></thead>
-              <tbody>
+          <Card><CardContent className="p-4">
+            {(perfilSharepoint ?? []).length === 0 ? (
+              <EmptyState message="Nenhuma permissão SharePoint vinculada." />
+            ) : (
+              <div className="space-y-1">
                 {(perfilSharepoint ?? []).map((ps: any, i: number) => {
                   const pastaN1 = ps.pasta_nivel1_id ? (allPastas ?? []).find((p: any) => p.id === ps.pasta_nivel1_id) : null;
                   const pastaN2 = ps.pasta_nivel2_id ? (allPastas ?? []).find((p: any) => p.id === ps.pasta_nivel2_id) : null;
-                  const permLabel = ps.permissao === "leitura" ? "Leitura" : ps.permissao === "escrita" ? "Escrita" : "Controle Total";
+                  const pLabel = ps.permissao === "leitura" ? "Leitura" : ps.permissao === "escrita" ? "Escrita" : "Controle Total";
+                  const path = [ps.sharepoint_sites?.nome, pastaN1?.nome, pastaN2?.nome].filter(Boolean).join(" / ");
                   return (
-                    <tr key={i} className="border-b last:border-0">
-                      <td className="p-4 font-medium">{ps.sharepoint_sites?.nome || "—"}</td>
-                      <td className="p-4 text-muted-foreground">{pastaN1?.nome || "— (Site inteiro)"}</td>
-                      <td className="p-4 text-muted-foreground">{pastaN2?.nome || "—"}</td>
-                      <td className="p-4"><Badge variant="outline">{permLabel}</Badge></td>
-                    </tr>
+                    <div key={i} className="flex items-center justify-between bg-muted/40 rounded px-3 py-2 text-sm">
+                      <span className="font-medium">{path || "Site"}</span>
+                      <Badge variant="outline">{pLabel}</Badge>
+                    </div>
                   );
                 })}
-                {(perfilSharepoint ?? []).length === 0 && <tr><td colSpan={4}><EmptyState message="Nenhuma permissão SharePoint vinculada." /></td></tr>}
-              </tbody>
-            </table>
+              </div>
+            )}
           </CardContent></Card>
         </TabsContent>
 
