@@ -124,6 +124,9 @@ export default function PerfilAcessoDetalhePage() {
     setBuscaApps("");
     setBuscaLicencas("");
     setBuscaGrupos("");
+    // Load existing SharePoint items
+    setSpItems((perfilSharepoint ?? []).map((ps: any) => ({ site_id: ps.site_id, pasta_nivel1_id: ps.pasta_nivel1_id || null, pasta_nivel2_id: ps.pasta_nivel2_id || null, permissao: ps.permissao })));
+    setSpNewSite(""); setSpNewPasta1(""); setSpNewPasta2(""); setSpNewPerm("leitura");
     setEditOpen(true);
   };
 
