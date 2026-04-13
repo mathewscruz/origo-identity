@@ -552,12 +552,29 @@ export default function PerfilAcessoDetalhePage() {
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
                     <Label className="text-xs">Site</Label>
-                    <Select value={spNewSite} onValueChange={v => { setSpNewSite(v); setSpNewPasta1(""); setSpNewPasta2(""); syncFoldersForSite(v); }}>
-                      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                      <SelectContent>
-                        {(sharepointSites ?? []).map((s: any) => <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    <Popover open={spSitePopoverOpen} onOpenChange={setSpSitePopoverOpen}>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" role="combobox" className="w-full justify-between font-normal h-8 text-xs">
+                          {spNewSite ? (sharepointSites ?? []).find((s: any) => s.id === spNewSite)?.nome || "Site" : "Selecione..."}
+                          <Search className="ml-2 h-3 w-3 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[320px] p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Buscar site..." />
+                          <CommandList>
+                            <CommandEmpty>Nenhum site encontrado.</CommandEmpty>
+                            <CommandGroup>
+                              {(sharepointSites ?? []).map((s: any) => (
+                                <CommandItem key={s.id} value={s.nome} onSelect={() => { setSpNewSite(s.id); setSpNewPasta1(""); setSpNewPasta2(""); syncFoldersForSite(s.id); setSpSitePopoverOpen(false); }}>
+                                  {s.nome}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Permissão</Label>
