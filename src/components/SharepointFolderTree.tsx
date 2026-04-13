@@ -268,7 +268,7 @@ function FolderRow({ folder, level, explicitPerm, inheritedPerm, onPermChange, g
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasChildren = folder.children.length > 0;
-  const currentPerm = explicitPerm || "";
+  const currentPerm = explicitPerm || "__none__";
   const showInherited = !explicitPerm && inheritedPerm;
 
   return (
