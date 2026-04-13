@@ -105,14 +105,22 @@ export default function IntegracoesPage() {
     setSpSiteSyncing(true);
     try {
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-sharepoint-sites`;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 120000);
       const res = await fetch(url, {
         method: "POST",
         headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
       const body = await res.json();
       if (!res.ok) { toast({ title: "Erro ao sincronizar sites", description: body.error || `HTTP ${res.status}`, variant: "destructive" }); }
-      else { toast({ title: "Sites SharePoint sincronizados", description: `${body.sites} sites e ${body.pastas} pastas importados` }); }
-    } catch (err: unknown) { toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" }); }
+      else { toast({ title: "Sites SharePoint sincronizados", description: `${body.sites} sites importados. As pastas serão carregadas sob demanda ao selecionar um site no perfil de acesso.` }); }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Erro";
+      toast({ title: "Erro na sincronização", description: msg.includes("abort") ? "Timeout: a sincronização pode ainda estar rodando em segundo plano." : msg, variant: "destructive" });
+    }
     setSpSiteSyncing(false);
   }, [toast]);
 
