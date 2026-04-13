@@ -1,38 +1,37 @@
 
 
-# Plano: Corrigir timeout na sincronizacao SharePoint e garantir sites completos
+# Plano: Filtrar sites SharePoint principais e melhorar UX de seleção
 
-## Problema
-A funcao encontra 4.594 sites mas tenta processar todos sequencialmente (upsert + listar drives + listar pastas L1 + listar pastas L2 para cada site). Isso ultrapassa o timeout de ~60s das Edge Functions, resultando em "Failed to fetch".
+## Diagnóstico
+A sincronização está funcionando corretamente — importou 4.594 sites, incluindo "Segurança da Informação". Porém:
+- **3.418 sites são pessoais** (OneDrive, URLs com `-my.sharepoint.com`) — devem ser excluídos
+- Os 1.174 sites restantes são sites reais (`/sites/...`)
+- Os campos de pasta já aparecem condicionalmente após selecionar um site (código OK), mas o volume de sites pessoais polui a lista
 
-## Solucao
+## Solução
 
-### 1. Processar em lotes com retorno parcial (Edge Function)
-Reescrever `sync-sharepoint-sites` para funcionar em duas fases:
-- **Fase 1 (sem parametro)**: Busca todos os sites via Graph API e faz upsert apenas dos sites na tabela `sharepoint_sites`. Isso e rapido (apenas upserts, sem navegar drives/pastas). Retorna contagem.
-- **Fase 2 (com `site_db_id`)**: Recebe um site especifico, lista seus drives e pastas (2 niveis) e faz upsert em `sharepoint_pastas`. Chamado sob demanda quando o usuario seleciona um site no perfil de acesso.
+### 1. Edge Function: filtrar sites pessoais na importação
+Modificar `sync-sharepoint-sites/index.ts` para excluir sites com URL contendo `-my.sharepoint.com` (OneDrive pessoal) antes do upsert. Isso reduz de ~4.600 para ~1.174 sites.
 
-Isso resolve o timeout porque a fase 1 processa apenas upserts simples (rapido mesmo com 4.594 sites) e a fase 2 foca em um site por vez.
+### 2. Limpar sites pessoais já importados
+Criar uma migration para deletar os registros existentes de sites pessoais da tabela `sharepoint_sites`.
 
-### 2. Batch upsert dos sites (performance)
-Em vez de upsert um a um, agrupar em lotes de 500 para reduzir round-trips ao banco.
+### 3. Frontend: adicionar busca no select de sites
+Com ~1.174 sites, o dropdown ainda é grande. Adicionar um campo de busca/filtro dentro do Select de sites no `PerfisAcessoPage.tsx` e `PerfilAcessoDetalhePage.tsx` para facilitar a localização.
 
-### 3. Sincronizacao de pastas sob demanda no frontend
-Quando o usuario seleciona um site no formulario de perfil SharePoint, se as pastas desse site ainda nao foram carregadas, disparar automaticamente a fase 2 para aquele site.
-
-### 4. Frontend: melhorar tratamento de erro
-Adicionar timeout mais longo no fetch e tratar erro de rede adequadamente.
+### 4. Confirmar que pastas só aparecem após seleção
+O código atual já condiciona os campos de pasta a `spNewSite` estar preenchido (linha 535). Nenhuma alteração necessária neste ponto.
 
 ## Arquivos impactados
-| Arquivo | Alteracao |
+| Arquivo | Alteração |
 |---|---|
-| `supabase/functions/sync-sharepoint-sites/index.ts` | Reescrever com processamento em 2 fases + batch upsert |
-| `src/pages/configuracoes/IntegracoesPage.tsx` | Tratar timeout + feedback melhor |
-| `src/pages/perfis-acesso/PerfilAcessoDetalhePage.tsx` | Sync pastas sob demanda ao selecionar site |
-| `src/pages/perfis-acesso/PerfisAcessoPage.tsx` | Mesmo ajuste de sync sob demanda |
+| `supabase/functions/sync-sharepoint-sites/index.ts` | Filtrar URLs `-my.sharepoint.com` antes do upsert |
+| Migration SQL | `DELETE FROM sharepoint_sites WHERE url LIKE '%-my.sharepoint.com/%'` |
+| `src/pages/perfis-acesso/PerfisAcessoPage.tsx` | Adicionar busca no Select de sites |
+| `src/pages/perfis-acesso/PerfilAcessoDetalhePage.tsx` | Mesmo ajuste de busca |
 
 ## Resultado esperado
-- Botao "Sincronizar Sites do SharePoint" importa todos os 4.594 sites rapidamente (sem pastas)
-- Ao selecionar um site no perfil de acesso, as pastas sao carregadas sob demanda
-- O site "Seguranca da Informacao" e todos os demais aparecem disponiveis para selecao
+- Apenas sites SharePoint reais (~1.174) aparecem para seleção
+- Campo de busca facilita encontrar sites como "Segurança da Informação"
+- Pastas só aparecem após selecionar um site (já funciona)
 
