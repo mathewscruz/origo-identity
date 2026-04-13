@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -94,10 +94,27 @@ export default function PerfilAcessoDetalhePage() {
   const [spNewPasta1, setSpNewPasta1] = useState("");
   const [spNewPasta2, setSpNewPasta2] = useState("");
   const [spNewPerm, setSpNewPerm] = useState("leitura");
+  const [spFolderLoading, setSpFolderLoading] = useState(false);
 
   // Derive pasta lists for the SP new-item form
   const spPastasNivel1 = useMemo(() => (allPastas ?? []).filter((p: any) => p.site_db_id === spNewSite && !p.parent_id), [allPastas, spNewSite]);
   const spPastasNivel2 = useMemo(() => (allPastas ?? []).filter((p: any) => p.parent_id === spNewPasta1), [allPastas, spNewPasta1]);
+
+  const syncFoldersForSite = useCallback(async (siteDbId: string) => {
+    const existing = (allPastas ?? []).filter((p: any) => p.site_db_id === siteDbId);
+    if (existing.length > 0) return;
+    setSpFolderLoading(true);
+    try {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-sharepoint-sites`;
+      await fetch(url, {
+        method: "POST",
+        headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ site_db_id: siteDbId }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["sharepoint_pastas_all"] });
+    } catch { /* ignore */ }
+    setSpFolderLoading(false);
+  }, [allPastas, queryClient]);
   const appsWithProfiles = useMemo(() => {
     const map: Record<string, any[]> = {};
     for (const pi of (allPerfisInternos || [])) {
@@ -535,7 +552,7 @@ export default function PerfilAcessoDetalhePage() {
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
                     <Label className="text-xs">Site</Label>
-                    <Select value={spNewSite} onValueChange={v => { setSpNewSite(v); setSpNewPasta1(""); setSpNewPasta2(""); }}>
+                    <Select value={spNewSite} onValueChange={v => { setSpNewSite(v); setSpNewPasta1(""); setSpNewPasta2(""); syncFoldersForSite(v); }}>
                       <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecione..." /></SelectTrigger>
                       <SelectContent>
                         {(sharepointSites ?? []).map((s: any) => <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>)}
@@ -554,7 +571,8 @@ export default function PerfilAcessoDetalhePage() {
                     </Select>
                   </div>
                 </div>
-                {spNewSite && (
+                {spNewSite && spFolderLoading && <p className="text-xs text-muted-foreground animate-pulse">Carregando pastas...</p>}
+                {spNewSite && !spFolderLoading && (
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
                       <Label className="text-xs">Pasta Nível 1 (opcional)</Label>
