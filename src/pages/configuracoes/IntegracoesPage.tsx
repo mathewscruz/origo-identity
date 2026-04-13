@@ -101,6 +101,21 @@ export default function IntegracoesPage() {
     setGroupSyncing(false);
   }, [toast]);
 
+  const handleSyncSharepointSites = useCallback(async () => {
+    setSpSiteSyncing(true);
+    try {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-sharepoint-sites`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`, "Content-Type": "application/json" },
+      });
+      const body = await res.json();
+      if (!res.ok) { toast({ title: "Erro ao sincronizar sites", description: body.error || `HTTP ${res.status}`, variant: "destructive" }); }
+      else { toast({ title: "Sites SharePoint sincronizados", description: `${body.sites} sites e ${body.pastas} pastas importados` }); }
+    } catch (err: unknown) { toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" }); }
+    setSpSiteSyncing(false);
+  }, [toast]);
+
   const handleCleanBase = useCallback(async () => {
     setCleaning(true);
     try {
