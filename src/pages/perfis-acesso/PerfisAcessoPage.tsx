@@ -188,7 +188,11 @@ export default function PerfisAcessoPage() {
       await (supabase as any).from("perfil_grupos").delete().eq("perfil_id", perfilId);
       if (form.grupo_ids.length > 0) await (supabase as any).from("perfil_grupos").insert(form.grupo_ids.map(gid => ({ perfil_id: perfilId, grupo_id: gid })));
 
-      // Entra ID provisioning diff
+      // Save SharePoint permissions
+      await (supabase as any).from("perfil_sharepoint").delete().eq("perfil_id", perfilId);
+      if (spItems.length > 0) await (supabase as any).from("perfil_sharepoint").insert(spItems.map(sp => ({ perfil_id: perfilId, site_id: sp.site_id, pasta_nivel1_id: sp.pasta_nivel1_id || null, pasta_nivel2_id: sp.pasta_nivel2_id || null, permissao: sp.permissao })));
+
+
       if (perfilId) {
         const diff = {
           addedGrupoIds: form.grupo_ids.filter(id => !oldGrupoIds.includes(id)),
