@@ -46,3 +46,6 @@ verify_jwt = false
 [functions.send-notification-email]
 verify_jwt = false
 
+[functions.sync-sharepoint-sites]
+verify_jwt = false
+
