@@ -1,35 +1,38 @@
 
 
-# Plano: Corrigir sync-sharepoint-sites para funcionar com as permissoes atuais
+# Plano: Corrigir timeout na sincronizacao SharePoint e garantir sites completos
 
-## Diagnostico
+## Problema
+A funcao encontra 4.594 sites mas tenta processar todos sequencialmente (upsert + listar drives + listar pastas L1 + listar pastas L2 para cada site). Isso ultrapassa o timeout de ~60s das Edge Functions, resultando em "Failed to fetch".
 
-O log mostra 403 no endpoint `GET /sites?search=*`. Analisando a screenshot de permissoes:
-- **`Sites.FullControl.All`** esta sob **Microsoft Graph** (Aplicativo) — recem-adicionado
-- **`Sites.Read.All`** esta sob **SharePoint** (nao Microsoft Graph)
+## Solucao
 
-O endpoint Graph API `/v1.0/sites?search=*` precisa de permissoes **Microsoft Graph**, nao SharePoint. O `Sites.FullControl.All` cobre isso, mas como foi recem-concedido, pode levar ate 30 minutos para propagar.
+### 1. Processar em lotes com retorno parcial (Edge Function)
+Reescrever `sync-sharepoint-sites` para funcionar em duas fases:
+- **Fase 1 (sem parametro)**: Busca todos os sites via Graph API e faz upsert apenas dos sites na tabela `sharepoint_sites`. Isso e rapido (apenas upserts, sem navegar drives/pastas). Retorna contagem.
+- **Fase 2 (com `site_db_id`)**: Recebe um site especifico, lista seus drives e pastas (2 niveis) e faz upsert em `sharepoint_pastas`. Chamado sob demanda quando o usuario seleciona um site no perfil de acesso.
 
-## Correcoes
+Isso resolve o timeout porque a fase 1 processa apenas upserts simples (rapido mesmo com 4.594 sites) e a fase 2 foca em um site por vez.
 
-### 1. Adicionar endpoint alternativo com fallback
-- Tentar primeiro `GET /sites/getAllSites` (endpoint mais recente e confiavel para listar todos os sites)
-- Se falhar, tentar `GET /sites?search=*` como fallback
-- Adicionar log do token (scopes) para diagnostico
+### 2. Batch upsert dos sites (performance)
+Em vez de upsert um a um, agrupar em lotes de 500 para reduzir round-trips ao banco.
 
-### 2. Melhorar logs de erro
-- Logar os scopes do token obtido para confirmar que `Sites.FullControl.All` esta presente
-- Retornar mensagem mais descritiva na resposta de erro (incluindo qual endpoint falhou e por que)
+### 3. Sincronizacao de pastas sob demanda no frontend
+Quando o usuario seleciona um site no formulario de perfil SharePoint, se as pastas desse site ainda nao foram carregadas, disparar automaticamente a fase 2 para aquele site.
 
-### 3. Adicionar `Sites.Read.All` no Microsoft Graph (recomendacao ao usuario)
-- A permissao `Sites.Read.All` atual esta apenas no escopo **SharePoint**, nao no **Microsoft Graph**
-- Recomendavel adicionar `Sites.Read.All` tambem no Microsoft Graph para redundancia
+### 4. Frontend: melhorar tratamento de erro
+Adicionar timeout mais longo no fetch e tratar erro de rede adequadamente.
 
-## Arquivo impactado
+## Arquivos impactados
 | Arquivo | Alteracao |
 |---|---|
-| `supabase/functions/sync-sharepoint-sites/index.ts` | Fallback de endpoint + logs melhorados |
+| `supabase/functions/sync-sharepoint-sites/index.ts` | Reescrever com processamento em 2 fases + batch upsert |
+| `src/pages/configuracoes/IntegracoesPage.tsx` | Tratar timeout + feedback melhor |
+| `src/pages/perfis-acesso/PerfilAcessoDetalhePage.tsx` | Sync pastas sob demanda ao selecionar site |
+| `src/pages/perfis-acesso/PerfisAcessoPage.tsx` | Mesmo ajuste de sync sob demanda |
 
 ## Resultado esperado
-A funcao tentara o endpoint mais confiavel primeiro e tera logs claros para diagnostico caso a propagacao da permissao ainda nao tenha concluido.
+- Botao "Sincronizar Sites do SharePoint" importa todos os 4.594 sites rapidamente (sem pastas)
+- Ao selecionar um site no perfil de acesso, as pastas sao carregadas sob demanda
+- O site "Seguranca da Informacao" e todos os demais aparecem disponiveis para selecao
 
