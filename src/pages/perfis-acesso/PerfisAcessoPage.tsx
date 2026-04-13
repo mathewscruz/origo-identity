@@ -95,6 +95,15 @@ export default function PerfisAcessoPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  // SharePoint state for new/edit dialog
+  const [spItems, setSpItems] = useState<Array<{ site_id: string; pasta_nivel1_id: string | null; pasta_nivel2_id: string | null; permissao: string }>>([]);
+  const [spNewSite, setSpNewSite] = useState("");
+  const [spNewPasta1, setSpNewPasta1] = useState("");
+  const [spNewPasta2, setSpNewPasta2] = useState("");
+  const [spNewPerm, setSpNewPerm] = useState("leitura");
+  const spPastasNivel1 = useMemo(() => (allPastas ?? []).filter((p: any) => p.site_db_id === spNewSite && !p.parent_id), [allPastas, spNewSite]);
+  const spPastasNivel2 = useMemo(() => (allPastas ?? []).filter((p: any) => p.parent_id === spNewPasta1), [allPastas, spNewPasta1]);
+
   const allPerfis = perfis ?? [];
   const list = allPerfis.filter((p: any) => {
     if (busca && !p.nome.toLowerCase().includes(busca.toLowerCase())) return false;
