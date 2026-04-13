@@ -571,7 +571,8 @@ export default function PerfilAcessoDetalhePage() {
                     </Select>
                   </div>
                 </div>
-                {spNewSite && (
+                {spNewSite && spFolderLoading && <p className="text-xs text-muted-foreground animate-pulse">Carregando pastas...</p>}
+                {spNewSite && !spFolderLoading && (
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
                       <Label className="text-xs">Pasta Nível 1 (opcional)</Label>

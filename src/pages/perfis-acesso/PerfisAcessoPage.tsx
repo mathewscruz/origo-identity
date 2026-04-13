@@ -532,7 +532,7 @@ export default function PerfisAcessoPage() {
                     </Select>
                   </div>
                 </div>
-                {spNewSite && spPastasNivel1.length > 0 && (
+                {spNewSite && (spFolderLoading ? <p className="text-xs text-muted-foreground animate-pulse">Carregando pastas...</p> : spPastasNivel1.length > 0) && !spFolderLoading && (
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
                       <Label className="text-xs">Pasta Nível 1 (opcional)</Label>
