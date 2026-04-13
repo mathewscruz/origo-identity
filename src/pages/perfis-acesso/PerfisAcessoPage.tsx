@@ -7,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Search, Pencil, Trash2, Shield, ShieldCheck, ShieldAlert } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Link } from "react-router-dom";
 import { usePerfisAcesso, useAplicacoes, useEntraLicencas, useEntraGrupos, useSharepointSites, useAllSharepointPastas } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -102,6 +104,7 @@ export default function PerfisAcessoPage() {
   const [spNewPasta2, setSpNewPasta2] = useState("");
   const [spNewPerm, setSpNewPerm] = useState("leitura");
   const [spFolderLoading, setSpFolderLoading] = useState(false);
+  const [spSitePopoverOpen, setSpSitePopoverOpen] = useState(false);
   const spPastasNivel1 = useMemo(() => (allPastas ?? []).filter((p: any) => p.site_db_id === spNewSite && !p.parent_id), [allPastas, spNewSite]);
   const spPastasNivel2 = useMemo(() => (allPastas ?? []).filter((p: any) => p.parent_id === spNewPasta1), [allPastas, spNewPasta1]);
 

@@ -9,6 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Pencil, Search, Plus, Trash2 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { usePerfilAcesso, usePerfilAtribuicoes, useAplicacoes, useEntraLicencas, useEntraGrupos, useSharepointSites, useAllSharepointPastas, usePerfilSharepoint } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -95,6 +97,7 @@ export default function PerfilAcessoDetalhePage() {
   const [spNewPasta2, setSpNewPasta2] = useState("");
   const [spNewPerm, setSpNewPerm] = useState("leitura");
   const [spFolderLoading, setSpFolderLoading] = useState(false);
+  const [spSitePopoverOpen, setSpSitePopoverOpen] = useState(false);
 
   // Derive pasta lists for the SP new-item form
   const spPastasNivel1 = useMemo(() => (allPastas ?? []).filter((p: any) => p.site_db_id === spNewSite && !p.parent_id), [allPastas, spNewSite]);
