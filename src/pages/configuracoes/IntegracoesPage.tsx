@@ -23,6 +23,7 @@ export default function IntegracoesPage() {
   const [spSyncing, setSpSyncing] = useState(false);
   const [cleaning, setCleaning] = useState(false);
   const [groupSyncing, setGroupSyncing] = useState(false);
+  const [spSiteSyncing, setSpSiteSyncing] = useState(false);
   const { toast } = useToast();
   const { data: csvJob, refetch: refetchCsv } = useSyncJobsCsv();
   const fileInputRef = useRef<HTMLInputElement>(null);
