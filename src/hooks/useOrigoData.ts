@@ -216,6 +216,45 @@ export function useColabQuarentena() {
   });
 }
 
+export function useSharepointSites() {
+  return useQuery({ queryKey: ["sharepoint_sites"], queryFn: () => fetchAll("sharepoint_sites", "*", "nome"), ...REFETCH_OPTS });
+}
+
+export function useSharepointPastas(siteDbId?: string) {
+  return useQuery({
+    queryKey: ["sharepoint_pastas", siteDbId],
+    enabled: !!siteDbId,
+    queryFn: async () => {
+      const { data, error } = await (supabase as any).from("sharepoint_pastas").select("*").eq("site_db_id", siteDbId!).order("nome");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+}
+
+export function useAllSharepointPastas() {
+  return useQuery({
+    queryKey: ["sharepoint_pastas_all"],
+    queryFn: () => fetchAll("sharepoint_pastas", "*", "nome"),
+    ...REFETCH_OPTS,
+  });
+}
+
+export function usePerfilSharepoint(perfilId?: string) {
+  return useQuery({
+    queryKey: ["perfil_sharepoint", perfilId],
+    enabled: !!perfilId,
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("perfil_sharepoint")
+        .select("*, sharepoint_sites(nome, url)")
+        .eq("perfil_id", perfilId!);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+}
+
 export function useColabIndividualQueue(colaboradorId: string | undefined) {
   return useQuery({
     queryKey: ["colab_individual_queue", colaboradorId],
