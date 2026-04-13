@@ -1,0 +1,1 @@
+ALTER TABLE public.sharepoint_pastas ADD CONSTRAINT sharepoint_pastas_drive_item_id_key UNIQUE (drive_item_id);
