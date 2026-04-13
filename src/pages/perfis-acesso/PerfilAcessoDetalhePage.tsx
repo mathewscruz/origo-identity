@@ -504,6 +504,89 @@ export default function PerfilAcessoDetalhePage() {
                 </div>
               </ScrollArea>
             </TabsContent>
+
+            <TabsContent value="sharepoint" className="mt-4 overflow-auto flex-1 space-y-4">
+              {/* Existing items */}
+              {spItems.length > 0 && (
+                <div className="space-y-2">
+                  {spItems.map((item, idx) => {
+                    const site = (sharepointSites ?? []).find((s: any) => s.id === item.site_id);
+                    const p1 = item.pasta_nivel1_id ? (allPastas ?? []).find((p: any) => p.id === item.pasta_nivel1_id) : null;
+                    const p2 = item.pasta_nivel2_id ? (allPastas ?? []).find((p: any) => p.id === item.pasta_nivel2_id) : null;
+                    const permLabel = item.permissao === "leitura" ? "Leitura" : item.permissao === "escrita" ? "Escrita" : "Controle Total";
+                    return (
+                      <div key={idx} className="flex items-center gap-2 text-sm border rounded-md px-3 py-2">
+                        <div className="flex-1 min-w-0">
+                          <span className="font-medium">{site?.nome || "?"}</span>
+                          {p1 && <span className="text-muted-foreground"> › {p1.nome}</span>}
+                          {p2 && <span className="text-muted-foreground"> › {p2.nome}</span>}
+                        </div>
+                        <Badge variant="outline">{permLabel}</Badge>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSpItems(prev => prev.filter((_, i) => i !== idx))}><Trash2 className="h-3 w-3" /></Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Add new item form */}
+              <div className="space-y-3 border rounded-md p-3">
+                <p className="text-xs font-medium text-muted-foreground">Adicionar permissão</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Site</Label>
+                    <Select value={spNewSite} onValueChange={v => { setSpNewSite(v); setSpNewPasta1(""); setSpNewPasta2(""); }}>
+                      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                      <SelectContent>
+                        {(sharepointSites ?? []).map((s: any) => <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Permissão</Label>
+                    <Select value={spNewPerm} onValueChange={setSpNewPerm}>
+                      <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="leitura">Leitura</SelectItem>
+                        <SelectItem value="escrita">Escrita</SelectItem>
+                        <SelectItem value="controle_total">Controle Total</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {spNewSite && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Pasta Nível 1 (opcional)</Label>
+                      <Select value={spNewPasta1} onValueChange={v => { setSpNewPasta1(v); setSpNewPasta2(""); }}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Site inteiro" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">— Site inteiro —</SelectItem>
+                          {spPastasNivel1.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {spNewPasta1 && spNewPasta1 !== "__none__" && spPastasNivel2.length > 0 && (
+                      <div className="space-y-1">
+                        <Label className="text-xs">Pasta Nível 2 (opcional)</Label>
+                        <Select value={spNewPasta2} onValueChange={setSpNewPasta2}>
+                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Pasta inteira" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">— Pasta inteira —</SelectItem>
+                            {spPastasNivel2.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <Button size="sm" variant="outline" disabled={!spNewSite} onClick={() => {
+                  setSpItems(prev => [...prev, { site_id: spNewSite, pasta_nivel1_id: (spNewPasta1 && spNewPasta1 !== "__none__") ? spNewPasta1 : null, pasta_nivel2_id: (spNewPasta2 && spNewPasta2 !== "__none__") ? spNewPasta2 : null, permissao: spNewPerm }]);
+                  setSpNewSite(""); setSpNewPasta1(""); setSpNewPasta2(""); setSpNewPerm("leitura");
+                }}><Plus className="mr-1 h-3 w-3" />Adicionar</Button>
+              </div>
+              {(sharepointSites ?? []).length === 0 && <p className="text-xs text-muted-foreground">Nenhum site SharePoint sincronizado. Vá em Configurações → Integrações para sincronizar.</p>}
+            </TabsContent>
           </Tabs>
           <DialogFooter className="pt-4 border-t">
             <Button variant="outline" onClick={() => setEditOpen(false)}>Cancelar</Button>
