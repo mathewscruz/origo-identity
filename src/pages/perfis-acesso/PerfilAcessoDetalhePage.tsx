@@ -312,6 +312,35 @@ export default function PerfilAcessoDetalhePage() {
           </CardContent></Card>
         </TabsContent>
 
+        <TabsContent value="sharepoint" className="mt-4">
+          <Card><CardContent className="p-0">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b text-left text-muted-foreground">
+                <th className="p-4 font-medium">Site</th>
+                <th className="p-4 font-medium">Pasta Nível 1</th>
+                <th className="p-4 font-medium">Pasta Nível 2</th>
+                <th className="p-4 font-medium">Permissão</th>
+              </tr></thead>
+              <tbody>
+                {(perfilSharepoint ?? []).map((ps: any, i: number) => {
+                  const pastaN1 = ps.pasta_nivel1_id ? (allPastas ?? []).find((p: any) => p.id === ps.pasta_nivel1_id) : null;
+                  const pastaN2 = ps.pasta_nivel2_id ? (allPastas ?? []).find((p: any) => p.id === ps.pasta_nivel2_id) : null;
+                  const permLabel = ps.permissao === "leitura" ? "Leitura" : ps.permissao === "escrita" ? "Escrita" : "Controle Total";
+                  return (
+                    <tr key={i} className="border-b last:border-0">
+                      <td className="p-4 font-medium">{ps.sharepoint_sites?.nome || "—"}</td>
+                      <td className="p-4 text-muted-foreground">{pastaN1?.nome || "— (Site inteiro)"}</td>
+                      <td className="p-4 text-muted-foreground">{pastaN2?.nome || "—"}</td>
+                      <td className="p-4"><Badge variant="outline">{permLabel}</Badge></td>
+                    </tr>
+                  );
+                })}
+                {(perfilSharepoint ?? []).length === 0 && <tr><td colSpan={4}><EmptyState message="Nenhuma permissão SharePoint vinculada." /></td></tr>}
+              </tbody>
+            </table>
+          </CardContent></Card>
+        </TabsContent>
+
         <TabsContent value="cargos" className="mt-4">
           <Card><CardContent className="p-0">
             <table className="w-full text-sm">
