@@ -8,10 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Pencil, Search, Plus, Trash2 } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { ArrowLeft, Pencil, Search, Trash2 } from "lucide-react";
 import { usePerfilAcesso, usePerfilAtribuicoes, useAplicacoes, useEntraLicencas, useEntraGrupos, useSharepointSites, useAllSharepointPastas, usePerfilSharepoint } from "@/hooks/useOrigoData";
+import SharepointFolderTree, { type SpPermission } from "@/components/SharepointFolderTree";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -91,17 +90,8 @@ export default function PerfilAcessoDetalhePage() {
   const [buscaGrupos, setBuscaGrupos] = useState("");
 
   // SharePoint edit state
-  const [spItems, setSpItems] = useState<Array<{ site_id: string; pasta_nivel1_id: string | null; pasta_nivel2_id: string | null; permissao: string }>>([]);
-  const [spNewSite, setSpNewSite] = useState("");
-  const [spNewPasta1, setSpNewPasta1] = useState("");
-  const [spNewPasta2, setSpNewPasta2] = useState("");
-  const [spNewPerm, setSpNewPerm] = useState("leitura");
+  const [spItems, setSpItems] = useState<SpPermission[]>([]);
   const [spFolderLoading, setSpFolderLoading] = useState(false);
-  const [spSitePopoverOpen, setSpSitePopoverOpen] = useState(false);
-
-  // Derive pasta lists for the SP new-item form
-  const spPastasNivel1 = useMemo(() => (allPastas ?? []).filter((p: any) => p.site_db_id === spNewSite && !p.parent_id), [allPastas, spNewSite]);
-  const spPastasNivel2 = useMemo(() => (allPastas ?? []).filter((p: any) => p.parent_id === spNewPasta1), [allPastas, spNewPasta1]);
 
   const syncFoldersForSite = useCallback(async (siteDbId: string) => {
     const existing = (allPastas ?? []).filter((p: any) => p.site_db_id === siteDbId);
