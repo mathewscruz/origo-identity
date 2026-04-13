@@ -1,115 +1,93 @@
 
-Objetivo: corrigir a desativação para realmente remover grupos/licenças/apps, fazer a sincronização de acessos do EntraID trazer os itens corretos e garantir que a comunicação Cargo → Perfil → Colaborador use uma única regra em todo o sistema.
 
-1. Diagnóstico confirmado
-- O vínculo Cargo → Perfil está correto para o caso analisado:
-  - cargo `Especialista em Segurança da Informação`
-  - perfil `Especialista em Segurança da Informação`
-  - perfil contém 1 grupo e 1 licença
-- O problema principal está no fluxo de status:
-  - `ColaboradorDetalhePage.tsx` já tem lógica nova de hard/soft disable.
-  - `ColaboradoresPage.tsx` ainda usa a lógica antiga, que só envia `disable` + `disable_entra`, sem:
-    - revogar `perfil_atribuicoes`
-    - gerar `remove_group/remove_license/remove_app`
-    - salvar snapshot completo
-    - tratar reativação com segurança
-- Evidência no caso “Teste IAM 7”:
-  - usuário está `inativo`
-  - ainda existe 1 `perfil_atribuicao` ativa
-  - últimos itens da `iam_queue` têm apenas `disable`/`disable_entra`
-  - não houve `remove_group` nem `remove_license` no último ciclo
-- A sincronização de acessos do EntraID também não alimentou esse colaborador:
-  - existem 0 registros `requested_by = 'entra_sync'` para ele
-  - no `/colaboradores`, o botão de sincronização em lote ignora usuários `inativo/desligado`
-- Há mais uma lacuna funcional:
-  - no hard disable atual, a remoção de acessos individuais considera só `manual_individual`
-  - acessos importados via `entra_sync` também podem continuar existindo no diretório e não serem revogados
+# Plano: Aba SharePoint nos Perfis de Acesso
 
-2. Correção proposta
-A. Unificar o fluxo de ciclo de vida do colaborador
-- Extrair a lógica de:
-  - hard disable
-  - soft disable
-  - reativação
-  - snapshot/restauração
-  - revogação/provisionamento por cargo
-- Colocar tudo em um helper único e reutilizar em:
-  - `src/pages/colaboradores/ColaboradorDetalhePage.tsx`
-  - `src/pages/colaboradores/ColaboradoresPage.tsx`
-- Assim eliminamos a divergência entre “editar no detalhe” e “editar pela lista”.
+## Objetivo
+Adicionar uma aba "SharePoint" nos perfis de acesso, permitindo definir quais sites e pastas (2 niveis hierarquicos) cada perfil pode acessar, com tipo de permissao (leitura, escrita, controle total).
 
-B. Corrigir a desativação real
-No hard disable (`inativo` / `desligado`):
-- desativar `perfil_atribuicoes`
-- buscar os perfis ativos antes da revogação
-- gerar `remove_*` dos recursos vindos dos perfis
-- sincronizar/considerar também os acessos individuais efetivos do usuário
-- incluir tanto:
-  - `manual_individual`
-  - `entra_sync`
-- deduplicar recursos antes de enfileirar revogações
-- salvar snapshot completo no evento JML
+## Arquitetura
 
-C. Corrigir a reativação
-- Parar de reativar com fluxo cego na tela de lista
-- Na volta para `ativo`:
-  - se ainda houver perfis ativos: tratar como soft disable
-  - se não houver perfis ativos: reprovisionar pelo cargo
-  - restaurar recursos individuais salvos no snapshot do hard disable
+```text
+perfis_acesso
+  └── perfil_sharepoint_sites (vincula perfil → site + pasta nivel1 + pasta nivel2 + permissao)
+        └── sharepoint_sites (catalogo de sites sincronizados do Graph API)
+```
 
-D. Corrigir a sincronização do EntraID
-- Ajustar a experiência de sincronização para o colaborador analisado:
-  - permitir sincronização individual mesmo se o usuário estiver `inativo/desligado`
-  - opcionalmente adicionar ação de sync no detalhe do colaborador
-- Melhorar a função `sync-user-access` para diagnosticar melhor:
-  - quantos grupos/licenças/apps vieram do EntraID
-  - quantos casaram com catálogo local
-  - quantos ficaram sem correspondência local
-- Isso evita “sincronizou mas não trouxe nada” sem explicação visível.
+## Tabelas novas (migration)
 
-3. Arquivos a ajustar
-- `src/pages/colaboradores/ColaboradoresPage.tsx`
-  - remover o fluxo legado de disable/enable
-  - reutilizar a mesma rotina do detalhe
-  - corrigir reativação e sincronização
-- `src/pages/colaboradores/ColaboradorDetalhePage.tsx`
-  - ampliar snapshot/revogação para incluir `entra_sync`
-  - manter a regra hard/soft, agora centralizada
-- `src/lib/provisionCargoAcessos.ts`
-  - preservar a proteção contra duplicidade
-  - alinhar com o fluxo centralizado
-- Novo helper compartilhado
-  - para encapsular o ciclo de vida do colaborador
-- `supabase/functions/sync-user-access/index.ts`
-  - melhorar matching/logs/retorno para troubleshooting
-  - manter importação de grupos/licenças/apps já existentes no diretório
+### 1. `sharepoint_sites` — Catalogo de sites do tenant
+| Coluna | Tipo | Descricao |
+|---|---|---|
+| id | uuid PK | |
+| site_id | text UNIQUE | ID do site no Graph API |
+| nome | text | Display name |
+| url | text | Web URL |
+| created_at | timestamptz | |
 
-4. Validação que farei após implementar
-- Caso real “Teste IAM 7”
-  - sincronizar acessos atuais
-  - confirmar importação de grupos/licenças/apps
-  - desativar e validar criação de:
-    - `disable`
-    - `disable_entra`
-    - `remove_group`
-    - `remove_license`
-    - `remove_app` quando existir
-  - confirmar `perfil_atribuicoes` inativas
-  - reativar e confirmar que não duplica perfis
-- Testar os 2 caminhos de UI:
-  - alteração pela lista `/colaboradores`
-  - alteração pela tela de detalhe
-- Validar que Cargo → Perfil → Colaborador continua funcionando sem quebrar provisão aditiva.
+### 2. `sharepoint_pastas` — Pastas/drives dentro de sites (2 niveis)
+| Coluna | Tipo | Descricao |
+|---|---|---|
+| id | uuid PK | |
+| site_db_id | uuid | FK para sharepoint_sites |
+| drive_item_id | text | ID do item no Graph |
+| nome | text | Nome da pasta |
+| caminho | text | Caminho completo |
+| parent_id | uuid NULL | NULL = nivel 1, preenchido = nivel 2 |
+| created_at | timestamptz | |
 
-5. Remediação do dado atual
-Depois da correção:
-- executar uma sincronização direcionada para o usuário afetado
-- rodar um novo ciclo controlado de desativação/reativação
-- confirmar no diretório que os acessos residuais foram removidos
-- se restar algum resíduo histórico fora do catálogo, tratar com remoção técnica pontual
+### 3. `perfil_sharepoint` — Vinculo perfil → site/pasta + permissao
+| Coluna | Tipo | Descricao |
+|---|---|---|
+| id | uuid PK | |
+| perfil_id | uuid | |
+| site_id | uuid | FK sharepoint_sites |
+| pasta_nivel1_id | uuid NULL | FK sharepoint_pastas (opcional) |
+| pasta_nivel2_id | uuid NULL | FK sharepoint_pastas (opcional) |
+| permissao | text | 'leitura', 'escrita', 'controle_total' |
+| created_at | timestamptz | |
 
-Resultado esperado
-- desativar realmente remove acessos técnicos
-- reativar não duplica perfil
-- a sincronização do EntraID passa a preencher os itens do colaborador corretamente
-- editar status na lista e no detalhe passa a produzir exatamente o mesmo comportamento
+RLS: mesmo padrao das demais tabelas (admin/operador para CUD, authenticated para SELECT).
+
+## Edge Function: `sync-sharepoint-sites`
+- Autentica via Graph API (mesmas credenciais Azure ja configuradas)
+- Lista sites do tenant via `GET /sites?search=*`
+- Para cada site, lista drives e pastas do root ate 2 niveis
+- Upsert em `sharepoint_sites` e `sharepoint_pastas`
+- Retorna contagem de sites/pastas sincronizados
+
+## Alteracoes no Frontend
+
+### `PerfilAcessoDetalhePage.tsx`
+1. **Nova aba "SharePoint"** na visualizacao — mostra sites/pastas vinculados com permissao
+2. **Nova aba "SharePoint"** no dialog de edicao — seletor hierarquico:
+   - Selecionar site (dropdown/busca)
+   - Selecionar pasta nivel 1 (opcional, carrega ao selecionar site)
+   - Selecionar pasta nivel 2 (opcional, carrega ao selecionar pasta nivel 1)
+   - Selecionar permissao (leitura / escrita / controle_total)
+   - Botao "Adicionar" → lista editavel com os vinculos
+3. **Card de contagem** — adicionar card "SharePoint" ao grid de metricas
+
+### `useOrigoData.ts`
+- `useSharepointSites()` — lista sites do catalogo
+- `useSharepointPastas(siteDbId)` — lista pastas por site
+
+### `IntegracoesPage.tsx`
+- Adicionar botao "Sincronizar Sites SharePoint" para popular o catalogo
+
+## Fluxo do usuario
+1. Admin vai em Integracoes → clica "Sincronizar Sites SharePoint" → popula catalogo
+2. Admin edita um Perfil de Acesso → aba SharePoint → adiciona site + pasta + permissao
+3. Colaborador com cargo vinculado a esse perfil herda a visibilidade do SharePoint
+
+## Arquivos impactados
+| Arquivo | Alteracao |
+|---|---|
+| Migration SQL | 3 tabelas + RLS |
+| `supabase/functions/sync-sharepoint-sites/index.ts` | Nova edge function |
+| `src/pages/perfis-acesso/PerfilAcessoDetalhePage.tsx` | Aba SharePoint (view + edit) |
+| `src/hooks/useOrigoData.ts` | Hooks para sites e pastas |
+| `src/pages/configuracoes/IntegracoesPage.tsx` | Botao de sync |
+
+## Nota sobre provisionamento
+Nesta fase, o vinculo SharePoint no perfil serve para **governanca e visibilidade** (saber quem tem acesso a que). O provisionamento automatico de permissoes SharePoint via Graph API pode ser adicionado futuramente como um `action_type` adicional no `iam_queue` (ex: `assign_sharepoint_permission` / `remove_sharepoint_permission`).
+
