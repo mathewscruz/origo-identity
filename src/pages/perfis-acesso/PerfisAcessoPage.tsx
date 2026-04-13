@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -101,8 +101,26 @@ export default function PerfisAcessoPage() {
   const [spNewPasta1, setSpNewPasta1] = useState("");
   const [spNewPasta2, setSpNewPasta2] = useState("");
   const [spNewPerm, setSpNewPerm] = useState("leitura");
+  const [spFolderLoading, setSpFolderLoading] = useState(false);
   const spPastasNivel1 = useMemo(() => (allPastas ?? []).filter((p: any) => p.site_db_id === spNewSite && !p.parent_id), [allPastas, spNewSite]);
   const spPastasNivel2 = useMemo(() => (allPastas ?? []).filter((p: any) => p.parent_id === spNewPasta1), [allPastas, spNewPasta1]);
+
+  const syncFoldersForSite = useCallback(async (siteDbId: string) => {
+    // Check if folders already loaded
+    const existing = (allPastas ?? []).filter((p: any) => p.site_db_id === siteDbId);
+    if (existing.length > 0) return;
+    setSpFolderLoading(true);
+    try {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-sharepoint-sites`;
+      await fetch(url, {
+        method: "POST",
+        headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ site_db_id: siteDbId }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["sharepoint_pastas_all"] });
+    } catch { /* ignore */ }
+    setSpFolderLoading(false);
+  }, [allPastas, queryClient]);
 
   const allPerfis = perfis ?? [];
   const list = allPerfis.filter((p: any) => {
