@@ -181,7 +181,7 @@ export default function SharepointFolderTree({ sites, allPastas, spItems, onItem
               <span className="text-sm font-medium">{(sites ?? []).find((s: any) => s.id === selectedSite)?.nome || "Site"}</span>
               <span className="text-xs text-muted-foreground">(site inteiro)</span>
             </div>
-            <PermSelect value={getSitePerm() || ""} onChange={setSitePerm} />
+            <PermSelect value={getSitePerm() || "__none__"} onChange={setSitePerm} />
           </div>
 
           {folderLoading ? (
