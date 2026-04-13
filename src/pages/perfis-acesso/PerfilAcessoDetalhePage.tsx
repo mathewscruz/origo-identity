@@ -401,6 +401,7 @@ export default function PerfilAcessoDetalhePage() {
               <TabsTrigger value="aplicacoes">Aplicações ({editForm.aplicacao_ids.length})</TabsTrigger>
               <TabsTrigger value="licencas">Licenças ({editForm.licenca_ids.length})</TabsTrigger>
               <TabsTrigger value="grupos">Grupos ({editForm.grupo_ids.length})</TabsTrigger>
+              <TabsTrigger value="sharepoint">SharePoint ({spItems.length})</TabsTrigger>
             </TabsList>
 
             <TabsContent value="geral" className="mt-4 space-y-4 overflow-auto flex-1">
