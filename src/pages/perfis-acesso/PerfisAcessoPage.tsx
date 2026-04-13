@@ -45,6 +45,8 @@ export default function PerfisAcessoPage() {
   const { data: aplicacoes } = useAplicacoes();
   const { data: entraLicencas } = useEntraLicencas();
   const { data: entraGrupos } = useEntraGrupos();
+  const { data: sharepointSites } = useSharepointSites();
+  const { data: allPastas } = useAllSharepointPastas();
 
   // Fetch counts for extra columns
   const { data: atribuicoesCounts } = useQuery({
