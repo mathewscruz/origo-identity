@@ -389,11 +389,12 @@ export default function PerfisAcessoPage() {
           <DialogHeader><DialogTitle>{editingId ? "Editar Perfil" : "Novo Perfil de Acesso"}</DialogTitle></DialogHeader>
           
           <Tabs defaultValue="geral" className="flex-1 overflow-hidden flex flex-col">
-            <TabsList className="w-full justify-start">
+            <TabsList className="w-full justify-start flex-wrap">
               <TabsTrigger value="geral">Geral</TabsTrigger>
               <TabsTrigger value="aplicacoes">Aplicações ({form.aplicacao_ids.length})</TabsTrigger>
               <TabsTrigger value="licencas">Licenças ({form.licenca_ids.length})</TabsTrigger>
               <TabsTrigger value="grupos">Grupos ({form.grupo_ids.length})</TabsTrigger>
+              <TabsTrigger value="sharepoint">SharePoint ({spItems.length})</TabsTrigger>
             </TabsList>
 
             <TabsContent value="geral" className="mt-4 space-y-4 overflow-auto flex-1">
