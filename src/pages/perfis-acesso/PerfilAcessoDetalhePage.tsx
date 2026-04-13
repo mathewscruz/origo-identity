@@ -165,6 +165,12 @@ export default function PerfilAcessoDetalhePage() {
         await (supabase as any).from("perfil_apps_internos").insert(piEntries.map(([appId, piId]) => ({ perfil_id: id!, aplicacao_id: appId, perfil_interno_id: piId })));
       }
 
+      // Sync SharePoint permissions
+      await (supabase as any).from("perfil_sharepoint").delete().eq("perfil_id", id!);
+      if (spItems.length > 0) {
+        await (supabase as any).from("perfil_sharepoint").insert(spItems.map(sp => ({ perfil_id: id!, site_id: sp.site_id, pasta_nivel1_id: sp.pasta_nivel1_id || null, pasta_nivel2_id: sp.pasta_nivel2_id || null, permissao: sp.permissao })));
+      }
+
       await logAuditoria({ acao: "editar_perfil", entidade: "perfis_acesso", entidade_id: id!, resumo: `Editado: ${editForm.nome}` });
       toast({ title: "Perfil atualizado" });
 
@@ -201,7 +207,7 @@ export default function PerfilAcessoDetalhePage() {
       queryClient.invalidateQueries({ queryKey: ["perfil_licencas", id] });
       queryClient.invalidateQueries({ queryKey: ["perfil_grupos", id] });
       queryClient.invalidateQueries({ queryKey: ["perfil_apps_internos", id] });
-      queryClient.invalidateQueries({ queryKey: ["perfis_acesso"] });
+      queryClient.invalidateQueries({ queryKey: ["perfil_sharepoint", id] });
       setEditOpen(false);
       triggerEntraProcessing();
     } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
