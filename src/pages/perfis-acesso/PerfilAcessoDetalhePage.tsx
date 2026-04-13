@@ -251,6 +251,7 @@ export default function PerfilAcessoDetalhePage() {
           <TabsTrigger value="aplicacoes">Aplicações ({appNames.length})</TabsTrigger>
           <TabsTrigger value="licencas">Licenças ({licNames.length})</TabsTrigger>
           <TabsTrigger value="grupos">Grupos ({grpNames.length})</TabsTrigger>
+          <TabsTrigger value="sharepoint">SharePoint ({(perfilSharepoint ?? []).length})</TabsTrigger>
           <TabsTrigger value="cargos">Cargos ({cargos.length})</TabsTrigger>
           <TabsTrigger value="pessoas">Pessoas ({atribuicoes?.length ?? 0})</TabsTrigger>
         </TabsList>
