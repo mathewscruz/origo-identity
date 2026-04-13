@@ -98,9 +98,10 @@ export default function SharepointFolderTree({ sites, allPastas, spItems, onItem
 
   // Set permission for site level
   const setSitePerm = useCallback((perm: string) => {
+    const realPerm = perm === "__none__" ? "" : perm;
     const filtered = spItems.filter(i => !(i.site_id === selectedSite && !i.pasta_nivel1_id && !i.pasta_nivel2_id));
-    if (perm) {
-      onItemsChange([...filtered, { site_id: selectedSite, pasta_nivel1_id: null, pasta_nivel2_id: null, permissao: perm }]);
+    if (realPerm) {
+      onItemsChange([...filtered, { site_id: selectedSite, pasta_nivel1_id: null, pasta_nivel2_id: null, permissao: realPerm }]);
     } else {
       onItemsChange(filtered);
     }
@@ -108,16 +109,17 @@ export default function SharepointFolderTree({ sites, allPastas, spItems, onItem
 
   // Set permission for a folder
   const setFolderPerm = useCallback((folderId: string, isLevel2: boolean, parentId: string | null, perm: string) => {
+    const realPerm = perm === "__none__" ? "" : perm;
     const filtered = spItems.filter(i => {
       if (i.site_id !== selectedSite) return true;
       if (isLevel2) return i.pasta_nivel2_id !== folderId;
       return !(i.pasta_nivel1_id === folderId && !i.pasta_nivel2_id);
     });
-    if (perm) {
+    if (realPerm) {
       if (isLevel2) {
-        filtered.push({ site_id: selectedSite, pasta_nivel1_id: parentId, pasta_nivel2_id: folderId, permissao: perm });
+        filtered.push({ site_id: selectedSite, pasta_nivel1_id: parentId, pasta_nivel2_id: folderId, permissao: realPerm });
       } else {
-        filtered.push({ site_id: selectedSite, pasta_nivel1_id: folderId, pasta_nivel2_id: null, permissao: perm });
+        filtered.push({ site_id: selectedSite, pasta_nivel1_id: folderId, pasta_nivel2_id: null, permissao: realPerm });
       }
     }
     onItemsChange(filtered);
