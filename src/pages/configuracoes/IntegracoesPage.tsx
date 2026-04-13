@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
   RefreshCw, CheckCircle, AlertCircle, Cloud, Users,
-  FileUp, Trash2, AlertTriangle, FileSpreadsheet, Clock, Shield, Plug,
+  FileUp, Trash2, AlertTriangle, FileSpreadsheet, Clock, Shield, Plug, FolderOpen,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSyncJobsCsv } from "@/hooks/useOrigoData";
@@ -23,6 +23,7 @@ export default function IntegracoesPage() {
   const [spSyncing, setSpSyncing] = useState(false);
   const [cleaning, setCleaning] = useState(false);
   const [groupSyncing, setGroupSyncing] = useState(false);
+  const [spSiteSyncing, setSpSiteSyncing] = useState(false);
   const { toast } = useToast();
   const { data: csvJob, refetch: refetchCsv } = useSyncJobsCsv();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -98,6 +99,21 @@ export default function IntegracoesPage() {
       toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
     }
     setGroupSyncing(false);
+  }, [toast]);
+
+  const handleSyncSharepointSites = useCallback(async () => {
+    setSpSiteSyncing(true);
+    try {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-sharepoint-sites`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`, "Content-Type": "application/json" },
+      });
+      const body = await res.json();
+      if (!res.ok) { toast({ title: "Erro ao sincronizar sites", description: body.error || `HTTP ${res.status}`, variant: "destructive" }); }
+      else { toast({ title: "Sites SharePoint sincronizados", description: `${body.sites} sites e ${body.pastas} pastas importados` }); }
+    } catch (err: unknown) { toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" }); }
+    setSpSiteSyncing(false);
   }, [toast]);
 
   const handleCleanBase = useCallback(async () => {
@@ -197,6 +213,24 @@ export default function IntegracoesPage() {
           </div>
           <Button onClick={handleSyncGroups} disabled={groupSyncing}>
             <RefreshCw className={`mr-2 h-4 w-4 ${groupSyncing ? "animate-spin" : ""}`} />{groupSyncing ? "Sincronizando grupos..." : "Sincronizar Grupos do Entra ID"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="border-primary/20">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <FolderOpen className="h-5 w-5 text-primary" />
+            <div><CardTitle className="text-base">Sincronizar Sites — SharePoint</CardTitle><CardDescription>Importa sites e pastas (2 níveis) do SharePoint via Microsoft Graph para uso nos perfis de acesso</CardDescription></div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="text-sm text-muted-foreground space-y-1">
+            <p>Lista todos os sites do tenant e suas pastas até 2 níveis de profundidade.</p>
+            <p>Os sites e pastas importados ficam disponíveis para vincular aos <strong>Perfis de Acesso</strong>.</p>
+          </div>
+          <Button onClick={handleSyncSharepointSites} disabled={spSiteSyncing}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${spSiteSyncing ? "animate-spin" : ""}`} />{spSiteSyncing ? "Sincronizando sites..." : "Sincronizar Sites do SharePoint"}
           </Button>
         </CardContent>
       </Card>
