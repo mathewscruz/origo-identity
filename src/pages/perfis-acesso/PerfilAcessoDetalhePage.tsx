@@ -88,7 +88,16 @@ export default function PerfilAcessoDetalhePage() {
   const [buscaLicencas, setBuscaLicencas] = useState("");
   const [buscaGrupos, setBuscaGrupos] = useState("");
 
-  // Which apps have internal profiles available
+  // SharePoint edit state
+  const [spItems, setSpItems] = useState<Array<{ site_id: string; pasta_nivel1_id: string | null; pasta_nivel2_id: string | null; permissao: string }>>([]);
+  const [spNewSite, setSpNewSite] = useState("");
+  const [spNewPasta1, setSpNewPasta1] = useState("");
+  const [spNewPasta2, setSpNewPasta2] = useState("");
+  const [spNewPerm, setSpNewPerm] = useState("leitura");
+
+  // Derive pasta lists for the SP new-item form
+  const spPastasNivel1 = useMemo(() => (allPastas ?? []).filter((p: any) => p.site_db_id === spNewSite && !p.parent_id), [allPastas, spNewSite]);
+  const spPastasNivel2 = useMemo(() => (allPastas ?? []).filter((p: any) => p.parent_id === spNewPasta1), [allPastas, spNewPasta1]);
   const appsWithProfiles = useMemo(() => {
     const map: Record<string, any[]> = {};
     for (const pi of (allPerfisInternos || [])) {
