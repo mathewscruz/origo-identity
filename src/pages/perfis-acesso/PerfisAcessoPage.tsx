@@ -511,7 +511,7 @@ export default function PerfisAcessoPage() {
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
                     <Label className="text-xs">Site</Label>
-                    <Select value={spNewSite} onValueChange={v => { setSpNewSite(v); setSpNewPasta1(""); setSpNewPasta2(""); }}>
+                    <Select value={spNewSite} onValueChange={v => { setSpNewSite(v); setSpNewPasta1(""); setSpNewPasta2(""); syncFoldersForSite(v); }}>
                       <SelectTrigger><SelectValue placeholder="Selecione o site" /></SelectTrigger>
                       <SelectContent>
                         {(sharepointSites ?? []).map((s: any) => (
