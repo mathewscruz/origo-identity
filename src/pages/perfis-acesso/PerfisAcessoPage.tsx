@@ -7,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Search, Pencil, Trash2, Shield, ShieldCheck, ShieldAlert } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Link } from "react-router-dom";
 import { usePerfisAcesso, useAplicacoes, useEntraLicencas, useEntraGrupos, useSharepointSites, useAllSharepointPastas } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -102,6 +104,7 @@ export default function PerfisAcessoPage() {
   const [spNewPasta2, setSpNewPasta2] = useState("");
   const [spNewPerm, setSpNewPerm] = useState("leitura");
   const [spFolderLoading, setSpFolderLoading] = useState(false);
+  const [spSitePopoverOpen, setSpSitePopoverOpen] = useState(false);
   const spPastasNivel1 = useMemo(() => (allPastas ?? []).filter((p: any) => p.site_db_id === spNewSite && !p.parent_id), [allPastas, spNewSite]);
   const spPastasNivel2 = useMemo(() => (allPastas ?? []).filter((p: any) => p.parent_id === spNewPasta1), [allPastas, spNewPasta1]);
 
@@ -511,14 +514,29 @@ export default function PerfisAcessoPage() {
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
                     <Label className="text-xs">Site</Label>
-                    <Select value={spNewSite} onValueChange={v => { setSpNewSite(v); setSpNewPasta1(""); setSpNewPasta2(""); syncFoldersForSite(v); }}>
-                      <SelectTrigger><SelectValue placeholder="Selecione o site" /></SelectTrigger>
-                      <SelectContent>
-                        {(sharepointSites ?? []).map((s: any) => (
-                          <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                   <Popover open={spSitePopoverOpen} onOpenChange={setSpSitePopoverOpen}>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" role="combobox" className="w-full justify-between font-normal h-10">
+                          {spNewSite ? (sharepointSites ?? []).find((s: any) => s.id === spNewSite)?.nome || "Site" : "Selecione o site"}
+                          <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[320px] p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Buscar site..." />
+                          <CommandList>
+                            <CommandEmpty>Nenhum site encontrado.</CommandEmpty>
+                            <CommandGroup>
+                              {(sharepointSites ?? []).map((s: any) => (
+                                <CommandItem key={s.id} value={s.nome} onSelect={() => { setSpNewSite(s.id); setSpNewPasta1(""); setSpNewPasta2(""); syncFoldersForSite(s.id); setSpSitePopoverOpen(false); }}>
+                                  {s.nome}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Permissão</Label>

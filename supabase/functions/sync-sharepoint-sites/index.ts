@@ -141,11 +141,15 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Filter out personal OneDrive sites (-my.sharepoint.com)
+    const corporateSites = sites.filter((s: any) => !s.webUrl || !s.webUrl.includes("-my.sharepoint.com"));
+    console.log(`Phase 1: ${corporateSites.length} corporate sites (filtered ${sites.length - corporateSites.length} personal)`);
+
     // Batch upsert in groups of 500
     const BATCH = 500;
     let upserted = 0;
-    for (let i = 0; i < sites.length; i += BATCH) {
-      const batch = sites.slice(i, i + BATCH).map((s: any) => ({
+    for (let i = 0; i < corporateSites.length; i += BATCH) {
+      const batch = corporateSites.slice(i, i + BATCH).map((s: any) => ({
         site_id: s.id,
         nome: s.displayName || s.id,
         url: s.webUrl,
