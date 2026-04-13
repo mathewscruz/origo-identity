@@ -26,7 +26,7 @@ interface FolderNode {
 }
 
 const PERM_OPTIONS = [
-  { value: "", label: "— Nenhuma —" },
+  { value: "__none__", label: "— Nenhuma —" },
   { value: "leitura", label: "Leitura" },
   { value: "escrita", label: "Escrita" },
   { value: "controle_total", label: "Controle Total" },
