@@ -157,7 +157,13 @@ export default function SolicitacaoDetalhePage() {
           <CardHeader><CardTitle className="text-base">Resultado</CardTitle></CardHeader>
           <CardContent>
             {item.result_message ? (
-              <div className={`rounded-md p-4 text-sm ${item.status === "failed" ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success"}`}>
+              <div className={`rounded-md p-4 text-sm ${
+                item.status === "failed"
+                  ? "bg-destructive/10 text-destructive"
+                  : item.status === "success"
+                  ? "bg-success/10 text-success"
+                  : "bg-warning/10 text-warning"
+              }`}>
                 {item.result_message}
               </div>
             ) : (
