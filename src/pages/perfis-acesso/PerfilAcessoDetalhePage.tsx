@@ -23,6 +23,7 @@ import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { generateEntraQueueForDiff, findAffectedCollaborators } from "@/lib/entraQueueHelper";
 import { logAuditoria } from "@/lib/auditLogger";
 import EmptyState from "@/components/EmptyState";
+import { formatAreaName } from "@/lib/formatters";
 
 const origemColors: Record<string, string> = {
   regra: "bg-primary/15 text-primary border-primary/30",
@@ -366,7 +367,7 @@ export default function PerfilAcessoDetalhePage() {
                     <td className="p-4 font-medium text-primary">
                       <Link to="/configuracoes/cargos" className="hover:underline">{cargo.nome}</Link>
                     </td>
-                    <td className="p-4 text-muted-foreground">{cargo.areas?.nome || "—"}</td>
+                    <td className="p-4 text-muted-foreground">{formatAreaName(cargo.areas?.nome)}</td>
                   </tr>
                 ))}
                 {cargos.length === 0 && <tr><td colSpan={2}><EmptyState message="Nenhum cargo vinculado a este perfil." /></td></tr>}
@@ -391,7 +392,7 @@ export default function PerfilAcessoDetalhePage() {
                         {colabId ? <Link to={`/colaboradores/${colabId}`} className="hover:underline">{colabNome}</Link> : colabNome}
                       </td>
                       <td className="p-4 text-muted-foreground">{(a.colaboradores as any)?.cargos?.nome || "—"}</td>
-                      <td className="p-4 text-muted-foreground">{(a.colaboradores as any)?.areas?.nome || "—"}</td>
+                      <td className="p-4 text-muted-foreground">{formatAreaName((a.colaboradores as any)?.areas?.nome)}</td>
                       <td className="p-4"><Badge variant="outline" className={origemColors[a.origem || "manual"]}>{a.origem === "regra" ? "Regra" : a.origem === "excecao" ? "Exceção" : a.origem === "cargo" ? "Cargo" : "Manual"}</Badge></td>
                     </tr>
                   );
@@ -530,7 +531,7 @@ export default function PerfilAcessoDetalhePage() {
                       <Checkbox checked={editForm.cargo_ids.includes(c.id)} onCheckedChange={() => toggleItem("cargo_ids", c.id)} />
                       <div className="flex-1 min-w-0">
                         <span className="text-sm font-medium">{c.nome}</span>
-                        {c.areas?.nome && <p className="text-xs text-muted-foreground truncate">{c.areas.nome}</p>}
+                        {formatAreaName(c.areas?.nome) !== "—" && <p className="text-xs text-muted-foreground truncate">{formatAreaName(c.areas?.nome)}</p>}
                       </div>
                     </label>
                   ))}

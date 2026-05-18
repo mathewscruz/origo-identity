@@ -21,6 +21,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { logAuditoria, logAlerta } from "@/lib/auditLogger";
 import EmptyState from "@/components/EmptyState";
+import { formatAreaName } from "@/lib/formatters";
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
@@ -362,7 +363,7 @@ export default function ColaboradorDetalhePage() {
   if (!pessoa) return <div className="p-8 text-center text-muted-foreground">Colaborador não encontrado.</div>;
 
   const cargo = (pessoa.cargos as any)?.nome || "—";
-  const area = (pessoa.areas as any)?.nome || "—";
+  const area = formatAreaName((pessoa.areas as any)?.nome);
   const empresa = (pessoa.empresas as any)?.nome || "—";
   const localidade = (pessoa.localidades as any)?.nome || "—";
   const gestor = (pessoa as any)?.gestor?.nome || "—";
