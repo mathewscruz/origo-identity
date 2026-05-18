@@ -21,6 +21,10 @@ function getStorageKey(userId: string, pageKey: string) {
   return `origo_tour_${userId}_${pageKey}`;
 }
 
+function getGlobalDismissKey(userId: string) {
+  return `origo_tour_${userId}_dismissed_all`;
+}
+
 /** Find the nearest scrollable ancestor */
 function getScrollParent(el: Element): Element | null {
   let parent = el.parentElement;
