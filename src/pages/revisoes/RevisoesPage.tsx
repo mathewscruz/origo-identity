@@ -164,7 +164,9 @@ export default function RevisoesPage() {
             <th className="p-4 font-medium">Progresso</th><th className="p-4 font-medium">Responsável</th>
             <th className="p-4 font-medium">Data Limite</th>
           </tr></thead><tbody>
-            {paginatedItems.map((r: any) => (
+            {paginatedItems.length === 0 ? (
+              <tr><td colSpan={5} className="p-8 text-center text-muted-foreground">Nenhuma campanha cadastrada.</td></tr>
+            ) : paginatedItems.map((r: any) => (
               <tr key={r.id} className="border-b last:border-0 hover:bg-muted/50">
                 <td className="p-4"><Link to={`/revisoes/${r.id}`} className="font-medium text-primary hover:underline">{r.nome}</Link></td>
                 <td className="p-4"><Badge variant="outline" className={statusColors[r.status] || ""}>{({ em_andamento: "Em Andamento", concluida: "Concluída", cancelada: "Cancelada" } as Record<string, string>)[r.status] || r.status}</Badge></td>
