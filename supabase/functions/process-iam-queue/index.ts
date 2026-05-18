@@ -159,6 +159,20 @@ async function resolveServicePrincipal(
   return null;
 }
 
+function humanizeGraphError(code: string | undefined, message: string | undefined, status: number, context: string): string {
+  const c = (code || "").toString();
+  const m = (message || "").toString();
+  if (c === "Authorization_RequestDenied" || /Authorization_RequestDenied|Insufficient privileges/i.test(m)) {
+    return `Permissão insuficiente no Microsoft Graph para "${context}". Verifique se o App Registration possui os escopos necessários (ex: GroupMember.ReadWrite.All, User.ReadWrite.All, AppRoleAssignment.ReadWrite.All) com consentimento de administrador no Entra ID.`;
+  }
+  if (status === 401 || /token|unauthorized/i.test(m)) {
+    return `Token Microsoft Graph inválido ou expirado (${status}). Verifique AZURE_CLIENT_ID / AZURE_CLIENT_SECRET / AZURE_TENANT_ID.`;
+  }
+  if (status === 404) return `Recurso não encontrado no Entra ID (${context}). O objeto pode ter sido removido.`;
+  if (status === 429) return `Throttling do Microsoft Graph (429). A operação será reprocessada automaticamente.`;
+  return `Erro Graph (${status})${c ? ` [${c}]` : ""}: ${m || "sem detalhes"}`;
+}
+
 async function executeAction(
   token: string,
   userId: string,
@@ -167,6 +181,17 @@ async function executeAction(
 ): Promise<{ success: boolean; message: string; alreadyExists?: boolean }> {
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
   const graphBase = "https://graph.microsoft.com/v1.0";
+
+  const buildErr = async (res: Response, context: string): Promise<string> => {
+    let code: string | undefined; let message: string | undefined;
+    try {
+      const j = await res.clone().json();
+      code = j?.error?.code; message = j?.error?.message;
+    } catch {
+      try { message = await res.text(); } catch { /* ignore */ }
+    }
+    return humanizeGraphError(code, message, res.status, context);
+  };
 
   switch (actionType) {
     case "assign_group": {
@@ -184,10 +209,9 @@ async function executeAction(
         const err = await res.json().catch(() => ({}));
         if (err?.error?.message?.includes("already exist")) return { success: true, message: `Usuário já é membro do grupo`, alreadyExists: true };
         if (err?.error?.message?.includes("on-premises mastered")) return { success: false, message: `Grupo gerenciado pelo AD local` };
-        return { success: false, message: `Erro: ${err?.error?.message || res.status}` };
+        return { success: false, message: humanizeGraphError(err?.error?.code, err?.error?.message, res.status, "adicionar membro ao grupo") };
       }
-      const errText = await res.text();
-      return { success: false, message: `Graph API erro ${res.status}: ${errText}` };
+      return { success: false, message: await buildErr(res, "adicionar membro ao grupo") };
     }
 
     case "remove_group": {
@@ -196,8 +220,7 @@ async function executeAction(
       const res = await fetch(`${graphBase}/groups/${groupId}/members/${userId}/$ref`, { method: "DELETE", headers });
       if (res.status === 204 || res.status === 200) return { success: true, message: `Usuário removido do grupo ${payload.groupName || groupId}` };
       if (res.status === 404) return { success: true, message: `Usuário já não é membro do grupo`, alreadyExists: true };
-      const errText = await res.text();
-      return { success: false, message: `Graph API erro ${res.status}: ${errText}` };
+      return { success: false, message: await buildErr(res, "remover membro do grupo") };
     }
 
     case "assign_license": {
@@ -220,7 +243,7 @@ async function executeAction(
       if (res.ok) return { success: true, message: `Licença ${payload.licenseName || skuId} atribuída` };
       const err = await res.json().catch(() => ({}));
       if (err?.error?.message?.includes("already")) return { success: true, message: `Licença já atribuída`, alreadyExists: true };
-      return { success: false, message: `Erro: ${err?.error?.message || res.status}` };
+      return { success: false, message: humanizeGraphError(err?.error?.code, err?.error?.message, res.status, "atribuir licença") };
     }
 
     case "remove_license": {
@@ -231,8 +254,7 @@ async function executeAction(
         body: JSON.stringify({ addLicenses: [], removeLicenses: [skuId] }),
       });
       if (res.ok) return { success: true, message: `Licença removida` };
-      const errText = await res.text();
-      return { success: false, message: `Erro: ${errText}` };
+      return { success: false, message: await buildErr(res, "remover licença") };
     }
 
     case "assign_app": {
@@ -259,7 +281,7 @@ async function executeAction(
       if (res.ok || res.status === 201) return { success: true, message: `App ${payload.appName || appClientId} atribuído` };
       const err = await res.json().catch(() => ({}));
       if (err?.error?.message?.includes("already exists")) return { success: true, message: `App já atribuído`, alreadyExists: true };
-      return { success: false, message: `Erro: ${err?.error?.message || res.status}` };
+      return { success: false, message: humanizeGraphError(err?.error?.code, err?.error?.message, res.status, "atribuir aplicativo") };
     }
 
     case "remove_app": {
@@ -271,8 +293,7 @@ async function executeAction(
       if (assignmentId) {
         const res = await fetch(`${graphBase}/servicePrincipals/${spObjectId}/appRoleAssignedTo/${assignmentId}`, { method: "DELETE", headers });
         if (res.status === 204 || res.ok) return { success: true, message: `App removido` };
-        const errText = await res.text();
-        return { success: false, message: `Erro: ${errText}` };
+        return { success: false, message: await buildErr(res, "remover aplicativo") };
       }
       // List all assignments and filter client-side (Graph API doesn't support $filter on this endpoint in all tenants)
       const listRes = await fetch(`${graphBase}/servicePrincipals/${spObjectId}/appRoleAssignedTo?$top=999`, { headers });
@@ -299,15 +320,13 @@ async function executeAction(
     case "disable_entra": {
       const res = await fetch(`${graphBase}/users/${userId}`, { method: "PATCH", headers, body: JSON.stringify({ accountEnabled: false }) });
       if (res.status === 204 || res.ok) return { success: true, message: `Conta desabilitada no Entra ID` };
-      const errText = await res.text();
-      return { success: false, message: `Erro: ${errText}` };
+      return { success: false, message: await buildErr(res, "desabilitar conta no Entra ID") };
     }
 
     case "enable_entra": {
       const res = await fetch(`${graphBase}/users/${userId}`, { method: "PATCH", headers, body: JSON.stringify({ accountEnabled: true }) });
       if (res.status === 204 || res.ok) return { success: true, message: `Conta reabilitada no Entra ID` };
-      const errText = await res.text();
-      return { success: false, message: `Erro: ${errText}` };
+      return { success: false, message: await buildErr(res, "reabilitar conta no Entra ID") };
     }
 
     case "update_entra": {
@@ -319,8 +338,7 @@ async function executeAction(
       if (Object.keys(updateBody).length === 0) return { success: true, message: "Nenhum atributo para atualizar" };
       const res = await fetch(`${graphBase}/users/${userId}`, { method: "PATCH", headers, body: JSON.stringify(updateBody) });
       if (res.status === 204 || res.ok) return { success: true, message: `Atributos atualizados: ${Object.keys(updateBody).join(", ")}` };
-      const errText = await res.text();
-      return { success: false, message: `Erro: ${errText}` };
+      return { success: false, message: await buildErr(res, "atualizar atributos do usuário") };
     }
 
     default:

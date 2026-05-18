@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Pencil, Search, Trash2 } from "lucide-react";
-import { usePerfilAcesso, usePerfilAtribuicoes, useAplicacoes, useEntraLicencas, useEntraGrupos, useSharepointSites, useAllSharepointPastas, usePerfilSharepoint } from "@/hooks/useOrigoData";
+import { usePerfilAcesso, usePerfilAtribuicoes, useAplicacoes, useEntraLicencas, useEntraGrupos, useSharepointSites, useAllSharepointPastas, usePerfilSharepoint, useCargos } from "@/hooks/useOrigoData";
 import SharepointFolderTree, { type SpPermission } from "@/components/SharepointFolderTree";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -83,11 +83,13 @@ export default function PerfilAcessoDetalhePage() {
   });
 
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ nome: "", descricao: "", tipo: "funcional", ativo: true, aplicacao_ids: [] as string[], licenca_ids: [] as string[], grupo_ids: [] as string[], perfil_interno_map: {} as Record<string, string> });
+  const { data: allCargos } = useCargos();
+  const [editForm, setEditForm] = useState({ nome: "", descricao: "", tipo: "funcional", ativo: true, aplicacao_ids: [] as string[], licenca_ids: [] as string[], grupo_ids: [] as string[], cargo_ids: [] as string[], perfil_interno_map: {} as Record<string, string> });
   const [saving, setSaving] = useState(false);
   const [buscaApps, setBuscaApps] = useState("");
   const [buscaLicencas, setBuscaLicencas] = useState("");
   const [buscaGrupos, setBuscaGrupos] = useState("");
+  const [buscaCargos, setBuscaCargos] = useState("");
 
   // SharePoint edit state
   const [spItems, setSpItems] = useState<SpPermission[]>([]);
@@ -129,17 +131,19 @@ export default function PerfilAcessoDetalhePage() {
       aplicacao_ids: (perfilApps ?? []).map((pa: any) => pa.aplicacao_id),
       licenca_ids: (perfilLicencas ?? []).map((pl: any) => pl.licenca_id),
       grupo_ids: (perfilGrupos ?? []).map((pg: any) => pg.grupo_id),
+      cargo_ids: (cargosVinculados ?? []).map((cp: any) => cp.cargo_id),
       perfil_interno_map: piMap,
     });
     setBuscaApps("");
     setBuscaLicencas("");
     setBuscaGrupos("");
+    setBuscaCargos("");
     // Load existing SharePoint items
     setSpItems((perfilSharepoint ?? []).map((ps: any) => ({ site_id: ps.site_id, pasta_nivel1_id: ps.pasta_nivel1_id || null, pasta_nivel2_id: ps.pasta_nivel2_id || null, permissao: ps.permissao })));
     setEditOpen(true);
   };
 
-  const toggleItem = (field: "aplicacao_ids" | "licenca_ids" | "grupo_ids", itemId: string) => {
+  const toggleItem = (field: "aplicacao_ids" | "licenca_ids" | "grupo_ids" | "cargo_ids", itemId: string) => {
     setEditForm(prev => ({
       ...prev,
       [field]: prev[field].includes(itemId) ? prev[field].filter(i => i !== itemId) : [...prev[field], itemId],
@@ -166,6 +170,10 @@ export default function PerfilAcessoDetalhePage() {
       // Sync grupos
       await (supabase as any).from("perfil_grupos").delete().eq("perfil_id", id!);
       if (editForm.grupo_ids.length > 0) await (supabase as any).from("perfil_grupos").insert(editForm.grupo_ids.map(gid => ({ perfil_id: id!, grupo_id: gid })));
+
+      // Sync cargos (cargo_perfis)
+      await (supabase as any).from("cargo_perfis").delete().eq("perfil_id", id!);
+      if (editForm.cargo_ids.length > 0) await (supabase as any).from("cargo_perfis").insert(editForm.cargo_ids.map(cid => ({ perfil_id: id!, cargo_id: cid })));
 
       // Sync perfil_apps_internos (internal profiles per app)
       await (supabase as any).from("perfil_apps_internos").delete().eq("perfil_id", id!);
@@ -217,6 +225,7 @@ export default function PerfilAcessoDetalhePage() {
       queryClient.invalidateQueries({ queryKey: ["perfil_grupos", id] });
       queryClient.invalidateQueries({ queryKey: ["perfil_apps_internos", id] });
       queryClient.invalidateQueries({ queryKey: ["perfil_sharepoint", id] });
+      queryClient.invalidateQueries({ queryKey: ["cargo_perfis_detalhe", id] });
       setEditOpen(false);
       triggerEntraProcessing();
     } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
@@ -405,6 +414,7 @@ export default function PerfilAcessoDetalhePage() {
               <TabsTrigger value="licencas">Licenças ({editForm.licenca_ids.length})</TabsTrigger>
               <TabsTrigger value="grupos">Grupos ({editForm.grupo_ids.length})</TabsTrigger>
               <TabsTrigger value="sharepoint">SharePoint ({spItems.length})</TabsTrigger>
+              <TabsTrigger value="cargos">Cargos ({editForm.cargo_ids.length})</TabsTrigger>
             </TabsList>
 
             <TabsContent value="geral" className="mt-4 space-y-4 overflow-auto flex-1">
@@ -504,6 +514,27 @@ export default function PerfilAcessoDetalhePage() {
                     </label>
                   ))}
                   {(entraGrupos ?? []).length === 0 && <EmptyState message="Nenhum grupo encontrado." size="sm" />}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+
+            <TabsContent value="cargos" className="mt-4 overflow-auto flex-1">
+              <div className="relative mb-2">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input placeholder="Buscar cargos..." className="pl-9" value={buscaCargos} onChange={e => setBuscaCargos(e.target.value)} />
+              </div>
+              <ScrollArea className="h-64 rounded-md border p-3">
+                <div className="space-y-2">
+                  {(allCargos ?? []).filter((c: any) => !buscaCargos || c.nome.toLowerCase().includes(buscaCargos.toLowerCase())).sort((a: any, b: any) => (editForm.cargo_ids.includes(a.id) ? 0 : 1) - (editForm.cargo_ids.includes(b.id) ? 0 : 1)).map((c: any) => (
+                    <label key={c.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-2 py-1">
+                      <Checkbox checked={editForm.cargo_ids.includes(c.id)} onCheckedChange={() => toggleItem("cargo_ids", c.id)} />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium">{c.nome}</span>
+                        {c.areas?.nome && <p className="text-xs text-muted-foreground truncate">{c.areas.nome}</p>}
+                      </div>
+                    </label>
+                  ))}
+                  {(allCargos ?? []).length === 0 && <EmptyState message="Nenhum cargo cadastrado." size="sm" />}
                 </div>
               </ScrollArea>
             </TabsContent>
