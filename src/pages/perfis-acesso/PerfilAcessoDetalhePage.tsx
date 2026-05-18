@@ -83,11 +83,13 @@ export default function PerfilAcessoDetalhePage() {
   });
 
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ nome: "", descricao: "", tipo: "funcional", ativo: true, aplicacao_ids: [] as string[], licenca_ids: [] as string[], grupo_ids: [] as string[], perfil_interno_map: {} as Record<string, string> });
+  const { data: allCargos } = useCargos();
+  const [editForm, setEditForm] = useState({ nome: "", descricao: "", tipo: "funcional", ativo: true, aplicacao_ids: [] as string[], licenca_ids: [] as string[], grupo_ids: [] as string[], cargo_ids: [] as string[], perfil_interno_map: {} as Record<string, string> });
   const [saving, setSaving] = useState(false);
   const [buscaApps, setBuscaApps] = useState("");
   const [buscaLicencas, setBuscaLicencas] = useState("");
   const [buscaGrupos, setBuscaGrupos] = useState("");
+  const [buscaCargos, setBuscaCargos] = useState("");
 
   // SharePoint edit state
   const [spItems, setSpItems] = useState<SpPermission[]>([]);
