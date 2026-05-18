@@ -131,17 +131,19 @@ export default function PerfilAcessoDetalhePage() {
       aplicacao_ids: (perfilApps ?? []).map((pa: any) => pa.aplicacao_id),
       licenca_ids: (perfilLicencas ?? []).map((pl: any) => pl.licenca_id),
       grupo_ids: (perfilGrupos ?? []).map((pg: any) => pg.grupo_id),
+      cargo_ids: (cargosVinculados ?? []).map((cp: any) => cp.cargo_id),
       perfil_interno_map: piMap,
     });
     setBuscaApps("");
     setBuscaLicencas("");
     setBuscaGrupos("");
+    setBuscaCargos("");
     // Load existing SharePoint items
     setSpItems((perfilSharepoint ?? []).map((ps: any) => ({ site_id: ps.site_id, pasta_nivel1_id: ps.pasta_nivel1_id || null, pasta_nivel2_id: ps.pasta_nivel2_id || null, permissao: ps.permissao })));
     setEditOpen(true);
   };
 
-  const toggleItem = (field: "aplicacao_ids" | "licenca_ids" | "grupo_ids", itemId: string) => {
+  const toggleItem = (field: "aplicacao_ids" | "licenca_ids" | "grupo_ids" | "cargo_ids", itemId: string) => {
     setEditForm(prev => ({
       ...prev,
       [field]: prev[field].includes(itemId) ? prev[field].filter(i => i !== itemId) : [...prev[field], itemId],
