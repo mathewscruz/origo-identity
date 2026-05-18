@@ -18,6 +18,7 @@ import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { HandHelping, Plus, Search, Clock, CheckCircle2, XCircle, Send, ExternalLink, AppWindow, Users, KeyRound } from "lucide-react";
 import { sendNotificationEmail } from "@/lib/sendNotificationEmail";
 import EmptyState from "@/components/EmptyState";
+import { Skeleton } from "@/components/ui/skeleton";
 import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
 
@@ -573,7 +574,13 @@ export default function SolicitacoesPage() {
               </TableRow></TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <TableRow key={`sk-${i}`}>
+                      {Array.from({ length: 6 }).map((__, j) => (
+                        <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
+                      ))}
+                    </TableRow>
+                  ))
                 ) : filtered(pendentes).length === 0 ? (
                   <TableRow><TableCell colSpan={6}><EmptyState message="Nenhuma solicitação pendente" /></TableCell></TableRow>
                 ) : filtered(pendentes).map(s => (

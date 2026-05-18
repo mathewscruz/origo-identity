@@ -29,6 +29,7 @@ import EmptyState from "@/components/EmptyState";
 import SortableHeader, { SortDirection, useSortableData } from "@/components/SortableHeader";
 import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
+import { formatAreaName } from "@/lib/formatters";
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
@@ -131,7 +132,7 @@ export default function ColaboradoresPage() {
     cpf_raw: c.cpf || "",
     cargo: c.cargos?.nome || "—",
     cargo_id: c.cargo_id || "",
-    area: c.areas?.nome || "—",
+    area: formatAreaName(c.areas?.nome),
     area_id: c.area_id || "",
     empresa_id: c.empresa_id || "",
     localidade_id: c.localidade_id || "",

@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { reprovisionCargoCollaborators } from "@/lib/entraQueueHelper";
 import { logAuditoria } from "@/lib/auditLogger";
 import EmptyState from "@/components/EmptyState";
+import { formatAreaName } from "@/lib/formatters";
 
 export default function CargosPage() {
   const canEdit = useCanEdit();
@@ -168,7 +169,7 @@ export default function CargosPage() {
                   {paginatedItems.map((cargo: any) => (
                     <tr key={cargo.id} className="border-b last:border-0 hover:bg-muted/50">
                       <td className="py-3 font-medium">{cargo.nome}</td>
-                      <td className="py-3 text-muted-foreground hidden md:table-cell">{cargo.areas?.nome || "—"}</td>
+                      <td className="py-3 text-muted-foreground hidden md:table-cell">{formatAreaName(cargo.areas?.nome)}</td>
                       <td className="py-3 hidden sm:table-cell">
                         <Badge variant="outline">{cargoPerfisMap[cargo.id] || 0} perfis</Badge>
                       </td>
