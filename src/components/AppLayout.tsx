@@ -79,16 +79,18 @@ function AppBreadcrumb() {
     <Breadcrumb>
       <BreadcrumbList>
         {crumbs.map((crumb, i) => (
-          <BreadcrumbItem key={crumb.path}>
+          <span key={crumb.path} className="contents">
             {i > 0 && <BreadcrumbSeparator />}
-            {crumb.isLast ? (
-              <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
-            ) : (
-              <BreadcrumbLink asChild>
-                <Link to={crumb.path}>{crumb.label}</Link>
-              </BreadcrumbLink>
-            )}
-          </BreadcrumbItem>
+            <BreadcrumbItem>
+              {crumb.isLast ? (
+                <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+              ) : (
+                <BreadcrumbLink asChild>
+                  <Link to={crumb.path}>{crumb.label}</Link>
+                </BreadcrumbLink>
+              )}
+            </BreadcrumbItem>
+          </span>
         ))}
       </BreadcrumbList>
     </Breadcrumb>
