@@ -182,6 +182,17 @@ async function executeAction(
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
   const graphBase = "https://graph.microsoft.com/v1.0";
 
+  const buildErr = async (res: Response, context: string): Promise<string> => {
+    let code: string | undefined; let message: string | undefined;
+    try {
+      const j = await res.clone().json();
+      code = j?.error?.code; message = j?.error?.message;
+    } catch {
+      try { message = await res.text(); } catch { /* ignore */ }
+    }
+    return humanizeGraphError(code, message, res.status, context);
+  };
+
   switch (actionType) {
     case "assign_group": {
       const groupId = payload.groupId;
