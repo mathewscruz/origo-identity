@@ -574,7 +574,13 @@ export default function SolicitacoesPage() {
               </TableRow></TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <TableRow key={`sk-${i}`}>
+                      {Array.from({ length: 6 }).map((__, j) => (
+                        <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
+                      ))}
+                    </TableRow>
+                  ))
                 ) : filtered(pendentes).length === 0 ? (
                   <TableRow><TableCell colSpan={6}><EmptyState message="Nenhuma solicitação pendente" /></TableCell></TableRow>
                 ) : filtered(pendentes).map(s => (
