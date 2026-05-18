@@ -95,34 +95,40 @@ export default function OnboardingTour({ pageKey, steps, delay = 800 }: Onboardi
 
   const userId = user?.id;
 
-  // Show tour on first visit — only once per mount
+  // Show tour on first visit — only once per mount, and never if the user
+  // already dismissed any tour in the app (global flag).
   useEffect(() => {
     if (!userId || steps.length === 0 || dismissedRef.current) return;
     const key = getStorageKey(userId, pageKey);
+    const globalKey = getGlobalDismissKey(userId);
     const seen = localStorage.getItem(key);
-    if (seen) {
+    const globalSeen = localStorage.getItem(globalKey);
+    if (seen || globalSeen) {
       dismissedRef.current = true;
       return;
     }
     const timer = setTimeout(() => {
       // Double-check right before showing (in case another instance marked it)
-      if (!localStorage.getItem(key) && !dismissedRef.current) {
+      if (!localStorage.getItem(key) && !localStorage.getItem(globalKey) && !dismissedRef.current) {
         setVisible(true);
       }
     }, delay);
     return () => clearTimeout(timer);
   }, [userId, pageKey, steps.length, delay]);
 
-  const markSeen = useCallback(() => {
+  const markSeen = useCallback((dismissAll = false) => {
     dismissedRef.current = true;
-    if (userId) localStorage.setItem(getStorageKey(userId, pageKey), "true");
+    if (userId) {
+      localStorage.setItem(getStorageKey(userId, pageKey), "true");
+      if (dismissAll) localStorage.setItem(getGlobalDismissKey(userId), "true");
+    }
     setVisible(false);
   }, [userId, pageKey]);
 
-  const handleSkip = () => markSeen();
+  const handleSkip = () => markSeen(true);
   const handleNext = () => {
     if (currentStep < steps.length - 1) setCurrentStep((s) => s + 1);
-    else markSeen();
+    else markSeen(false);
   };
   const handlePrev = () => {
     if (currentStep > 0) setCurrentStep((s) => s - 1);
