@@ -159,6 +159,20 @@ async function resolveServicePrincipal(
   return null;
 }
 
+function humanizeGraphError(code: string | undefined, message: string | undefined, status: number, context: string): string {
+  const c = (code || "").toString();
+  const m = (message || "").toString();
+  if (c === "Authorization_RequestDenied" || /Authorization_RequestDenied|Insufficient privileges/i.test(m)) {
+    return `Permissão insuficiente no Microsoft Graph para "${context}". Verifique se o App Registration possui os escopos necessários (ex: GroupMember.ReadWrite.All, User.ReadWrite.All, AppRoleAssignment.ReadWrite.All) com consentimento de administrador no Entra ID.`;
+  }
+  if (status === 401 || /token|unauthorized/i.test(m)) {
+    return `Token Microsoft Graph inválido ou expirado (${status}). Verifique AZURE_CLIENT_ID / AZURE_CLIENT_SECRET / AZURE_TENANT_ID.`;
+  }
+  if (status === 404) return `Recurso não encontrado no Entra ID (${context}). O objeto pode ter sido removido.`;
+  if (status === 429) return `Throttling do Microsoft Graph (429). A operação será reprocessada automaticamente.`;
+  return `Erro Graph (${status})${c ? ` [${c}]` : ""}: ${m || "sem detalhes"}`;
+}
+
 async function executeAction(
   token: string,
   userId: string,
