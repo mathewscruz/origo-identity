@@ -18,6 +18,7 @@ import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
 import NovaSolicitacaoDialog from "./sections/NovaSolicitacaoDialog";
 import DecisaoDialog from "./sections/DecisaoDialog";
+import { startWorkflow, recordDecision } from "@/lib/workflow/engine";
 
 function extractOwnerEmail(owner: string | null): string | null {
   if (!owner) return null;
@@ -166,45 +167,6 @@ export default function SolicitacoesPage() {
     return records;
   };
 
-  const provisionItem = async (item: { tipo: string; recurso_id: string; recurso_nome: string }, colab: any) => {
-    const targetIdentity = colab.entra_id || colab.email || colab.sam_account_name;
-    if (!targetIdentity) return;
-
-    const actionMap: Record<string, string> = { app: "assign_app", grupo: "assign_group", licenca: "assign_license" };
-    const payloadKeyMap: Record<string, { idKey: string; nameKey: string }> = {
-      app: { idKey: "appId", nameKey: "appName" },
-      grupo: { idKey: "groupId", nameKey: "groupName" },
-      licenca: { idKey: "skuId", nameKey: "licenseName" },
-    };
-
-    const keys = payloadKeyMap[item.tipo];
-    let resourceExternalId = item.recurso_id;
-    if (item.tipo === "app") resourceExternalId = appMap.get(item.recurso_id)?.entra_id || item.recurso_id;
-    if (item.tipo === "grupo") resourceExternalId = grupoMap.get(item.recurso_id)?.entra_id || item.recurso_id;
-    if (item.tipo === "licenca") {
-      const lic = licencaMap.get(item.recurso_id);
-      resourceExternalId = lic?.sku_id || item.recurso_id;
-    }
-
-    const payload: Record<string, any> = {
-      [keys.idKey]: resourceExternalId,
-      [keys.nameKey]: item.recurso_nome,
-      reason: "solicitacao_acesso",
-    };
-    if (item.tipo === "app") {
-      const app = appMap.get(item.recurso_id);
-      if (app?.default_app_role_id) payload.appRoleId = app.default_app_role_id;
-    }
-
-    await supabase.from("iam_queue").insert({
-      action_type: actionMap[item.tipo],
-      colaborador_id: colab.id,
-      target_identity: targetIdentity,
-      status: "pending",
-      payload_json: payload,
-      requested_by: profile?.email || "sistema",
-    } as any);
-  };
 
   const handleSubmit = async () => {
     if (!solicitanteId) {
@@ -220,18 +182,13 @@ export default function SolicitacoesPage() {
       return;
     }
 
-    // Build items first to determine initial status
-    const tempItems = buildItensRecords("temp");
-    const hasPending = tempItems.some(i => i.status === "pendente");
-    const initialStatus = hasPending ? "em_aprovacao" : "aprovada";
-
     const { data: inserted, error } = await supabase.from("solicitacoes_acesso").insert({
       solicitante_id: solicitanteId,
       aplicacoes_ids: selectedApps,
       grupos_ids: selectedGrupos,
       licencas_ids: selectedLicencas,
       justificativa: justificativa.trim(),
-      status: initialStatus,
+      status: "em_aprovacao",
     } as any).select("id").single();
 
     if (error) {
@@ -239,101 +196,46 @@ export default function SolicitacoesPage() {
       return;
     }
 
-    // Insert individual items
     const itemRecords = buildItensRecords(inserted!.id);
-    await supabase.from("solicitacao_itens").insert(itemRecords as any);
+    const { data: insertedItens } = await supabase
+      .from("solicitacao_itens")
+      .insert(itemRecords as any)
+      .select("id, tipo, recurso_id, recurso_nome, owner_email");
 
-    // Auto-provision items without owner
     const colab = colabMap.get(solicitanteId);
-    const autoApproved = itemRecords.filter(i => i.status === "aprovado");
-    if (colab && autoApproved.length > 0) {
-      for (const item of autoApproved) {
-        await provisionItem(item, colab);
-      }
-      triggerEntraProcessing();
-    }
+    const colabNome = colab?.nome || "—";
 
-    // If all items auto-approved, mark as approved with auto-approval
-    if (!hasPending) {
-      await supabase.from("solicitacoes_acesso").update({
-        status: "aprovada",
-        aprovador: "auto",
-        data_decisao: new Date().toISOString(),
-        comentario: "Aprovação automática — nenhum item possui owner definido",
-      } as any).eq("id", inserted!.id);
-    }
-
-    const colabNome = colabMap.get(solicitanteId)?.nome || "—";
-    const allItemNames = itemRecords.map(i => i.recurso_nome);
-    const itensDesc = allItemNames.join(", ");
+    // Inicia o motor de workflow
+    const result = await startWorkflow(
+      "solicitacao",
+      inserted!.id,
+      solicitanteId,
+      {
+        solicitanteEmail: colab?.email || null,
+        itens: (insertedItens || itemRecords) as any,
+        aplicacaoIds: selectedApps,
+        grupoIds: selectedGrupos,
+        licencaIds: selectedLicencas,
+        perfilId: null,
+      },
+      profile?.email || "sistema",
+    );
 
     await logAuditoria({
       acao: "criar",
       entidade: "solicitacao_acesso",
       entidade_id: inserted?.id,
-      resumo: `Solicitação de acesso: ${colabNome} → ${itensDesc}`,
+      resumo: `Solicitação de acesso: ${colabNome} → ${itemRecords.map((i: any) => i.recurso_nome).join(", ")}`,
       operador: profile?.email || "sistema",
     });
 
-    // Notify owners grouped by email
-    const ownerGroups = new Map<string, string[]>();
-    for (const item of itemRecords) {
-      if (item.owner_email) {
-        const existing = ownerGroups.get(item.owner_email) || [];
-        existing.push(item.recurso_nome);
-        ownerGroups.set(item.owner_email, existing);
-      }
+    if (result.status === "aprovada") {
+      toast({ title: "Solicitação criada e aprovada automaticamente" });
+    } else if (result.status === "rejeitada") {
+      toast({ title: "Solicitação criada e rejeitada pelo fluxo", variant: "destructive" });
+    } else {
+      toast({ title: "Solicitação criada", description: "Aguardando aprovadores do fluxo configurado." });
     }
-
-    for (const [ownerEmail, ownerItems] of ownerGroups) {
-      sendNotificationEmail("solicitacao_criada", {
-        destinatario_email: ownerEmail,
-        colaborador_nome: colabNome,
-        itens: ownerItems.join(", "),
-        justificativa: justificativa.trim(),
-        solicitante: profile?.nome || profile?.email || "Sistema",
-      });
-    }
-
-    // Notify admins only if NO items have owners
-    if (ownerGroups.size === 0 && hasPending) {
-      const { data: adminRoles } = await supabase.from("user_roles").select("user_id").eq("role", "admin");
-      if (adminRoles && adminRoles.length > 0) {
-        const adminIds = adminRoles.map((r: any) => r.user_id);
-        const { data: adminProfiles } = await supabase.from("profiles").select("email").in("id", adminIds);
-        for (const ap of (adminProfiles || [])) {
-          sendNotificationEmail("solicitacao_criada", {
-            destinatario_email: ap.email,
-            colaborador_nome: colabNome,
-            itens: itensDesc,
-            justificativa: justificativa.trim(),
-            solicitante: profile?.nome || profile?.email || "Sistema",
-          });
-        }
-      }
-    }
-
-    // Notify requester about auto-approved items
-    if (autoApproved.length > 0) {
-      const solicitanteEmail = colab?.email;
-      if (solicitanteEmail) {
-        sendNotificationEmail("solicitacao_decidida", {
-          destinatario_email: solicitanteEmail,
-          colaborador_nome: colabNome,
-          itens: autoApproved.map(i => i.recurso_nome).join(", "),
-          status: "aprovada",
-          aprovador: "Automático",
-          comentario: "Aprovação automática — sem owner definido",
-        });
-      }
-    }
-
-    toast({
-      title: "Solicitação criada com sucesso",
-      description: hasPending
-        ? `${autoApproved.length} item(ns) aprovado(s) automaticamente, ${itemRecords.length - autoApproved.length} aguardando aprovação do owner.`
-        : "Todos os itens foram aprovados automaticamente.",
-    });
 
     setDialogOpen(false);
     setSolicitanteId("");
@@ -361,73 +263,22 @@ export default function SolicitacoesPage() {
   };
 
   const handleDecision = async (decisao: "aprovada" | "rejeitada") => {
-    if (!decisionDialog || decisionItens.length === 0) return;
+    if (!decisionDialog) return;
 
-    const colab = colabMap.get(decisionDialog.solicitante_id);
-    const colabNome = colab?.nome || "—";
+    const aprovadorEmail = profile?.email || "sistema";
 
-    // Update all pending items
-    const itemIds = decisionItens.map(i => i.id);
-    await supabase.from("solicitacao_itens").update({
-      status: decisao === "aprovada" ? "aprovado" : "rejeitado",
-      decidido_por: profile?.email || "sistema",
-      decidido_em: new Date().toISOString(),
-    } as any).in("id", itemIds);
-
-    // Provision approved items
-    if (decisao === "aprovada" && colab) {
-      for (const item of decisionItens) {
-        await provisionItem(item, colab);
-      }
-      triggerEntraProcessing();
+    try {
+      await recordDecision(
+        decisionDialog.id,
+        aprovadorEmail,
+        decisao,
+        comentario || null,
+        profile?.nome || profile?.email || "Sistema",
+      );
+      toast({ title: `Decisão registrada: ${decisao}` });
+    } catch (e: any) {
+      toast({ title: "Erro ao registrar decisão", description: e.message, variant: "destructive" });
     }
-
-    // Check if all items are now decided
-    const { data: allItens } = await supabase
-      .from("solicitacao_itens")
-      .select("status")
-      .eq("solicitacao_id", decisionDialog.id);
-
-    const allDecided = (allItens || []).every((i: any) => i.status !== "pendente");
-    if (allDecided) {
-      const hasRejected = (allItens || []).some((i: any) => i.status === "rejeitado");
-      const hasApproved = (allItens || []).some((i: any) => i.status === "aprovado");
-      let finalStatus = "aprovada";
-      if (hasRejected && !hasApproved) finalStatus = "rejeitada";
-      else if (hasRejected && hasApproved) finalStatus = "aprovada"; // partial
-
-      await supabase.from("solicitacoes_acesso").update({
-        status: finalStatus,
-        aprovador: profile?.email || "sistema",
-        comentario: comentario || null,
-        data_decisao: new Date().toISOString(),
-      } as any).eq("id", decisionDialog.id);
-    }
-
-    // Notify requester
-    const solicitanteEmail = colab?.email;
-    if (solicitanteEmail) {
-      const itensNomes = decisionItens.map(i => i.recurso_nome).join(", ");
-      sendNotificationEmail("solicitacao_decidida", {
-        destinatario_email: solicitanteEmail,
-        colaborador_nome: colabNome,
-        itens: itensNomes,
-        status: decisao,
-        aprovador: profile?.nome || profile?.email || "Sistema",
-        comentario: comentario || undefined,
-      });
-    }
-
-    await logAuditoria({
-      acao: decisao === "aprovada" ? "aprovar" : "rejeitar",
-      entidade: "solicitacao_acesso",
-      entidade_id: decisionDialog.id,
-      resumo: `Itens ${decisao === "aprovada" ? "aprovados" : "rejeitados"}: ${decisionItens.map(i => i.recurso_nome).join(", ")}`,
-      operador: profile?.email || "sistema",
-      detalhes: { comentario },
-    });
-
-    toast({ title: `Itens ${decisao === "aprovada" ? "aprovados" : "rejeitados"} com sucesso` });
 
     setDecisionDialog(null);
     setDecisionItens([]);

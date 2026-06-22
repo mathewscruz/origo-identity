@@ -1792,6 +1792,8 @@ export type Database = {
           comentario: string | null
           created_at: string
           data_decisao: string | null
+          etapa_atual_ordem: number | null
+          fluxo_id: string | null
           grupos_ids: Json
           id: string
           justificativa: string
@@ -1808,6 +1810,8 @@ export type Database = {
           comentario?: string | null
           created_at?: string
           data_decisao?: string | null
+          etapa_atual_ordem?: number | null
+          fluxo_id?: string | null
           grupos_ids?: Json
           id?: string
           justificativa: string
@@ -1824,6 +1828,8 @@ export type Database = {
           comentario?: string | null
           created_at?: string
           data_decisao?: string | null
+          etapa_atual_ordem?: number | null
+          fluxo_id?: string | null
           grupos_ids?: Json
           id?: string
           justificativa?: string
@@ -1835,6 +1841,13 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "solicitacoes_acesso_fluxo_id_fkey"
+            columns: ["fluxo_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_fluxos"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "solicitacoes_acesso_perfil_fkey"
             columns: ["perfil_id"]
@@ -2003,39 +2016,92 @@ export type Database = {
         }
         Relationships: []
       }
-      workflow_etapas: {
+      workflow_etapa_aprovadores: {
         Row: {
-          aprovador_tipo: string
-          ativo: boolean
           created_at: string
-          entidade_tipo: string
+          email: string
+          etapa_id: string
           id: string
-          ordem: number
-          timeout_horas: number
+          nome: string | null
         }
         Insert: {
-          aprovador_tipo?: string
-          ativo?: boolean
           created_at?: string
-          entidade_tipo?: string
+          email: string
+          etapa_id: string
           id?: string
-          ordem?: number
-          timeout_horas?: number
+          nome?: string | null
         }
         Update: {
-          aprovador_tipo?: string
+          created_at?: string
+          email?: string
+          etapa_id?: string
+          id?: string
+          nome?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_etapa_aprovadores_etapa_id_fkey"
+            columns: ["etapa_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_etapas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workflow_etapas: {
+        Row: {
+          acao_timeout: string | null
+          ativo: boolean
+          created_at: string
+          fluxo_id: string | null
+          id: string
+          modo_aprovacao: string | null
+          nome: string | null
+          ordem: number
+          papel: Database["public"]["Enums"]["app_role"] | null
+          timeout_horas: number
+          tipo_aprovador: string | null
+        }
+        Insert: {
+          acao_timeout?: string | null
           ativo?: boolean
           created_at?: string
-          entidade_tipo?: string
+          fluxo_id?: string | null
           id?: string
+          modo_aprovacao?: string | null
+          nome?: string | null
           ordem?: number
+          papel?: Database["public"]["Enums"]["app_role"] | null
           timeout_horas?: number
+          tipo_aprovador?: string | null
         }
-        Relationships: []
+        Update: {
+          acao_timeout?: string | null
+          ativo?: boolean
+          created_at?: string
+          fluxo_id?: string | null
+          id?: string
+          modo_aprovacao?: string | null
+          nome?: string | null
+          ordem?: number
+          papel?: Database["public"]["Enums"]["app_role"] | null
+          timeout_horas?: number
+          tipo_aprovador?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_etapas_fluxo_id_fkey"
+            columns: ["fluxo_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_fluxos"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       workflow_execucoes: {
         Row: {
           aprovador: string | null
+          aprovador_email: string | null
           comentario: string | null
           created_at: string
           data_decisao: string | null
@@ -2043,10 +2109,13 @@ export type Database = {
           entidade_tipo: string
           etapa_id: string
           id: string
+          ordem: number | null
+          solicitacao_id: string | null
           status: string
         }
         Insert: {
           aprovador?: string | null
+          aprovador_email?: string | null
           comentario?: string | null
           created_at?: string
           data_decisao?: string | null
@@ -2054,10 +2123,13 @@ export type Database = {
           entidade_tipo?: string
           etapa_id: string
           id?: string
+          ordem?: number | null
+          solicitacao_id?: string | null
           status?: string
         }
         Update: {
           aprovador?: string | null
+          aprovador_email?: string | null
           comentario?: string | null
           created_at?: string
           data_decisao?: string | null
@@ -2065,6 +2137,8 @@ export type Database = {
           entidade_tipo?: string
           etapa_id?: string
           id?: string
+          ordem?: number | null
+          solicitacao_id?: string | null
           status?: string
         }
         Relationships: [
@@ -2075,7 +2149,59 @@ export type Database = {
             referencedRelation: "workflow_etapas"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "workflow_execucoes_solicitacao_id_fkey"
+            columns: ["solicitacao_id"]
+            isOneToOne: false
+            referencedRelation: "solicitacoes_acesso"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      workflow_fluxos: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          descricao: string | null
+          escopo: string
+          filtro_aplicacao_ids: string[]
+          filtro_licenca_ids: string[]
+          filtro_perfil_ids: string[]
+          id: string
+          is_default: boolean
+          nome: string
+          prioridade: number
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          escopo: string
+          filtro_aplicacao_ids?: string[]
+          filtro_licenca_ids?: string[]
+          filtro_perfil_ids?: string[]
+          id?: string
+          is_default?: boolean
+          nome: string
+          prioridade?: number
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          escopo?: string
+          filtro_aplicacao_ids?: string[]
+          filtro_licenca_ids?: string[]
+          filtro_perfil_ids?: string[]
+          id?: string
+          is_default?: boolean
+          nome?: string
+          prioridade?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
     }
     Views: {
