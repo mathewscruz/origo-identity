@@ -310,7 +310,19 @@ export default function TerceirosPage() {
                   <SelectContent><SelectItem value="baixa">Baixa</SelectItem><SelectItem value="media">Média</SelectItem><SelectItem value="alta">Alta</SelectItem><SelectItem value="critica">Crítica</SelectItem></SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2"><Label>Responsável</Label><Input value={form.responsavel} onChange={(e) => setForm({ ...form, responsavel: e.target.value })} /></div>
+              <div className="space-y-2">
+                <Label>Responsável</Label>
+                <ColaboradorPicker
+                  value={form.responsavel_colaborador_id || null}
+                  onChange={(c) => setForm({
+                    ...form,
+                    responsavel_colaborador_id: c?.id || "",
+                    responsavel: c ? (c.email ? `${c.nome} <${c.email}>` : c.nome) : "",
+                  })}
+                  placeholder="Selecione o responsável..."
+                />
+                <p className="text-xs text-muted-foreground">Receberá o e-mail de revalidação a cada 45 dias.</p>
+              </div>
             </div>
             <div className="flex items-center gap-2"><Switch checked={form.ativo} onCheckedChange={(v) => setForm({ ...form, ativo: v })} /><Label>Ativo</Label></div>
           </div>
