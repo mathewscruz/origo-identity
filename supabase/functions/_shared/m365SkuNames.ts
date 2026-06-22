@@ -13,19 +13,29 @@ export const M365_SKU_FRIENDLY: Record<string, string> = {
   DESKLESSPACK: "Office 365 F3",
   SPE_E3: "Microsoft 365 E3",
   SPE_E5: "Microsoft 365 E5",
-  SPE_F1: "Microsoft 365 F1",
+  // SPE_F1 is the partNumber of Microsoft 365 F3 (renamed by Microsoft in April 2020).
+  // The legacy F1 plan uses partNumber M365_F1.
+  SPE_F1: "Microsoft 365 F3",
   SPE_F3: "Microsoft 365 F3",
   M365_F1: "Microsoft 365 F1",
   M365EDU_A1: "Microsoft 365 A1",
   M365EDU_A3_FACULTY: "Microsoft 365 A3 (Faculty)",
   M365EDU_A5_FACULTY: "Microsoft 365 A5 (Faculty)",
+  SPB: "Microsoft 365 Business Premium",
+  SMB_BUSINESS: "Microsoft 365 Business Standard",
+  SMB_BUSINESS_ESSENTIALS: "Microsoft 365 Business Basic",
+  SMB_BUSINESS_PREMIUM: "Microsoft 365 Business Premium",
   O365_BUSINESS: "Microsoft 365 Apps for Business",
   O365_BUSINESS_ESSENTIALS: "Microsoft 365 Business Basic",
   O365_BUSINESS_PREMIUM: "Microsoft 365 Business Standard",
-  SMB_BUSINESS_PREMIUM: "Microsoft 365 Business Premium",
   OFFICESUBSCRIPTION: "Microsoft 365 Apps for Enterprise",
   EXCHANGESTANDARD: "Exchange Online (Plan 1)",
   EXCHANGEENTERPRISE: "Exchange Online (Plan 2)",
+  EXCHANGEARCHIVE: "Exchange Online Archiving for Exchange Server",
+  EXCHANGEARCHIVE_ADDON: "Exchange Online Archiving for Exchange Online",
+  EXCHANGEDESKLESS: "Exchange Online Kiosk",
+  SHAREPOINTSTORAGE: "Office 365 Extra File Storage",
+  WINDOWS_STORE: "Windows Store for Business",
   EXCHANGEARCHIVE: "Exchange Online Archiving for Exchange Server",
   EXCHANGEARCHIVE_ADDON: "Exchange Online Archiving for Exchange Online",
   EXCHANGEDESKLESS: "Exchange Online Kiosk",
@@ -37,8 +47,10 @@ export const M365_SKU_FRIENDLY: Record<string, string> = {
   MCOPSTN2: "Microsoft Teams Domestic & International Calling Plan",
   PHONESYSTEM_VIRTUALUSER: "Microsoft Teams Phone Resource Account",
   Microsoft_Teams_Rooms_Pro: "Microsoft Teams Rooms Pro",
-  Microsoft_Teams_Exploratory_Dept: "Microsoft Teams Exploratory",
+  Microsoft_Teams_Exploratory_Dept: "Microsoft Teams Exploratory (for Departments)",
   TEAMS_EXPLORATORY: "Microsoft Teams Exploratory",
+  "Teams_Premium_(for_Departments)": "Microsoft Teams Premium (for Departments)",
+  Teams_Premium: "Microsoft Teams Premium",
 
   // Power Platform / Dynamics
   POWER_BI_PRO: "Power BI Pro",
@@ -81,17 +93,24 @@ export const M365_SKU_FRIENDLY: Record<string, string> = {
   AAD_PREMIUM_P2: "Microsoft Entra ID P2",
   RIGHTSMANAGEMENT: "Azure Information Protection Plan 1",
   INTUNE_A: "Microsoft Intune Plan 1",
+  WIN_DEF_ATP: "Microsoft Defender for Endpoint Plan 2",
+  ATP_ENTERPRISE: "Microsoft Defender for Office 365 P1",
+  THREAT_INTELLIGENCE: "Microsoft Defender for Office 365 P2",
+  IDENTITY_THREAT_PROTECTION: "Microsoft 365 E5 Security",
+  ADALLOM_S_STANDALONE: "Microsoft Defender for Cloud Apps",
 
   // Visio / Project / misc
   VISIOCLIENT: "Visio Plan 2",
   PROJECTPROFESSIONAL: "Project Plan 3",
+  PROJECT_PLAN3_DEPT: "Project Plan 3 (for Departments)",
   PROJECTPREMIUM: "Project Plan 5",
   STREAM: "Microsoft Stream Trial",
   WIN10_PRO_ENT_SUB: "Windows 10/11 Enterprise E3",
   WIN10_VDA_E5: "Windows 10/11 Enterprise E5",
 };
 
-const TRIAL_HINT_REGEX = /(VIRAL|TRIAL|FREE|vTrial|_DEV)/i;
+// _IW = Info Worker (self-service trial). Always trial regardless of consumption.
+const TRIAL_HINT_REGEX = /(VIRAL|TRIAL|FREE|vTrial|_DEV|_IW)/i;
 
 /** Heuristic: treat as trial when name signals it OR when pool is absurdly large with negligible usage. */
 export function isTrialSku(skuPartNumber: string, enabled: number, consumed: number): boolean {
