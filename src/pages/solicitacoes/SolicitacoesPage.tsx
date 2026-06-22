@@ -629,147 +629,41 @@ export default function SolicitacoesPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Nova Solicitação */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Nova Solicitação de Acesso</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            {/* Colaborador */}
-            <div>
-              <label className="text-sm font-medium">Colaborador</label>
-              <Input placeholder="Buscar colaborador..." value={buscaColab} onChange={e => setBuscaColab(e.target.value)} className="mb-2" />
-              <Select value={solicitanteId} onValueChange={setSolicitanteId}>
-                <SelectTrigger><SelectValue placeholder="Selecione o colaborador" /></SelectTrigger>
-                <SelectContent>
-                  {filteredColabs.slice(0, 50).map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.nome}{c.email ? ` (${c.email})` : ""}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      <NovaSolicitacaoDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        colabs={colaboradores}
+        apps={filteredApps}
+        grupos={filteredGrupos}
+        licencas={filteredLicencas}
+        solicitanteId={solicitanteId}
+        setSolicitanteId={setSolicitanteId}
+        selectedApps={selectedApps}
+        selectedGrupos={selectedGrupos}
+        selectedLicencas={selectedLicencas}
+        onToggleApp={(id) => toggleItem(selectedApps, setSelectedApps, id)}
+        onToggleGrupo={(id) => toggleItem(selectedGrupos, setSelectedGrupos, id)}
+        onToggleLicenca={(id) => toggleItem(selectedLicencas, setSelectedLicencas, id)}
+        justificativa={justificativa}
+        setJustificativa={setJustificativa}
+        buscaColab={buscaColab} setBuscaColab={setBuscaColab}
+        buscaApp={buscaApp} setBuscaApp={setBuscaApp}
+        buscaGrupo={buscaGrupo} setBuscaGrupo={setBuscaGrupo}
+        buscaLicenca={buscaLicenca} setBuscaLicenca={setBuscaLicenca}
+        onSubmit={handleSubmit}
+      />
 
-            {/* Aplicações */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium flex items-center gap-2">
-                <AppWindow className="h-4 w-4" /> Aplicações
-                {selectedApps.length > 0 && <Badge variant="secondary" className="text-xs">{selectedApps.length} selecionada(s)</Badge>}
-              </label>
-              <Input placeholder="Buscar aplicação..." value={buscaApp} onChange={e => setBuscaApp(e.target.value)} />
-              <ScrollArea className="h-36 rounded-md border p-2">
-                {filteredApps.map(a => (
-                  <label key={a.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
-                    <Checkbox checked={selectedApps.includes(a.id)} onCheckedChange={() => toggleItem(selectedApps, setSelectedApps, a.id)} />
-                    <span className="text-sm">{a.nome}</span>
-                    {a.owner && <Badge variant="outline" className="text-xs ml-auto">Owner definido</Badge>}
-                  </label>
-                ))}
-                {filteredApps.length === 0 && <EmptyState message="Nenhuma aplicação encontrada" size="sm" />}
-              </ScrollArea>
-            </div>
+      <DecisaoDialog
+        open={!!decisionDialog}
+        onClose={() => { setDecisionDialog(null); setDecisionItens([]); setComentario(""); }}
+        solicitacao={decisionDialog}
+        solicitanteNome={decisionDialog ? colabMap.get(decisionDialog.solicitante_id)?.nome || "—" : ""}
+        itens={decisionItens}
+        comentario={comentario}
+        setComentario={setComentario}
+        onDecision={handleDecision}
+      />
 
-            {/* Grupos */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium flex items-center gap-2">
-                <Users className="h-4 w-4" /> Grupos
-                {selectedGrupos.length > 0 && <Badge variant="secondary" className="text-xs">{selectedGrupos.length} selecionado(s)</Badge>}
-              </label>
-              <Input placeholder="Buscar grupo..." value={buscaGrupo} onChange={e => setBuscaGrupo(e.target.value)} />
-              <ScrollArea className="h-36 rounded-md border p-2">
-                {filteredGrupos.map(g => (
-                  <label key={g.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
-                    <Checkbox checked={selectedGrupos.includes(g.id)} onCheckedChange={() => toggleItem(selectedGrupos, setSelectedGrupos, g.id)} />
-                    <span className="text-sm">{g.nome}</span>
-                    {g.owner && <Badge variant="outline" className="text-xs ml-auto">Owner definido</Badge>}
-                  </label>
-                ))}
-                {filteredGrupos.length === 0 && <EmptyState message="Nenhum grupo encontrado" size="sm" />}
-              </ScrollArea>
-            </div>
-
-            {/* Licenças */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium flex items-center gap-2">
-                <KeyRound className="h-4 w-4" /> Licenças
-                {selectedLicencas.length > 0 && <Badge variant="secondary" className="text-xs">{selectedLicencas.length} selecionada(s)</Badge>}
-              </label>
-              <Input placeholder="Buscar licença..." value={buscaLicenca} onChange={e => setBuscaLicenca(e.target.value)} />
-              <ScrollArea className="h-36 rounded-md border p-2">
-                {filteredLicencas.map(l => (
-                  <label key={l.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
-                    <Checkbox checked={selectedLicencas.includes(l.id)} onCheckedChange={() => toggleItem(selectedLicencas, setSelectedLicencas, l.id)} />
-                    <span className="text-sm">{l.nome}</span>
-                    {l.owner && <Badge variant="outline" className="text-xs ml-auto">Owner definido</Badge>}
-                  </label>
-                ))}
-                {filteredLicencas.length === 0 && <EmptyState message="Nenhuma licença encontrada" size="sm" />}
-              </ScrollArea>
-            </div>
-
-            {/* Justificativa */}
-            <div>
-              <label className="text-sm font-medium">Justificativa</label>
-              <Textarea value={justificativa} onChange={e => setJustificativa(e.target.value)} placeholder="Explique por que este acesso é necessário..." />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSubmit}><Send className="mr-2 h-4 w-4" />Enviar Solicitação</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Decision Dialog — per-item */}
-      <Dialog open={!!decisionDialog} onOpenChange={() => { setDecisionDialog(null); setDecisionItens([]); setComentario(""); }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Decidir Solicitação</DialogTitle>
-          </DialogHeader>
-          {decisionDialog && (
-            <div className="space-y-4">
-              <div className="rounded-lg border p-3 space-y-1 text-sm">
-                <p><strong>Solicitante:</strong> {colabMap.get(decisionDialog.solicitante_id)?.nome || "—"}</p>
-                <p><strong>Justificativa:</strong> {decisionDialog.justificativa}</p>
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-sm font-medium">Itens pendentes de aprovação:</p>
-                {decisionItens.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Nenhum item pendente</p>
-                ) : (
-                  <div className="space-y-1">
-                    {decisionItens.map((item: any) => {
-                      const iconMap: Record<string, any> = { app: AppWindow, grupo: Users, licenca: KeyRound };
-                      const Icon = iconMap[item.tipo] || AppWindow;
-                      const tipoLabel: Record<string, string> = { app: "Aplicação", grupo: "Grupo", licenca: "Licença" };
-                      return (
-                        <div key={item.id} className="flex items-center gap-2 p-2 rounded border">
-                          <Icon className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm font-medium">{item.recurso_nome}</span>
-                          <Badge variant="outline" className="text-xs ml-auto">{tipoLabel[item.tipo] || item.tipo}</Badge>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className="text-sm font-medium">Comentário (opcional)</label>
-                <Textarea value={comentario} onChange={e => setComentario(e.target.value)} placeholder="Adicione um comentário sobre a decisão..." />
-              </div>
-            </div>
-          )}
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => { setDecisionDialog(null); setDecisionItens([]); setComentario(""); }}>Cancelar</Button>
-            <Button variant="destructive" onClick={() => handleDecision("rejeitada")} disabled={decisionItens.length === 0}>
-              <XCircle className="mr-2 h-4 w-4" />Rejeitar Todos
-            </Button>
-            <Button onClick={() => handleDecision("aprovada")} disabled={decisionItens.length === 0}>
-              <CheckCircle2 className="mr-2 h-4 w-4" />Aprovar Todos
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
       <OnboardingTour pageKey="solicitacoes" steps={tourSteps.solicitacoes} />
     </div>
   );
