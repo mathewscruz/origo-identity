@@ -398,29 +398,34 @@ export default function PortalSolicitacoesPage() {
     rejeitadas: solicitacoes.filter(s => s.status === "rejeitada").length,
   };
 
+  // Sort: recomendado > selecionado > já tem (no fim) > alfabético
+  const catalogSort = (selected: string[], owned: Set<string>, rec: Set<string>) =>
+    (a: any, b: any) => {
+      const score = (x: any) => (selected.includes(x.id) ? 0 : rec.has(x.id) ? 1 : owned.has(x.id) ? 3 : 2);
+      const sa = score(a); const sb = score(b);
+      return sa - sb || a.nome.localeCompare(b.nome);
+    };
+
   const filteredApps = aplicacoes
     .filter(a => !buscaApp || a.nome.toLowerCase().includes(buscaApp.toLowerCase()))
-    .sort((a, b) => {
-      const aS = selectedApps.includes(a.id) ? 0 : 1;
-      const bS = selectedApps.includes(b.id) ? 0 : 1;
-      return aS - bS || a.nome.localeCompare(b.nome);
-    });
+    .sort(catalogSort(selectedApps, ownedAppIds, recAppIds));
 
   const filteredGrupos = grupos
     .filter(g => !buscaGrupo || g.nome.toLowerCase().includes(buscaGrupo.toLowerCase()))
-    .sort((a, b) => {
-      const aS = selectedGrupos.includes(a.id) ? 0 : 1;
-      const bS = selectedGrupos.includes(b.id) ? 0 : 1;
-      return aS - bS || a.nome.localeCompare(b.nome);
-    });
+    .sort(catalogSort(selectedGrupos, ownedGrupoIds, recGrupoIds));
 
   const filteredLicencas = licencas
     .filter(l => !buscaLicenca || l.nome.toLowerCase().includes(buscaLicenca.toLowerCase()))
-    .sort((a, b) => {
-      const aS = selectedLicencas.includes(a.id) ? 0 : 1;
-      const bS = selectedLicencas.includes(b.id) ? 0 : 1;
-      return aS - bS || a.nome.localeCompare(b.nome);
-    });
+    .sort(catalogSort(selectedLicencas, ownedLicencaIds, recLicencaIds));
+
+  const totalRecomendados = recAppIds.size + recGrupoIds.size + recLicencaIds.size;
+
+  const applyAllRecommendations = () => {
+    setSelectedApps(prev => Array.from(new Set([...prev, ...recAppIds])));
+    setSelectedGrupos(prev => Array.from(new Set([...prev, ...recGrupoIds])));
+    setSelectedLicencas(prev => Array.from(new Set([...prev, ...recLicencaIds])));
+  };
+
 
   return (
     <div className="space-y-6">
