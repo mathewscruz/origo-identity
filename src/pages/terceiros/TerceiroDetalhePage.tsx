@@ -4,7 +4,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Pencil, RefreshCw, Plus, X, UserX, RotateCcw, Info } from "lucide-react";
+import { ArrowLeft, Pencil, RefreshCw, Plus, X, UserX, RotateCcw, Info, Workflow } from "lucide-react";
+import StartJmlEventDialog from "@/components/jml/StartJmlEventDialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -49,6 +50,7 @@ export default function TerceiroDetalhePage() {
   const { id } = useParams();
   const { data: terceiro, isLoading } = useTerceiro(id);
   const [renovarOpen, setRenovarOpen] = useState(false);
+  const [startJmlOpen, setStartJmlOpen] = useState(false);
   const [atribuirOpen, setAtribuirOpen] = useState(false);
   const [desligarOpen, setDesligarOpen] = useState(false);
   const [desligando, setDesligando] = useState(false);
@@ -352,6 +354,9 @@ export default function TerceiroDetalhePage() {
               <RotateCcw className="mr-1 h-3 w-3" /> {reativando ? "Reativando..." : "Reativar Terceiro"}
             </Button>
           )}
+          <Button variant="outline" size="sm" onClick={() => setStartJmlOpen(true)}>
+            <Workflow className="mr-1 h-3 w-3" /> Iniciar evento JML
+          </Button>
           <Button variant="outline" size="sm"><Pencil className="mr-1 h-3 w-3" /> Editar</Button>
           <Button size="sm" onClick={() => setRenovarOpen(true)}><RefreshCw className="mr-1 h-3 w-3" /> Renovar Contrato</Button>
         </div>
@@ -538,6 +543,15 @@ export default function TerceiroDetalhePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </Dialog>
+
+      <StartJmlEventDialog
+        open={startJmlOpen}
+        onOpenChange={setStartJmlOpen}
+        colaboradorId={id}
+        colaboradorNome={terceiro.nome}
+        allowedTipos={["joiner", "leaver", "pre_leaver"]}
+      />
     </div>
   );
 }
