@@ -609,6 +609,55 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
     console.log(`Classification: ${toInsert.length} new, ${toUpdate.length} changed, ${unchanged} unchanged, ${leaverIds.length} leavers`);
 
+    // ── 5.1 Guard: ignore CSV-driven reactivation for users disabled manually in the tool ──
+    // If admin set status=desligado/inativo here, CSV may still say "ativo" for up to 5 days.
+    // Preserve DB status until CSV converges (status flips to desligado/inativo), then clear the flag.
+    const manualConvergenceIds: string[] = [];
+    for (const item of toUpdate) {
+      if (!item.desligadoManual) continue;
+      const csvStatus = item.data.status;
+      if (csvStatus === "ativo") {
+        // Block reactivation: keep DB status, don't enqueue enable_*.
+        item.data.status = item.oldStatus;
+        const gapDias = item.desligadoManualEm
+          ? Math.max(0, Math.round((Date.now() - new Date(item.desligadoManualEm).getTime()) / 86400000))
+          : null;
+        await sb.from("alertas").insert({
+          titulo: "CSV divergente — desligamento manual",
+          mensagem: `${item.data.nome || item.id}: CSV ainda traz como ativo, mas foi desligado manualmente na ferramenta${gapDias !== null ? ` há ${gapDias} dia(s)` : ""}. Reativação bloqueada.`,
+          severidade: "aviso",
+          tipo: "csv_divergencia_desligamento",
+          ref_url: `/colaboradores/${item.id}`,
+        });
+        await sb.from("auditoria").insert({
+          acao: "bloquear_reativacao_csv",
+          entidade: "colaboradores",
+          entidade_id: item.id,
+          resumo: `Reativação por CSV bloqueada para ${item.data.nome || item.id} (desligado manualmente${gapDias !== null ? `, gap ${gapDias}d` : ""})`,
+          operador: "sistema_sync_csv",
+          detalhes: {
+            csv_status: csvStatus,
+            db_status: item.oldStatus,
+            desligado_manual_em: item.desligadoManualEm,
+            gap_dias: gapDias,
+          },
+        });
+      } else if (csvStatus === "desligado" || csvStatus === "inativo") {
+        // Convergence: clear the manual flag — CSV finally caught up.
+        manualConvergenceIds.push(item.id);
+        item.desligadoManual = false;
+      }
+    }
+    if (manualConvergenceIds.length > 0) {
+      for (const batch of chunk(manualConvergenceIds, 200)) {
+        await sb.from("colaboradores").update({
+          desligado_manual: false,
+          desligado_manual_em: null,
+          desligado_manual_por: null,
+        }).in("id", batch);
+      }
+    }
+
     // ── 6. Execute INSERTs ──
     await sb.from("sync_jobs").update({ phase: "inserting", message: `Inserindo ${toInsert.length} novos...`, colab_percent: 30 }).eq("id", jobId);
 
