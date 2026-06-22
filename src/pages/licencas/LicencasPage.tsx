@@ -47,6 +47,8 @@ export default function LicencasPage() {
   const { data: licencas, isLoading: loadingLicencas } = useLicencas();
   const { data: entraLicencas, isLoading: loadingEntra } = useEntraLicencas();
   const { data: aplicacoes } = useAplicacoes();
+  const { data: extUso } = useLicencasExternasUso();
+  const { data: parametros } = useParametros();
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -59,46 +61,79 @@ export default function LicencasPage() {
   const [tab, setTab] = useState("todas");
   const [search, setSearch] = useState("");
   const [syncing, setSyncing] = useState(false);
+  const [hideTrials, setHideTrials] = useState(true);
 
   const isLoading = loadingLicencas || loadingEntra;
+
+  const criticalPct = useMemo(() => {
+    const p = (parametros ?? []).find((p: any) => p.chave === "licenca_critico_pct");
+    const n = p ? parseInt(p.valor, 10) : 90;
+    return Number.isFinite(n) ? n : 90;
+  }, [parametros]);
+
+  const extUsoMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of extUso ?? []) m.set(r.licenca_id, r.em_uso_calc);
+    return m;
+  }, [extUso]);
 
   // Unify both lists
   const msLicenses: UnifiedLicense[] = ((entraLicencas ?? []) as any[]).map((l) => ({
     id: l.id,
     nome: l.nome,
+    display_name: l.friendly_name || l.nome,
     total: l.total,
     em_uso: l.em_uso,
+    em_uso_source: "microsoft" as const,
     tipo: null,
     origem: "microsoft" as const,
+    is_trial: !!l.is_trial,
+    capability_status: l.capability_status ?? null,
     sku_id: l.sku_id,
     raw: l,
   }));
 
-  const extLicenses: UnifiedLicense[] = ((licencas ?? []) as any[]).map((l) => ({
-    id: l.id,
-    nome: l.nome,
-    total: l.total,
-    em_uso: l.em_uso,
-    tipo: l.tipo,
-    origem: "externa" as const,
-    aplicacao_nome: l.aplicacoes?.nome,
-    custo_unitario: l.custo_unitario,
-    renovacao: l.renovacao,
-    aplicacao_id: l.aplicacao_id,
-    raw: l,
-  }));
+  const extLicenses: UnifiedLicense[] = ((licencas ?? []) as any[]).map((l) => {
+    const calc = extUsoMap.get(l.id);
+    const hasCalc = calc !== undefined && calc > 0;
+    return {
+      id: l.id,
+      nome: l.nome,
+      display_name: l.nome,
+      total: l.total,
+      em_uso: hasCalc ? calc! : l.em_uso,
+      em_uso_source: hasCalc ? ("calculated" as const) : ("manual" as const),
+      tipo: l.tipo,
+      origem: "externa" as const,
+      is_trial: false,
+      aplicacao_nome: l.aplicacoes?.nome,
+      custo_unitario: l.custo_unitario,
+      renovacao: l.renovacao,
+      aplicacao_id: l.aplicacao_id,
+      raw: l,
+    };
+  });
 
-  const allLicenses = [...msLicenses, ...extLicenses].sort((a, b) => a.nome.localeCompare(b.nome));
+  const allLicenses = [...msLicenses, ...extLicenses].sort((a, b) => a.display_name.localeCompare(b.display_name));
 
   const filtered = allLicenses.filter((l) => {
     if (tab === "microsoft" && l.origem !== "microsoft") return false;
     if (tab === "externas" && l.origem !== "externa") return false;
-    if (search && !l.nome.toLowerCase().includes(search.toLowerCase())) return false;
+    if (hideTrials && l.is_trial) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      if (!l.display_name.toLowerCase().includes(q) && !l.nome.toLowerCase().includes(q)) return false;
+    }
     return true;
   });
 
-  const criticos = allLicenses.filter((l) => l.total > 0 && Math.round((l.em_uso / l.total) * 100) >= 90).length;
+  // Counters reflect the currently visible (filtered) population
+  const paidPool = allLicenses.filter((l) => !l.is_trial);
+  const criticos = paidPool.filter((l) => l.total > 0 && Math.round((l.em_uso / l.total) * 100) >= criticalPct).length;
+  const seatsTotal = paidPool.reduce((s, l) => s + (l.total || 0), 0);
+  const seatsEmUso = paidPool.reduce((s, l) => s + (l.em_uso || 0), 0);
   const { paginatedItems, safePage } = usePagination(filtered, page, pageSize);
+
 
   const handleSync = async () => {
     setSyncing(true);
