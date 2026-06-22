@@ -847,6 +847,94 @@ export default function ColaboradorDetalhePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* AlertDialog — Suspender Acessos (Pré-Desligamento) */}
+      <AlertDialog open={preLeaverOpen} onOpenChange={setPreLeaverOpen}>
+        <AlertDialogContent className="max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <ShieldAlert className="h-5 w-5" />
+              Suspender acessos imediatamente
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  Esta ação bloqueia o sign-in de <strong>{pessoa.nome}</strong> no Entra ID
+                  (incluindo revogação de sessões ativas) e desabilita a conta no AD on-prem.
+                </p>
+                <p>
+                  Licenças, grupos, perfis e aplicações <strong>permanecem</strong> atribuídos —
+                  serão revogados automaticamente quando o Leaver formal for executado a partir do CSV.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Use enquanto aguardamos a planilha do RH refletir o desligamento. A ação é reversível.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="pre-leaver-motivo">Justificativa (mín. 10 caracteres)</Label>
+            <Textarea
+              id="pre-leaver-motivo"
+              value={preLeaverMotivo}
+              onChange={(e) => setPreLeaverMotivo(e.target.value)}
+              placeholder="Ex.: desligamento confirmado pelo RH em DD/MM, aguardando atualização do CSV."
+              rows={3}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={savingPreLeaver}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={savingPreLeaver || preLeaverMotivo.trim().length < 10}
+              onClick={(e) => { e.preventDefault(); handleConfirmPreLeaver(); }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {savingPreLeaver ? "Suspendendo..." : "Suspender acessos"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* AlertDialog — Reverter Suspensão */}
+      <AlertDialog open={revertOpen} onOpenChange={setRevertOpen}>
+        <AlertDialogContent className="max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-success">
+              <ShieldCheck className="h-5 w-5" />
+              Reverter suspensão preventiva
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  Esta ação reabilita a conta de <strong>{pessoa.nome}</strong> no Entra ID e no AD on-prem.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Use apenas se a suspensão foi um engano. Registre o motivo da reversão.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="revert-motivo">Justificativa (mín. 10 caracteres)</Label>
+            <Textarea
+              id="revert-motivo"
+              value={preLeaverMotivo}
+              onChange={(e) => setPreLeaverMotivo(e.target.value)}
+              placeholder="Ex.: RH confirmou que o desligamento não procede."
+              rows={3}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={savingPreLeaver}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={savingPreLeaver || preLeaverMotivo.trim().length < 10}
+              onClick={(e) => { e.preventDefault(); handleConfirmRevert(); }}
+            >
+              {savingPreLeaver ? "Revertendo..." : "Reverter"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
