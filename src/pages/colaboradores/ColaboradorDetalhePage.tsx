@@ -452,11 +452,20 @@ export default function ColaboradorDetalhePage() {
           <Link to="/colaboradores"><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
         <div className="flex-1">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-semibold tracking-tight">{pessoa.nome}</h1>
             <Badge variant="outline" className={sc.class}>{sc.label}</Badge>
+            {(pessoa as any)?.suspenso_preventivo && (
+              <Badge variant="outline" className="bg-destructive/15 text-destructive border-destructive/30 gap-1">
+                <ShieldAlert className="h-3 w-3" />
+                Suspensão Preventiva — desde {(pessoa as any).suspenso_em ? new Date((pessoa as any).suspenso_em).toLocaleDateString("pt-BR") : "—"}
+              </Badge>
+            )}
           </div>
           <p className="text-sm text-muted-foreground">{cargo} · {area} · {empresa}</p>
+          {(pessoa as any)?.suspenso_preventivo && (pessoa as any)?.suspenso_motivo && (
+            <p className="text-xs text-destructive mt-1">Motivo: {(pessoa as any).suspenso_motivo}</p>
+          )}
         </div>
         <div className="flex gap-2">
           <Select
