@@ -385,16 +385,22 @@ async function executeExternalAppAction(
   const appId = payload.aplicacao_id;
   if (!appId) return { success: false, message: "aplicacao_id ausente no payload" };
 
-  // Fetch app connector config
+  // Fetch app + connector config (split table)
   const { data: app, error: appErr } = await supabaseClient
     .from("aplicacoes")
-    .select("nome, connector_type, connector_config")
+    .select("nome, connector_type")
     .eq("id", appId)
     .single();
 
   if (appErr || !app) return { success: false, message: `Aplicação ${appId} não encontrada` };
 
-  const config = app.connector_config as Record<string, any> | null;
+  const { data: connRow } = await supabaseClient
+    .from("aplicacao_connectors")
+    .select("config")
+    .eq("aplicacao_id", appId)
+    .maybeSingle();
+
+  const config = (connRow?.config || null) as Record<string, any> | null;
   if (!config?.base_url) return { success: false, message: `Conector da aplicação ${app.nome} não configurado (sem base_url)` };
 
   // Build auth headers
