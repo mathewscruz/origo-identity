@@ -12,6 +12,7 @@ import ColaboradorDetalhePage from "./pages/colaboradores/ColaboradorDetalhePage
 import TerceirosPage from "./pages/terceiros/TerceirosPage";
 import TerceiroDetalhePage from "./pages/terceiros/TerceiroDetalhePage";
 import EventoJMLDetalhePage from "./pages/eventos-jml/EventoJMLDetalhePage";
+import EventosJMLPage from "./pages/eventos-jml/EventosJMLPage";
 import AplicacoesPage from "./pages/aplicacoes/AplicacoesPage";
 import AplicacaoDetalhePage from "./pages/aplicacoes/AplicacaoDetalhePage";
 import PerfisAcessoPage from "./pages/perfis-acesso/PerfisAcessoPage";
@@ -73,7 +74,7 @@ const App = () => (
               <Route path="/colaboradores/:id" element={<ColaboradorDetalhePage />} />
               <Route path="/terceiros" element={<TerceirosPage />} />
               <Route path="/terceiros/:id" element={<TerceiroDetalhePage />} />
-              <Route path="/eventos-jml" element={<Navigate to="/fila-provisionamento" replace />} />
+              <Route path="/eventos-jml" element={<EventosJMLPage />} />
               <Route path="/eventos-jml/:id" element={<EventoJMLDetalhePage />} />
               <Route path="/aplicacoes" element={<AplicacoesPage />} />
               <Route path="/aplicacoes/:id" element={<AplicacaoDetalhePage />} />
