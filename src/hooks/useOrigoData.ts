@@ -210,6 +210,22 @@ export function useEntraLicencas() {
   return useQuery({ queryKey: ["entra_licencas"], queryFn: () => fetchAll("entra_licencas", "*", "nome"), ...REFETCH_OPTS });
 }
 
+/** Real usage per external license, computed from successful iam_queue assignments. */
+export function useLicencasExternasUso() {
+  return useQuery({
+    queryKey: ["licencas_externas_uso"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("licencas_externas_uso")
+        .select("licenca_id, em_uso_calc");
+      if (error) throw error;
+      return (data ?? []) as { licenca_id: string; em_uso_calc: number }[];
+    },
+    ...REFETCH_OPTS,
+  });
+}
+
+
 export function useEntraGrupos() {
   return useQuery({ queryKey: ["entra_grupos"], queryFn: () => fetchAll("entra_grupos", "*", "nome"), ...REFETCH_OPTS });
 }
