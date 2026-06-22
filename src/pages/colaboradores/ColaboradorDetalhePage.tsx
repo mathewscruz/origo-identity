@@ -535,6 +535,16 @@ export default function ColaboradorDetalhePage() {
           <Button variant="outline" size="sm" onClick={() => { window.location.href = `/colaboradores?edit=${id}`; }}>
             <Pencil className="mr-1 h-3 w-3" /> Editar
           </Button>
+          {pessoa.status === "ativo" && !(pessoa as any)?.suspenso_preventivo && (
+            <Button variant="destructive" size="sm" onClick={() => { setPreLeaverMotivo(""); setPreLeaverOpen(true); }}>
+              <ShieldAlert className="mr-1 h-3 w-3" /> Suspender Acessos
+            </Button>
+          )}
+          {(pessoa as any)?.suspenso_preventivo && (
+            <Button variant="outline" size="sm" className="border-success/40 text-success hover:text-success" onClick={() => { setPreLeaverMotivo(""); setRevertOpen(true); }}>
+              <ShieldCheck className="mr-1 h-3 w-3" /> Reverter Suspensão
+            </Button>
+          )}
         </div>
       </div>
 
