@@ -363,7 +363,7 @@ export async function handleStatusChange(params: StatusChangeParams): Promise<{ 
 export async function syncSingleUserAccess(colaboradorId: string): Promise<{ success: boolean; queued?: number; groups?: number; licenses?: number; apps?: number; message?: string }> {
   try {
     const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-user-access`;
-    const res = await fetch(url, {
+    const res = await authedFetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
