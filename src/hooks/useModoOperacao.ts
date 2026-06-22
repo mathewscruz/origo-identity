@@ -13,8 +13,8 @@ export function useModoOperacao() {
       if (error) return "simulacao";
       return data?.valor || "simulacao";
     },
-    staleTime: 10000,
-    refetchInterval: 30000,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
   return {
     modo: (query.data as string) || "simulacao",
