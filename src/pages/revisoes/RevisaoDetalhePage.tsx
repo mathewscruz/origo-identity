@@ -111,7 +111,7 @@ export default function RevisaoDetalhePage() {
         <div className="flex-1">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold tracking-tight">{revisao.nome}</h1>
-            <Badge variant="outline" className={isConcluida ? "bg-success/15 text-success border-success/30" : "bg-info/15 text-info border-info/30"}>{({ em_andamento: "Em Andamento", concluida: "Concluída", cancelada: "Cancelada" } as Record<string, string>)[revisao.status] || revisao.status}</Badge>
+            <Badge variant="outline" className={isConcluida ? "bg-success/15 text-success border-success/30" : isCancelada ? "bg-destructive/15 text-destructive border-destructive/30" : "bg-info/15 text-info border-info/30"}>{({ em_andamento: "Em Andamento", concluida: "Concluída", cancelada: "Cancelada" } as Record<string, string>)[revisao.status] || revisao.status}</Badge>
           </div>
           <p className="text-sm text-muted-foreground">Responsável: {revisao.responsavel} · {revisao.data_inicio ? new Date(revisao.data_inicio).toLocaleDateString("pt-BR") : ""} → {revisao.data_fim ? new Date(revisao.data_fim).toLocaleDateString("pt-BR") : "sem prazo"}</p>
         </div>
@@ -123,6 +123,55 @@ export default function RevisaoDetalhePage() {
           </Button>
         )}
       </div>
+
+      {/* Action bar */}
+      {canEdit && isAtiva && (
+        <Card className="border-primary/20"><CardContent className="pt-4 pb-4 flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleResend} disabled={busy !== null}>
+            {busy === "resend" ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Send className="h-3 w-3 mr-1" />}
+            Reenviar e-mail
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" size="sm" disabled={busy !== null}>
+                <CheckCircle2 className="h-3 w-3 mr-1" /> Concluir agora
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Concluir campanha?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  As decisões já tomadas serão aplicadas: <strong>{mantidos}</strong> mantidos e <strong>{revogados}</strong> revogados serão processados no Entra ID. Itens pendentes ({pendentes}) ficarão sem decisão.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={handleFinalize}>Concluir</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" disabled={busy !== null}>
+                <XCircle className="h-3 w-3 mr-1" /> Cancelar campanha
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Cancelar campanha?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  A campanha será marcada como cancelada e nenhuma decisão será processada. Esta ação não pode ser desfeita.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Voltar</AlertDialogCancel>
+                <AlertDialogAction onClick={handleCancel} className="bg-destructive hover:bg-destructive/90">Cancelar campanha</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </CardContent></Card>
+      )}
+
 
       <div className="grid grid-cols-4 gap-4">
         <Card><CardContent className="pt-6 text-center">
