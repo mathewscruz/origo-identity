@@ -400,13 +400,13 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     await sb.from("sync_jobs").update({ message: `Parsed ${totalRows} registros. Comparando...`, phase: "comparing", colab_total: totalRows }).eq("id", jobId);
 
     // ── 3. Load existing CSV-origin records ──
-    const existingMap = new Map<string, { id: string; fingerprint: string; cargo_id: string | null; sam_account_name: string | null; status: string }>();
+    const existingMap = new Map<string, { id: string; fingerprint: string; cargo_id: string | null; sam_account_name: string | null; status: string; desligado_manual: boolean; desligado_manual_em: string | null; nome: string | null }>();
     let from = 0;
     const PAGE = 1000;
     while (true) {
       const { data } = await sb
         .from("colaboradores")
-        .select("id, matricula, nome, email, status, empresa_id, cargo_id, area_id, localidade_id, cpf, data_admissao, data_desligamento, import_hash, sam_account_name")
+        .select("id, matricula, nome, email, status, empresa_id, cargo_id, area_id, localidade_id, cpf, data_admissao, data_desligamento, import_hash, sam_account_name, desligado_manual, desligado_manual_em")
         .eq("origem", "csv")
         .range(from, from + PAGE - 1);
       if (!data || data.length === 0) break;
@@ -418,6 +418,9 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
             cargo_id: c.cargo_id,
             sam_account_name: c.sam_account_name,
             status: c.status,
+            desligado_manual: !!c.desligado_manual,
+            desligado_manual_em: c.desligado_manual_em || null,
+            nome: c.nome || null,
           });
         }
       });
