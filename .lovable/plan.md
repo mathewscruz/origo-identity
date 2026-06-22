@@ -1,58 +1,47 @@
 ## Objetivo
 
-Validar a integridade do sistema após as recentes mudanças (Pré-Desligamento, guard de reativação por CSV, correções de segurança RLS) — sem alterar nenhum arquivo de produção. Apenas inspeção, execução de checks e relatório.
+1. Trocar o campo **Responsável** (atualmente texto livre) por uma busca/dropdown de colaboradores ativos, para que o e-mail de revalidação a cada 45 dias chegue ao responsável correto.
+2. Garantir que **atribuição/revogação de perfis, grupos, licenças e apps** para terceiros sigam o mesmo padrão dos colaboradores.
+3. Garantir que **ativação e desativação** de terceiros aconteça direto na ferramenta (sem depender de planilha ou base externa).
 
-## Escopo da validação
+## Mudanças
 
-### 1. Saúde do build e tipos
-- `tsc --noEmit` (via build automático) — confirmar que não há erros de tipo após as últimas edições em `colaboradorLifecycle.ts`, `sync-csv-colab/index.ts`, `ColaboradorDetalhePage.tsx`, `preLeaver.ts`.
-- Conferir se `src/integrations/supabase/types.ts` já reflete as novas colunas `desligado_manual*` e `suspenso_*` (caso contrário, sinalizar regeneração).
+### 1. Banco de dados (migration)
+- Adicionar coluna `responsavel_colaborador_id uuid` em `public.terceiros` referenciando `public.colaboradores(id) ON DELETE SET NULL`, com índice.
+- Manter a coluna `responsavel` (texto) como cache do nome+e-mail do responsável escolhido, preenchida automaticamente na gravação — assim relatórios/exportações existentes continuam mostrando algo legível mesmo se o colaborador for removido.
 
-### 2. Saúde do banco
-- `supabase--db_health` — uso de disco, conexões, OOM, deadlocks.
-- `supabase--linter` — confirmar que os 4 warnings de `SECURITY DEFINER` pré-existentes continuam sendo os únicos itens abertos e que não surgiu nada novo após as últimas migrações.
-- `supabase--read_query` — sanity checks:
-  - `colaboradores` contém as novas colunas e os defaults estão corretos.
-  - `tipo_evento_jml` aceita `pre_leaver` e `pre_leaver_revertido`.
-  - Nenhuma linha com estado inconsistente (`desligado_manual=true` + `status=ativo`, ou `suspenso_preventivo=true` sem `suspenso_em`).
-  - Nenhum item pendente em `iam_queue` parado há mais de 1h (sinal de loop ou worker travado).
+### 2. Formulário de Terceiro (`TerceirosPage.tsx`)
+- Substituir o `Input` do Responsável por um Combobox (busca + dropdown) listando colaboradores **ativos** (nome + e-mail), reaproveitando `useColaboradores`.
+- Mostrar avatar/iniciais opcional e e-mail como subtítulo dentro da opção, para facilitar a escolha.
+- Ao salvar:
+  - `responsavel_colaborador_id` ← id selecionado.
+  - `responsavel` ← `"Nome Sobrenome <email>"` do colaborador (snapshot para exibição).
+- Listagem da tabela: continua mostrando o nome do responsável (vindo do snapshot).
 
-### 3. Saúde das Edge Functions
-- `supabase--edge_function_logs` para `sync-csv-colab`, `process-iam-queue`, `iam-agent-api`, `send-notification-email` — última hora; procurar `error`, `failed`, stack traces.
-- Confirmar que nenhuma função está em loop de boot/shutdown (sinal de crash).
+### 3. Detalhe do Terceiro (`TerceiroDetalhePage.tsx`)
+- Exibir o responsável como o nome do colaborador vinculado (com link para `/colaboradores/:id`), e o e-mail logo abaixo. Fallback para o texto antigo se não houver vínculo.
+- Texto da revalidação automática passa a citar o e-mail real do responsável escolhido.
 
-### 4. Saúde do frontend (runtime)
-- `code--read_runtime_errors` e `code--read_console_logs` — pegar qualquer exceção recente em produção.
-- `code--read_network_requests` — procurar 4xx/5xx repetidos (especialmente em `colaboradores`, `eventos_jml`, `iam_queue` após as mudanças de RLS).
-- Driver Playwright (headless, localhost) para reproduzir o fluxo crítico e capturar screenshots:
-  1. `/login` carrega.
-  2. Após autenticar (usando a sessão pré-injetada), `/colaboradores` lista sem erro.
-  3. Abrir um `ColaboradorDetalhePage` — confirmar que renderiza, sem badge piscando, sem re-render infinito (observar console por warnings de React `Maximum update depth`).
-  4. Conferir botões "Suspender Acessos" / "Reverter" presentes e habilitados conforme RBAC.
-  5. Navegar para `/alertas`, `/eventos-jml`, `/fila-provisionamento`, `/dashboard` — cada uma sem erro fatal.
+### 4. E-mail de revalidação (`supabase/functions/auto-recertification/index.ts`)
+- Resolver o destinatário pela ordem: e-mail do `responsavel_colaborador_id` → texto `responsavel` se for um e-mail → `terceiro.email` (fallback atual). Atualmente o código assume que o texto contém "@", o que falhava com nomes.
 
-### 5. Verificações específicas das features recentes
-- **Pré-Desligamento**: SELECT em `colaboradores` por `suspenso_preventivo=true` e cruzar com `eventos_jml` (deve existir um `pre_leaver` correspondente).
-- **Guard de CSV**: SELECT em `colaboradores` por `desligado_manual=true`; conferir que nenhum desses tem item recente `enable_*` em `iam_queue`.
-- **Findings de segurança fechados**: re-rodar `security--get_scan_results` e confirmar que os 13 IDs corrigidos não reapareceram.
+### 5. Validação de paridade com colaboradores (não precisa de código novo, apenas conferência documentada)
+A página de detalhe já chama os mesmos helpers usados em colaboradores:
+- **Atribuir perfil**: insere em `perfil_atribuicoes` (com `terceiro_id`) e chama `queueFullProfileActions(..., "assign")` + `triggerEntraProcessing()` — idêntico ao colaborador.
+- **Revogar perfil**: marca `ativo=false`, `data_revogacao`, e chama `queueFullProfileActions(..., "remove")`.
+- **Desligar terceiro**: respeita exceção "Manter Ativo", revoga perfis, remove recursos individuais, enfileira `disable` (AD) e `disable_entra`, cria evento JML `leaver` com snapshot, alerta e auditoria.
+- **Reativar terceiro**: enfileira `update` (AD) e `enable_entra`, restaura perfis e recursos do último snapshot `leaver`, evento `joiner`, alerta e auditoria.
 
-## Critérios de aprovação
+Confirmar visualmente após o build que o fluxo continua funcionando para um terceiro real.
 
-- Build limpo, sem erros TS.
-- Sem erros 5xx ou exceções no console nos últimos 30 min.
-- Nenhum loop de re-render detectado pelo Playwright (logs estáveis após 3s em cada tela).
-- `iam_queue` sem pendentes antigos inexplicados.
-- Findings de segurança fechados continuam fechados.
+## Detalhes técnicos
 
-## Entregável
+- Combobox usa `Command` + `Popover` do shadcn (mesmo padrão já presente em outras telas; criar um pequeno componente reutilizável `ColaboradorPicker` em `src/components/` se ficar repetitivo).
+- A busca é client-side em cima da lista já carregada por `useColaboradores`, filtrando por nome ou e-mail.
+- O snapshot `responsavel` é o único campo que o código legado (`auto-recertification`, exportações) consome; manter o snapshot evita quebrar nada.
+- Tipagem `types.ts` será regerada pela migration aprovada.
 
-Um relatório curto em chat, dividido em ✅/⚠️/❌ por área (build, banco, edge functions, frontend, features novas), com:
-- Lista do que foi verificado.
-- Qualquer problema encontrado + diagnóstico + sugestão de correção (sem implementar — vai depender de aprovação sua para entrar em build mode).
-- Screenshots do Playwright das telas críticas anexados ao relatório.
+## Fora de escopo
 
-## Fora do escopo
-
-- Refatoração ou correção de bugs encontrados — apenas reportar.
-- Testes de carga ou stress.
-- Auditoria de segurança além do que o scanner já cobre.
+- Mudanças em revisões de acesso (`revisoes`) — já funcionam por owner_email.
+- Sincronização do responsável quando o colaborador é desativado/removido (o `ON DELETE SET NULL` cobre exclusão; status `desligado` não afeta o vínculo — só passa a constar sem opção viável no dropdown na próxima edição).
