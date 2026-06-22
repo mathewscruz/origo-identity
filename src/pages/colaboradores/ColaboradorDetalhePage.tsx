@@ -5,12 +5,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Pencil, XCircle, Plus, KeyRound, ChevronDown, Shield, Award, AppWindow, RefreshCw } from "lucide-react";
+import { ArrowLeft, Pencil, XCircle, Plus, KeyRound, ChevronDown, Shield, Award, AppWindow, RefreshCw, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useColaborador, usePerfilAtribuicoes, useEventosJML, usePerfisAcesso, useEntraGrupos, useEntraLicencas, useAplicacoes, useColabIndividualQueue } from "@/hooks/useOrigoData";
 import { queueFullProfileActions, generateEntraQueueForDiff } from "@/lib/entraQueueHelper";
 import { handleStatusChange, syncSingleUserAccess } from "@/lib/colaboradorLifecycle";
+import { suspendColaboradorPreventivo, revertSuspensaoPreventiva } from "@/lib/preLeaver";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -49,6 +52,16 @@ const tipoJMLColors: Record<string, string> = {
   joiner: "bg-success text-success-foreground",
   mover: "bg-info text-info-foreground",
   leaver: "bg-destructive text-destructive-foreground",
+  pre_leaver: "bg-warning text-warning-foreground",
+  pre_leaver_revertido: "bg-info text-info-foreground",
+};
+
+const tipoJMLLabels: Record<string, string> = {
+  joiner: "joiner",
+  mover: "mover",
+  leaver: "leaver",
+  pre_leaver: "pré-leaver",
+  pre_leaver_revertido: "reversão",
 };
 
 const actionTypeLabels: Record<string, string> = {
@@ -199,6 +212,12 @@ export default function ColaboradorDetalhePage() {
   const [selectedLicencaId, setSelectedLicencaId] = useState("");
   const [selectedAppId, setSelectedAppId] = useState("");
   const [savingIndividual, setSavingIndividual] = useState(false);
+
+  // Pre-Leaver (suspensão preventiva)
+  const [preLeaverOpen, setPreLeaverOpen] = useState(false);
+  const [revertOpen, setRevertOpen] = useState(false);
+  const [preLeaverMotivo, setPreLeaverMotivo] = useState("");
+  const [savingPreLeaver, setSavingPreLeaver] = useState(false);
 
   const eventos = (allEventos ?? []).filter((e) => e.colaborador_id === id);
 
@@ -359,6 +378,62 @@ export default function ColaboradorDetalhePage() {
     queryClient.invalidateQueries({ queryKey: ["colab_individual_queue"] });
   }
 
+  async function handleConfirmPreLeaver() {
+    if (!pessoa) return;
+    setSavingPreLeaver(true);
+    const res = await suspendColaboradorPreventivo(
+      {
+        id: id!,
+        nome: pessoa.nome,
+        email: pessoa.email || null,
+        sam_account_name: (pessoa as any)?.sam_account_name || null,
+        gestor_id: pessoa.gestor_id || null,
+      },
+      preLeaverMotivo,
+      { email: profile?.email || null, nome: profile?.nome || null },
+    );
+    setSavingPreLeaver(false);
+    if (!res.success) {
+      toast({ title: "Não foi possível suspender", description: res.error, variant: "destructive" });
+      return;
+    }
+    toast({ title: "Suspensão preventiva ativada", description: "Conta bloqueada no Entra ID e AD. Sessões revogadas." });
+    setPreLeaverOpen(false);
+    setPreLeaverMotivo("");
+    queryClient.invalidateQueries({ queryKey: ["colaborador", id] });
+    queryClient.invalidateQueries({ queryKey: ["eventos_jml"] });
+    queryClient.invalidateQueries({ queryKey: ["iam_queue"] });
+    queryClient.invalidateQueries({ queryKey: ["alertas"] });
+  }
+
+  async function handleConfirmRevert() {
+    if (!pessoa) return;
+    setSavingPreLeaver(true);
+    const res = await revertSuspensaoPreventiva(
+      {
+        id: id!,
+        nome: pessoa.nome,
+        email: pessoa.email || null,
+        sam_account_name: (pessoa as any)?.sam_account_name || null,
+        gestor_id: pessoa.gestor_id || null,
+      },
+      preLeaverMotivo,
+      { email: profile?.email || null, nome: profile?.nome || null },
+    );
+    setSavingPreLeaver(false);
+    if (!res.success) {
+      toast({ title: "Não foi possível reverter", description: res.error, variant: "destructive" });
+      return;
+    }
+    toast({ title: "Suspensão revertida", description: "Conta reabilitada no Entra ID e AD." });
+    setRevertOpen(false);
+    setPreLeaverMotivo("");
+    queryClient.invalidateQueries({ queryKey: ["colaborador", id] });
+    queryClient.invalidateQueries({ queryKey: ["eventos_jml"] });
+    queryClient.invalidateQueries({ queryKey: ["iam_queue"] });
+    queryClient.invalidateQueries({ queryKey: ["alertas"] });
+  }
+
   if (isLoading) return <div className="space-y-4 p-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}</div>;
   if (!pessoa) return <div className="p-8 text-center text-muted-foreground">Colaborador não encontrado.</div>;
 
@@ -387,11 +462,20 @@ export default function ColaboradorDetalhePage() {
           <Link to="/colaboradores"><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
         <div className="flex-1">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-semibold tracking-tight">{pessoa.nome}</h1>
             <Badge variant="outline" className={sc.class}>{sc.label}</Badge>
+            {(pessoa as any)?.suspenso_preventivo && (
+              <Badge variant="outline" className="bg-destructive/15 text-destructive border-destructive/30 gap-1">
+                <ShieldAlert className="h-3 w-3" />
+                Suspensão Preventiva — desde {(pessoa as any).suspenso_em ? new Date((pessoa as any).suspenso_em).toLocaleDateString("pt-BR") : "—"}
+              </Badge>
+            )}
           </div>
           <p className="text-sm text-muted-foreground">{cargo} · {area} · {empresa}</p>
+          {(pessoa as any)?.suspenso_preventivo && (pessoa as any)?.suspenso_motivo && (
+            <p className="text-xs text-destructive mt-1">Motivo: {(pessoa as any).suspenso_motivo}</p>
+          )}
         </div>
         <div className="flex gap-2">
           <Select
@@ -461,6 +545,16 @@ export default function ColaboradorDetalhePage() {
           <Button variant="outline" size="sm" onClick={() => { window.location.href = `/colaboradores?edit=${id}`; }}>
             <Pencil className="mr-1 h-3 w-3" /> Editar
           </Button>
+          {pessoa.status === "ativo" && !(pessoa as any)?.suspenso_preventivo && (
+            <Button variant="destructive" size="sm" onClick={() => { setPreLeaverMotivo(""); setPreLeaverOpen(true); }}>
+              <ShieldAlert className="mr-1 h-3 w-3" /> Suspender Acessos
+            </Button>
+          )}
+          {(pessoa as any)?.suspenso_preventivo && (
+            <Button variant="outline" size="sm" className="border-success/40 text-success hover:text-success" onClick={() => { setPreLeaverMotivo(""); setRevertOpen(true); }}>
+              <ShieldCheck className="mr-1 h-3 w-3" /> Reverter Suspensão
+            </Button>
+          )}
         </div>
       </div>
 
@@ -596,12 +690,12 @@ export default function ColaboradorDetalhePage() {
                   {eventos.map((ev) => (
                     <div key={ev.id} className="relative">
                       <div className="absolute -left-[31px] top-0 flex h-5 w-5 items-center justify-center rounded-full border-2 border-background bg-card">
-                        <div className={`h-2.5 w-2.5 rounded-full ${ev.tipo === "joiner" ? "bg-success" : ev.tipo === "mover" ? "bg-info" : "bg-destructive"}`} />
+                        <div className={`h-2.5 w-2.5 rounded-full ${ev.tipo === "joiner" ? "bg-success" : ev.tipo === "mover" || ev.tipo === "pre_leaver_revertido" ? "bg-info" : ev.tipo === "pre_leaver" ? "bg-warning" : "bg-destructive"}`} />
                       </div>
                       <div className="flex items-start justify-between">
                         <div>
                           <div className="flex items-center gap-2 mb-1">
-                            <Badge className={`${tipoJMLColors[ev.tipo]} text-[10px] uppercase`}>{ev.tipo}</Badge>
+                            <Badge className={`${tipoJMLColors[ev.tipo] || ""} text-[10px] uppercase`}>{tipoJMLLabels[ev.tipo] || ev.tipo}</Badge>
                             <Badge variant="outline" className="text-[10px]">{({ pendente: "Pendente", quarentena: "Quarentena", executando: "Executando", executado: "Executado", erro: "Erro", cancelado: "Cancelado" } as Record<string, string>)[ev.status] || ev.status}</Badge>
                           </div>
                           <p className="text-sm">
@@ -763,6 +857,94 @@ export default function ColaboradorDetalhePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* AlertDialog — Suspender Acessos (Pré-Desligamento) */}
+      <AlertDialog open={preLeaverOpen} onOpenChange={setPreLeaverOpen}>
+        <AlertDialogContent className="max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <ShieldAlert className="h-5 w-5" />
+              Suspender acessos imediatamente
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  Esta ação bloqueia o sign-in de <strong>{pessoa.nome}</strong> no Entra ID
+                  (incluindo revogação de sessões ativas) e desabilita a conta no AD on-prem.
+                </p>
+                <p>
+                  Licenças, grupos, perfis e aplicações <strong>permanecem</strong> atribuídos —
+                  serão revogados automaticamente quando o Leaver formal for executado a partir do CSV.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Use enquanto aguardamos a planilha do RH refletir o desligamento. A ação é reversível.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="pre-leaver-motivo">Justificativa (mín. 10 caracteres)</Label>
+            <Textarea
+              id="pre-leaver-motivo"
+              value={preLeaverMotivo}
+              onChange={(e) => setPreLeaverMotivo(e.target.value)}
+              placeholder="Ex.: desligamento confirmado pelo RH em DD/MM, aguardando atualização do CSV."
+              rows={3}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={savingPreLeaver}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={savingPreLeaver || preLeaverMotivo.trim().length < 10}
+              onClick={(e) => { e.preventDefault(); handleConfirmPreLeaver(); }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {savingPreLeaver ? "Suspendendo..." : "Suspender acessos"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* AlertDialog — Reverter Suspensão */}
+      <AlertDialog open={revertOpen} onOpenChange={setRevertOpen}>
+        <AlertDialogContent className="max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-success">
+              <ShieldCheck className="h-5 w-5" />
+              Reverter suspensão preventiva
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  Esta ação reabilita a conta de <strong>{pessoa.nome}</strong> no Entra ID e no AD on-prem.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Use apenas se a suspensão foi um engano. Registre o motivo da reversão.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="revert-motivo">Justificativa (mín. 10 caracteres)</Label>
+            <Textarea
+              id="revert-motivo"
+              value={preLeaverMotivo}
+              onChange={(e) => setPreLeaverMotivo(e.target.value)}
+              placeholder="Ex.: RH confirmou que o desligamento não procede."
+              rows={3}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={savingPreLeaver}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={savingPreLeaver || preLeaverMotivo.trim().length < 10}
+              onClick={(e) => { e.preventDefault(); handleConfirmRevert(); }}
+            >
+              {savingPreLeaver ? "Revertendo..." : "Reverter"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

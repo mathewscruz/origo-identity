@@ -403,6 +403,10 @@ export type Database = {
           origem: string | null
           sam_account_name: string | null
           status: Database["public"]["Enums"]["status_colaborador"]
+          suspenso_em: string | null
+          suspenso_motivo: string | null
+          suspenso_por: string | null
+          suspenso_preventivo: boolean
           ultima_importacao_id: string | null
           updated_at: string
         }
@@ -425,6 +429,10 @@ export type Database = {
           origem?: string | null
           sam_account_name?: string | null
           status?: Database["public"]["Enums"]["status_colaborador"]
+          suspenso_em?: string | null
+          suspenso_motivo?: string | null
+          suspenso_por?: string | null
+          suspenso_preventivo?: boolean
           ultima_importacao_id?: string | null
           updated_at?: string
         }
@@ -447,6 +455,10 @@ export type Database = {
           origem?: string | null
           sam_account_name?: string | null
           status?: Database["public"]["Enums"]["status_colaborador"]
+          suspenso_em?: string | null
+          suspenso_motivo?: string | null
+          suspenso_por?: string | null
+          suspenso_preventivo?: boolean
           ultima_importacao_id?: string | null
           updated_at?: string
         }
@@ -2126,7 +2138,12 @@ export type Database = {
       status_excecao: "pendente" | "aprovada" | "rejeitada" | "expirada"
       status_regra: "ativa" | "inativa" | "rascunho"
       status_revisao: "em_andamento" | "concluida" | "cancelada"
-      tipo_evento_jml: "joiner" | "mover" | "leaver"
+      tipo_evento_jml:
+        | "joiner"
+        | "mover"
+        | "leaver"
+        | "pre_leaver"
+        | "pre_leaver_revertido"
       tipo_perfil: "funcional" | "tecnico" | "privilegiado"
     }
     CompositeTypes: {
@@ -2277,7 +2294,13 @@ export const Constants = {
       status_excecao: ["pendente", "aprovada", "rejeitada", "expirada"],
       status_regra: ["ativa", "inativa", "rascunho"],
       status_revisao: ["em_andamento", "concluida", "cancelada"],
-      tipo_evento_jml: ["joiner", "mover", "leaver"],
+      tipo_evento_jml: [
+        "joiner",
+        "mover",
+        "leaver",
+        "pre_leaver",
+        "pre_leaver_revertido",
+      ],
       tipo_perfil: ["funcional", "tecnico", "privilegiado"],
     },
   },
