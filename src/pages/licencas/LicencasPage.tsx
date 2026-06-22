@@ -275,21 +275,56 @@ export default function LicencasPage() {
             <th className="p-4 font-medium w-20">Ações</th>
           </tr></thead><tbody>
             {paginatedItems.map((l: UnifiedLicense) => {
-              const pct = l.total > 0 ? Math.round((l.em_uso / l.total) * 100) : 0;
+              const pct = l.total > 0 ? Math.min(100, Math.round((l.em_uso / l.total) * 100)) : 0;
               const disp = l.total - l.em_uso;
+              const excedido = l.em_uso > l.total && l.total > 0;
+              const critico = !l.is_trial && l.total > 0 && pct >= criticalPct;
+              const showAsCritical = excedido || critico;
               return (
                 <tr key={`${l.origem}-${l.id}`} className="border-b last:border-0 hover:bg-muted/50">
-                  <td className="p-4 font-medium text-primary">{l.nome}</td>
-                  <td className="p-4 hidden md:table-cell">
-                    {l.origem === "microsoft" ? (
-                      <Badge className="bg-blue-600 hover:bg-blue-700 text-white border-0">Microsoft</Badge>
-                    ) : (
-                      <Badge variant="outline">Externa</Badge>
+                  <td className="p-4">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-primary">{l.display_name}</span>
+                      {excedido && <Badge className="bg-destructive text-destructive-foreground border-0">Excedido</Badge>}
+                      {l.is_trial && <Badge variant="outline" className="text-muted-foreground">Trial/Free</Badge>}
+                      {l.capability_status === "Warning" && <Badge variant="outline" className="border-warning/40 text-warning">Em graça</Badge>}
+                    </div>
+                    {l.display_name !== l.nome && (
+                      <p className="text-[11px] text-muted-foreground font-mono mt-0.5">{l.nome}</p>
                     )}
                   </td>
-                  <td className="p-4 text-muted-foreground hidden sm:table-cell">{l.total}</td>
-                  <td className="p-4 text-muted-foreground hidden sm:table-cell">{l.em_uso}</td>
-                  <td className="p-4"><div className="flex items-center gap-2"><Progress value={pct} className={`h-2 flex-1 ${pct >= 90 ? "[&>div]:bg-destructive" : pct >= 75 ? "[&>div]:bg-warning" : ""}`} /><span className={`text-xs font-medium ${pct >= 90 ? "text-destructive" : "text-muted-foreground"}`}>{disp} disp.</span></div></td>
+                  <td className="p-4 hidden md:table-cell">
+                    {l.origem === "microsoft" ? (
+                      <Badge className="bg-blue-600 hover:bg-blue-700 text-white border-0"><Monitor className="h-3 w-3 mr-1" />Microsoft</Badge>
+                    ) : (
+                      <Badge variant="outline"><Globe className="h-3 w-3 mr-1" />Externa</Badge>
+                    )}
+                  </td>
+                  <td className="p-4 text-muted-foreground hidden sm:table-cell">{l.total.toLocaleString("pt-BR")}</td>
+                  <td className="p-4 hidden sm:table-cell">
+                    <TooltipProvider delayDuration={150}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="text-muted-foreground cursor-help underline decoration-dotted decoration-muted-foreground/40">
+                            {l.em_uso.toLocaleString("pt-BR")}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {l.em_uso_source === "microsoft" && "Reportado pela Microsoft (consumedUnits)"}
+                          {l.em_uso_source === "calculated" && "Calculado a partir das atribuições processadas"}
+                          {l.em_uso_source === "manual" && "Valor manual — não há atribuições rastreadas"}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </td>
+                  <td className="p-4">
+                    <div className="flex items-center gap-2">
+                      <Progress value={pct} className={`h-2 flex-1 ${showAsCritical ? "[&>div]:bg-destructive" : pct >= 75 ? "[&>div]:bg-warning" : ""}`} />
+                      <span className={`text-xs font-medium whitespace-nowrap ${showAsCritical ? "text-destructive" : "text-muted-foreground"}`}>
+                        {excedido ? `+${l.em_uso - l.total} acima` : `${disp} disp.`}
+                      </span>
+                    </div>
+                  </td>
                   <td className="p-4 text-muted-foreground text-xs hidden lg:table-cell">{l.tipo || "—"}</td>
                   <td className="p-4">
                     {l.origem === "externa" ? (
