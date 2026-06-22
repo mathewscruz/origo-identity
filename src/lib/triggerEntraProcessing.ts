@@ -11,8 +11,6 @@ export async function triggerEntraProcessing(force = true): Promise<void> {
     const res = await fetch(url, {
       method: "POST",
       headers: {
-        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ force }),

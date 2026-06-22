@@ -30,6 +30,7 @@ import SortableHeader, { SortDirection, useSortableData } from "@/components/Sor
 import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
 import { formatAreaName } from "@/lib/formatters";
+import { authedFetch } from "@/lib/authedFetch";
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
@@ -305,11 +306,9 @@ export default function ColaboradoresPage() {
         if (form.email.trim() || form.sam_account_name.trim()) {
           try {
             const syncUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-user-access`;
-            fetch(syncUrl, {
+            authedFetch(syncUrl, {
               method: "POST",
               headers: {
-                apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-                Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({ colaborador_id: colaboradorId }),

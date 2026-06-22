@@ -19,6 +19,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { logAuditoria } from "@/lib/auditLogger";
 import EmptyState from "@/components/EmptyState";
+import { authedFetch } from "@/lib/authedFetch";
 
 type UnifiedLicense = {
   id: string;
@@ -97,7 +98,7 @@ export default function LicencasPage() {
     setSyncing(true);
     try {
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/sync-entra-licencas`, {
+      const res = await authedFetch(`https://${projectId}.supabase.co/functions/v1/sync-entra-licencas`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
