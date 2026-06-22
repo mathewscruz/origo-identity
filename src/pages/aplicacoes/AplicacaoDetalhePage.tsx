@@ -266,7 +266,7 @@ export default function AplicacaoDetalhePage() {
     setSyncingProfiles(true);
     try {
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-app-profiles`;
-      const res = await fetch(url, {
+      const res = await authedFetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
