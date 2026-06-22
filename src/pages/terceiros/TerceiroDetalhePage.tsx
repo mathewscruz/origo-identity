@@ -404,7 +404,7 @@ export default function TerceiroDetalhePage() {
           <Alert className="border-primary/30 bg-primary/5">
             <Info className="h-4 w-4 text-primary" />
             <AlertDescription className="text-sm">
-              <strong>Revalidação automática a cada 45 dias.</strong> O responsável ({terceiro.responsavel || "não definido"}) receberá um e-mail com as opções de manter ou revogar o acesso.
+              <strong>Revalidação automática a cada 45 dias.</strong> O responsável ({(terceiro as any).responsavel_colaborador?.email || (terceiro as any).responsavel_colaborador?.nome || terceiro.responsavel || "não definido"}) receberá um e-mail com as opções de manter ou revogar o acesso.
               {terceiro.contrato_inicio && (() => {
                 const inicio = new Date(terceiro.contrato_inicio!);
                 const ultimaRev = (terceiro as any).ultima_revalidacao ? new Date((terceiro as any).ultima_revalidacao) : inicio;
