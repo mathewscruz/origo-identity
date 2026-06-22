@@ -128,15 +128,19 @@ Deno.serve(async (req) => {
       if (!error) deleted = stale.length;
     }
 
-    // Generate alerts for critical licenses (>90% usage)
+    // Generate alerts for critical licenses (>=90% usage), excluding trials and zero-total pools
     const criticalSkus = skus.filter((sku: any) => {
-      const t = sku.prepaidUnits?.enabled || 0;
+      const enabled = sku.prepaidUnits?.enabled || 0;
+      const warning = sku.prepaidUnits?.warning || 0;
+      const t = enabled + warning;
       const u = sku.consumedUnits || 0;
-      return t > 0 && (u / t) >= 0.9;
+      if (t === 0) return false;
+      if (isTrialSku(sku.skuPartNumber || sku.skuId, enabled, u)) return false;
+      return (u / t) >= 0.9;
     });
     for (const sku of criticalSkus) {
-      const nome = sku.skuPartNumber || sku.skuId;
-      const t = sku.prepaidUnits?.enabled || 0;
+      const nome = friendlyName(sku.skuPartNumber || sku.skuId);
+      const t = (sku.prepaidUnits?.enabled || 0) + (sku.prepaidUnits?.warning || 0);
       const u = sku.consumedUnits || 0;
       await supabase.from("alertas").insert({
         titulo: `Licença crítica: ${nome}`,
