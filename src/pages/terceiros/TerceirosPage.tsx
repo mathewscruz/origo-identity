@@ -93,8 +93,8 @@ export default function TerceirosPage() {
   const sorted = useSortableData(filtered, sortField, sortDir);
   const { paginatedItems, safePage } = usePagination(sorted, page, pageSize);
 
-  const openNew = () => { setEditing(null); setForm({ nome: "", email: "", empresa_terceira: "", contrato_inicio: "", contrato_fim: "", criticidade: "media", responsavel: "", ativo: true, sam_account_name: "" }); setDialogOpen(true); };
-  const openEdit = (t: any) => { setEditing(t); setForm({ nome: t.nome, email: t.email || "", empresa_terceira: t.empresa_terceira || "", contrato_inicio: t.contrato_inicio || "", contrato_fim: t.contrato_fim || "", criticidade: t.criticidade, responsavel: t.responsavel || "", ativo: t.ativo, sam_account_name: t.sam_account_name || "" }); setDialogOpen(true); };
+  const openNew = () => { setEditing(null); setForm({ nome: "", email: "", empresa_terceira: "", contrato_inicio: "", contrato_fim: "", criticidade: "media", responsavel: "", responsavel_colaborador_id: "", ativo: true, sam_account_name: "" }); setDialogOpen(true); };
+  const openEdit = (t: any) => { setEditing(t); setForm({ nome: t.nome, email: t.email || "", empresa_terceira: t.empresa_terceira || "", contrato_inicio: t.contrato_inicio || "", contrato_fim: t.contrato_fim || "", criticidade: t.criticidade, responsavel: t.responsavel || "", responsavel_colaborador_id: t.responsavel_colaborador_id || "", ativo: t.ativo, sam_account_name: t.sam_account_name || "" }); setDialogOpen(true); };
 
   const handleSave = async () => {
     if (!form.nome.trim()) { toast({ title: "Nome obrigatório", variant: "destructive" }); return; }
