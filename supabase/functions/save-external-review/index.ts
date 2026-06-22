@@ -95,78 +95,77 @@ Deno.serve(async (req) => {
         }
 
         if (identity) {
+          // Remove groups
+          const { data: grupos } = await supabase
+            .from("perfil_grupos")
+            .select("*, entra_grupos(nome, entra_id)")
+            .eq("perfil_id", item.perfil_id);
 
-            // Remove groups
-            const { data: grupos } = await supabase
-              .from("perfil_grupos")
-              .select("*, entra_grupos(nome, entra_id)")
-              .eq("perfil_id", item.perfil_id);
+          for (const g of (grupos || [])) {
+            await supabase.from("iam_queue").insert({
+              action_type: "remove_group",
+              payload_json: {
+                displayName: nome,
+                mail: email,
+                groupName: g.entra_grupos?.nome || "",
+                groupId: g.entra_grupos?.entra_id || "",
+              },
+              target_identity: identity,
+              requested_by: revisao.owner_email || "revisao_externa",
+              colaborador_id: item.colaborador_id,
+              status: "pending",
+            });
+          }
 
-            for (const g of (grupos || [])) {
+          // Remove licenses
+          const { data: licencas } = await supabase
+            .from("perfil_licencas")
+            .select("*, entra_licencas(nome, sku_id)")
+            .eq("perfil_id", item.perfil_id);
+
+          for (const l of (licencas || [])) {
+            await supabase.from("iam_queue").insert({
+              action_type: "remove_license",
+              payload_json: {
+                displayName: nome,
+                mail: email,
+                licenseName: l.entra_licencas?.nome || "",
+                skuId: l.entra_licencas?.sku_id || "",
+              },
+              target_identity: identity,
+              requested_by: revisao.owner_email || "revisao_externa",
+              colaborador_id: item.colaborador_id,
+              status: "pending",
+            });
+          }
+
+          // Remove apps
+          const { data: apps } = await supabase
+            .from("perfil_aplicacoes")
+            .select("*, aplicacoes(nome, entra_id)")
+            .eq("perfil_id", item.perfil_id);
+
+          for (const a of (apps || [])) {
+            if (a.aplicacoes?.entra_id) {
               await supabase.from("iam_queue").insert({
-                action_type: "remove_group",
+                action_type: "remove_app",
                 payload_json: {
-                  displayName: colab?.nome || item.colaborador_nome || "",
-                  mail: colab?.email || "",
-                  groupName: g.entra_grupos?.nome || "",
-                  groupId: g.entra_grupos?.entra_id || "",
+                  displayName: nome,
+                  mail: email,
+                  appName: a.aplicacoes?.nome || "",
+                  appId: a.aplicacoes?.entra_id || "",
                 },
                 target_identity: identity,
                 requested_by: revisao.owner_email || "revisao_externa",
                 colaborador_id: item.colaborador_id,
                 status: "pending",
               });
-            }
-
-            // Remove licenses
-            const { data: licencas } = await supabase
-              .from("perfil_licencas")
-              .select("*, entra_licencas(nome, sku_id)")
-              .eq("perfil_id", item.perfil_id);
-
-            for (const l of (licencas || [])) {
-              await supabase.from("iam_queue").insert({
-                action_type: "remove_license",
-                payload_json: {
-                  displayName: colab?.nome || item.colaborador_nome || "",
-                  mail: colab?.email || "",
-                  licenseName: l.entra_licencas?.nome || "",
-                  skuId: l.entra_licencas?.sku_id || "",
-                },
-                target_identity: identity,
-                requested_by: revisao.owner_email || "revisao_externa",
-                colaborador_id: item.colaborador_id,
-                status: "pending",
-              });
-            }
-
-            // Remove apps
-            const { data: apps } = await supabase
-              .from("perfil_aplicacoes")
-              .select("*, aplicacoes(nome, entra_id)")
-              .eq("perfil_id", item.perfil_id);
-
-            for (const a of (apps || [])) {
-              if (a.aplicacoes?.entra_id) {
-                await supabase.from("iam_queue").insert({
-                  action_type: "remove_app",
-                  payload_json: {
-                    displayName: colab?.nome || item.colaborador_nome || "",
-                    mail: colab?.email || "",
-                    appName: a.aplicacoes?.nome || "",
-                    appId: a.aplicacoes?.entra_id || "",
-                  },
-                  target_identity: identity,
-                  requested_by: revisao.owner_email || "revisao_externa",
-                  colaborador_id: item.colaborador_id,
-                  status: "pending",
-                });
-              }
             }
           }
         }
       }
     }
+
 
     // Mark review as completed
     const revisados = Object.keys(decisions).length;
