@@ -568,24 +568,33 @@ export type Database = {
       }
       entra_licencas: {
         Row: {
+          capability_status: string | null
           em_uso: number
+          friendly_name: string | null
           id: string
+          is_trial: boolean
           nome: string
           sku_id: string
           total: number
           updated_at: string
         }
         Insert: {
+          capability_status?: string | null
           em_uso?: number
+          friendly_name?: string | null
           id?: string
+          is_trial?: boolean
           nome: string
           sku_id: string
           total?: number
           updated_at?: string
         }
         Update: {
+          capability_status?: string | null
           em_uso?: number
+          friendly_name?: string | null
           id?: string
+          is_trial?: boolean
           nome?: string
           sku_id?: string
           total?: number
@@ -2121,6 +2130,13 @@ export type Database = {
           tipo_auth?: string | null
           updated_at?: string | null
           url?: string | null
+        }
+        Relationships: []
+      }
+      licencas_externas_uso: {
+        Row: {
+          em_uso_calc: number | null
+          licenca_id: string | null
         }
         Relationships: []
       }
