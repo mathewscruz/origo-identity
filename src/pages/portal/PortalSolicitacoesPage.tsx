@@ -13,11 +13,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "@/hooks/use-toast";
 import { Plus, Clock, CheckCircle2, XCircle, Send, FileText, AppWindow, Users, KeyRound, Sparkles, UserCog, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
-import { sendNotificationEmail } from "@/lib/sendNotificationEmail";
+
 import CatalogResourceList from "./sections/CatalogResourceList";
 import CartPanel from "./sections/CartPanel";
 import RequestApprovalCard from "./sections/RequestApprovalCard";
 import PeersRecommendations from "./sections/PeersRecommendations";
+import { startWorkflow } from "@/lib/workflow/engine";
 
 const iconForTipo = { app: AppWindow, grupo: Users, licenca: KeyRound };
 
@@ -423,21 +424,18 @@ export default function PortalSolicitacoesPage() {
     for (const appId of selectedApps) {
       const app = appMap.get(appId);
       const ownerEmail = extractOwnerEmail(app?.owner);
-      itemRecords.push({ tipo: "app", recurso_id: appId, recurso_nome: app?.nome || appId, owner_email: ownerEmail, status: ownerEmail ? "pendente" : "aprovado" });
+      itemRecords.push({ tipo: "app", recurso_id: appId, recurso_nome: app?.nome || appId, owner_email: ownerEmail, status: "pendente" });
     }
     for (const grpId of selectedGrupos) {
       const grp = grupoMap.get(grpId);
       const ownerEmail = extractOwnerEmail(grp?.owner);
-      itemRecords.push({ tipo: "grupo", recurso_id: grpId, recurso_nome: grp?.nome || grpId, owner_email: ownerEmail, status: ownerEmail ? "pendente" : "aprovado" });
+      itemRecords.push({ tipo: "grupo", recurso_id: grpId, recurso_nome: grp?.nome || grpId, owner_email: ownerEmail, status: "pendente" });
     }
     for (const licId of selectedLicencas) {
       const lic = licencaMap.get(licId);
       const ownerEmail = extractOwnerEmail(lic?.owner);
-      itemRecords.push({ tipo: "licenca", recurso_id: licId, recurso_nome: lic?.nome || licId, owner_email: ownerEmail, status: ownerEmail ? "pendente" : "aprovado" });
+      itemRecords.push({ tipo: "licenca", recurso_id: licId, recurso_nome: lic?.nome || licId, owner_email: ownerEmail, status: "pendente" });
     }
-
-    const hasPending = itemRecords.some((i) => i.status === "pendente");
-    const initialStatus = hasPending ? "em_aprovacao" : "aprovada";
 
     const justificativaFinal = solicitandoParaId
       ? `[Solicitado por ${userEmail} em nome de ${target!.nome}] ${justificativa.trim()}`
@@ -450,7 +448,7 @@ export default function PortalSolicitacoesPage() {
       grupos_ids: selectedGrupos,
       licencas_ids: selectedLicencas,
       justificativa: justificativaFinal,
-      status: initialStatus,
+      status: "em_aprovacao",
       user_id: userId,
     } as any).select("id").single();
 
@@ -461,116 +459,36 @@ export default function PortalSolicitacoesPage() {
     }
 
     const itemsToInsert = itemRecords.map((i) => ({ ...i, solicitacao_id: inserted!.id }));
-    await supabase.from("solicitacao_itens").insert(itemsToInsert as any);
+    const { data: insertedItens } = await supabase
+      .from("solicitacao_itens")
+      .insert(itemsToInsert as any)
+      .select("id, tipo, recurso_id, recurso_nome, owner_email");
 
     const colabData = target;
-    const autoApproved = itemRecords.filter((i) => i.status === "aprovado");
 
-    if (colabData && autoApproved.length > 0) {
-      const targetIdentity = colabData.entra_id || colabData.email || colabData.sam_account_name;
-      if (targetIdentity) {
-        const queueItems = autoApproved.map((item) => {
-          const actionMap: Record<string, string> = { app: "assign_app", grupo: "assign_group", licenca: "assign_license" };
-          const keyMap: Record<string, { id: string; name: string }> = {
-            app: { id: "appId", name: "appName" },
-            grupo: { id: "groupId", name: "groupName" },
-            licenca: { id: "skuId", name: "licenseName" },
-          };
-          const keys = keyMap[item.tipo];
-          let resourceExternalId = item.recurso_id;
-          if (item.tipo === "app") {
-            const app = aplicacoes.find((a: any) => a.id === item.recurso_id);
-            resourceExternalId = app?.entra_id || item.recurso_id;
-          }
-          if (item.tipo === "grupo") {
-            const grupo = grupos.find((g: any) => g.id === item.recurso_id);
-            resourceExternalId = grupo?.entra_id || item.recurso_id;
-          }
-          if (item.tipo === "licenca") {
-            const lic = licencas.find((l: any) => l.id === item.recurso_id);
-            resourceExternalId = lic?.sku_id || item.recurso_id;
-          }
-          const payload: Record<string, any> = { [keys.id]: resourceExternalId, [keys.name]: item.recurso_nome, reason: "solicitacao_acesso" };
-          if (item.tipo === "app") {
-            const app = aplicacoes.find((a: any) => a.id === item.recurso_id);
-            if (app?.default_app_role_id) payload.appRoleId = app.default_app_role_id;
-          }
-          return {
-            action_type: actionMap[item.tipo],
-            colaborador_id: colabData.id,
-            target_identity: targetIdentity,
-            status: "pending",
-            payload_json: payload,
-            requested_by: userEmail || "portal",
-          };
-        });
-        await supabase.from("iam_queue").insert(queueItems as any);
-      }
+    const result = await startWorkflow(
+      "solicitacao",
+      inserted!.id,
+      solicitanteId,
+      {
+        solicitanteEmail: colabData?.email || userEmail || null,
+        itens: (insertedItens || itemsToInsert) as any,
+        aplicacaoIds: selectedApps,
+        grupoIds: selectedGrupos,
+        licencaIds: selectedLicencas,
+        perfilId: null,
+      },
+      userEmail || "portal",
+    );
+
+    if (result.status === "aprovada") {
+      toast({ title: "Solicitação enviada e aprovada automaticamente!" });
+    } else if (result.status === "rejeitada") {
+      toast({ title: "Solicitação rejeitada pelo fluxo", variant: "destructive" });
+    } else {
+      toast({ title: "Solicitação enviada!", description: "Aguardando aprovadores configurados no fluxo." });
     }
 
-    if (!hasPending) {
-      await supabase.from("solicitacoes_acesso").update({
-        aprovador: "auto",
-        data_decisao: new Date().toISOString(),
-        comentario: "Aprovação automática — nenhum item possui owner definido",
-      } as any).eq("id", inserted!.id);
-    }
-
-    const colabNome = colabData?.nome || userEmail || "Colaborador";
-
-    const ownerGroups = new Map<string, string[]>();
-    for (const item of itemRecords) {
-      if (item.owner_email) {
-        const existing = ownerGroups.get(item.owner_email) || [];
-        existing.push(item.recurso_nome);
-        ownerGroups.set(item.owner_email, existing);
-      }
-    }
-
-    for (const [ownerEmail, ownerItems] of ownerGroups) {
-      sendNotificationEmail("solicitacao_criada", {
-        destinatario_email: ownerEmail,
-        colaborador_nome: colabNome,
-        itens: ownerItems.join(", "),
-        justificativa: justificativaFinal,
-        solicitante: colabNome,
-      });
-    }
-
-    if (ownerGroups.size === 0 && hasPending) {
-      const { data: adminRoles } = await supabase.from("user_roles").select("user_id").eq("role", "admin");
-      if (adminRoles && adminRoles.length > 0) {
-        const adminIds = adminRoles.map((r: any) => r.user_id);
-        const { data: adminProfiles } = await supabase.from("profiles").select("email").in("id", adminIds);
-        for (const ap of (adminProfiles || [])) {
-          sendNotificationEmail("solicitacao_criada", {
-            destinatario_email: ap.email,
-            colaborador_nome: colabNome,
-            itens: itemRecords.map((i) => i.recurso_nome).join(", "),
-            justificativa: justificativaFinal,
-            solicitante: colabNome,
-          });
-        }
-      }
-    }
-
-    if (autoApproved.length > 0 && colabData?.email) {
-      sendNotificationEmail("solicitacao_decidida", {
-        destinatario_email: colabData.email,
-        colaborador_nome: colabNome,
-        itens: autoApproved.map((i) => i.recurso_nome).join(", "),
-        status: "aprovada",
-        aprovador: "Automático",
-        comentario: "Aprovação automática — sem owner definido",
-      });
-    }
-
-    toast({
-      title: "Solicitação enviada com sucesso!",
-      description: hasPending
-        ? `${autoApproved.length} item(ns) aprovado(s) automaticamente, ${itemRecords.length - autoApproved.length} aguardando aprovação.`
-        : "Todos os itens foram aprovados automaticamente.",
-    });
 
     setDialogOpen(false);
     clearCart();

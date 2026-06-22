@@ -21,7 +21,7 @@ import ExcecoesPage from "./pages/excecoes/ExcecoesPage";
 import RevisoesPage from "./pages/revisoes/RevisoesPage";
 import RevisaoDetalhePage from "./pages/revisoes/RevisaoDetalhePage";
 import RevisaoExternaPage from "./pages/revisoes/RevisaoExternaPage";
-import MatrizPage from "./pages/matriz/MatrizPage";
+
 import LicencasPage from "./pages/licencas/LicencasPage";
 import AuditoriaPage from "./pages/auditoria/AuditoriaPage";
 import SoDPage from "./pages/sod/SoDPage";
@@ -84,7 +84,7 @@ const App = () => (
               <Route path="/excecoes/:id" element={<ExcecoesPage />} />
               <Route path="/revisoes" element={<RevisoesPage />} />
               <Route path="/revisoes/:id" element={<RevisaoDetalhePage />} />
-              <Route path="/matriz" element={<MatrizPage />} />
+              
               <Route path="/licencas" element={<LicencasPage />} />
               <Route path="/licencas/:id" element={<LicencasPage />} />
               <Route path="/sod" element={<SoDPage />} />

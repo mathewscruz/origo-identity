@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   LayoutDashboard, Users, UserCheck, AppWindow, Shield,
-  AlertTriangle, ClipboardCheck, Cog, Grid3X3, Key, LogOut, UsersRound, ListOrdered, ShieldAlert, BarChart3, HandHelping, GitBranch, Crown, Settings,
+  AlertTriangle, ClipboardCheck, Cog, Key, LogOut, UsersRound, ListOrdered, ShieldAlert, BarChart3, HandHelping, GitBranch, Crown, Settings,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -35,7 +35,6 @@ const sidebarGroups = [
     { title: "Workflow", url: "/workflow", icon: GitBranch },
   ]},
   { label: "Controle", items: [
-    { title: "Matriz", url: "/matriz", icon: Grid3X3 },
     { title: "Licenças", url: "/licencas", icon: Key },
     { title: "Relatórios", url: "/relatorios", icon: BarChart3 },
   ]},
