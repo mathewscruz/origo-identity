@@ -568,7 +568,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     await sb.from("sync_jobs").update({ phase: "classifying", message: "Classificando mudanças...", colab_percent: 20 }).eq("id", jobId);
 
     const toInsert: any[] = [];
-    const toUpdate: { id: string; data: any; oldCargoId: string | null; oldStatus: string; oldSam: string | null }[] = [];
+    const toUpdate: { id: string; data: any; oldCargoId: string | null; oldStatus: string; oldSam: string | null; desligadoManual: boolean; desligadoManualEm: string | null }[] = [];
     const csvMatriculas = new Set<string>();
     let unchanged = 0;
 
@@ -587,6 +587,8 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
           oldCargoId: existing.cargo_id,
           oldStatus: existing.status,
           oldSam: existing.sam_account_name,
+          desligadoManual: existing.desligado_manual,
+          desligadoManualEm: existing.desligado_manual_em,
         });
       } else {
         unchanged++;
