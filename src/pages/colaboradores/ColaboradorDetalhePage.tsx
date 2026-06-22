@@ -66,7 +66,10 @@ const tipoJMLLabels: Record<string, string> = {
 };
 
 import IndividualAccessTabs from "./sections/IndividualAccessTabs";
+import PerfisAtribuidosTable from "./sections/PerfisAtribuidosTable";
+import JMLTimeline from "./sections/JMLTimeline";
 import { useAssignPerfil, useRevokePerfil } from "@/hooks/mutations/usePerfilAssignment";
+
 
 export default function ColaboradorDetalhePage() {
   const { id } = useParams();
