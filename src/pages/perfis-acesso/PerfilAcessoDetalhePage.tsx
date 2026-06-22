@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
+import { authedFetch } from "@/lib/authedFetch";
 import { useParams, Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
