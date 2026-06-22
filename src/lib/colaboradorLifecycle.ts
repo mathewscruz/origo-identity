@@ -257,6 +257,16 @@ export async function handleStatusChange(params: StatusChangeParams): Promise<{ 
 
   // ─── REACTIVATION (anything → ativo) ───────────────────────────
   if (oldStatus !== "ativo" && newStatus === "ativo") {
+    // Clear manual-disable flag (operator is consciously reactivating in the tool)
+    await supabase
+      .from("colaboradores")
+      .update({
+        desligado_manual: false,
+        desligado_manual_em: null,
+        desligado_manual_por: null,
+      } as any)
+      .eq("id", colab.id);
+
     // Enable accounts in AD + Entra
     await supabase.from("iam_queue" as any).insert({
       action_type: "update",
