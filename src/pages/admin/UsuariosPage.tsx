@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Pencil, Trash2, Key, Camera, Loader2 } from "lucide-react";
-import { sendNotificationEmail } from "@/lib/sendNotificationEmail";
+
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
@@ -111,7 +111,7 @@ export default function UsuariosPage() {
 
   const handleSave = async () => {
     if (!form.nome.trim() || !form.email.trim()) { toast({ title: "Nome e email obrigatórios", variant: "destructive" }); return; }
-    if (!editing && form.password.length < 6) { toast({ title: "Senha obrigatória (mínimo 6 caracteres)", variant: "destructive" }); return; }
+    if (!editing && form.password.length < 8) { toast({ title: "Senha obrigatória (mínimo 8 caracteres)", variant: "destructive" }); return; }
     if (editing) {
       // Update profile
       const { error } = await supabase.from("profiles").update({ nome: form.nome.trim(), email: form.email.trim(), ativo: form.ativo }).eq("id", editing.id);
