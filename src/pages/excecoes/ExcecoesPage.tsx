@@ -273,8 +273,28 @@ export default function ExcecoesPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Exceções de Acesso</h1>
           <p className="text-sm text-muted-foreground">Concessões fora da regra e bypass de desativação com justificativa e aprovação</p>
         </div>
-        {canEdit && <Button onClick={() => { resetForm(); setDialogOpen(true); }}><Plus className="mr-1 h-4 w-4" />Nova Exceção</Button>}
+        <div className="flex gap-2">
+          {canEdit && (
+            <Button
+              variant="outline"
+              onClick={async () => {
+                setExpiring(true);
+                const { data, error } = await supabase.functions.invoke("expire-access-exceptions", { body: {} });
+                setExpiring(false);
+                if (error) toast({ title: "Erro", description: error.message, variant: "destructive" });
+                else toast({ title: "Expiração concluída", description: `${data?.expiradas ?? 0} exceções expiradas, ${data?.acoesGeradas ?? 0} ações Entra ID geradas` });
+                qc.invalidateQueries({ queryKey: ["excecoes"] });
+              }}
+              disabled={expiring}
+            >
+              <RefreshCw className={`mr-1 h-4 w-4 ${expiring ? "animate-spin" : ""}`} />
+              Expirar vencidas
+            </Button>
+          )}
+          {canEdit && <Button onClick={() => { resetForm(); setDialogOpen(true); }}><Plus className="mr-1 h-4 w-4" />Nova Exceção</Button>}
+        </div>
       </div>
+
 
       {/* Counters */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
