@@ -10,10 +10,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/hooks/use-toast";
-import { Plus, Clock, CheckCircle2, XCircle, Send, FileText, AppWindow, Users, KeyRound } from "lucide-react";
+import { Plus, Clock, CheckCircle2, XCircle, Send, FileText, AppWindow, Users, KeyRound, Sparkles, Check } from "lucide-react";
 import { format } from "date-fns";
 import { sendNotificationEmail } from "@/lib/sendNotificationEmail";
 import EmptyState from "@/components/EmptyState";
+
 
 function extractOwnerEmail(owner: string | null): string | null {
   if (!owner) return null;
@@ -40,6 +41,14 @@ export default function PortalSolicitacoesPage() {
   const [buscaApp, setBuscaApp] = useState("");
   const [buscaGrupo, setBuscaGrupo] = useState("");
   const [buscaLicenca, setBuscaLicenca] = useState("");
+  // Catalog context: what the user already has + cargo-based recommendations
+  const [ownedAppIds, setOwnedAppIds] = useState<Set<string>>(new Set());
+  const [ownedGrupoIds, setOwnedGrupoIds] = useState<Set<string>>(new Set());
+  const [ownedLicencaIds, setOwnedLicencaIds] = useState<Set<string>>(new Set());
+  const [recAppIds, setRecAppIds] = useState<Set<string>>(new Set());
+  const [recGrupoIds, setRecGrupoIds] = useState<Set<string>>(new Set());
+  const [recLicencaIds, setRecLicencaIds] = useState<Set<string>>(new Set());
+
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -73,7 +82,70 @@ export default function PortalSolicitacoesPage() {
     setLicencas(licRes.data ?? []);
     setSolicitacaoItens(itensRes.data ?? []);
     setLoading(false);
+
+    // Catalog context: load owned + recommended resources for the requester
+    if (userEmail) {
+      void loadCatalogContext(userEmail);
+    }
   }
+
+  async function loadCatalogContext(email: string) {
+    const { data: colab } = await supabase
+      .from("colaboradores")
+      .select("id, cargo_id")
+      .eq("email", email)
+      .maybeSingle();
+    if (!colab) return;
+
+    // Effective profile assignments (active)
+    const { data: atribs } = await supabase
+      .from("perfil_atribuicoes")
+      .select("perfil_id")
+      .eq("colaborador_id", colab.id)
+      .eq("ativo", true);
+    const ownedPerfilIds = (atribs ?? []).map((a: any) => a.perfil_id);
+
+    // Recommended profiles by cargo (excluding ones the user already has)
+    let recPerfilIds: string[] = [];
+    if (colab.cargo_id) {
+      const { data: cp } = await supabase
+        .from("cargo_perfis")
+        .select("perfil_id")
+        .eq("cargo_id", colab.cargo_id);
+      recPerfilIds = (cp ?? [])
+        .map((r: any) => r.perfil_id)
+        .filter((pid: string) => !ownedPerfilIds.includes(pid));
+    }
+
+    // Resolve resources for owned and recommended sets in parallel
+    const resolveResources = async (perfilIds: string[]) => {
+      if (perfilIds.length === 0) return { apps: new Set<string>(), grupos: new Set<string>(), licencas: new Set<string>() };
+      const [pa, pg, pl] = await Promise.all([
+        (supabase as any).from("perfil_aplicacoes").select("aplicacao_id").in("perfil_id", perfilIds),
+        (supabase as any).from("perfil_grupos").select("grupo_id").in("perfil_id", perfilIds),
+        (supabase as any).from("perfil_licencas").select("licenca_id").in("perfil_id", perfilIds),
+      ]);
+      return {
+        apps: new Set<string>((pa.data ?? []).map((r: any) => r.aplicacao_id)),
+        grupos: new Set<string>((pg.data ?? []).map((r: any) => r.grupo_id)),
+        licencas: new Set<string>((pl.data ?? []).map((r: any) => r.licenca_id)),
+      };
+    };
+
+    const [owned, rec] = await Promise.all([
+      resolveResources(ownedPerfilIds),
+      resolveResources(recPerfilIds),
+    ]);
+
+    setOwnedAppIds(owned.apps);
+    setOwnedGrupoIds(owned.grupos);
+    setOwnedLicencaIds(owned.licencas);
+    // Recommended: exclude what the user already has
+    setRecAppIds(new Set([...rec.apps].filter(id => !owned.apps.has(id))));
+    setRecGrupoIds(new Set([...rec.grupos].filter(id => !owned.grupos.has(id))));
+    setRecLicencaIds(new Set([...rec.licencas].filter(id => !owned.licencas.has(id))));
+  }
+
 
   const appMap = new Map(aplicacoes.map(a => [a.id, a]));
   const grupoMap = new Map(grupos.map(g => [g.id, g]));
@@ -326,29 +398,34 @@ export default function PortalSolicitacoesPage() {
     rejeitadas: solicitacoes.filter(s => s.status === "rejeitada").length,
   };
 
+  // Sort: recomendado > selecionado > já tem (no fim) > alfabético
+  const catalogSort = (selected: string[], owned: Set<string>, rec: Set<string>) =>
+    (a: any, b: any) => {
+      const score = (x: any) => (selected.includes(x.id) ? 0 : rec.has(x.id) ? 1 : owned.has(x.id) ? 3 : 2);
+      const sa = score(a); const sb = score(b);
+      return sa - sb || a.nome.localeCompare(b.nome);
+    };
+
   const filteredApps = aplicacoes
     .filter(a => !buscaApp || a.nome.toLowerCase().includes(buscaApp.toLowerCase()))
-    .sort((a, b) => {
-      const aS = selectedApps.includes(a.id) ? 0 : 1;
-      const bS = selectedApps.includes(b.id) ? 0 : 1;
-      return aS - bS || a.nome.localeCompare(b.nome);
-    });
+    .sort(catalogSort(selectedApps, ownedAppIds, recAppIds));
 
   const filteredGrupos = grupos
     .filter(g => !buscaGrupo || g.nome.toLowerCase().includes(buscaGrupo.toLowerCase()))
-    .sort((a, b) => {
-      const aS = selectedGrupos.includes(a.id) ? 0 : 1;
-      const bS = selectedGrupos.includes(b.id) ? 0 : 1;
-      return aS - bS || a.nome.localeCompare(b.nome);
-    });
+    .sort(catalogSort(selectedGrupos, ownedGrupoIds, recGrupoIds));
 
   const filteredLicencas = licencas
     .filter(l => !buscaLicenca || l.nome.toLowerCase().includes(buscaLicenca.toLowerCase()))
-    .sort((a, b) => {
-      const aS = selectedLicencas.includes(a.id) ? 0 : 1;
-      const bS = selectedLicencas.includes(b.id) ? 0 : 1;
-      return aS - bS || a.nome.localeCompare(b.nome);
-    });
+    .sort(catalogSort(selectedLicencas, ownedLicencaIds, recLicencaIds));
+
+  const totalRecomendados = recAppIds.size + recGrupoIds.size + recLicencaIds.size;
+
+  const applyAllRecommendations = () => {
+    setSelectedApps(prev => Array.from(new Set([...prev, ...recAppIds])));
+    setSelectedGrupos(prev => Array.from(new Set([...prev, ...recGrupoIds])));
+    setSelectedLicencas(prev => Array.from(new Set([...prev, ...recLicencaIds])));
+  };
+
 
   return (
     <div className="space-y-6">
@@ -474,6 +551,22 @@ export default function PortalSolicitacoesPage() {
             <DialogTitle>Nova Solicitação de Acesso</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {/* Recomendações por cargo */}
+            {totalRecomendados > 0 && (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 flex items-start gap-3">
+                <Sparkles className="h-5 w-5 text-primary mt-0.5 shrink-0" />
+                <div className="flex-1 space-y-1">
+                  <p className="text-sm font-medium">Recomendado para o seu cargo</p>
+                  <p className="text-xs text-muted-foreground">
+                    {totalRecomendados} recurso(s) costumam ser usados por colegas do seu cargo e você ainda não possui.
+                  </p>
+                </div>
+                <Button size="sm" variant="outline" onClick={applyAllRecommendations}>
+                  Selecionar todos
+                </Button>
+              </div>
+            )}
+
             {/* Aplicações */}
             <div className="space-y-2">
               <label className="text-sm font-medium flex items-center gap-2">
@@ -484,13 +577,20 @@ export default function PortalSolicitacoesPage() {
               </label>
               <Input placeholder="Buscar aplicação..." value={buscaApp} onChange={(e) => setBuscaApp(e.target.value)} />
               <ScrollArea className="h-36 rounded-md border p-2">
-                {filteredApps.map((a) => (
-                  <label key={a.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
-                    <Checkbox checked={selectedApps.includes(a.id)} onCheckedChange={() => toggleItem(selectedApps, setSelectedApps, a.id)} />
-                    <span className="text-sm">{a.nome}</span>
-                    {a.owner && <Badge variant="outline" className="text-xs ml-auto">Owner definido</Badge>}
-                  </label>
-                ))}
+                {filteredApps.map((a) => {
+                  const owned = ownedAppIds.has(a.id);
+                  const recommended = recAppIds.has(a.id);
+                  return (
+                    <label key={a.id} className={`flex items-center gap-2 py-1.5 px-1 rounded cursor-pointer ${owned ? "opacity-60" : "hover:bg-muted/50"}`}>
+                      <Checkbox checked={selectedApps.includes(a.id)} disabled={owned} onCheckedChange={() => toggleItem(selectedApps, setSelectedApps, a.id)} />
+                      <span className="text-sm">{a.nome}</span>
+                      <div className="ml-auto flex items-center gap-1">
+                        {recommended && <Badge variant="outline" className="text-xs border-primary/40 text-primary"><Sparkles className="mr-1 h-2.5 w-2.5" />Recomendado</Badge>}
+                        {owned && <Badge variant="outline" className="text-xs border-success/40 text-success"><Check className="mr-1 h-2.5 w-2.5" />Você já tem</Badge>}
+                      </div>
+                    </label>
+                  );
+                })}
                 {filteredApps.length === 0 && <EmptyState message="Nenhuma aplicação encontrada" size="sm" />}
               </ScrollArea>
             </div>
@@ -505,13 +605,20 @@ export default function PortalSolicitacoesPage() {
               </label>
               <Input placeholder="Buscar grupo..." value={buscaGrupo} onChange={(e) => setBuscaGrupo(e.target.value)} />
               <ScrollArea className="h-36 rounded-md border p-2">
-                {filteredGrupos.map((g) => (
-                  <label key={g.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
-                    <Checkbox checked={selectedGrupos.includes(g.id)} onCheckedChange={() => toggleItem(selectedGrupos, setSelectedGrupos, g.id)} />
-                    <span className="text-sm">{g.nome}</span>
-                    {g.owner && <Badge variant="outline" className="text-xs ml-auto">Owner definido</Badge>}
-                  </label>
-                ))}
+                {filteredGrupos.map((g) => {
+                  const owned = ownedGrupoIds.has(g.id);
+                  const recommended = recGrupoIds.has(g.id);
+                  return (
+                    <label key={g.id} className={`flex items-center gap-2 py-1.5 px-1 rounded cursor-pointer ${owned ? "opacity-60" : "hover:bg-muted/50"}`}>
+                      <Checkbox checked={selectedGrupos.includes(g.id)} disabled={owned} onCheckedChange={() => toggleItem(selectedGrupos, setSelectedGrupos, g.id)} />
+                      <span className="text-sm">{g.nome}</span>
+                      <div className="ml-auto flex items-center gap-1">
+                        {recommended && <Badge variant="outline" className="text-xs border-primary/40 text-primary"><Sparkles className="mr-1 h-2.5 w-2.5" />Recomendado</Badge>}
+                        {owned && <Badge variant="outline" className="text-xs border-success/40 text-success"><Check className="mr-1 h-2.5 w-2.5" />Você já tem</Badge>}
+                      </div>
+                    </label>
+                  );
+                })}
                 {filteredGrupos.length === 0 && <EmptyState message="Nenhum grupo encontrado" size="sm" />}
               </ScrollArea>
             </div>
@@ -526,16 +633,24 @@ export default function PortalSolicitacoesPage() {
               </label>
               <Input placeholder="Buscar licença..." value={buscaLicenca} onChange={(e) => setBuscaLicenca(e.target.value)} />
               <ScrollArea className="h-36 rounded-md border p-2">
-                {filteredLicencas.map((l) => (
-                  <label key={l.id} className="flex items-center gap-2 py-1.5 px-1 hover:bg-muted/50 rounded cursor-pointer">
-                    <Checkbox checked={selectedLicencas.includes(l.id)} onCheckedChange={() => toggleItem(selectedLicencas, setSelectedLicencas, l.id)} />
-                    <span className="text-sm">{l.nome}</span>
-                    {l.owner && <Badge variant="outline" className="text-xs ml-auto">Owner definido</Badge>}
-                  </label>
-                ))}
+                {filteredLicencas.map((l) => {
+                  const owned = ownedLicencaIds.has(l.id);
+                  const recommended = recLicencaIds.has(l.id);
+                  return (
+                    <label key={l.id} className={`flex items-center gap-2 py-1.5 px-1 rounded cursor-pointer ${owned ? "opacity-60" : "hover:bg-muted/50"}`}>
+                      <Checkbox checked={selectedLicencas.includes(l.id)} disabled={owned} onCheckedChange={() => toggleItem(selectedLicencas, setSelectedLicencas, l.id)} />
+                      <span className="text-sm">{l.nome}</span>
+                      <div className="ml-auto flex items-center gap-1">
+                        {recommended && <Badge variant="outline" className="text-xs border-primary/40 text-primary"><Sparkles className="mr-1 h-2.5 w-2.5" />Recomendado</Badge>}
+                        {owned && <Badge variant="outline" className="text-xs border-success/40 text-success"><Check className="mr-1 h-2.5 w-2.5" />Você já tem</Badge>}
+                      </div>
+                    </label>
+                  );
+                })}
                 {filteredLicencas.length === 0 && <EmptyState message="Nenhuma licença encontrada" size="sm" />}
               </ScrollArea>
             </div>
+
 
             {/* Justificativa */}
             <div className="space-y-2">
