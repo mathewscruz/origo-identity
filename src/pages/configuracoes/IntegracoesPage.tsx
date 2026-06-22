@@ -79,7 +79,7 @@ export default function IntegracoesPage() {
     setGroupSyncing(true);
     try {
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-entra-groups`;
-      const res = await fetch(url, {
+      const res = await authedFetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
