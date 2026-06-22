@@ -197,10 +197,23 @@ Deno.serve(async (req) => {
     const hoje = new Date().toISOString().split("T")[0];
     const { data: terceirosExpirados } = await sb
       .from("terceiros")
-      .select("id, nome, email, contrato_fim")
+      .select("id, nome, email, contrato_fim, responsavel, responsavel_colaborador_id")
       .eq("ativo", true)
       .not("contrato_fim", "is", null)
       .lte("contrato_fim", hoje);
+
+    // Helper: resolve responsavel email (FK colaborador → responsavel text → terceiro.email)
+    const resolveResponsavelEmail = async (t: any): Promise<string | null> => {
+      if (t.responsavel_colaborador_id) {
+        const { data: c } = await sb.from("colaboradores").select("email").eq("id", t.responsavel_colaborador_id).single();
+        if (c?.email) return c.email;
+      }
+      if (t.responsavel && typeof t.responsavel === "string") {
+        const match = t.responsavel.match(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/);
+        if (match) return match[0];
+      }
+      return t.email || null;
+    };
 
     if (terceirosExpirados && terceirosExpirados.length > 0) {
       for (const terceiro of terceirosExpirados) {
