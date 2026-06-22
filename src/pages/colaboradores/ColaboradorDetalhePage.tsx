@@ -734,6 +734,13 @@ export default function ColaboradorDetalhePage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <StartJmlEventDialog
+        open={startJmlOpen}
+        onOpenChange={setStartJmlOpen}
+        colaboradorId={id}
+        colaboradorNome={pessoa.nome}
+      />
     </div>
   );
 }
