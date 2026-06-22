@@ -567,89 +567,51 @@ export default function PortalSolicitacoesPage() {
               </div>
             )}
 
-            {/* Aplicações */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium flex items-center gap-2">
-                <AppWindow className="h-4 w-4" /> Aplicações
-                {selectedApps.length > 0 && (
-                  <Badge variant="secondary" className="text-xs">{selectedApps.length} selecionada(s)</Badge>
-                )}
-              </label>
-              <Input placeholder="Buscar aplicação..." value={buscaApp} onChange={(e) => setBuscaApp(e.target.value)} />
-              <ScrollArea className="h-36 rounded-md border p-2">
-                {filteredApps.map((a) => {
-                  const owned = ownedAppIds.has(a.id);
-                  const recommended = recAppIds.has(a.id);
-                  return (
-                    <label key={a.id} className={`flex items-center gap-2 py-1.5 px-1 rounded cursor-pointer ${owned ? "opacity-60" : "hover:bg-muted/50"}`}>
-                      <Checkbox checked={selectedApps.includes(a.id)} disabled={owned} onCheckedChange={() => toggleItem(selectedApps, setSelectedApps, a.id)} />
-                      <span className="text-sm">{a.nome}</span>
-                      <div className="ml-auto flex items-center gap-1">
-                        {recommended && <Badge variant="outline" className="text-xs border-primary/40 text-primary"><Sparkles className="mr-1 h-2.5 w-2.5" />Recomendado</Badge>}
-                        {owned && <Badge variant="outline" className="text-xs border-success/40 text-success"><Check className="mr-1 h-2.5 w-2.5" />Você já tem</Badge>}
-                      </div>
-                    </label>
-                  );
-                })}
-                {filteredApps.length === 0 && <EmptyState message="Nenhuma aplicação encontrada" size="sm" />}
-              </ScrollArea>
-            </div>
+            <CatalogResourceList
+              icon={AppWindow}
+              label="Aplicações"
+              itemLabel="selecionada(s)"
+              searchPlaceholder="Buscar aplicação..."
+              emptyMessage="Nenhuma aplicação encontrada"
+              search={buscaApp}
+              onSearchChange={setBuscaApp}
+              items={filteredApps}
+              selected={selectedApps}
+              ownedIds={ownedAppIds}
+              recommendedIds={recAppIds}
+              onToggle={(id) => toggleItem(selectedApps, setSelectedApps, id)}
+            />
 
-            {/* Grupos */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium flex items-center gap-2">
-                <Users className="h-4 w-4" /> Grupos
-                {selectedGrupos.length > 0 && (
-                  <Badge variant="secondary" className="text-xs">{selectedGrupos.length} selecionado(s)</Badge>
-                )}
-              </label>
-              <Input placeholder="Buscar grupo..." value={buscaGrupo} onChange={(e) => setBuscaGrupo(e.target.value)} />
-              <ScrollArea className="h-36 rounded-md border p-2">
-                {filteredGrupos.map((g) => {
-                  const owned = ownedGrupoIds.has(g.id);
-                  const recommended = recGrupoIds.has(g.id);
-                  return (
-                    <label key={g.id} className={`flex items-center gap-2 py-1.5 px-1 rounded cursor-pointer ${owned ? "opacity-60" : "hover:bg-muted/50"}`}>
-                      <Checkbox checked={selectedGrupos.includes(g.id)} disabled={owned} onCheckedChange={() => toggleItem(selectedGrupos, setSelectedGrupos, g.id)} />
-                      <span className="text-sm">{g.nome}</span>
-                      <div className="ml-auto flex items-center gap-1">
-                        {recommended && <Badge variant="outline" className="text-xs border-primary/40 text-primary"><Sparkles className="mr-1 h-2.5 w-2.5" />Recomendado</Badge>}
-                        {owned && <Badge variant="outline" className="text-xs border-success/40 text-success"><Check className="mr-1 h-2.5 w-2.5" />Você já tem</Badge>}
-                      </div>
-                    </label>
-                  );
-                })}
-                {filteredGrupos.length === 0 && <EmptyState message="Nenhum grupo encontrado" size="sm" />}
-              </ScrollArea>
-            </div>
+            <CatalogResourceList
+              icon={Users}
+              label="Grupos"
+              itemLabel="selecionado(s)"
+              searchPlaceholder="Buscar grupo..."
+              emptyMessage="Nenhum grupo encontrado"
+              search={buscaGrupo}
+              onSearchChange={setBuscaGrupo}
+              items={filteredGrupos}
+              selected={selectedGrupos}
+              ownedIds={ownedGrupoIds}
+              recommendedIds={recGrupoIds}
+              onToggle={(id) => toggleItem(selectedGrupos, setSelectedGrupos, id)}
+            />
 
-            {/* Licenças */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium flex items-center gap-2">
-                <KeyRound className="h-4 w-4" /> Licenças
-                {selectedLicencas.length > 0 && (
-                  <Badge variant="secondary" className="text-xs">{selectedLicencas.length} selecionada(s)</Badge>
-                )}
-              </label>
-              <Input placeholder="Buscar licença..." value={buscaLicenca} onChange={(e) => setBuscaLicenca(e.target.value)} />
-              <ScrollArea className="h-36 rounded-md border p-2">
-                {filteredLicencas.map((l) => {
-                  const owned = ownedLicencaIds.has(l.id);
-                  const recommended = recLicencaIds.has(l.id);
-                  return (
-                    <label key={l.id} className={`flex items-center gap-2 py-1.5 px-1 rounded cursor-pointer ${owned ? "opacity-60" : "hover:bg-muted/50"}`}>
-                      <Checkbox checked={selectedLicencas.includes(l.id)} disabled={owned} onCheckedChange={() => toggleItem(selectedLicencas, setSelectedLicencas, l.id)} />
-                      <span className="text-sm">{l.nome}</span>
-                      <div className="ml-auto flex items-center gap-1">
-                        {recommended && <Badge variant="outline" className="text-xs border-primary/40 text-primary"><Sparkles className="mr-1 h-2.5 w-2.5" />Recomendado</Badge>}
-                        {owned && <Badge variant="outline" className="text-xs border-success/40 text-success"><Check className="mr-1 h-2.5 w-2.5" />Você já tem</Badge>}
-                      </div>
-                    </label>
-                  );
-                })}
-                {filteredLicencas.length === 0 && <EmptyState message="Nenhuma licença encontrada" size="sm" />}
-              </ScrollArea>
-            </div>
+            <CatalogResourceList
+              icon={KeyRound}
+              label="Licenças"
+              itemLabel="selecionada(s)"
+              searchPlaceholder="Buscar licença..."
+              emptyMessage="Nenhuma licença encontrada"
+              search={buscaLicenca}
+              onSearchChange={setBuscaLicenca}
+              items={filteredLicencas}
+              selected={selectedLicencas}
+              ownedIds={ownedLicencaIds}
+              recommendedIds={recLicencaIds}
+              onToggle={(id) => toggleItem(selectedLicencas, setSelectedLicencas, id)}
+            />
+
 
 
             {/* Justificativa */}
