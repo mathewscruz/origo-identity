@@ -391,6 +391,9 @@ export type Database = {
           created_at: string
           data_admissao: string | null
           data_desligamento: string | null
+          desligado_manual: boolean
+          desligado_manual_em: string | null
+          desligado_manual_por: string | null
           email: string | null
           empresa_id: string | null
           entra_id: string | null
@@ -417,6 +420,9 @@ export type Database = {
           created_at?: string
           data_admissao?: string | null
           data_desligamento?: string | null
+          desligado_manual?: boolean
+          desligado_manual_em?: string | null
+          desligado_manual_por?: string | null
           email?: string | null
           empresa_id?: string | null
           entra_id?: string | null
@@ -443,6 +449,9 @@ export type Database = {
           created_at?: string
           data_admissao?: string | null
           data_desligamento?: string | null
+          desligado_manual?: boolean
+          desligado_manual_em?: string | null
+          desligado_manual_por?: string | null
           email?: string | null
           empresa_id?: string | null
           entra_id?: string | null

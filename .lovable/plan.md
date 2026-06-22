@@ -1,90 +1,98 @@
 ## Problema
 
-A planilha de RH só marca o colaborador como `inativo` até 5 dias após o desligamento real. Nessa janela, a conta segue ativa em Entra ID/AD com todos os acessos — risco de vazamento, exclusão de dados ou ações em nome da empresa.
+Quando um colaborador é desligado **direto na ferramenta** (ColaboradoresPage / ColaboradorDetalhePage), o status no banco vira `desligado`/`inativo`. Porém o CSV de RH ainda traz esse mesmo colaborador como `ativo` por até 5 dias. No próximo `sync-csv-colab`, a lógica atual em `supabase/functions/sync-csv-colab/index.ts` (linha 829) interpreta isso como reativação:
 
-Como o CSV é a única fonte e não tem campo antecipado, a mitigação precisa vir de uma ação **manual e imediata** do RH/Segurança, com efeito reversível e sem quebrar o fluxo Leaver formal que virá depois.
-
-## Estratégia: "Pré-Desligamento" (Suspensão Preventiva)
-
-Um novo tipo de evento JML, paralelo ao Leaver, que **bloqueia o acesso agora** sem apagar nada — preservando licenças, grupos e perfis para o Leaver oficial revogá-los quando o CSV confirmar.
-
-### Princípios
-
-- **Aditivo, não destrutivo**: só bloqueia sign-in e revoga sessões; mantém atribuições no banco.
-- **Reversível**: se for engano, operador pode reativar com 1 clique enquanto a conta ainda não foi formalmente desligada.
-- **Idempotente com o Leaver**: quando o CSV finalmente flipar para `inativo`, o Leaver formal executa normalmente; já encontrando a conta bloqueada, apenas revoga recursos.
-- **Auditável**: justificativa obrigatória, evento JML rastreável, alerta no centro de notificações.
-
-### Fluxo proposto
-
-```text
-RH detecta desligamento real
-        │
-        ▼
-ColaboradorDetalhePage → botão "Suspender Acessos Imediatamente"
-        │ (AlertDialog: justificativa obrigatória + confirmação)
-        ▼
-createEventoJML(tipo='pre_leaver')
-        │
-        ├─► iam_queue: disable_entra_account  (accountEnabled=false)
-        ├─► iam_queue: revoke_entra_sessions  (revokeSignInSessions)
-        ├─► iam_queue: disable_ad_account     (via iam-agent-api)
-        ├─► colaboradores.suspenso_preventivo = true (+ data, +operador, +motivo)
-        ├─► alertas: severidade='alta', notifica gestor + admins
-        └─► auditoria: registro completo
-
-   (5 dias depois)
-        ▼
-sync-csv-colab vê status: ativo → inativo
-        │
-        ├─ se suspenso_preventivo=true: cria Leaver, pula etapa de "disable" (já feita),
-        │   executa apenas revogação de recursos (licenças, grupos, perfis, apps)
-        └─ se false: Leaver completo + alerta "gap detectado: N dias sem suspensão preventiva"
+```ts
+const isReactivating = newStatus === "ativo"
+  && oldStatus !== "ativo"
+  && disabledStatuses.includes(oldStatus); // desligado/inativo/ferias/afastado
 ```
 
-### Telas e ações
+Resultado: o sync sobrescreve o status para `ativo` e enfileira `create_if_not_exists` + `enable_entra` — **reativando indevidamente** alguém que o admin acabou de desligar.
 
-1. **ColaboradorDetalhePage** (admin/operador): novo botão vermelho "Suspender Acessos" + badge "Suspensão Preventiva ativa desde DD/MM" quando ligado. Botão de reverter ao lado, com mesma confirmação forte.
-2. **FilaProvisionamentoPage**: novo filtro/tipo `pre_leaver` distinguido visualmente.
-3. **Dashboard**: card "Suspensões preventivas ativas" + métrica "gap médio entre suspensão e Leaver formal".
-4. **AlertasPage**: alertas automáticos quando uma suspensão preventiva passa de X dias sem o Leaver formal chegar (sinal de que o RH esqueceu, ou o CSV não atualizou).
+A "Suspensão Preventiva" já protege esse caso porque não muda o status no banco. Mas o **desligamento manual direto** (hard disable feito por admin/operador) hoje está desprotegido.
 
-### Reversão (engano operacional)
+## Estratégia: marcar a origem do desligamento e travar a reativação por CSV
 
-Mesmo botão na tela do colaborador, com AlertDialog: enfileira `enable_entra_account` + `enable_ad_account`, zera `suspenso_preventivo`, registra evento JML `pre_leaver_revertido` e auditoria.
+Adicionar um marcador "desligado manualmente na ferramenta" no colaborador. Enquanto esse marcador estiver ativo, o `sync-csv-colab` deve:
+
+1. **Não atualizar** o `status` do banco com o valor do CSV.
+2. **Não enfileirar** `enable_*` (nem `create_if_not_exists`).
+3. **Registrar um alerta** quando o CSV tentar trazer o colaborador de volta para `ativo` (sinal informativo para o RH atualizar a planilha).
+
+Quando o CSV finalmente refletir o desligamento (status vira `desligado`/`inativo`), o marcador é limpo automaticamente — o estado da ferramenta e da planilha convergiram, e dali pra frente o ciclo normal volta a valer (inclusive uma futura recontratação real via CSV poderá reativar normalmente).
+
+## Comportamento por cenário
+
+```text
+Cenário A — Admin desliga na ferramenta, CSV ainda ativo
+  DB: ativo → desligado (manual, flag=true)
+  CSV chega "ativo":
+    - status NÃO muda no banco (continua desligado)
+    - nenhuma ação enable_* enfileirada
+    - alerta "CSV ainda mostra X como ativo — RH precisa atualizar"
+
+Cenário B — CSV finalmente reflete o desligamento
+  DB: desligado (flag=true)   CSV: desligado/inativo
+    - flag é limpa (convergência)
+    - sem novas ações (já está desligado)
+
+Cenário C — Recontratação legítima depois (CSV volta a "ativo")
+  DB: desligado (flag=false)   CSV: ativo
+    - segue o caminho normal de reativação existente
+```
+
+## Telas e UX
+
+- **ColaboradorDetalhePage**: badge discreto "Desligado manualmente na ferramenta" quando a flag estiver ativa, e (se o CSV ainda trouxer como ativo) um aviso "Aguardando RH refletir o desligamento no CSV — gap de N dias".
+- **AlertasPage**: novo tipo `csv_divergencia_desligamento` para divergências detectadas pelo sync.
+- **Dashboard**: já existe a métrica de "gap" da suspensão preventiva — adicionamos a mesma noção para desligamentos manuais (linha extra na seção, sem nova tela).
 
 ## Detalhes técnicos
 
 ### Banco
 
-- `colaboradores`: novas colunas `suspenso_preventivo boolean default false`, `suspenso_em timestamptz`, `suspenso_por text`, `suspenso_motivo text`.
-- `eventos_jml.tipo`: aceitar novos valores `pre_leaver` e `pre_leaver_revertido` (atualizar mapeamento em `style/ui-status-formatting`).
-- Migração inclui GRANTs e RLS já no padrão admin/operador.
+- `colaboradores`: novas colunas
+  - `desligado_manual boolean default false`
+  - `desligado_manual_em timestamptz`
+  - `desligado_manual_por text`
+- GRANTs e RLS no padrão já existente (admin/operador write, authenticated read conforme regra atual).
 
-### Edge functions / código
+### `src/lib/colaboradorLifecycle.ts` (handleStatusChange)
 
-- `src/lib/colaboradorLifecycle.ts`: adicionar `suspendColaboradorPreventivo(id, motivo)` e `revertSuspensaoPreventiva(id)`. Reutilizam `entraQueueHelper` para enfileirar ações com `requested_by='pre_leaver'`.
-- `supabase/functions/sync-csv-colab/index.ts`: ao detectar transição ativo→inativo, verificar `suspenso_preventivo`; se true, criar Leaver pulando ações de disable (já em curso/concluídas) e marcar o evento com `gap_dias`.
-- `process-iam-queue`: nenhum código novo — as ações `disable_entra_account`, `revoke_entra_sessions`, `disable_ad_account` já existem.
-- AuditLogger: novo `acao='suspender_preventivo'` e `'reverter_suspensao'`.
+Quando `oldStatus === "ativo" && newStatus !== "ativo"` e o caminho é **hard disable** (`desligado`/`inativo`), setar `desligado_manual=true`, `desligado_manual_em=now()`, `desligado_manual_por=operadorEmail`. Soft disable (`ferias`/`afastado`) **não** seta a flag — esses são reversíveis e a planilha ainda manda.
 
-### Segurança e governança
+Quando `oldStatus !== "ativo" && newStatus === "ativo"` (reativação manual pelo próprio admin na ferramenta), limpar a flag.
 
-- Botão visível só com `useCanEdit` + role admin/operador (RBAC já existente).
-- Justificativa mínima 10 caracteres; gravada em `colaboradores.suspenso_motivo` + `auditoria.detalhes`.
-- Alerta automático para gestor + admins por SendGrid (template novo, segue `style/email-visual-identity`).
+### `supabase/functions/sync-csv-colab/index.ts`
 
-### Métricas e visibilidade
+Trecho do bloco `for (const item of toUpdate)` (linhas ~820-944):
 
-- Dashboard: contadores de suspensões ativas, tempo médio até Leaver formal, gaps detectados.
-- Relatório novo "Janela de risco de desligamento" listando todos os casos onde houve gap > 0 entre desligamento real (data da suspensão preventiva) e Leaver formal.
+1. Carregar `desligado_manual` para os IDs do batch (uma única query).
+2. **Antes** de fazer o `update` do status no banco a partir do CSV, se `desligado_manual===true` **e** `newStatus==='ativo'`:
+   - Forçar `item.data.status = item.oldStatus` (não sobrescreve).
+   - Pular o ramo `isReactivating`.
+   - Registrar `logAlerta({ tipo: 'csv_divergencia_desligamento', severidade: 'aviso', mensagem: 'CSV trouxe X como ativo, mas foi desligado manualmente em DD/MM' })`.
+3. Se `desligado_manual===true` **e** `newStatus` é `desligado`/`inativo`: limpar a flag (`desligado_manual=false`, demais campos null) — convergência.
+
+### Reconciliação com Pré-Desligamento
+
+A flag `desligado_manual` é **independente** de `suspenso_preventivo`:
+- Pré-desligamento: status continua `ativo`, suspende sign-in, espera CSV. Não precisa de guard novo (já tratado).
+- Desligamento manual hard: status vira `desligado`, flag liga, guard impede reativação pelo CSV.
+
+Se um colaborador tem `suspenso_preventivo=true` e depois o admin formaliza o desligamento direto na ferramenta (sem esperar CSV), o `handleStatusChange` já limpa `suspenso_preventivo` (lógica existente) e agora também liga `desligado_manual`.
+
+### Auditoria
+
+Cada bloqueio de reativação pelo guard gera entrada em `auditoria` com `acao='bloquear_reativacao_csv'` e detalhes (CSV status, DB status, flag, data do desligamento manual).
 
 ## Fora do escopo
 
-- Detecção automática por comportamento anômalo (last sign-in, MFA changes) — exige integração extra com Entra ID Sign-in Logs; pode ser fase 2.
-- Webhook do sistema de RH disparando o pré-desligamento automaticamente — depende do RH expor o evento, hoje só temos CSV.
-- Alteração do contrato do CSV — fora do nosso controle.
+- Mudar o contrato/origem do CSV.
+- Expirar a flag automaticamente (ex.: após 30 dias). Caso o CSV nunca convirja, o operador pode forçar manualmente reativando o colaborador na ferramenta (a flag é limpa nesse caminho).
+- Bloqueio de outras ações vindas do CSV (cargo/área) enquanto a flag está ativa — o pedido é especificamente sobre não reativar.
 
 ## Resultado esperado
 
-A janela de risco de até 5 dias deixa de ser silenciosa: vira uma ação proativa do RH com 1 clique, totalmente reversível, rastreada em JML/auditoria e reconciliada automaticamente com o Leaver formal quando o CSV finalmente atualizar.
+Desligamento manual na ferramenta vira a fonte da verdade até o CSV convergir. O sync passa a ser idempotente nesse intervalo: lê, detecta divergência, alerta, e **nunca** reativa silenciosamente.

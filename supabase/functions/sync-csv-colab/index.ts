@@ -400,13 +400,13 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     await sb.from("sync_jobs").update({ message: `Parsed ${totalRows} registros. Comparando...`, phase: "comparing", colab_total: totalRows }).eq("id", jobId);
 
     // ── 3. Load existing CSV-origin records ──
-    const existingMap = new Map<string, { id: string; fingerprint: string; cargo_id: string | null; sam_account_name: string | null; status: string }>();
+    const existingMap = new Map<string, { id: string; fingerprint: string; cargo_id: string | null; sam_account_name: string | null; status: string; desligado_manual: boolean; desligado_manual_em: string | null; nome: string | null }>();
     let from = 0;
     const PAGE = 1000;
     while (true) {
       const { data } = await sb
         .from("colaboradores")
-        .select("id, matricula, nome, email, status, empresa_id, cargo_id, area_id, localidade_id, cpf, data_admissao, data_desligamento, import_hash, sam_account_name")
+        .select("id, matricula, nome, email, status, empresa_id, cargo_id, area_id, localidade_id, cpf, data_admissao, data_desligamento, import_hash, sam_account_name, desligado_manual, desligado_manual_em")
         .eq("origem", "csv")
         .range(from, from + PAGE - 1);
       if (!data || data.length === 0) break;
@@ -418,6 +418,9 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
             cargo_id: c.cargo_id,
             sam_account_name: c.sam_account_name,
             status: c.status,
+            desligado_manual: !!c.desligado_manual,
+            desligado_manual_em: c.desligado_manual_em || null,
+            nome: c.nome || null,
           });
         }
       });
@@ -565,7 +568,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     await sb.from("sync_jobs").update({ phase: "classifying", message: "Classificando mudanças...", colab_percent: 20 }).eq("id", jobId);
 
     const toInsert: any[] = [];
-    const toUpdate: { id: string; data: any; oldCargoId: string | null; oldStatus: string; oldSam: string | null }[] = [];
+    const toUpdate: { id: string; data: any; oldCargoId: string | null; oldStatus: string; oldSam: string | null; desligadoManual: boolean; desligadoManualEm: string | null }[] = [];
     const csvMatriculas = new Set<string>();
     let unchanged = 0;
 
@@ -584,6 +587,8 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
           oldCargoId: existing.cargo_id,
           oldStatus: existing.status,
           oldSam: existing.sam_account_name,
+          desligadoManual: existing.desligado_manual,
+          desligadoManualEm: existing.desligado_manual_em,
         });
       } else {
         unchanged++;
@@ -603,6 +608,55 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     }
 
     console.log(`Classification: ${toInsert.length} new, ${toUpdate.length} changed, ${unchanged} unchanged, ${leaverIds.length} leavers`);
+
+    // ── 5.1 Guard: ignore CSV-driven reactivation for users disabled manually in the tool ──
+    // If admin set status=desligado/inativo here, CSV may still say "ativo" for up to 5 days.
+    // Preserve DB status until CSV converges (status flips to desligado/inativo), then clear the flag.
+    const manualConvergenceIds: string[] = [];
+    for (const item of toUpdate) {
+      if (!item.desligadoManual) continue;
+      const csvStatus = item.data.status;
+      if (csvStatus === "ativo") {
+        // Block reactivation: keep DB status, don't enqueue enable_*.
+        item.data.status = item.oldStatus;
+        const gapDias = item.desligadoManualEm
+          ? Math.max(0, Math.round((Date.now() - new Date(item.desligadoManualEm).getTime()) / 86400000))
+          : null;
+        await sb.from("alertas").insert({
+          titulo: "CSV divergente — desligamento manual",
+          mensagem: `${item.data.nome || item.id}: CSV ainda traz como ativo, mas foi desligado manualmente na ferramenta${gapDias !== null ? ` há ${gapDias} dia(s)` : ""}. Reativação bloqueada.`,
+          severidade: "aviso",
+          tipo: "csv_divergencia_desligamento",
+          ref_url: `/colaboradores/${item.id}`,
+        });
+        await sb.from("auditoria").insert({
+          acao: "bloquear_reativacao_csv",
+          entidade: "colaboradores",
+          entidade_id: item.id,
+          resumo: `Reativação por CSV bloqueada para ${item.data.nome || item.id} (desligado manualmente${gapDias !== null ? `, gap ${gapDias}d` : ""})`,
+          operador: "sistema_sync_csv",
+          detalhes: {
+            csv_status: csvStatus,
+            db_status: item.oldStatus,
+            desligado_manual_em: item.desligadoManualEm,
+            gap_dias: gapDias,
+          },
+        });
+      } else if (csvStatus === "desligado" || csvStatus === "inativo") {
+        // Convergence: clear the manual flag — CSV finally caught up.
+        manualConvergenceIds.push(item.id);
+        item.desligadoManual = false;
+      }
+    }
+    if (manualConvergenceIds.length > 0) {
+      for (const batch of chunk(manualConvergenceIds, 200)) {
+        await sb.from("colaboradores").update({
+          desligado_manual: false,
+          desligado_manual_em: null,
+          desligado_manual_por: null,
+        }).in("id", batch);
+      }
+    }
 
     // ── 6. Execute INSERTs ──
     await sb.from("sync_jobs").update({ phase: "inserting", message: `Inserindo ${toInsert.length} novos...`, colab_percent: 30 }).eq("id", jobId);
