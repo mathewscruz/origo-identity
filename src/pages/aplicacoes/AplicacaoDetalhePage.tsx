@@ -52,6 +52,21 @@ export default function AplicacaoDetalhePage() {
     enabled: !!id,
   });
 
+  const { data: connectorRow } = useQuery({
+    queryKey: ["aplicacao-connector", id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("aplicacao_connectors")
+        .select("config")
+        .eq("aplicacao_id", id!)
+        .maybeSingle();
+      if (error && error.code !== "PGRST116") throw error;
+      return data;
+    },
+    enabled: !!id,
+  });
+  const connectorConfig = (connectorRow?.config as Record<string, any> | undefined) || {};
+
   const { data: perfisData } = useQuery({
     queryKey: ["aplicacao-perfis", id],
     queryFn: async () => {
@@ -200,7 +215,7 @@ export default function AplicacaoDetalhePage() {
   const [savingProfile, setSavingProfile] = useState(false);
 
   const openConnectorEdit = () => {
-    const config = (app as any)?.connector_config || {};
+    const config = connectorConfig;
     setConnForm({
       connector_type: (app as any)?.connector_type || "manual",
       base_url: config.base_url || "",
@@ -248,14 +263,20 @@ export default function AplicacaoDetalhePage() {
         connConfig.oauth_scope = connForm.oauth_scope || undefined;
       }
 
-      const { error } = await supabase.from("aplicacoes").update({
+      const { error: appErr } = await supabase.from("aplicacoes").update({
         connector_type: connForm.connector_type as any,
-        connector_config: connConfig as any,
       } as any).eq("id", id!);
-      if (error) throw error;
+      if (appErr) throw appErr;
+
+      const { error: cfgErr } = await supabase.from("aplicacao_connectors").upsert({
+        aplicacao_id: id!,
+        config: connConfig as any,
+      }, { onConflict: "aplicacao_id" });
+      if (cfgErr) throw cfgErr;
 
       toast({ title: "Conector salvo com sucesso" });
       queryClient.invalidateQueries({ queryKey: ["aplicacao", id] });
+      queryClient.invalidateQueries({ queryKey: ["aplicacao-connector", id] });
       setConnectorOpen(false);
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
@@ -601,9 +622,9 @@ export default function AplicacaoDetalhePage() {
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div><strong>Tipo:</strong> {connectorTypeLabels[connType] || connType}</div>
-                <div><strong>Auth:</strong> {(app as any).connector_config?.auth_type || "Não configurado"}</div>
-                <div><strong>Base URL:</strong> {(app as any).connector_config?.base_url || "Não configurada"}</div>
-                <div><strong>Endpoint Perfis:</strong> {(app as any).connector_config?.profiles_endpoint || "/profiles (padrão)"}</div>
+                <div><strong>Auth:</strong> {connectorConfig.auth_type || "Não configurado"}</div>
+                <div><strong>Base URL:</strong> {connectorConfig.base_url || "Não configurada"}</div>
+                <div><strong>Endpoint Perfis:</strong> {connectorConfig.profiles_endpoint || "/profiles (padrão)"}</div>
               </div>
               {!hasConnector && (
                 <div className="mt-4 p-3 rounded-md border border-info/30 bg-info/5 text-sm text-muted-foreground">
