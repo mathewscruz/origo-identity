@@ -182,13 +182,24 @@ export default function ExcecoesPage() {
 
       // Only provision access if type is 'acesso' and approved
       if (action === "aprovada" && tipoExcecao !== "manter_ativo" && colabId && perfilId) {
-        // Create perfil_atribuicoes
-        await supabase.from("perfil_atribuicoes").insert({
-          colaborador_id: colabId,
-          perfil_id: perfilId,
-          origem: "excecao",
-          ativo: true,
-        } as any);
+        // Dedupe: evita criar atribuição duplicada
+        const { data: existente } = await supabase
+          .from("perfil_atribuicoes")
+          .select("id")
+          .eq("colaborador_id", colabId)
+          .eq("perfil_id", perfilId)
+          .eq("ativo", true)
+          .maybeSingle();
+
+        if (!existente) {
+          await supabase.from("perfil_atribuicoes").insert({
+            colaborador_id: colabId,
+            perfil_id: perfilId,
+            origem: "excecao",
+            excecao_id: id,
+            ativo: true,
+          } as any);
+        }
 
         // Get colab identity
         const { data: colab } = await (supabase as any).from("colaboradores").select("id, nome, email, sam_account_name").eq("id", colabId).single();
@@ -211,6 +222,7 @@ export default function ExcecoesPage() {
           }
         }
       }
+
 
       // Audit
       const tipoLabel = tipoExcecao === "manter_ativo" ? "Manter Ativo" : "Concessão de Acesso";
