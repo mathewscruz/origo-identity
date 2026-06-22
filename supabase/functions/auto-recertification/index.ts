@@ -315,10 +315,11 @@ Deno.serve(async (req) => {
           operador: "sistema",
         });
 
-        // Send email to responsavel
-        if (t.responsavel && t.responsavel.includes("@")) {
+        // Send email to responsavel (resolved via FK)
+        const revalEmail = await resolveResponsavelEmail(t);
+        if (revalEmail) {
           await sendEmail({
-            to: t.responsavel,
+            to: revalEmail,
             subject: `Revalidação necessária — ${t.nome}`,
             htmlContent: `<p>O terceiro <strong>${t.nome}</strong> precisa ser revalidado (45 dias desde última validação). Por favor, avalie se o acesso deve ser mantido ou revogado.</p>`,
           });
