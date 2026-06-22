@@ -368,6 +368,62 @@ export default function ColaboradorDetalhePage() {
     queryClient.invalidateQueries({ queryKey: ["colab_individual_queue"] });
   }
 
+  async function handleConfirmPreLeaver() {
+    if (!pessoa) return;
+    setSavingPreLeaver(true);
+    const res = await suspendColaboradorPreventivo(
+      {
+        id: id!,
+        nome: pessoa.nome,
+        email: pessoa.email || null,
+        sam_account_name: (pessoa as any)?.sam_account_name || null,
+        gestor_id: pessoa.gestor_id || null,
+      },
+      preLeaverMotivo,
+      { email: profile?.email || null, nome: profile?.nome || null },
+    );
+    setSavingPreLeaver(false);
+    if (!res.success) {
+      toast({ title: "Não foi possível suspender", description: res.error, variant: "destructive" });
+      return;
+    }
+    toast({ title: "Suspensão preventiva ativada", description: "Conta bloqueada no Entra ID e AD. Sessões revogadas." });
+    setPreLeaverOpen(false);
+    setPreLeaverMotivo("");
+    queryClient.invalidateQueries({ queryKey: ["colaborador", id] });
+    queryClient.invalidateQueries({ queryKey: ["eventos_jml"] });
+    queryClient.invalidateQueries({ queryKey: ["iam_queue"] });
+    queryClient.invalidateQueries({ queryKey: ["alertas"] });
+  }
+
+  async function handleConfirmRevert() {
+    if (!pessoa) return;
+    setSavingPreLeaver(true);
+    const res = await revertSuspensaoPreventiva(
+      {
+        id: id!,
+        nome: pessoa.nome,
+        email: pessoa.email || null,
+        sam_account_name: (pessoa as any)?.sam_account_name || null,
+        gestor_id: pessoa.gestor_id || null,
+      },
+      preLeaverMotivo,
+      { email: profile?.email || null, nome: profile?.nome || null },
+    );
+    setSavingPreLeaver(false);
+    if (!res.success) {
+      toast({ title: "Não foi possível reverter", description: res.error, variant: "destructive" });
+      return;
+    }
+    toast({ title: "Suspensão revertida", description: "Conta reabilitada no Entra ID e AD." });
+    setRevertOpen(false);
+    setPreLeaverMotivo("");
+    queryClient.invalidateQueries({ queryKey: ["colaborador", id] });
+    queryClient.invalidateQueries({ queryKey: ["eventos_jml"] });
+    queryClient.invalidateQueries({ queryKey: ["iam_queue"] });
+    queryClient.invalidateQueries({ queryKey: ["alertas"] });
+  }
+
   if (isLoading) return <div className="space-y-4 p-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}</div>;
   if (!pessoa) return <div className="p-8 text-center text-muted-foreground">Colaborador não encontrado.</div>;
 
