@@ -82,7 +82,70 @@ export default function PortalSolicitacoesPage() {
     setLicencas(licRes.data ?? []);
     setSolicitacaoItens(itensRes.data ?? []);
     setLoading(false);
+
+    // Catalog context: load owned + recommended resources for the requester
+    if (userEmail) {
+      void loadCatalogContext(userEmail);
+    }
   }
+
+  async function loadCatalogContext(email: string) {
+    const { data: colab } = await supabase
+      .from("colaboradores")
+      .select("id, cargo_id")
+      .eq("email", email)
+      .maybeSingle();
+    if (!colab) return;
+
+    // Effective profile assignments (active)
+    const { data: atribs } = await supabase
+      .from("perfil_atribuicoes")
+      .select("perfil_id")
+      .eq("colaborador_id", colab.id)
+      .eq("ativo", true);
+    const ownedPerfilIds = (atribs ?? []).map((a: any) => a.perfil_id);
+
+    // Recommended profiles by cargo (excluding ones the user already has)
+    let recPerfilIds: string[] = [];
+    if (colab.cargo_id) {
+      const { data: cp } = await supabase
+        .from("cargo_perfis")
+        .select("perfil_id")
+        .eq("cargo_id", colab.cargo_id);
+      recPerfilIds = (cp ?? [])
+        .map((r: any) => r.perfil_id)
+        .filter((pid: string) => !ownedPerfilIds.includes(pid));
+    }
+
+    // Resolve resources for owned and recommended sets in parallel
+    const resolveResources = async (perfilIds: string[]) => {
+      if (perfilIds.length === 0) return { apps: new Set<string>(), grupos: new Set<string>(), licencas: new Set<string>() };
+      const [pa, pg, pl] = await Promise.all([
+        (supabase as any).from("perfil_aplicacoes").select("aplicacao_id").in("perfil_id", perfilIds),
+        (supabase as any).from("perfil_grupos").select("grupo_id").in("perfil_id", perfilIds),
+        (supabase as any).from("perfil_licencas").select("licenca_id").in("perfil_id", perfilIds),
+      ]);
+      return {
+        apps: new Set<string>((pa.data ?? []).map((r: any) => r.aplicacao_id)),
+        grupos: new Set<string>((pg.data ?? []).map((r: any) => r.grupo_id)),
+        licencas: new Set<string>((pl.data ?? []).map((r: any) => r.licenca_id)),
+      };
+    };
+
+    const [owned, rec] = await Promise.all([
+      resolveResources(ownedPerfilIds),
+      resolveResources(recPerfilIds),
+    ]);
+
+    setOwnedAppIds(owned.apps);
+    setOwnedGrupoIds(owned.grupos);
+    setOwnedLicencaIds(owned.licencas);
+    // Recommended: exclude what the user already has
+    setRecAppIds(new Set([...rec.apps].filter(id => !owned.apps.has(id))));
+    setRecGrupoIds(new Set([...rec.grupos].filter(id => !owned.grupos.has(id))));
+    setRecLicencaIds(new Set([...rec.licencas].filter(id => !owned.licencas.has(id))));
+  }
+
 
   const appMap = new Map(aplicacoes.map(a => [a.id, a]));
   const grupoMap = new Map(grupos.map(g => [g.id, g]));
