@@ -35,35 +35,8 @@ const statusConfig: Record<string, { label: string; class: string }> = {
   desligado: { label: "Desligado", class: "bg-destructive/15 text-destructive border-destructive/30" },
 };
 
-const origemColors: Record<string, string> = {
-  regra: "bg-primary/15 text-primary border-primary/30",
-  excecao: "bg-warning/15 text-warning border-warning/30",
-  manual: "bg-muted text-muted-foreground",
-  cargo: "bg-info/15 text-info border-info/30",
-};
 
-const origemLabels: Record<string, string> = {
-  regra: "Regra",
-  excecao: "Exceção",
-  manual: "Manual",
-  cargo: "Cargo",
-};
 
-const tipoJMLColors: Record<string, string> = {
-  joiner: "bg-success text-success-foreground",
-  mover: "bg-info text-info-foreground",
-  leaver: "bg-destructive text-destructive-foreground",
-  pre_leaver: "bg-warning text-warning-foreground",
-  pre_leaver_revertido: "bg-info text-info-foreground",
-};
-
-const tipoJMLLabels: Record<string, string> = {
-  joiner: "joiner",
-  mover: "mover",
-  leaver: "leaver",
-  pre_leaver: "pré-leaver",
-  pre_leaver_revertido: "reversão",
-};
 
 import IndividualAccessTabs from "./sections/IndividualAccessTabs";
 import PerfisAtribuidosTable from "./sections/PerfisAtribuidosTable";
