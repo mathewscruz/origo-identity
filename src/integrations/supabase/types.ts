@@ -1932,6 +1932,7 @@ export type Database = {
           id: string
           nome: string
           responsavel: string | null
+          responsavel_colaborador_id: string | null
           ultima_revalidacao: string | null
           updated_at: string
         }
@@ -1946,6 +1947,7 @@ export type Database = {
           id?: string
           nome: string
           responsavel?: string | null
+          responsavel_colaborador_id?: string | null
           ultima_revalidacao?: string | null
           updated_at?: string
         }
@@ -1960,10 +1962,19 @@ export type Database = {
           id?: string
           nome?: string
           responsavel?: string | null
+          responsavel_colaborador_id?: string | null
           ultima_revalidacao?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "terceiros_responsavel_colaborador_id_fkey"
+            columns: ["responsavel_colaborador_id"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {

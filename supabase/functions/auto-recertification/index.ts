@@ -197,10 +197,23 @@ Deno.serve(async (req) => {
     const hoje = new Date().toISOString().split("T")[0];
     const { data: terceirosExpirados } = await sb
       .from("terceiros")
-      .select("id, nome, email, contrato_fim")
+      .select("id, nome, email, contrato_fim, responsavel, responsavel_colaborador_id")
       .eq("ativo", true)
       .not("contrato_fim", "is", null)
       .lte("contrato_fim", hoje);
+
+    // Helper: resolve responsavel email (FK colaborador → responsavel text → terceiro.email)
+    const resolveResponsavelEmail = async (t: any): Promise<string | null> => {
+      if (t.responsavel_colaborador_id) {
+        const { data: c } = await sb.from("colaboradores").select("email").eq("id", t.responsavel_colaborador_id).single();
+        if (c?.email) return c.email;
+      }
+      if (t.responsavel && typeof t.responsavel === "string") {
+        const match = t.responsavel.match(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/);
+        if (match) return match[0];
+      }
+      return t.email || null;
+    };
 
     if (terceirosExpirados && terceirosExpirados.length > 0) {
       for (const terceiro of terceirosExpirados) {
@@ -244,16 +257,14 @@ Deno.serve(async (req) => {
           operador: "sistema",
         });
 
-        // Send email to responsavel
-        if (terceiro.email || (terceiro as any).responsavel) {
-          const responsavelEmail = (terceiro as any).responsavel && (terceiro as any).responsavel.includes("@") ? (terceiro as any).responsavel : terceiro.email;
-          if (responsavelEmail) {
-            await sendEmail({
-              to: responsavelEmail,
-              subject: `Contrato expirado — ${terceiro.nome}`,
-              htmlContent: `<p>O contrato do terceiro <strong>${terceiro.nome}</strong> expirou em ${terceiro.contrato_fim}. Todos os acessos foram revogados automaticamente.</p>`,
-            });
-          }
+        // Send email to responsavel (resolved via FK)
+        const responsavelEmail = await resolveResponsavelEmail(terceiro);
+        if (responsavelEmail) {
+          await sendEmail({
+            to: responsavelEmail,
+            subject: `Contrato expirado — ${terceiro.nome}`,
+            htmlContent: `<p>O contrato do terceiro <strong>${terceiro.nome}</strong> expirou em ${terceiro.contrato_fim}. Todos os acessos foram revogados automaticamente.</p>`,
+          });
         }
 
         results.terceiros_expirados++;
@@ -265,7 +276,7 @@ Deno.serve(async (req) => {
 
     const { data: terceirosAtivos } = await sb
       .from("terceiros")
-      .select("id, nome, email, responsavel, contrato_inicio, contrato_fim, ultima_revalidacao")
+      .select("id, nome, email, responsavel, responsavel_colaborador_id, contrato_inicio, contrato_fim, ultima_revalidacao")
       .eq("ativo", true)
       .not("contrato_fim", "is", null);
 
@@ -304,10 +315,11 @@ Deno.serve(async (req) => {
           operador: "sistema",
         });
 
-        // Send email to responsavel
-        if (t.responsavel && t.responsavel.includes("@")) {
+        // Send email to responsavel (resolved via FK)
+        const revalEmail = await resolveResponsavelEmail(t);
+        if (revalEmail) {
           await sendEmail({
-            to: t.responsavel,
+            to: revalEmail,
             subject: `Revalidação necessária — ${t.nome}`,
             htmlContent: `<p>O terceiro <strong>${t.nome}</strong> precisa ser revalidado (45 dias desde última validação). Por favor, avalie se o acesso deve ser mantido ou revogado.</p>`,
           });

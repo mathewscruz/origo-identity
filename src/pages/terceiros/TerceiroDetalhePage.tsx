@@ -331,7 +331,16 @@ export default function TerceiroDetalhePage() {
             <Badge variant="outline" className={crit.class}>Criticidade {crit.label}</Badge>
             <Badge variant={terceiro.ativo ? "default" : "secondary"}>{terceiro.ativo ? "Ativo" : "Inativo"}</Badge>
           </div>
-          <p className="text-sm text-muted-foreground">{terceiro.empresa_terceira} · Responsável: {terceiro.responsavel || "—"}</p>
+          <p className="text-sm text-muted-foreground">
+            {terceiro.empresa_terceira} · Responsável:{" "}
+            {(terceiro as any).responsavel_colaborador ? (
+              <Link to={`/colaboradores/${(terceiro as any).responsavel_colaborador.id}`} className="text-primary hover:underline">
+                {(terceiro as any).responsavel_colaborador.nome}
+              </Link>
+            ) : (
+              terceiro.responsavel || "—"
+            )}
+          </p>
         </div>
         <div className="flex gap-2">
           {terceiro.ativo ? (
@@ -380,7 +389,7 @@ export default function TerceiroDetalhePage() {
                   ["Nome", terceiro.nome],
                   ["Email", terceiro.email || "—"],
                   ["Empresa terceira", terceiro.empresa_terceira || "—"],
-                  ["Responsável", terceiro.responsavel || "—"],
+                  ["Responsável", (terceiro as any).responsavel_colaborador ? `${(terceiro as any).responsavel_colaborador.nome}${(terceiro as any).responsavel_colaborador.email ? ` (${(terceiro as any).responsavel_colaborador.email})` : ""}` : (terceiro.responsavel || "—")],
                   ["Criticidade", crit.label],
                   ["Login AD", (terceiro as any).sam_account_name || "—"],
                 ].map(([label, value]) => (
@@ -395,7 +404,7 @@ export default function TerceiroDetalhePage() {
           <Alert className="border-primary/30 bg-primary/5">
             <Info className="h-4 w-4 text-primary" />
             <AlertDescription className="text-sm">
-              <strong>Revalidação automática a cada 45 dias.</strong> O responsável ({terceiro.responsavel || "não definido"}) receberá um e-mail com as opções de manter ou revogar o acesso.
+              <strong>Revalidação automática a cada 45 dias.</strong> O responsável ({(terceiro as any).responsavel_colaborador?.email || (terceiro as any).responsavel_colaborador?.nome || terceiro.responsavel || "não definido"}) receberá um e-mail com as opções de manter ou revogar o acesso.
               {terceiro.contrato_inicio && (() => {
                 const inicio = new Date(terceiro.contrato_inicio!);
                 const ultimaRev = (terceiro as any).ultima_revalidacao ? new Date((terceiro as any).ultima_revalidacao) : inicio;

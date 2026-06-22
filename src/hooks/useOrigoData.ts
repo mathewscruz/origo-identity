@@ -87,7 +87,16 @@ export function useTerceiros() {
 export function useTerceiro(id: string | undefined) {
   return useQuery({
     queryKey: ["terceiro", id], enabled: !!id,
-    queryFn: async () => { const { data, error } = await supabase.from("terceiros").select("*").eq("id", id!).single(); if (error) throw error; return data; },
+    queryFn: async () => {
+      const { data, error } = await supabase.from("terceiros").select("*").eq("id", id!).single();
+      if (error) throw error;
+      const respId = (data as any)?.responsavel_colaborador_id;
+      if (respId) {
+        const { data: resp } = await supabase.from("colaboradores").select("id, nome, email").eq("id", respId).single();
+        (data as any).responsavel_colaborador = resp || null;
+      }
+      return data;
+    },
   });
 }
 

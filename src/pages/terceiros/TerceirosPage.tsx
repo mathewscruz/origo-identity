@@ -28,6 +28,7 @@ import { queueFullProfileActions } from "@/lib/entraQueueHelper";
 import { createEventoJML } from "@/lib/createEventoJML";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { logAuditoria, logAlerta } from "@/lib/auditLogger";
+import ColaboradorPicker from "@/components/ColaboradorPicker";
 
 const criticidadeConfig: Record<string, { label: string; class: string }> = {
   baixa: { label: "Baixa", class: "bg-muted text-muted-foreground" },
@@ -75,7 +76,7 @@ export default function TerceirosPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editing, setEditing] = useState<any>(null);
-  const [form, setForm] = useState({ nome: "", email: "", empresa_terceira: "", contrato_inicio: "", contrato_fim: "", criticidade: "media", responsavel: "", ativo: true, sam_account_name: "" });
+  const [form, setForm] = useState({ nome: "", email: "", empresa_terceira: "", contrato_inicio: "", contrato_fim: "", criticidade: "media", responsavel: "", responsavel_colaborador_id: "" as string | "", ativo: true, sam_account_name: "" });
   const qc = useQueryClient();
   const { toast } = useToast();
   const { profile } = useAuth();
@@ -92,14 +93,14 @@ export default function TerceirosPage() {
   const sorted = useSortableData(filtered, sortField, sortDir);
   const { paginatedItems, safePage } = usePagination(sorted, page, pageSize);
 
-  const openNew = () => { setEditing(null); setForm({ nome: "", email: "", empresa_terceira: "", contrato_inicio: "", contrato_fim: "", criticidade: "media", responsavel: "", ativo: true, sam_account_name: "" }); setDialogOpen(true); };
-  const openEdit = (t: any) => { setEditing(t); setForm({ nome: t.nome, email: t.email || "", empresa_terceira: t.empresa_terceira || "", contrato_inicio: t.contrato_inicio || "", contrato_fim: t.contrato_fim || "", criticidade: t.criticidade, responsavel: t.responsavel || "", ativo: t.ativo, sam_account_name: t.sam_account_name || "" }); setDialogOpen(true); };
+  const openNew = () => { setEditing(null); setForm({ nome: "", email: "", empresa_terceira: "", contrato_inicio: "", contrato_fim: "", criticidade: "media", responsavel: "", responsavel_colaborador_id: "", ativo: true, sam_account_name: "" }); setDialogOpen(true); };
+  const openEdit = (t: any) => { setEditing(t); setForm({ nome: t.nome, email: t.email || "", empresa_terceira: t.empresa_terceira || "", contrato_inicio: t.contrato_inicio || "", contrato_fim: t.contrato_fim || "", criticidade: t.criticidade, responsavel: t.responsavel || "", responsavel_colaborador_id: t.responsavel_colaborador_id || "", ativo: t.ativo, sam_account_name: t.sam_account_name || "" }); setDialogOpen(true); };
 
   const handleSave = async () => {
     if (!form.nome.trim()) { toast({ title: "Nome obrigatório", variant: "destructive" }); return; }
     if (!form.empresa_terceira.trim()) { toast({ title: "Empresa obrigatória", variant: "destructive" }); return; }
     if (!form.sam_account_name.trim()) { toast({ title: "Preencha nome e empresa para gerar login e e-mail", variant: "destructive" }); return; }
-    const payload: any = { nome: form.nome.trim(), email: form.email || null, empresa_terceira: form.empresa_terceira || null, contrato_inicio: form.contrato_inicio || null, contrato_fim: form.contrato_fim || null, criticidade: form.criticidade as any, responsavel: form.responsavel || null, ativo: form.ativo, sam_account_name: form.sam_account_name.trim() || null };
+    const payload: any = { nome: form.nome.trim(), email: form.email || null, empresa_terceira: form.empresa_terceira || null, contrato_inicio: form.contrato_inicio || null, contrato_fim: form.contrato_fim || null, criticidade: form.criticidade as any, responsavel: form.responsavel || null, responsavel_colaborador_id: form.responsavel_colaborador_id || null, ativo: form.ativo, sam_account_name: form.sam_account_name.trim() || null };
     if (editing) {
       // Detect disable: was active, now inactive
       const wasActive = editing.ativo;
@@ -309,7 +310,19 @@ export default function TerceirosPage() {
                   <SelectContent><SelectItem value="baixa">Baixa</SelectItem><SelectItem value="media">Média</SelectItem><SelectItem value="alta">Alta</SelectItem><SelectItem value="critica">Crítica</SelectItem></SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2"><Label>Responsável</Label><Input value={form.responsavel} onChange={(e) => setForm({ ...form, responsavel: e.target.value })} /></div>
+              <div className="space-y-2">
+                <Label>Responsável</Label>
+                <ColaboradorPicker
+                  value={form.responsavel_colaborador_id || null}
+                  onChange={(c) => setForm({
+                    ...form,
+                    responsavel_colaborador_id: c?.id || "",
+                    responsavel: c ? (c.email ? `${c.nome} <${c.email}>` : c.nome) : "",
+                  })}
+                  placeholder="Selecione o responsável..."
+                />
+                <p className="text-xs text-muted-foreground">Receberá o e-mail de revalidação a cada 45 dias.</p>
+              </div>
             </div>
             <div className="flex items-center gap-2"><Switch checked={form.ativo} onCheckedChange={(v) => setForm({ ...form, ativo: v })} /><Label>Ativo</Label></div>
           </div>
