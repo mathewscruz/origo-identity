@@ -41,6 +41,8 @@ const statusConfig: Record<string, { label: string; class: string }> = {
 import IndividualAccessTabs from "./sections/IndividualAccessTabs";
 import PerfisAtribuidosTable from "./sections/PerfisAtribuidosTable";
 import JMLTimeline from "./sections/JMLTimeline";
+import StartJmlEventDialog from "@/components/jml/StartJmlEventDialog";
+import { Workflow } from "lucide-react";
 import { useAssignPerfil, useRevokePerfil } from "@/hooks/mutations/usePerfilAssignment";
 
 
@@ -82,6 +84,7 @@ export default function ColaboradorDetalhePage() {
   const [revertOpen, setRevertOpen] = useState(false);
   const [preLeaverMotivo, setPreLeaverMotivo] = useState("");
   const [savingPreLeaver, setSavingPreLeaver] = useState(false);
+  const [startJmlOpen, setStartJmlOpen] = useState(false);
 
   const eventos = (allEventos ?? []).filter((e) => e.colaborador_id === id);
 
@@ -400,6 +403,9 @@ export default function ColaboradorDetalhePage() {
           </Button>
           <Button variant="outline" size="sm" onClick={() => { setTempPassword(null); setResetDialogOpen(true); }}>
             <KeyRound className="mr-1 h-3 w-3" /> Resetar Senha
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setStartJmlOpen(true)}>
+            <Workflow className="mr-1 h-3 w-3" /> Iniciar evento JML
           </Button>
           <Button variant="outline" size="sm" onClick={() => { window.location.href = `/colaboradores?edit=${id}`; }}>
             <Pencil className="mr-1 h-3 w-3" /> Editar
