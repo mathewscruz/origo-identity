@@ -6,73 +6,15 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Search, RefreshCw, Zap, AlertTriangle } from "lucide-react";
-import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Skeleton } from "@/components/ui/skeleton";
 import TablePagination, { usePagination } from "@/components/TablePagination";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { useEventosJML } from "@/hooks/useOrigoData";
-import EmptyState from "@/components/EmptyState";
 import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
 import { authedFetch } from "@/lib/authedFetch";
-
-// ---- Provisionamento configs ----
-const statusConfig: Record<string, { label: string; class: string }> = {
-  pending: { label: "Pendente", class: "bg-warning/15 text-warning border-warning/30" },
-  processing: { label: "Processando", class: "bg-info/15 text-info border-info/30" },
-  success: { label: "Concluído", class: "bg-success/15 text-success border-success/30" },
-  failed: { label: "Falhou", class: "bg-destructive/15 text-destructive border-destructive/30" },
-};
-
-const actionConfig: Record<string, { label: string; class: string }> = {
-  create: { label: "Criação", class: "bg-success/15 text-success border-success/30" },
-  create_if_not_exists: { label: "Criação (Auto)", class: "bg-success/15 text-success border-success/30" },
-  update: { label: "Atualização", class: "bg-info/15 text-info border-info/30" },
-  disable: { label: "Desativação", class: "bg-warning/15 text-warning border-warning/30" },
-  delete: { label: "Exclusão", class: "bg-destructive/15 text-destructive border-destructive/30" },
-  assign_group: { label: "Atribuir Grupo", class: "bg-primary/15 text-primary border-primary/30" },
-  remove_group: { label: "Remover Grupo", class: "bg-muted text-muted-foreground border-muted" },
-  assign_license: { label: "Atribuir Licença", class: "bg-primary/15 text-primary border-primary/30" },
-  remove_license: { label: "Remover Licença", class: "bg-muted text-muted-foreground border-muted" },
-  assign_app: { label: "Atribuir App", class: "bg-primary/15 text-primary border-primary/30" },
-  remove_app: { label: "Remover App", class: "bg-muted text-muted-foreground border-muted" },
-  disable_entra: { label: "Desativar Entra", class: "bg-warning/15 text-warning border-warning/30" },
-  enable_entra: { label: "Reativar Entra", class: "bg-success/15 text-success border-success/30" },
-  update_entra: { label: "Atualizar Entra", class: "bg-info/15 text-info border-info/30" },
-};
-
-// ---- JML configs ----
-const tipoColors: Record<string, string> = {
-  joiner: "bg-success text-success-foreground",
-  mover: "bg-info text-info-foreground",
-  leaver: "bg-destructive text-destructive-foreground",
-};
-const jmlStatusColors: Record<string, string> = {
-  pendente: "bg-warning/15 text-warning border-warning/30",
-  executando: "bg-info/15 text-info border-info/30",
-  executado: "bg-success/15 text-success border-success/30",
-  erro: "bg-destructive/15 text-destructive border-destructive/30",
-  cancelado: "bg-muted text-muted-foreground",
-  quarentena: "bg-warning/15 text-warning border-warning/30",
-};
-
-interface QueueItem {
-  id: string;
-  action_type: string;
-  status: string;
-  payload_json: any;
-  requested_by: string | null;
-  created_at: string;
-  processed_at: string | null;
-  result_message: string | null;
-  correlation_id: string;
-  colaborador_id: string | null;
-  retry_count: number;
-  max_retries: number;
-}
+import QueueTable, { statusConfig, type QueueItem } from "./sections/QueueTable";
+import EventosJMLTable from "./sections/EventosJMLTable";
 
 type JmlTabKey = "pendentes" | "quarentena" | "executados" | "erros" | "todos";
 const jmlTabFilters: Record<JmlTabKey, (e: { status: string }) => boolean> = {
@@ -82,6 +24,7 @@ const jmlTabFilters: Record<JmlTabKey, (e: { status: string }) => boolean> = {
   erros: (e) => e.status === "erro",
   todos: () => true,
 };
+
 
 export default function FilaProvisionamentoPage() {
   const [mainTab, setMainTab] = useState("provisionamento");
@@ -250,64 +193,10 @@ export default function FilaProvisionamentoPage() {
             </Select>
           </div>
 
-          <Card data-tour="table">
-            <CardContent className="p-0">
-              {loading ? (
-                <div className="p-4 space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b text-left text-muted-foreground text-xs uppercase tracking-wider">
-                        <th className="p-4 font-medium hidden lg:table-cell">Correlation ID</th>
-                        <th className="p-4 font-medium">Ação</th>
-                        <th className="p-4 font-medium">Usuário</th>
-                        <th className="p-4 font-medium">Status</th>
-                        <th className="p-4 font-medium hidden md:table-cell">Solicitante</th>
-                        <th className="p-4 font-medium hidden md:table-cell">Solicitado em</th>
-                        <th className="p-4 font-medium hidden lg:table-cell">Processado em</th>
-                        <th className="p-4 font-medium hidden lg:table-cell">Retries</th>
-                        <th className="p-4 font-medium hidden lg:table-cell">Resultado</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedItems.map((item) => {
-                        const aCfg = actionConfig[item.action_type] || { label: item.action_type, class: "" };
-                        const sCfg = statusConfig[item.status] || { label: item.status, class: "" };
-                        const displayName = item.payload_json?.displayName || item.payload_json?.samAccountName || "—";
-                        return (
-                          <tr key={item.id} className="border-b last:border-0 hover:bg-muted/50">
-                            <td className="p-4 hidden lg:table-cell">
-                              <Link to={`/fila-provisionamento/${item.id}`} className="font-mono text-xs text-primary hover:underline">
-                                {item.correlation_id.slice(0, 8)}...
-                              </Link>
-                            </td>
-                            <td className="p-4"><Badge variant="outline" className={aCfg.class}>{aCfg.label}</Badge></td>
-                            <td className="p-4 font-medium">{displayName}</td>
-                            <td className="p-4"><Badge variant="outline" className={sCfg.class}>{sCfg.label}</Badge></td>
-                            <td className="p-4 text-muted-foreground text-xs hidden md:table-cell">{item.requested_by || "—"}</td>
-                            <td className="p-4 text-muted-foreground text-xs hidden md:table-cell">{format(new Date(item.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}</td>
-                            <td className="p-4 text-muted-foreground text-xs hidden lg:table-cell">{item.processed_at ? format(new Date(item.processed_at), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "—"}</td>
-                            <td className="p-4 text-xs text-muted-foreground hidden lg:table-cell">
-                              {item.retry_count > 0 ? (
-                                <Badge variant="outline" className="bg-warning/15 text-warning border-warning/30">{item.retry_count}/{item.max_retries || 10}</Badge>
-                              ) : "—"}
-                            </td>
-                            <td className="p-4 text-xs text-muted-foreground max-w-[200px] truncate hidden lg:table-cell">{item.result_message || "—"}</td>
-                          </tr>
-                        );
-                      })}
-                      {paginatedItems.length === 0 && (
-                        <tr><td colSpan={9}><EmptyState message="Nenhuma solicitação encontrada." /></td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <QueueTable items={paginatedItems} loading={loading} />
           <TablePagination totalItems={filtered.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
         </TabsContent>
+
 
         {/* ===================== TAB: Eventos JML ===================== */}
         <TabsContent value="eventos-jml" className="mt-4 space-y-4">
@@ -337,36 +226,11 @@ export default function FilaProvisionamentoPage() {
 
             {(["pendentes", "quarentena", "executados", "erros", "todos"] as JmlTabKey[]).map((t) => (
               <TabsContent key={t} value={t} className="mt-4">
-                <Card><CardContent className="p-0">
-                  {jmlLoading ? (
-                    <div className="p-4 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
-                  ) : (
-                    <table className="w-full text-sm">
-                      <thead><tr className="border-b text-left text-muted-foreground">
-                        <th className="p-4 font-medium">Tipo</th>
-                        <th className="p-4 font-medium">Pessoa</th>
-                        <th className="p-4 font-medium">Status</th>
-                        <th className="p-4 font-medium">Tentativas</th>
-                        <th className="p-4 font-medium">Data</th>
-                      </tr></thead>
-                      <tbody>
-                        {jmlPaginated.map((ev: any) => (
-                          <tr key={ev.id} className="border-b last:border-0 hover:bg-muted/50">
-                            <td className="p-4"><Badge className={`${tipoColors[ev.tipo]} text-[10px] uppercase`}>{ev.tipo.charAt(0)}</Badge></td>
-                            <td className="p-4"><Link to={`/eventos-jml/${ev.id}`} className="font-medium text-primary hover:underline">{ev.colaborador_nome || "Desconhecido"}</Link></td>
-                            <td className="p-4"><Badge variant="outline" className={jmlStatusColors[ev.status] || ""}>{({ pendente: "Pendente", quarentena: "Quarentena", executando: "Executando", executado: "Executado", erro: "Erro", cancelado: "Cancelado" } as Record<string, string>)[ev.status] || ev.status}</Badge></td>
-                            <td className="p-4 text-muted-foreground">{ev.tentativas}/{ev.max_tentativas}</td>
-                            <td className="p-4 text-muted-foreground text-xs">{new Date(ev.created_at).toLocaleDateString("pt-BR")}</td>
-                          </tr>
-                        ))}
-                        {jmlPaginated.length === 0 && <tr><td colSpan={5}><EmptyState message="Nenhum evento." /></td></tr>}
-                      </tbody>
-                    </table>
-                  )}
-                </CardContent></Card>
+                <EventosJMLTable items={jmlPaginated} loading={jmlLoading} />
                 <TablePagination totalItems={jmlFiltered.length} pageSize={jmlPageSize} currentPage={jmlSafePage} onPageChange={setJmlPage} onPageSizeChange={(s) => { setJmlPageSize(s); setJmlPage(1); }} />
               </TabsContent>
             ))}
+
           </Tabs>
         </TabsContent>
       </Tabs>
