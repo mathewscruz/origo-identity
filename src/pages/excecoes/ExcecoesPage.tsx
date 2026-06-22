@@ -65,6 +65,8 @@ export default function ExcecoesPage() {
   const [decisionDialog, setDecisionDialog] = useState<{ id: string; action: "aprovada" | "rejeitada"; colabId?: string; perfilId?: string; tipoExcecao?: string } | null>(null);
   const [decisionComment, setDecisionComment] = useState("");
   const [processing, setProcessing] = useState(false);
+  const [expiring, setExpiring] = useState(false);
+
 
   // Form state
   const [formTipoExcecao, setFormTipoExcecao] = useState("acesso");
