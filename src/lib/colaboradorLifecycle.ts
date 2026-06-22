@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { authedFetch } from "@/lib/authedFetch";
 import { queueFullProfileActions } from "@/lib/entraQueueHelper";
 import { provisionCargoAcessos } from "@/lib/provisionCargoAcessos";
 import { createEventoJML } from "@/lib/createEventoJML";
