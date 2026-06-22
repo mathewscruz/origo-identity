@@ -471,6 +471,12 @@ export default function ColaboradorDetalhePage() {
                 Suspensão Preventiva — desde {(pessoa as any).suspenso_em ? new Date((pessoa as any).suspenso_em).toLocaleDateString("pt-BR") : "—"}
               </Badge>
             )}
+            {(pessoa as any)?.desligado_manual && (
+              <Badge variant="outline" className="bg-amber-500/15 text-amber-700 border-amber-500/30 gap-1" title="Reativação automática pelo CSV está bloqueada até o RH refletir o desligamento na planilha.">
+                <ShieldAlert className="h-3 w-3" />
+                Desligado manualmente — CSV ignorado{(pessoa as any).desligado_manual_em ? ` desde ${new Date((pessoa as any).desligado_manual_em).toLocaleDateString("pt-BR")}` : ""}
+              </Badge>
+            )}
           </div>
           <p className="text-sm text-muted-foreground">{cargo} · {area} · {empresa}</p>
           {(pessoa as any)?.suspenso_preventivo && (pessoa as any)?.suspenso_motivo && (
