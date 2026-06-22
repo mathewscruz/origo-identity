@@ -93,17 +93,24 @@ export const M365_SKU_FRIENDLY: Record<string, string> = {
   AAD_PREMIUM_P2: "Microsoft Entra ID P2",
   RIGHTSMANAGEMENT: "Azure Information Protection Plan 1",
   INTUNE_A: "Microsoft Intune Plan 1",
+  WIN_DEF_ATP: "Microsoft Defender for Endpoint Plan 2",
+  ATP_ENTERPRISE: "Microsoft Defender for Office 365 P1",
+  THREAT_INTELLIGENCE: "Microsoft Defender for Office 365 P2",
+  IDENTITY_THREAT_PROTECTION: "Microsoft 365 E5 Security",
+  ADALLOM_S_STANDALONE: "Microsoft Defender for Cloud Apps",
 
   // Visio / Project / misc
   VISIOCLIENT: "Visio Plan 2",
   PROJECTPROFESSIONAL: "Project Plan 3",
+  PROJECT_PLAN3_DEPT: "Project Plan 3 (for Departments)",
   PROJECTPREMIUM: "Project Plan 5",
   STREAM: "Microsoft Stream Trial",
   WIN10_PRO_ENT_SUB: "Windows 10/11 Enterprise E3",
   WIN10_VDA_E5: "Windows 10/11 Enterprise E5",
 };
 
-const TRIAL_HINT_REGEX = /(VIRAL|TRIAL|FREE|vTrial|_DEV)/i;
+// _IW = Info Worker (self-service trial). Always trial regardless of consumption.
+const TRIAL_HINT_REGEX = /(VIRAL|TRIAL|FREE|vTrial|_DEV|_IW)/i;
 
 /** Heuristic: treat as trial when name signals it OR when pool is absurdly large with negligible usage. */
 export function isTrialSku(skuPartNumber: string, enabled: number, consumed: number): boolean {
