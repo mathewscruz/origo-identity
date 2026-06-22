@@ -509,6 +509,42 @@ export type Database = {
           },
         ]
       }
+      contas_admin_conhecidas: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          display_name: string | null
+          dono_responsavel: string | null
+          email: string | null
+          entra_id: string
+          id: string
+          motivo: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          display_name?: string | null
+          dono_responsavel?: string | null
+          email?: string | null
+          entra_id: string
+          id?: string
+          motivo: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          display_name?: string | null
+          dono_responsavel?: string | null
+          email?: string | null
+          entra_id?: string
+          id?: string
+          motivo?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       empresas: {
         Row: {
           ativo: boolean
@@ -604,27 +640,39 @@ export type Database = {
       }
       entra_role_members: {
         Row: {
+          assignment_type: string
           colaborador_id: string | null
+          directory_scope_id: string | null
+          end_at: string | null
           id: string
           role_id: string
+          start_at: string | null
           updated_at: string
           user_display_name: string | null
           user_email: string | null
           user_entra_id: string
         }
         Insert: {
+          assignment_type?: string
           colaborador_id?: string | null
+          directory_scope_id?: string | null
+          end_at?: string | null
           id?: string
           role_id: string
+          start_at?: string | null
           updated_at?: string
           user_display_name?: string | null
           user_email?: string | null
           user_entra_id: string
         }
         Update: {
+          assignment_type?: string
           colaborador_id?: string | null
+          directory_scope_id?: string | null
+          end_at?: string | null
           id?: string
           role_id?: string
+          start_at?: string | null
           updated_at?: string
           user_display_name?: string | null
           user_email?: string | null
