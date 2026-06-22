@@ -28,6 +28,7 @@ import { queueFullProfileActions } from "@/lib/entraQueueHelper";
 import { createEventoJML } from "@/lib/createEventoJML";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { logAuditoria, logAlerta } from "@/lib/auditLogger";
+import ColaboradorPicker from "@/components/ColaboradorPicker";
 
 const criticidadeConfig: Record<string, { label: string; class: string }> = {
   baixa: { label: "Baixa", class: "bg-muted text-muted-foreground" },
