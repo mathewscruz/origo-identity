@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
     // Get items
     const { data: itens } = await supabase
       .from("revisao_itens")
-      .select("id, colaborador_id, perfil_id, colaborador_nome")
+      .select("id, colaborador_id, perfil_id, colaborador_nome, terceiro_id")
       .eq("revisao_id", revisao.id);
 
     const now = new Date().toISOString();
@@ -57,22 +57,45 @@ Deno.serve(async (req) => {
       if (decisao === "revogar") {
         revogados++;
 
-        if (item.colaborador_id && item.perfil_id) {
-          // Revoke perfil_atribuicoes
-          await supabase.from("perfil_atribuicoes").update({
-            ativo: false,
-            data_revogacao: now,
-          }).eq("colaborador_id", item.colaborador_id).eq("perfil_id", item.perfil_id).eq("ativo", true);
+        if (!item.perfil_id) continue;
 
-          // Get collaborator identity
+        // Resolve identidade (colaborador ou terceiro)
+        let identity = "";
+        let nome = item.colaborador_nome || "";
+        let email = "";
+
+        if (item.colaborador_id) {
           const { data: colab } = await supabase
             .from("colaboradores")
             .select("sam_account_name, nome, email")
             .eq("id", item.colaborador_id)
             .single();
+          nome = colab?.nome || nome;
+          email = colab?.email || "";
+          identity = email || colab?.sam_account_name || "";
 
-          const identity = colab?.email || colab?.sam_account_name || "";
-          if (identity) {
+          await supabase.from("perfil_atribuicoes").update({
+            ativo: false,
+            data_revogacao: now,
+          }).eq("colaborador_id", item.colaborador_id).eq("perfil_id", item.perfil_id).eq("ativo", true);
+        } else if (item.terceiro_id) {
+          const { data: terc } = await supabase
+            .from("terceiros")
+            .select("sam_account_name, nome, email")
+            .eq("id", item.terceiro_id)
+            .single();
+          nome = terc?.nome || nome;
+          email = terc?.email || "";
+          identity = email || terc?.sam_account_name || "";
+
+          await supabase.from("perfil_atribuicoes").update({
+            ativo: false,
+            data_revogacao: now,
+          }).eq("terceiro_id", item.terceiro_id).eq("perfil_id", item.perfil_id).eq("ativo", true);
+        }
+
+        if (identity) {
+
             // Remove groups
             const { data: grupos } = await supabase
               .from("perfil_grupos")
