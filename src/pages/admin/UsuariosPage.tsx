@@ -246,7 +246,7 @@ export default function UsuariosPage() {
           <div className="space-y-4">
             <div className="space-y-2"><Label>Nome</Label><Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} /></div>
             <div className="space-y-2"><Label>Email</Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} disabled={!!editing} /></div>
-            {!editing && <div className="space-y-2"><Label>Senha</Label><Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Mínimo 6 caracteres" /></div>}
+            {!editing && <div className="space-y-2"><Label>Senha temporária</Label><Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Mínimo 8 caracteres" /></div>}
             <div className="space-y-2"><Label>Perfil</Label>
               <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -262,10 +262,11 @@ export default function UsuariosPage() {
       <Dialog open={!!changingPwd} onOpenChange={() => setChangingPwd(null)}>
         <DialogContent><DialogHeader><DialogTitle>Trocar Senha</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2"><Label>Nova senha</Label><Input type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)} placeholder="Mínimo 6 caracteres" /></div>
+            <div className="space-y-2"><Label>Nova senha temporária</Label><Input type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)} placeholder="Mínimo 8 caracteres" /></div>
+            <p className="text-xs text-muted-foreground">O usuário receberá a nova senha por e-mail e será obrigado a trocá-la no próximo login.</p>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setChangingPwd(null)}>Cancelar</Button><Button onClick={async () => {
-            if (newPwd.length < 6) { toast({ title: "Mínimo 6 caracteres", variant: "destructive" }); return; }
+            if (newPwd.length < 8) { toast({ title: "Mínimo 8 caracteres", variant: "destructive" }); return; }
             const session = (await supabase.auth.getSession()).data.session;
             const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
             const res = await fetch(`${supabaseUrl}/functions/v1/admin-create-user`, {
@@ -275,11 +276,16 @@ export default function UsuariosPage() {
             });
             const result = await res.json();
             if (!res.ok) { toast({ title: "Erro", description: result.error || "Falha ao redefinir senha", variant: "destructive" }); return; }
-            toast({ title: "Senha atualizada com sucesso" });
+            if (result.email_enviado) {
+              toast({ title: "Senha atualizada", description: "E-mail com a nova senha enviado ao usuário." });
+            } else {
+              toast({ title: "Senha atualizada, mas e-mail falhou", description: result.email_erro || "Compartilhe manualmente.", variant: "destructive" });
+            }
             setChangingPwd(null);
           }}>Atualizar</Button></DialogFooter>
         </DialogContent>
       </Dialog>
+
 
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Desativar usuário?</AlertDialogTitle><AlertDialogDescription>O usuário será marcado como inativo e não poderá acessar o sistema.</AlertDialogDescription></AlertDialogHeader>
