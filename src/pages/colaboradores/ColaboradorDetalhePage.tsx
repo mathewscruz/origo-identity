@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { authedFetch } from "@/lib/authedFetch";
 import TablePagination, { usePagination } from "@/components/TablePagination";
 import { useParams, Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
