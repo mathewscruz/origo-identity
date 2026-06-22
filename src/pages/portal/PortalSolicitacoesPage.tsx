@@ -266,7 +266,7 @@ export default function PortalSolicitacoesPage() {
           const gruposMap = countResources(pg.data ?? [], "grupo_id");
           const licencasMap = countResources(pl.data ?? [], "licenca_id");
 
-          const aplicacoesIndex = new Map(((appRes_cache.value as any[]) ?? []).map((a) => [a.id, a.nome]));
+          
           const collect = (
             map: Map<string, Set<string>>,
             tipo: "app" | "grupo" | "licenca",
@@ -306,8 +306,7 @@ export default function PortalSolicitacoesPage() {
     }
   }
 
-  // Tiny helper to silence unused warning (used only to maintain shape from earlier draft)
-  const appRes_cache: { value: unknown } = { value: aplicacoes };
+
 
   const appMap = useMemo(() => new Map(aplicacoes.map((a) => [a.id, a])), [aplicacoes]);
   const grupoMap = useMemo(() => new Map(grupos.map((g) => [g.id, g])), [grupos]);
