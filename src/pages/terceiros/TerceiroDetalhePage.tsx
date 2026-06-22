@@ -389,7 +389,7 @@ export default function TerceiroDetalhePage() {
                   ["Nome", terceiro.nome],
                   ["Email", terceiro.email || "—"],
                   ["Empresa terceira", terceiro.empresa_terceira || "—"],
-                  ["Responsável", terceiro.responsavel || "—"],
+                  ["Responsável", (terceiro as any).responsavel_colaborador ? `${(terceiro as any).responsavel_colaborador.nome}${(terceiro as any).responsavel_colaborador.email ? ` (${(terceiro as any).responsavel_colaborador.email})` : ""}` : (terceiro.responsavel || "—")],
                   ["Criticidade", crit.label],
                   ["Login AD", (terceiro as any).sam_account_name || "—"],
                 ].map(([label, value]) => (
