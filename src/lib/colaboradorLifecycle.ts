@@ -236,6 +236,8 @@ export async function handleStatusChange(params: StatusChangeParams): Promise<{ 
         tipo_desativacao: isHardDisable ? "hard" : "soft",
         perfis: activePerfilIds,
         recursos_individuais: isHardDisable ? individualSnapshot : [],
+        pre_suspensao_aplicada: wasPreSuspended,
+        gap_dias: gapDias,
       },
       dadosDepois: { status: newStatus },
     });
