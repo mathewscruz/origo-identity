@@ -543,7 +543,7 @@ export default function TerceiroDetalhePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      </Dialog>
+
 
       <StartJmlEventDialog
         open={startJmlOpen}
