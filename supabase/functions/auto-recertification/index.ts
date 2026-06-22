@@ -276,7 +276,7 @@ Deno.serve(async (req) => {
 
     const { data: terceirosAtivos } = await sb
       .from("terceiros")
-      .select("id, nome, email, responsavel, contrato_inicio, contrato_fim, ultima_revalidacao")
+      .select("id, nome, email, responsavel, responsavel_colaborador_id, contrato_inicio, contrato_fim, ultima_revalidacao")
       .eq("ativo", true)
       .not("contrato_fim", "is", null);
 
