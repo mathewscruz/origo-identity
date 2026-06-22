@@ -4,23 +4,20 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/hooks/use-toast";
 import { logAuditoria } from "@/lib/auditLogger";
 import { useAuth } from "@/contexts/AuthContext";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
-import { HandHelping, Plus, Search, Clock, CheckCircle2, XCircle, Send, ExternalLink, AppWindow, Users, KeyRound } from "lucide-react";
+import { HandHelping, Plus, Search, Clock, CheckCircle2, XCircle, ExternalLink, AppWindow, Users, KeyRound } from "lucide-react";
 import { sendNotificationEmail } from "@/lib/sendNotificationEmail";
 import EmptyState from "@/components/EmptyState";
 import { Skeleton } from "@/components/ui/skeleton";
 import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
+import NovaSolicitacaoDialog from "./sections/NovaSolicitacaoDialog";
+import DecisaoDialog from "./sections/DecisaoDialog";
 
 function extractOwnerEmail(owner: string | null): string | null {
   if (!owner) return null;
