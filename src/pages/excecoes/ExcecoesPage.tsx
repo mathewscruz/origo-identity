@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Check, X, Search, Clock, ShieldCheck, ShieldX, AlertTriangle } from "lucide-react";
+import { Plus, Check, X, Search, Clock, ShieldCheck, ShieldX, AlertTriangle, RefreshCw } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -65,6 +65,8 @@ export default function ExcecoesPage() {
   const [decisionDialog, setDecisionDialog] = useState<{ id: string; action: "aprovada" | "rejeitada"; colabId?: string; perfilId?: string; tipoExcecao?: string } | null>(null);
   const [decisionComment, setDecisionComment] = useState("");
   const [processing, setProcessing] = useState(false);
+  const [expiring, setExpiring] = useState(false);
+
 
   // Form state
   const [formTipoExcecao, setFormTipoExcecao] = useState("acesso");
@@ -182,13 +184,24 @@ export default function ExcecoesPage() {
 
       // Only provision access if type is 'acesso' and approved
       if (action === "aprovada" && tipoExcecao !== "manter_ativo" && colabId && perfilId) {
-        // Create perfil_atribuicoes
-        await supabase.from("perfil_atribuicoes").insert({
-          colaborador_id: colabId,
-          perfil_id: perfilId,
-          origem: "excecao",
-          ativo: true,
-        } as any);
+        // Dedupe: evita criar atribuição duplicada
+        const { data: existente } = await supabase
+          .from("perfil_atribuicoes")
+          .select("id")
+          .eq("colaborador_id", colabId)
+          .eq("perfil_id", perfilId)
+          .eq("ativo", true)
+          .maybeSingle();
+
+        if (!existente) {
+          await supabase.from("perfil_atribuicoes").insert({
+            colaborador_id: colabId,
+            perfil_id: perfilId,
+            origem: "excecao",
+            excecao_id: id,
+            ativo: true,
+          } as any);
+        }
 
         // Get colab identity
         const { data: colab } = await (supabase as any).from("colaboradores").select("id, nome, email, sam_account_name").eq("id", colabId).single();
@@ -211,6 +224,7 @@ export default function ExcecoesPage() {
           }
         }
       }
+
 
       // Audit
       const tipoLabel = tipoExcecao === "manter_ativo" ? "Manter Ativo" : "Concessão de Acesso";
@@ -259,8 +273,28 @@ export default function ExcecoesPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Exceções de Acesso</h1>
           <p className="text-sm text-muted-foreground">Concessões fora da regra e bypass de desativação com justificativa e aprovação</p>
         </div>
-        {canEdit && <Button onClick={() => { resetForm(); setDialogOpen(true); }}><Plus className="mr-1 h-4 w-4" />Nova Exceção</Button>}
+        <div className="flex gap-2">
+          {canEdit && (
+            <Button
+              variant="outline"
+              onClick={async () => {
+                setExpiring(true);
+                const { data, error } = await supabase.functions.invoke("expire-access-exceptions", { body: {} });
+                setExpiring(false);
+                if (error) toast({ title: "Erro", description: error.message, variant: "destructive" });
+                else toast({ title: "Expiração concluída", description: `${data?.expiradas ?? 0} exceções expiradas, ${data?.acoesGeradas ?? 0} ações Entra ID geradas` });
+                qc.invalidateQueries({ queryKey: ["excecoes"] });
+              }}
+              disabled={expiring}
+            >
+              <RefreshCw className={`mr-1 h-4 w-4 ${expiring ? "animate-spin" : ""}`} />
+              Expirar vencidas
+            </Button>
+          )}
+          {canEdit && <Button onClick={() => { resetForm(); setDialogOpen(true); }}><Plus className="mr-1 h-4 w-4" />Nova Exceção</Button>}
+        </div>
       </div>
+
 
       {/* Counters */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

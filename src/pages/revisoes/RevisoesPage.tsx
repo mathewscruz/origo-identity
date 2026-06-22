@@ -94,10 +94,12 @@ export default function RevisoesPage() {
       const itens = (atribuicoes || []).map((a: any) => ({
         revisao_id: revisao.id,
         colaborador_id: a.colaborador_id || null,
+        terceiro_id: a.terceiro_id || null,
         colaborador_nome: a.colaboradores?.nome || a.terceiros?.nome || "—",
         perfil_id: a.perfil_id,
         perfil_nome: a.perfis_acesso?.nome || "—",
       }));
+
 
       if (itens.length > 0) {
         await supabase.from("revisao_itens").insert(itens);
