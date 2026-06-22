@@ -35,38 +35,14 @@ const statusConfig: Record<string, { label: string; class: string }> = {
   desligado: { label: "Desligado", class: "bg-destructive/15 text-destructive border-destructive/30" },
 };
 
-const origemColors: Record<string, string> = {
-  regra: "bg-primary/15 text-primary border-primary/30",
-  excecao: "bg-warning/15 text-warning border-warning/30",
-  manual: "bg-muted text-muted-foreground",
-  cargo: "bg-info/15 text-info border-info/30",
-};
 
-const origemLabels: Record<string, string> = {
-  regra: "Regra",
-  excecao: "Exceção",
-  manual: "Manual",
-  cargo: "Cargo",
-};
 
-const tipoJMLColors: Record<string, string> = {
-  joiner: "bg-success text-success-foreground",
-  mover: "bg-info text-info-foreground",
-  leaver: "bg-destructive text-destructive-foreground",
-  pre_leaver: "bg-warning text-warning-foreground",
-  pre_leaver_revertido: "bg-info text-info-foreground",
-};
-
-const tipoJMLLabels: Record<string, string> = {
-  joiner: "joiner",
-  mover: "mover",
-  leaver: "leaver",
-  pre_leaver: "pré-leaver",
-  pre_leaver_revertido: "reversão",
-};
 
 import IndividualAccessTabs from "./sections/IndividualAccessTabs";
+import PerfisAtribuidosTable from "./sections/PerfisAtribuidosTable";
+import JMLTimeline from "./sections/JMLTimeline";
 import { useAssignPerfil, useRevokePerfil } from "@/hooks/mutations/usePerfilAssignment";
+
 
 export default function ColaboradorDetalhePage() {
   const { id } = useParams();
@@ -501,56 +477,11 @@ export default function ColaboradorDetalhePage() {
             </DropdownMenu>
           </div>
 
-          {/* Perfis table */}
-          <div>
-            <h3 className="text-sm font-medium text-muted-foreground mb-2">Perfis de Acesso</h3>
-            <Card>
-              <CardContent className="p-0">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-muted-foreground">
-                      <th className="p-4 font-medium">Perfil</th>
-                      <th className="p-4 font-medium">Aplicações</th>
-                      <th className="p-4 font-medium">Origem</th>
-                      <th className="p-4 font-medium">Desde</th>
-                      <th className="p-4 font-medium">Ação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(atribuicoes ?? []).map((a) => {
-                      const apps = getPerfilApps(a);
-                      return (
-                        <tr key={a.id} className="border-b last:border-0">
-                          <td className="p-4 font-medium">{(a.perfis_acesso as any)?.nome || "—"}</td>
-                          <td className="p-4">
-                            <div className="flex flex-wrap gap-1">
-                              {apps.length > 0 ? apps.map((name: string) => (
-                                <Badge key={name} variant="outline" className="text-xs">{name}</Badge>
-                              )) : <span className="text-muted-foreground">—</span>}
-                            </div>
-                          </td>
-                          <td className="p-4">
-                            <Badge variant="outline" className={origemColors[a.origem || "manual"]}>
-                              {origemLabels[a.origem || "manual"] || a.origem}
-                            </Badge>
-                          </td>
-                          <td className="p-4 text-muted-foreground">{new Date(a.data_concessao).toLocaleDateString("pt-BR")}</td>
-                          <td className="p-4">
-                            <Button variant="ghost" size="sm" className="h-7 text-destructive hover:text-destructive" onClick={() => handleRevogar(a.id, a.perfil_id)}>
-                              <XCircle className="mr-1 h-3 w-3" /> Revogar
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {(!atribuicoes || atribuicoes.length === 0) && (
-                      <tr><td colSpan={5}><EmptyState message="Nenhum perfil atribuído." /></td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
-          </div>
+          <PerfisAtribuidosTable
+            atribuicoes={atribuicoes}
+            getPerfilApps={getPerfilApps}
+            onRevoke={handleRevogar}
+          />
 
           {/* Individual assignments - tabs */}
           <IndividualAccessTabs
@@ -562,36 +493,9 @@ export default function ColaboradorDetalhePage() {
         </TabsContent>
 
         <TabsContent value="jml" className="mt-4">
-          <Card>
-            <CardContent className="pt-6">
-              {eventos.length === 0 ? (
-                <EmptyState message="Nenhum evento JML." />
-              ) : (
-                <div className="relative border-l-2 border-border pl-6 space-y-6">
-                  {eventos.map((ev) => (
-                    <div key={ev.id} className="relative">
-                      <div className="absolute -left-[31px] top-0 flex h-5 w-5 items-center justify-center rounded-full border-2 border-background bg-card">
-                        <div className={`h-2.5 w-2.5 rounded-full ${ev.tipo === "joiner" ? "bg-success" : ev.tipo === "mover" || ev.tipo === "pre_leaver_revertido" ? "bg-info" : ev.tipo === "pre_leaver" ? "bg-warning" : "bg-destructive"}`} />
-                      </div>
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <Badge className={`${tipoJMLColors[ev.tipo] || ""} text-[10px] uppercase`}>{tipoJMLLabels[ev.tipo] || ev.tipo}</Badge>
-                            <Badge variant="outline" className="text-[10px]">{({ pendente: "Pendente", quarentena: "Quarentena", executando: "Executando", executado: "Executado", erro: "Erro", cancelado: "Cancelado" } as Record<string, string>)[ev.status] || ev.status}</Badge>
-                          </div>
-                          <p className="text-sm">
-                            {ev.dados_depois ? JSON.stringify(ev.dados_depois) : ev.dados_antes ? JSON.stringify(ev.dados_antes) : "Evento processado"}
-                          </p>
-                        </div>
-                        <span className="text-xs text-muted-foreground shrink-0 ml-4">{new Date(ev.created_at).toLocaleDateString("pt-BR")}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <JMLTimeline eventos={eventos} />
         </TabsContent>
+
       </Tabs>
 
       {/* Dialog Atribuir Perfil */}
