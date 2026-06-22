@@ -25,11 +25,15 @@ import { authedFetch } from "@/lib/authedFetch";
 
 type UnifiedLicense = {
   id: string;
-  nome: string;
+  nome: string;                  // technical SKU partNumber (or external name)
+  display_name: string;          // friendly name when available
   total: number;
   em_uso: number;
+  em_uso_source: "microsoft" | "calculated" | "manual";
   tipo: string | null;
   origem: "microsoft" | "externa";
+  is_trial: boolean;
+  capability_status?: string | null;
   aplicacao_nome?: string;
   custo_unitario?: number | null;
   renovacao?: string | null;
