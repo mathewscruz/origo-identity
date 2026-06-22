@@ -10,10 +10,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/hooks/use-toast";
-import { Plus, Clock, CheckCircle2, XCircle, Send, FileText, AppWindow, Users, KeyRound } from "lucide-react";
+import { Plus, Clock, CheckCircle2, XCircle, Send, FileText, AppWindow, Users, KeyRound, Sparkles, Check } from "lucide-react";
 import { format } from "date-fns";
 import { sendNotificationEmail } from "@/lib/sendNotificationEmail";
 import EmptyState from "@/components/EmptyState";
+
 
 function extractOwnerEmail(owner: string | null): string | null {
   if (!owner) return null;
