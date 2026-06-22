@@ -6,73 +6,15 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Search, RefreshCw, Zap, AlertTriangle } from "lucide-react";
-import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Skeleton } from "@/components/ui/skeleton";
 import TablePagination, { usePagination } from "@/components/TablePagination";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { useEventosJML } from "@/hooks/useOrigoData";
-import EmptyState from "@/components/EmptyState";
 import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
 import { authedFetch } from "@/lib/authedFetch";
-
-// ---- Provisionamento configs ----
-const statusConfig: Record<string, { label: string; class: string }> = {
-  pending: { label: "Pendente", class: "bg-warning/15 text-warning border-warning/30" },
-  processing: { label: "Processando", class: "bg-info/15 text-info border-info/30" },
-  success: { label: "Concluído", class: "bg-success/15 text-success border-success/30" },
-  failed: { label: "Falhou", class: "bg-destructive/15 text-destructive border-destructive/30" },
-};
-
-const actionConfig: Record<string, { label: string; class: string }> = {
-  create: { label: "Criação", class: "bg-success/15 text-success border-success/30" },
-  create_if_not_exists: { label: "Criação (Auto)", class: "bg-success/15 text-success border-success/30" },
-  update: { label: "Atualização", class: "bg-info/15 text-info border-info/30" },
-  disable: { label: "Desativação", class: "bg-warning/15 text-warning border-warning/30" },
-  delete: { label: "Exclusão", class: "bg-destructive/15 text-destructive border-destructive/30" },
-  assign_group: { label: "Atribuir Grupo", class: "bg-primary/15 text-primary border-primary/30" },
-  remove_group: { label: "Remover Grupo", class: "bg-muted text-muted-foreground border-muted" },
-  assign_license: { label: "Atribuir Licença", class: "bg-primary/15 text-primary border-primary/30" },
-  remove_license: { label: "Remover Licença", class: "bg-muted text-muted-foreground border-muted" },
-  assign_app: { label: "Atribuir App", class: "bg-primary/15 text-primary border-primary/30" },
-  remove_app: { label: "Remover App", class: "bg-muted text-muted-foreground border-muted" },
-  disable_entra: { label: "Desativar Entra", class: "bg-warning/15 text-warning border-warning/30" },
-  enable_entra: { label: "Reativar Entra", class: "bg-success/15 text-success border-success/30" },
-  update_entra: { label: "Atualizar Entra", class: "bg-info/15 text-info border-info/30" },
-};
-
-// ---- JML configs ----
-const tipoColors: Record<string, string> = {
-  joiner: "bg-success text-success-foreground",
-  mover: "bg-info text-info-foreground",
-  leaver: "bg-destructive text-destructive-foreground",
-};
-const jmlStatusColors: Record<string, string> = {
-  pendente: "bg-warning/15 text-warning border-warning/30",
-  executando: "bg-info/15 text-info border-info/30",
-  executado: "bg-success/15 text-success border-success/30",
-  erro: "bg-destructive/15 text-destructive border-destructive/30",
-  cancelado: "bg-muted text-muted-foreground",
-  quarentena: "bg-warning/15 text-warning border-warning/30",
-};
-
-interface QueueItem {
-  id: string;
-  action_type: string;
-  status: string;
-  payload_json: any;
-  requested_by: string | null;
-  created_at: string;
-  processed_at: string | null;
-  result_message: string | null;
-  correlation_id: string;
-  colaborador_id: string | null;
-  retry_count: number;
-  max_retries: number;
-}
+import QueueTable, { statusConfig, type QueueItem } from "./sections/QueueTable";
+import EventosJMLTable from "./sections/EventosJMLTable";
 
 type JmlTabKey = "pendentes" | "quarentena" | "executados" | "erros" | "todos";
 const jmlTabFilters: Record<JmlTabKey, (e: { status: string }) => boolean> = {
@@ -82,6 +24,7 @@ const jmlTabFilters: Record<JmlTabKey, (e: { status: string }) => boolean> = {
   erros: (e) => e.status === "erro",
   todos: () => true,
 };
+
 
 export default function FilaProvisionamentoPage() {
   const [mainTab, setMainTab] = useState("provisionamento");
