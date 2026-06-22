@@ -562,12 +562,10 @@ export default function ColaboradorDetalhePage() {
           {/* Individual assignments - tabs */}
           <IndividualAccessTabs
             individualQueue={individualQueue}
-            actionTypeIcons={actionTypeIcons}
-            actionTypeLabels={actionTypeLabels}
-            statusQueueColors={statusQueueColors}
             getResourceName={getResourceName}
-            handleRevogarIndividual={handleRevogarIndividual}
+            onRevoke={handleRevogarIndividual}
           />
+
         </TabsContent>
 
         <TabsContent value="jml" className="mt-4">
