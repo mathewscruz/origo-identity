@@ -1,58 +1,27 @@
-## Diagnóstico
+## Causa real do "loading"
 
-O "piscar" da página Cargos (e comportamento similar em outros módulos) tem **duas causas combinadas**:
+O culpado não é mais um refetch — é a animação de transição de página.
 
-1. **`useOrigoData.ts` linha 28** — todos os hooks de dados compartilham:
-   ```ts
-   const REFETCH_OPTS = { refetchOnWindowFocus: true, staleTime: 10000, refetchInterval: 30000 };
-   ```
-   Isso dispara refetch de TODA query a cada 30s e sempre que o usuário volta para a aba. Contradiz a regra do projeto "No automatic syncs; syncs are purely manual/on-demand". Afeta: cargos, áreas, empresas, localidades, colaboradores, terceiros, aplicações, perfis de acesso, licenças, eventos JML, exceções, revisões, alertas, auditoria, entra grupos/licenças, SharePoint, fila individual.
+`src/components/PageTransition.tsx` envolve o `<Outlet />` em uma `<div key={location.pathname} className="animate-page-in">`. Como o `key` muda em toda navegação, o React **desmonta e remonta** todo o conteúdo da rota e a classe `animate-page-in` (400ms de fade/slide definida em `tailwind.config.ts`) roda. Resultado: ao clicar em "Cargos" (vindo de outra aba de Configurações ou de outra página), a tela inteira pisca/anima como se estivesse carregando, mesmo com os dados em cache.
 
-2. **`CargosPage.tsx` linhas 45-55** — um `useEffect` que depende de `cargos` refaz a consulta `cargo_perfis` toda vez que o array `cargos` muda (inclusive nos refetches em background dos 30s), trocando a referência do `cargoPerfisMap` e re-renderizando a tabela inteira.
+Efeito colateral: o remount também descarta estado local da página (busca, paginação, scroll) — não só parece um loading, é um reset real.
 
-Outros pontos com polling ativo:
-- `Dashboard.tsx`: 5 queries com 60s + 1 com 30s.
-- `NotificacoesBell.tsx`: `setInterval(fetchAlertas, 30000)`.
-- `useModoOperacao.ts`: `refetchInterval: 30000`.
-- `useSyncJobsCsv`: polling dinâmico (2s enquanto o job está `running`) — **intencional e correto**, mantém-se.
+## Mudança
 
-## Mudanças
+Reescrever `PageTransition` para:
+- **Não usar `key={location.pathname}`** — assim o React reutiliza a instância do componente entre navegações e o React Query devolve os dados em cache instantaneamente, sem flicker.
+- **Remover a classe `animate-page-in`** do wrapper. A animação será mantida no `tailwind.config.ts` (caso seja usada em outros lugares), mas não disparada em toda troca de rota.
 
-### 1. `src/hooks/useOrigoData.ts`
-Trocar `REFETCH_OPTS` por uma versão sem polling automático:
-```ts
-const REFETCH_OPTS = { refetchOnWindowFocus: false, staleTime: 60_000, refetchInterval: false as const };
+```tsx
+// src/components/PageTransition.tsx
+export default function PageTransition({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
+}
 ```
-Atualizações (invalidateQueries após save/delete) continuam funcionando normalmente porque já chamamos `qc.invalidateQueries(...)` após cada mutação.
 
-### 2. `src/pages/configuracoes/CargosPage.tsx`
-Substituir o `useState + useEffect` que busca `cargo_perfis` por um `useQuery` dedicado:
-```ts
-const { data: cargoPerfisRows } = useQuery({
-  queryKey: ["cargo_perfis_counts"],
-  queryFn: async () => (await supabase.from("cargo_perfis").select("cargo_id")).data ?? [],
-});
-const cargoPerfisMap = useMemo(() => { /* contagem por cargo_id */ }, [cargoPerfisRows]);
-```
-Invalidar `cargo_perfis_counts` no `handleSave` quando houver alterações.
-
-### 3. `src/pages/Dashboard.tsx`
-Remover os `refetchInterval` (60s/30s). O dashboard é uma tela de leitura — manter atualização apenas no carregamento e via um botão "Atualizar" já existente / `invalidateQueries`. (Se preferir manter polling no dashboard apenas, sinalize antes da implementação.)
-
-### 4. `src/components/NotificacoesBell.tsx`
-Remover o `setInterval(fetchAlertas, 30000)`. Buscar alertas:
-- ao montar,
-- ao abrir o popover do sino,
-- após ações que geram alertas (já invalidamos `alertas` nesses pontos).
-
-### 5. `src/hooks/useModoOperacao.ts`
-Remover `refetchInterval: 30000`. O modo operação raramente muda; ler ao montar é suficiente. Quem altera o parâmetro já invalida a query.
-
-### 6. Não muda
-- `useSyncJobsCsv` (polling 2s só durante execução de job — correto).
-- Lógica de invalidação após mutações em todas as páginas.
+(Mantemos o componente para não quebrar o import em `AppLayout.tsx`; se preferir, posso depois removê-lo totalmente.)
 
 ## Resultado esperado
-- Cargos (e demais listas) deixam de recarregar sozinhos a cada 30s ou ao trocar de aba.
-- Skeletons só aparecem no primeiro carregamento.
-- Dados continuam frescos porque toda mutação já invalida a query correspondente.
+- Clicar em "Cargos" (ou qualquer outra rota com dados já em cache) muda a tela instantaneamente, sem fade nem skeleton.
+- O skeleton só aparece no primeiro carregamento real da página (quando o React Query ainda não tem dados).
+- Estado local de buscas/paginação por página passa a ser preservado durante a navegação na mesma aba.
