@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { sendEmail } from "../_shared/sendgrid.ts";
+import { requireRole } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -216,6 +217,9 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
+
+  const auth = await requireRole(req, ["admin", "operador"]);
+  if (auth instanceof Response) return auth;
 
   try {
     const { tipo, payload } = await req.json();
