@@ -17,6 +17,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import EmptyState from "@/components/EmptyState";
+import { authedFetch } from "@/lib/authedFetch";
 
 export default function IntegracoesPage() {
   const [csvSyncing, setCsvSyncing] = useState(false);
@@ -55,7 +56,7 @@ export default function IntegracoesPage() {
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-csv-colab`;
       const formData = new FormData();
       formData.append("file", file);
-      fetch(url, { method: "POST", headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` }, body: formData })
+      authedFetch(url, { method: "POST", body: formData })
         .then(async (res) => { if (!res.ok) { const body = await res.text(); toast({ title: "Erro na importação CSV", description: body, variant: "destructive" }); } refetchCsv(); })
         .catch((err) => { toast({ title: "Erro", description: err.message, variant: "destructive" }); setCsvSyncing(false); });
       setTimeout(() => refetchCsv(), 1500);
@@ -66,7 +67,7 @@ export default function IntegracoesPage() {
     setSpSyncing(true);
     try {
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-sharepoint-csv`;
-      const res = await fetch(url, { method: "POST", headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`, "Content-Type": "application/json" } });
+      const res = await authedFetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, });
       const body = await res.json();
       if (!res.ok) { toast({ title: "Erro SharePoint", description: body.error || `HTTP ${res.status}`, variant: "destructive" }); }
       else { toast({ title: "Sincronização iniciada", description: `Arquivo: ${body.file}` }); setTimeout(() => refetchCsv(), 2000); }
@@ -78,11 +79,9 @@ export default function IntegracoesPage() {
     setGroupSyncing(true);
     try {
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-entra-groups`;
-      const res = await fetch(url, {
+      const res = await authedFetch(url, {
         method: "POST",
         headers: {
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           "Content-Type": "application/json",
         },
       });
@@ -107,9 +106,9 @@ export default function IntegracoesPage() {
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-sharepoint-sites`;
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 120000);
-      const res = await fetch(url, {
+      const res = await authedFetch(url, {
         method: "POST",
-        headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
         signal: controller.signal,
       });

@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { authedFetch } from "@/lib/authedFetch";
 import TablePagination, { usePagination } from "@/components/TablePagination";
 import { useParams, Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -835,11 +836,9 @@ export default function ColaboradorDetalhePage() {
                     setResetingPassword(true);
                     try {
                       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reset-entra-password`;
-                      const res = await fetch(url, {
+                      const res = await authedFetch(url, {
                         method: "POST",
                         headers: {
-                          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-                          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
                           "Content-Type": "application/json",
                         },
                         body: JSON.stringify({ colaborador_id: id }),

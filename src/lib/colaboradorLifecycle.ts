@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { authedFetch } from "@/lib/authedFetch";
 import { queueFullProfileActions } from "@/lib/entraQueueHelper";
 import { provisionCargoAcessos } from "@/lib/provisionCargoAcessos";
 import { createEventoJML } from "@/lib/createEventoJML";
@@ -362,11 +363,9 @@ export async function handleStatusChange(params: StatusChangeParams): Promise<{ 
 export async function syncSingleUserAccess(colaboradorId: string): Promise<{ success: boolean; queued?: number; groups?: number; licenses?: number; apps?: number; message?: string }> {
   try {
     const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-user-access`;
-    const res = await fetch(url, {
+    const res = await authedFetch(url, {
       method: "POST",
       headers: {
-        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ colaborador_id: colaboradorId }),

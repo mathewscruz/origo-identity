@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
+import { authedFetch } from "@/lib/authedFetch";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -107,9 +108,8 @@ export default function PerfisAcessoPage() {
     setSpFolderLoading(true);
     try {
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-sharepoint-sites`;
-      await fetch(url, {
+      await authedFetch(url, {
         method: "POST",
-        headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({ site_db_id: siteDbId }),
       });
       queryClient.invalidateQueries({ queryKey: ["sharepoint_pastas_all"] });

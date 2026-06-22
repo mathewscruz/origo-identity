@@ -17,6 +17,7 @@ import { useEventosJML } from "@/hooks/useOrigoData";
 import EmptyState from "@/components/EmptyState";
 import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
+import { authedFetch } from "@/lib/authedFetch";
 
 // ---- Provisionamento configs ----
 const statusConfig: Record<string, { label: string; class: string }> = {
@@ -125,13 +126,11 @@ export default function FilaProvisionamentoPage() {
   async function processEntraQueue() {
     setProcessing(true);
     try {
-      const res = await fetch(
+      const res = await authedFetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-iam-queue`,
         {
           method: "POST",
           headers: {
-            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ force: true }),
