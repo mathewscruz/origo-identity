@@ -126,7 +126,8 @@ export default function UsuariosPage() {
       await logAuditoria({ acao: "editar_usuario", entidade: "profiles", entidade_id: editing.id, resumo: `Editado: ${form.nome}, role: ${form.role}` });
       toast({ title: "Usuário atualizado" });
     } else {
-      // Create via edge function — sends invite email
+      if (form.password.length < 8) { toast({ title: "Senha mínima 8 caracteres", variant: "destructive" }); return; }
+      // Create via edge function — email is sent server-side
       const session = (await supabase.auth.getSession()).data.session;
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const res = await fetch(`${supabaseUrl}/functions/v1/admin-create-user`, {
@@ -138,19 +139,15 @@ export default function UsuariosPage() {
         body: JSON.stringify({ email: form.email.trim(), nome: form.nome.trim(), role: form.role, password: form.password }),
       });
       const result = await res.json();
-      if (!res.ok) { toast({ title: "Erro", description: result.error || "Falha ao convidar usuário", variant: "destructive" }); return; }
+      if (!res.ok) { toast({ title: "Erro", description: result.error || "Falha ao criar usuário", variant: "destructive" }); return; }
       await logAuditoria({ acao: "criar_usuario", entidade: "profiles", entidade_id: result.user_id, resumo: `Criado: ${form.nome} (${form.email}), role: ${form.role}` });
-      // Enviar e-mail de boas-vindas
-      await sendNotificationEmail("usuario_boas_vindas" as any, {
-        destinatario_email: form.email.trim(),
-        nome: form.nome.trim(),
-        email: form.email.trim(),
-        senha: form.password,
-        role: form.role,
-        link: window.location.origin,
-      });
-      toast({ title: "Usuário criado com sucesso", description: `${form.email} já pode acessar o sistema.` });
+      if (result.email_enviado) {
+        toast({ title: "Usuário criado", description: `E-mail de boas-vindas enviado para ${form.email}.` });
+      } else {
+        toast({ title: "Usuário criado, mas e-mail falhou", description: result.email_erro || "Compartilhe a senha temporária manualmente.", variant: "destructive" });
+      }
     }
+
     qc.invalidateQueries({ queryKey: ["admin_profiles"] });
     setDialogOpen(false);
   };

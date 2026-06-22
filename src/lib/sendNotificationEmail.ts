@@ -9,7 +9,10 @@ type NotificationType =
   | "terceiro_expirando"
   | "alerta_critico"
   | "revisao_concluida"
-  | "revisao_lembrete";
+  | "revisao_lembrete"
+  | "usuario_boas_vindas"
+  | "usuario_senha_redefinida";
+
 
 export async function sendNotificationEmail(
   tipo: NotificationType,
