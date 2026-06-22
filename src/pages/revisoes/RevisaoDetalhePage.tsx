@@ -36,6 +36,10 @@ export default function RevisaoDetalhePage() {
   const { data: revisao, isLoading } = useRevisao(id);
   const { data: itens } = useRevisaoItens(id);
   const [search, setSearch] = useState("");
+  const [busy, setBusy] = useState<"resend" | "finalize" | "cancel" | null>(null);
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const canEdit = useCanEdit();
 
   if (isLoading) return <div className="space-y-4 p-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}</div>;
   if (!revisao) return <div className="p-8"><EmptyState message="Revisão não encontrada." size="lg" /></div>;
@@ -47,12 +51,58 @@ export default function RevisaoDetalhePage() {
   const reviewToken = (revisao as any).token;
   const externalUrl = reviewToken ? `${window.location.origin}/revisao-externa/${reviewToken}` : null;
   const isConcluida = revisao.status === "concluida";
+  const isCancelada = revisao.status === "cancelada";
+  const isAtiva = !isConcluida && !isCancelada;
+
+  const handleResend = async () => {
+    setBusy("resend");
+    const { error } = await supabase.functions.invoke("send-review-email", { body: { revisao_id: id } });
+    setBusy(null);
+    if (error) toast({ title: "Erro ao reenviar", description: error.message, variant: "destructive" });
+    else toast({ title: "E-mail reenviado", description: `Notificação enviada para ${revisao.responsavel || "owner"}` });
+  };
+
+  const handleFinalize = async () => {
+    if (!reviewToken) return;
+    setBusy("finalize");
+    // Constrói payload de decisões já tomadas
+    const decisions: Record<string, string> = {};
+    (itens || []).forEach((it: any) => { if (it.decisao) decisions[it.id] = it.decisao; });
+    const { data, error } = await supabase.functions.invoke("save-external-review", {
+      body: { token: reviewToken, decisions },
+    });
+    setBusy(null);
+    if (error) {
+      toast({ title: "Erro ao concluir", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Revisão concluída", description: `${data?.mantidos ?? 0} mantidos, ${data?.revogados ?? 0} revogados.` });
+      if ((data?.revogados ?? 0) > 0) triggerEntraProcessing();
+      qc.invalidateQueries({ queryKey: ["revisao", id] });
+      qc.invalidateQueries({ queryKey: ["revisao_itens", id] });
+      qc.invalidateQueries({ queryKey: ["revisoes"] });
+    }
+  };
+
+  const handleCancel = async () => {
+    setBusy("cancel");
+    const { error } = await supabase.from("revisoes").update({ status: "cancelada" } as any).eq("id", id!);
+    setBusy(null);
+    if (error) {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+      return;
+    }
+    await logAuditoria({ acao: "cancelar_revisao", entidade: "revisoes", entidade_id: id!, resumo: `Campanha cancelada: ${revisao.nome}` });
+    toast({ title: "Campanha cancelada" });
+    qc.invalidateQueries({ queryKey: ["revisao", id] });
+    qc.invalidateQueries({ queryKey: ["revisoes"] });
+  };
 
   const filteredItens = (itens || []).filter((it: any) => {
     if (!search) return true;
     const s = search.toLowerCase();
     return (it.colaborador_nome || "").toLowerCase().includes(s) || (it.perfil_nome || "").toLowerCase().includes(s);
   });
+
 
   return (
     <div className="space-y-6">
