@@ -1,5 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { requireRole } from "../_shared/auth.ts";
+import { friendlyName, isTrialSku } from "../_shared/m365SkuNames.ts";
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -74,28 +76,38 @@ Deno.serve(async (req) => {
     let updated = 0;
 
     for (const sku of skus) {
-      // Skip disabled/suspended SKUs with 0 total
-      const total = sku.prepaidUnits?.enabled || 0;
+      const enabled = sku.prepaidUnits?.enabled || 0;
+      const warning = sku.prepaidUnits?.warning || 0;
+      // Include units in grace period ("warning") because they're still assignable.
+      // Exclude "suspended" units (cancelled, cannot be assigned).
+      const total = enabled + warning;
       const emUso = sku.consumedUnits || 0;
       const skuId = sku.skuId;
       const nome = sku.skuPartNumber || sku.skuId;
+      const friendly = friendlyName(nome);
+      const capability = sku.capabilityStatus || "Enabled";
+      const isTrial = isTrialSku(nome, enabled, emUso);
 
       validSkuIds.add(skuId);
 
       if (existingBySkuId.has(skuId)) {
-        // Update existing
         await supabase.from("entra_licencas").update({
           nome,
+          friendly_name: friendly,
+          capability_status: capability,
+          is_trial: isTrial,
           total,
           em_uso: emUso,
           updated_at: new Date().toISOString(),
         }).eq("id", existingBySkuId.get(skuId));
         updated++;
       } else {
-        // Insert new
         const { error } = await supabase.from("entra_licencas").insert({
           sku_id: skuId,
           nome,
+          friendly_name: friendly,
+          capability_status: capability,
+          is_trial: isTrial,
           total,
           em_uso: emUso,
         });
@@ -116,15 +128,19 @@ Deno.serve(async (req) => {
       if (!error) deleted = stale.length;
     }
 
-    // Generate alerts for critical licenses (>90% usage)
+    // Generate alerts for critical licenses (>=90% usage), excluding trials and zero-total pools
     const criticalSkus = skus.filter((sku: any) => {
-      const t = sku.prepaidUnits?.enabled || 0;
+      const enabled = sku.prepaidUnits?.enabled || 0;
+      const warning = sku.prepaidUnits?.warning || 0;
+      const t = enabled + warning;
       const u = sku.consumedUnits || 0;
-      return t > 0 && (u / t) >= 0.9;
+      if (t === 0) return false;
+      if (isTrialSku(sku.skuPartNumber || sku.skuId, enabled, u)) return false;
+      return (u / t) >= 0.9;
     });
     for (const sku of criticalSkus) {
-      const nome = sku.skuPartNumber || sku.skuId;
-      const t = sku.prepaidUnits?.enabled || 0;
+      const nome = friendlyName(sku.skuPartNumber || sku.skuId);
+      const t = (sku.prepaidUnits?.enabled || 0) + (sku.prepaidUnits?.warning || 0);
       const u = sku.consumedUnits || 0;
       await supabase.from("alertas").insert({
         titulo: `Licença crítica: ${nome}`,
