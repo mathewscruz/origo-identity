@@ -7,14 +7,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Checkbox } from "@/components/ui/checkbox";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/hooks/use-toast";
-import { Plus, Clock, CheckCircle2, XCircle, Send, FileText, AppWindow, Users, KeyRound, Sparkles, Check } from "lucide-react";
+import { Plus, Clock, CheckCircle2, XCircle, Send, FileText, AppWindow, Users, KeyRound, Sparkles } from "lucide-react";
 import { format } from "date-fns";
 import { sendNotificationEmail } from "@/lib/sendNotificationEmail";
-import EmptyState from "@/components/EmptyState";
 import CatalogResourceList from "./sections/CatalogResourceList";
+
 
 
 
