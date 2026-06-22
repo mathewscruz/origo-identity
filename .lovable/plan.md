@@ -1,106 +1,75 @@
-## Visão geral
+# Validação de Prontidão para Produção — Órigo Access & Identity
 
-Três frentes complementares: **(A) unificar o fluxo JML** em uma única jornada operacional; **(B) reconstruir o portal self-service** como catálogo navegável; **(C) refatorações estruturais** que destravam as duas anteriores.
+Antes de dar o "OK" para produção, preciso executar uma rodada estruturada de validação técnica e operacional. Abaixo está o que vou verificar e o que precisa da sua confirmação.
 
-Cada frente é entregável de forma independente — implementamos em ordem, com release no fim de cada uma.
+## 1. Status atual (já verificado agora)
 
----
+- **Build**: passa sem erros.
+- **Scanners de segurança** (agent, connector, supabase, supabase_lov): **0 findings**.
+- **Linter do banco**: 4 WARN — todas relacionadas a funções `SECURITY DEFINER` executáveis por `anon`/`authenticated`. São as funções usadas pelo portal externo de revisão (`get_revisao_by_token`, `get_revisao_itens_by_token`) e por `has_role`/`has_any_app_role`. Precisam de revisão de `GRANT EXECUTE` para reduzir a superfície (manter apenas o que o fluxo público de revisão exige).
 
-## A. Fluxo JML unificado
+## 2. Validações que vou rodar (read-only) antes do Go
 
-Hoje cada evento de ciclo de vida exige percorrer 3-4 telas (Colaborador → Eventos JML → Fila → Auditoria) e a tela de Eventos JML virou um redirect para a Fila, perdendo a noção de "evento". Vamos consolidar.
+### 2.1 Segurança & RLS
+- Conferir RLS habilitada em todas as 46 tabelas `public.*` e ausência de policies permissivas (`USING (true)`) fora de tabelas de catálogo.
+- Confirmar que `user_roles` não é gravável pelo próprio usuário (anti escalonamento de privilégio).
+- Confirmar que `iam_queue`, `auditoria`, `colab_snapshots` só são escritas por service_role / edge functions.
+- Revogar `EXECUTE` desnecessário das 4 funções `SECURITY DEFINER` apontadas pelo linter.
 
-### A.1 Nova rota `/eventos-jml` como timeline operacional
-- Lista cronológica de Joiners/Movers/Leavers com filtros (tipo, status, empresa, período, com pendência humana).
-- Cada linha mostra: identidade, tipo, gatilho (CSV/manual/regra), progresso (ex.: `4/7 ações executadas`), pendências (aprovação, exceção, item travado), SLA.
-- Substitui o redirect atual (`/eventos-jml → /fila-provisionamento`).
+### 2.2 Provisionamento (núcleo IGA)
+- Validar o ciclo JML ponta-a-ponta em modo Simulação: Joiner (colab + terceiro), Mover (cargo/área/perfil), Pré-Leaver, Leaver.
+- Verificar idempotência da fila (`process-iam-queue`) e tratamento de falhas permanentes (grupos AD via Graph).
+- Confirmar que `desligado_manual` impede reativação pelo `sync-csv-colab`.
+- Conferir payloads camelCase enviados ao `iam-agent-api` (AD) e ao Graph (Entra).
 
-### A.2 `EventoJMLDetalhePage` como painel ponta-a-ponta
-Hoje tem 163 linhas e mostra pouco. Vamos torná-lo o "boletim" do evento, com seções:
-1. **Identidade e snapshot** — antes/depois (já existe em `dados_antes/dados_depois`).
-2. **Aprovações** — etapas do workflow, quem decidiu, quando.
-3. **Ações de provisionamento** — uma tabela por sistema-alvo (AD, Entra, apps, grupos, licenças, SharePoint) com status, última tentativa, erro, botão "Reprocessar" individual e em lote.
-4. **Exceções vinculadas** — quando o evento dispara um Keep-Active ou Pré-Leaver.
-5. **Linha do tempo** — auditoria filtrada pelo `entidade_id = evento.id`.
-6. **Ações** — "Reexecutar evento", "Cancelar e reverter", "Criar exceção", "Forçar conclusão".
+### 2.3 Sincronizações
+- Confirmar que **todos os crons estão desabilitados** (política manual-only) inspecionando `supabase/config.toml` e jobs agendados.
+- Validar que cada sync (CSV colaboradores, Entra users/groups/licenças/roles/apps, SharePoint) registra `sync_jobs` com timeout de 10 min e exibe na UI corretamente.
 
-### A.3 Disparo unificado a partir das páginas de identidade
-Em `ColaboradorDetalhePage` e `TerceiroDetalhePage`, substituir os botões soltos ("Desativar", "Reativar", "Reprovisionar", "Pré-desligamento") por um único menu **"Iniciar evento JML"** que abre um diálogo com tipo (Joiner/Mover/Leaver/Pré-Leaver/Reativação), justificativa e preview do que será executado. O diálogo cria o `eventos_jml` + ações + entradas na fila em uma transação (via Edge Function `start-jml-event`).
+### 2.4 Governança
+- SoD: regras carregadas, detecção bloqueando solicitações conflitantes no portal.
+- Revisões/Recertificações: criação de campanha, e-mail SendGrid, portal externo por token, gravação em `revisao_itens`.
+- Exceções: validade 45 dias para terceiros, "Keep Active" respeitado pelo Leaver.
+- PAM: leitura de Directory Roles do Entra.
 
-### A.4 Ações JML em lote
-Na nova `/eventos-jml`, permitir selecionar várias linhas e aplicar "Reprocessar pendentes" ou "Cancelar" em massa — útil quando um conector volta após falha.
+### 2.5 Operação & UX
+- Toaster top-right único, sem scroll horizontal/sidebar, status em PT capitalizado, animações de página.
+- Portal de auto-atendimento: carrinho persistente, recomendações por cargo/peers, timeline de aprovação.
+- Tour de onboarding dispara para novos admins (localStorage).
+- Notification center com severidade e tempo relativo.
 
-### A.5 Memória
-Atualizar `mem://features/jml-lifecycle-unification` documentando esse novo modelo (a entrada atual diz que JML foi unificado na Fila — vamos corrigir).
+### 2.6 Edge Functions
+- 20 functions presentes; conferir CORS padrão (`_shared/cors.ts`), validação de JWT em código, uso de Zod nas entradas críticas (`start-jml-event`, `admin-create-user`, `save-external-review`).
+- Confirmar que `SUPABASE_SERVICE_ROLE_KEY` só é usada server-side e nunca exposta.
 
----
+### 2.7 Integrações externas
+- Azure (CLIENT_ID/SECRET/TENANT): smoke test de token + 1 chamada Graph read.
+- SendGrid: smoke test de envio (template Origo).
+- IAM Agent on-prem (AD): heartbeat / ping via `iam-agent-api` com `IAM_AGENT_TOKEN`.
 
-## B. Catálogo de acesso self-service
+### 2.8 Dados & Backup
+- Confirmar com você se há snapshot/backup do banco antes do cutover.
+- Confirmar limpeza de dados de teste (colaboradores fake, eventos JML de simulação) ou se devem permanecer.
 
-Hoje `PortalSolicitacoesPage` (561 linhas) é um diálogo gigante com três checklists planos (apps, grupos, licenças). Reconstruir como catálogo navegável.
+## 3. Itens que dependem de decisão sua (não posso decidir sozinho)
 
-### B.1 Nova UX em duas colunas
-- **Esquerda — "Meus acessos"**: tudo que o usuário já tem (perfis + recursos individuais), agrupado por sistema, com botão "Solicitar revogação" por item.
-- **Direita — "Catálogo"**: busca global + filtros por tipo (Aplicação, Grupo, Licença, Perfil completo), por sistema (Entra/AD/SharePoint), por área/cargo recomendado. Cada card mostra dono, descrição, conflitos de SoD conhecidos, tempo médio de aprovação.
-- "Adicionar ao carrinho" → resumo no rodapé → "Solicitar" abre o diálogo de justificativa **uma vez** para o lote.
+1. **Modo inicial em produção**: começar em **Simulação** por N dias e depois virar para **Produção**, ou já entrar em Produção?
+2. **Limpeza de dados de teste**: apagar eventos JML, solicitações e itens de fila criados durante testes? (irreversível)
+3. **Domínio publicado**: manter `iam.origoenergia.com.br` como canônico? Redirecionar `origo-identity.lovable.app`?
+4. **Lista de admins iniciais** confirmada e com senha temporária `Origo@2026er` para troca no 1º login?
+5. **Janela de cutover** e responsável de plantão para o primeiro ciclo CSV/Entra manual.
 
-### B.2 Recomendações
-- Bloco "Recomendado para você": perfis do seu cargo que você ainda não tem (usa `cargo_perfis` × `perfil_atribuicoes`).
-- Bloco "Colegas da sua área têm": top recursos atribuídos a quem compartilha `area_id`.
+## 4. Entregáveis após sua aprovação deste plano
 
-### B.3 Status pós-pedido
-Card por solicitação aberta com timeline de aprovação (etapa atual, aprovador, tempo decorrido), e botão "Cancelar item" enquanto pendente — alavanca o `solicitacao_itens` que já existe.
+- Relatório de validação (PASS/FAIL por item das seções 2.1–2.8).
+- Migração SQL corrigindo os 4 WARN do linter (REVOKE EXECUTE público onde aplicável).
+- Checklist de cutover assinável (pré-Go, Go, pós-Go 24h/7d).
+- Recomendação final: **GO** ou **NO-GO** com motivos.
 
-### B.4 Conflitos de SoD na hora do pedido
-Antes de submeter, rodar `sod_conflitos` × itens selecionados e mostrar aviso bloqueante (admin pode aprovar com exceção; usuário comum não consegue submeter).
+## Detalhes técnicos
 
-### B.5 Atalho do gestor
-Mesma UX, mas com seletor "Solicitando para" listando subordinados (via `gestor_id`). Cria a solicitação no nome do colaborador, mantendo `solicitante = gestor.email`.
+- Linter findings detectados: `0028` (anon) e `0029` (authenticated) em `get_revisao_by_token`, `get_revisao_itens_by_token`, `has_role`, `has_any_app_role`. Para as `has_*`, basta `REVOKE EXECUTE ... FROM anon`; para `get_revisao_*`, manter `anon` (portal por token é o caso de uso intencional) e documentar exceção na security-memory.
+- Nenhum finding ativo nos 4 scanners de segurança.
+- Build Vite verde; sem TODO/FIXME no código.
 
----
-
-## C. Refatorações estruturais
-
-### C.1 Quebrar páginas gigantes
-- `ColaboradorDetalhePage` (955 l.) e `TerceiroDetalhePage` (544 l.) → extrair tabs em arquivos próprios sob `src/pages/colaboradores/sections/` (`IdentidadeTab`, `PerfisTab`, `RecursosIndividuaisTab`, `HistoricoTab`, `JMLTab`).
-- `SolicitacoesPage` (779 l.) e `PortalSolicitacoesPage` (561 l.) → divididos junto com a frente B.
-
-### C.2 Camada de mutações com React Query
-Hoje há ~20 `supabase.from(...).update/insert/delete` espalhados em `onClick`. Criar `src/hooks/mutations/` com:
-- `useStartJmlEvent`, `useReprocessQueueItem`, `useApproveSolicitacao`, `useAssignPerfil`, `useRevokePerfil`, `useToggleColabAtivo`, etc.
-
-Cada hook centraliza: validação, toast, `invalidateQueries`, log de auditoria. Reduz duplicação e elimina o "esqueci de invalidar".
-
-### C.3 Tipos fortes nos payloads da fila
-`iam_queue.payload_json` hoje é `any` em todo lugar. Criar `src/types/iamQueue.ts` com `discriminated union` por `action_type` (`assign_group | remove_app | create | disable | ...`). Aplicar em `process-iam-queue`, `entraQueueHelper.ts`, `colaboradorLifecycle.ts`, `provisionCargoAcessos.ts`. Pega bugs como o payload errado de license/group em compile time.
-
-### C.4 Consolidar lógica de provisionamento
-`colaboradorLifecycle.ts` (386 l.), `entraQueueHelper.ts` (338 l.) e `provisionCargoAcessos.ts` (135 l.) compartilham primitivas (resolver recursos de um perfil, comparar deltas, enfileirar). Extrair `src/lib/iam/` com módulos puros:
-- `resolveProfileResources(perfilId)` — devolve `{ apps, groups, licenses, sharepoint }`.
-- `diffResources(before, after)` — calcula adds/removes.
-- `enqueue(actions[])` — fila com idempotência por `payload_hash`.
-Os arquivos atuais viram orquestradores finos.
-
-### C.5 Hook único para "recursos efetivos" da identidade
-`ColaboradorDetalhePage` recalcula recursos via 4 queries + merge manual. Extrair `useEffectiveAccess(identityId, kind)` que devolve `{ direct, viaProfile, viaRule, conflicts }`. Reaproveitado em Terceiros, Portal e Revisões.
-
-### C.6 Padronizar Edge Functions
-- Mover `corsHeaders` para `_shared/cors.ts` (hoje duplicado em ~10 functions).
-- Padronizar resposta de erro: `{ error: string, code?: string, details?: any }` com helper `_shared/respond.ts`.
-- Adicionar validação de input com Zod nas funções que aceitam body do front (`start-jml-event`, `process-iam-queue`, `execute-rules`).
-
----
-
-## Ordem e entregas
-
-1. **C.1 + C.2 + C.6** (base técnica, 1 release) — sem mudança visível, destrava o resto.
-2. **A. Fluxo JML** (1 release) — lista timeline + detalhe ponta-a-ponta + disparo unificado.
-3. **B. Catálogo self-service** (1 release) — portal redesenhado com carrinho, SoD e recomendações.
-4. **C.3 + C.4 + C.5** (1 release, em paralelo a B) — tipagem da fila e consolidação dos helpers.
-
-## Fora de escopo (deliberadamente)
-- Novos conectores externos (a frente B só usa o que já está sincronizado).
-- Mudança no modelo de papéis (admin/operador/viewer permanece).
-- Migração para outro backend.
-
-Posso começar pela base (passo 1) assim que você aprovar; ou, se preferir entregar valor visível primeiro, começo direto pela frente A.
+Confirma que posso prosseguir com essa bateria de validação (incluindo as respostas às 5 perguntas da seção 3)?
