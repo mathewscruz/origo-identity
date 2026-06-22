@@ -95,7 +95,6 @@ function useKpiCounts() {
       };
     },
     staleTime: 15000,
-    refetchInterval: 60000,
   });
 }
 
@@ -129,7 +128,6 @@ function useProvisioningData(period: Period) {
         semana, Concessão: v.assign, Revogação: v.remove, Outros: v.other,
       }));
     },
-    refetchInterval: 60000,
   });
 }
 
@@ -167,7 +165,6 @@ function useAccessByApp() {
       const others = sorted.slice(5).reduce((sum, i) => sum + i.value, 0);
       return [...top5, { name: "Outros", value: others }];
     },
-    refetchInterval: 60000,
   });
 }
 
@@ -193,7 +190,6 @@ function useSolicitacoesByStatus(period: Period) {
         .filter(d => d.value > 0);
     },
     staleTime: 15000,
-    refetchInterval: 60000,
   });
 }
 
@@ -210,7 +206,6 @@ function useRevisoesAtivas() {
       return data ?? [];
     },
     staleTime: 15000,
-    refetchInterval: 60000,
   });
 }
 
@@ -299,7 +294,6 @@ function useRecentActivity() {
       return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 8);
     },
     staleTime: 15000,
-    refetchInterval: 30000,
   });
 }
 

@@ -47,9 +47,11 @@ export function NotificacoesBell() {
 
   useEffect(() => {
     fetchAlertas();
-    const interval = setInterval(fetchAlertas, 30000);
-    return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (open) fetchAlertas();
+  }, [open]);
 
   const handleClick = async (alerta: any) => {
     await supabase.from("alertas").update({ lido: true } as any).eq("id", alerta.id);

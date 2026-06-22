@@ -25,7 +25,7 @@ async function fetchAll(
   return all;
 }
 
-const REFETCH_OPTS = { refetchOnWindowFocus: true, staleTime: 10000, refetchInterval: 30000 };
+const REFETCH_OPTS = { refetchOnWindowFocus: false, staleTime: 60_000, refetchInterval: false as const };
 
 export function useEmpresas() {
   return useQuery({ queryKey: ["empresas"], queryFn: () => fetchAll("empresas", "*", "nome"), ...REFETCH_OPTS });

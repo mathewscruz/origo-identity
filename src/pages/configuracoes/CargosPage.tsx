@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useCanEdit } from "@/hooks/useRole";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { reprovisionCargoCollaborators } from "@/lib/entraQueueHelper";
 import { logAuditoria } from "@/lib/auditLogger";
@@ -41,18 +41,20 @@ export default function CargosPage() {
   const list = ((cargos ?? []) as any[]).filter((c: any) => !busca || c.nome.toLowerCase().includes(busca.toLowerCase()));
   const { paginatedItems, safePage } = usePagination(list, page, 25);
 
-  // Load cargo_perfis counts for display
-  const [cargoPerfisMap, setCargoPerfisMap] = useState<Record<string, number>>({});
-  useEffect(() => {
-    (async () => {
-      const { data } = await (supabase as any).from("cargo_perfis").select("cargo_id, perfil_id");
-      if (data) {
-        const map: Record<string, number> = {};
-        data.forEach((r: any) => { map[r.cargo_id] = (map[r.cargo_id] || 0) + 1; });
-        setCargoPerfisMap(map);
-      }
-    })();
-  }, [cargos]);
+  // Load cargo_perfis counts for display via cached query (no flicker on background refetches)
+  const { data: cargoPerfisRows } = useQuery({
+    queryKey: ["cargo_perfis_counts"],
+    queryFn: async () => {
+      const { data } = await (supabase as any).from("cargo_perfis").select("cargo_id");
+      return (data ?? []) as { cargo_id: string }[];
+    },
+    staleTime: 60_000,
+  });
+  const cargoPerfisMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    (cargoPerfisRows ?? []).forEach((r) => { map[r.cargo_id] = (map[r.cargo_id] || 0) + 1; });
+    return map;
+  }, [cargoPerfisRows]);
 
   const openNew = () => {
     setEditing(null);
@@ -126,6 +128,7 @@ export default function CargosPage() {
     }
 
     qc.invalidateQueries({ queryKey: ["cargos"] });
+    qc.invalidateQueries({ queryKey: ["cargo_perfis_counts"] });
     setDialogOpen(false);
   };
 
