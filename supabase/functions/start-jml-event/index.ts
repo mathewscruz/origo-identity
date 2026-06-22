@@ -1,10 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+import { corsHeaders, handlePreflight } from "../_shared/cors.ts";
+import { ok, badRequest, unauthorized, serverError } from "../_shared/respond.ts";
 
 type Tipo = "joiner" | "mover" | "leaver" | "pre_leaver" | "pre_leaver_revertido";
 
@@ -19,15 +15,12 @@ interface Body {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const pre = handlePreflight(req);
+  if (pre) return pre;
 
   try {
     const authHeader = req.headers.get("Authorization") ?? "";
-    if (!authHeader.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Missing auth" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (!authHeader.startsWith("Bearer ")) return unauthorized("Missing auth");
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -37,21 +30,14 @@ Deno.serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: userResult, error: uerr } = await userClient.auth.getUser();
-    if (uerr || !userResult?.user) {
-      return new Response(JSON.stringify({ error: "Invalid token" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (uerr || !userResult?.user) return unauthorized("Invalid token");
     const user = userResult.user;
 
     const admin = createClient(supabaseUrl, serviceKey);
-
     const body = (await req.json()) as Body;
     const allowed: Tipo[] = ["joiner", "mover", "leaver", "pre_leaver", "pre_leaver_revertido"];
     if (!body?.tipo || !allowed.includes(body.tipo) || !body?.colaboradorNome) {
-      return new Response(JSON.stringify({ error: "Invalid payload" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return badRequest("Invalid payload");
     }
 
     const dadosDepois = {
@@ -74,11 +60,7 @@ Deno.serve(async (req) => {
       .select("id")
       .single();
 
-    if (error) {
-      return new Response(JSON.stringify({ error: error.message }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (error) return serverError(error.message);
 
     await admin.from("auditoria").insert({
       acao: `jml_${body.tipo}_iniciado`,
@@ -88,12 +70,11 @@ Deno.serve(async (req) => {
       resumo: `Evento JML ${body.tipo} iniciado manualmente para ${body.colaboradorNome}${body.motivo ? ` — ${body.motivo}` : ""}`,
     });
 
-    return new Response(JSON.stringify({ ok: true, eventoId: inserted!.id }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return ok({ ok: true, eventoId: inserted!.id });
   } catch (e) {
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return serverError(e instanceof Error ? e.message : String(e));
   }
 });
+
+// Reference corsHeaders so esbuild keeps it in the bundle for typings clarity.
+void corsHeaders;
