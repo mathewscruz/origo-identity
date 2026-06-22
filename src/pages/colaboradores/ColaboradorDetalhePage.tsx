@@ -690,12 +690,12 @@ export default function ColaboradorDetalhePage() {
                   {eventos.map((ev) => (
                     <div key={ev.id} className="relative">
                       <div className="absolute -left-[31px] top-0 flex h-5 w-5 items-center justify-center rounded-full border-2 border-background bg-card">
-                        <div className={`h-2.5 w-2.5 rounded-full ${ev.tipo === "joiner" ? "bg-success" : ev.tipo === "mover" ? "bg-info" : "bg-destructive"}`} />
+                        <div className={`h-2.5 w-2.5 rounded-full ${ev.tipo === "joiner" ? "bg-success" : ev.tipo === "mover" || ev.tipo === "pre_leaver_revertido" ? "bg-info" : ev.tipo === "pre_leaver" ? "bg-warning" : "bg-destructive"}`} />
                       </div>
                       <div className="flex items-start justify-between">
                         <div>
                           <div className="flex items-center gap-2 mb-1">
-                            <Badge className={`${tipoJMLColors[ev.tipo]} text-[10px] uppercase`}>{ev.tipo}</Badge>
+                            <Badge className={`${tipoJMLColors[ev.tipo] || ""} text-[10px] uppercase`}>{tipoJMLLabels[ev.tipo] || ev.tipo}</Badge>
                             <Badge variant="outline" className="text-[10px]">{({ pendente: "Pendente", quarentena: "Quarentena", executando: "Executando", executado: "Executado", erro: "Erro", cancelado: "Cancelado" } as Record<string, string>)[ev.status] || ev.status}</Badge>
                           </div>
                           <p className="text-sm">
