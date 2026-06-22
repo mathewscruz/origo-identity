@@ -1157,6 +1157,7 @@ export type Database = {
           created_at: string
           data_concessao: string
           data_revogacao: string | null
+          excecao_id: string | null
           id: string
           origem: string | null
           perfil_id: string
@@ -1168,6 +1169,7 @@ export type Database = {
           created_at?: string
           data_concessao?: string
           data_revogacao?: string | null
+          excecao_id?: string | null
           id?: string
           origem?: string | null
           perfil_id: string
@@ -1179,6 +1181,7 @@ export type Database = {
           created_at?: string
           data_concessao?: string
           data_revogacao?: string | null
+          excecao_id?: string | null
           id?: string
           origem?: string | null
           perfil_id?: string
@@ -1190,6 +1193,13 @@ export type Database = {
             columns: ["colaborador_id"]
             isOneToOne: false
             referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "perfil_atribuicoes_excecao_id_fkey"
+            columns: ["excecao_id"]
+            isOneToOne: false
+            referencedRelation: "excecoes"
             referencedColumns: ["id"]
           },
           {
@@ -1521,6 +1531,7 @@ export type Database = {
           perfil_id: string | null
           perfil_nome: string | null
           revisao_id: string
+          terceiro_id: string | null
         }
         Insert: {
           colaborador_id?: string | null
@@ -1533,6 +1544,7 @@ export type Database = {
           perfil_id?: string | null
           perfil_nome?: string | null
           revisao_id: string
+          terceiro_id?: string | null
         }
         Update: {
           colaborador_id?: string | null
@@ -1545,6 +1557,7 @@ export type Database = {
           perfil_id?: string | null
           perfil_nome?: string | null
           revisao_id?: string
+          terceiro_id?: string | null
         }
         Relationships: [
           {
@@ -1566,6 +1579,13 @@ export type Database = {
             columns: ["revisao_id"]
             isOneToOne: false
             referencedRelation: "revisoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "revisao_itens_terceiro_id_fkey"
+            columns: ["terceiro_id"]
+            isOneToOne: false
+            referencedRelation: "terceiros"
             referencedColumns: ["id"]
           },
         ]
