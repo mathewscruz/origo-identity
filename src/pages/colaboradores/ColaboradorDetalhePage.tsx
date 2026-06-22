@@ -39,6 +39,7 @@ const statusConfig: Record<string, { label: string; class: string }> = {
 
 
 import IndividualAccessTabs from "./sections/IndividualAccessTabs";
+import PrivilegedRolesSection from "./sections/PrivilegedRolesSection";
 import PerfisAtribuidosTable from "./sections/PerfisAtribuidosTable";
 import JMLTimeline from "./sections/JMLTimeline";
 import StartJmlEventDialog from "@/components/jml/StartJmlEventDialog";
@@ -427,6 +428,7 @@ export default function ColaboradorDetalhePage() {
         <TabsList>
           <TabsTrigger value="dados">Dados Pessoais</TabsTrigger>
           <TabsTrigger value="acessos">Acessos Ativos ({(atribuicoes?.length ?? 0) + (individualQueue?.length ?? 0)})</TabsTrigger>
+          <TabsTrigger value="privilegiados">Funções Privilegiadas</TabsTrigger>
           <TabsTrigger value="jml">Histórico JML ({eventos.length})</TabsTrigger>
         </TabsList>
 
@@ -496,6 +498,10 @@ export default function ColaboradorDetalhePage() {
             onRevoke={handleRevogarIndividual}
           />
 
+        </TabsContent>
+
+        <TabsContent value="privilegiados" className="mt-4">
+          <PrivilegedRolesSection colaboradorId={id!} />
         </TabsContent>
 
         <TabsContent value="jml" className="mt-4">

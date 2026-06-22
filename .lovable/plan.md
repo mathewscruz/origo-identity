@@ -1,66 +1,54 @@
+# Plano — Acessos Privilegiados confiável end-to-end
 
-## Diagnóstico dos 3 módulos
+Objetivo: eliminar pontos cegos que hoje fazem a tela subestimar/poluir o risco real e dar visibilidade do frescor do dado.
 
-### 1. Perfis de Acesso — ✅ funcional
-- CRUD completo (apps, licenças, grupos, SharePoint, cargos), diff Entra na edição, cleanup ao excluir, contadores, busca, paginação.
-- **Pequeno débito:** `handleDelete` ainda limpa `cargo_perfis` (resquício da Matriz removida). Sem impacto, apenas cosmético — manter por segurança.
-- **Nada a alterar.**
+## 1. Cobertura PIM (Privileged Identity Management)
+Estender `sync-entra-roles` para ler também:
+- `/roleManagement/directory/roleEligibilitySchedules` — atribuições **elegíveis** (pode ativar quando quiser).
+- `/roleManagement/directory/roleAssignmentSchedules` — atribuições **ativas** (inclui ativações PIM temporárias com janela).
 
-### 2. Exceções — ⚠️ funcional mas com 3 gaps lógicos
-- O que funciona: criação dos tipos `acesso` e `manter_ativo`, notificação a admins, aprovação cria `perfil_atribuicoes` + fila Entra, `manter_ativo` é honrado no `colaboradorLifecycle` e `terceiroLifecycle`, e-mail ao solicitante.
+Mudanças no schema (`entra_role_members`):
+- `assignment_type` enum: `permanente` | `elegivel` | `ativo_pim`
+- `start_at` / `end_at` (nullable) para janelas PIM
+- `directory_scope_id` (para roles escopadas em AU/app)
 
-**Gaps a corrigir:**
+UI: nova coluna **Tipo de atribuição** (badge: Permanente / Elegível / Ativo PIM com contagem regressiva), filtro por tipo, e card extra "Elegíveis PIM".
 
-1. **Não usa o Workflow Engine novo** — aprovação é "qualquer admin com acesso à tela". Deveria invocar `startWorkflow(escopo: "excecao", ctx)` para permitir fluxos multi-etapa (ex.: Gestor → Security). Hoje o engine só é chamado em Solicitações.
-2. **Exceção tipo `acesso` não expira** — se aprovada com `validade`, o perfil fica atribuído para sempre. Deveria existir mecanismo que revoga `perfil_atribuicoes` (+ fila Entra) quando `validade < hoje`.
-3. **Duplicidade silenciosa** — ao aprovar, não verifica se já existe `perfil_atribuicoes` ativa (colab + perfil). Cria duplicata.
+## 2. Contas administrativas / breakglass
+- Nova tabela leve `contas_admin_conhecidas` (entra_id, motivo, dono_responsavel) gerenciada via UI simples na própria página.
+- Sync deixa de gerar alerta `privilegiado_nao_vinculado` quando o `user_entra_id` está nessa lista; em vez disso a linha mostra badge "Conta administrativa" com responsável.
+- Match relaxado: também tenta `colaboradores` com qualquer status antes de cair para "não vinculado" (hoje só `ativo`).
 
-### 3. Revisões — ⚠️ funcional mas com 4 gaps de UX/lógica
-- O que funciona: criação por aplicação, geração de `revisao_itens` (colab + terceiros), token externo com RPCs SECURITY DEFINER, portal externo com bulk-actions e confirmação, edge function `save-external-review` revoga `perfil_atribuicoes` e enfileira `remove_group/license/app` no Entra.
+## 3. Frescor do dado
+- Persistir `last_sync_at` em `parametros` (chave `entra_roles_last_sync`).
+- Header da página exibe "Última sincronização: há X min" + cor (verde <24h, âmbar <7d, vermelho >7d).
+- Card "Sincronização" mostra duração do último job e status.
 
-**Gaps a corrigir:**
+## 4. Parametrização de alertas
+- Mover limite hardcoded "3 membros" para `parametros` (`priv_role_max_membros`, default 3) editável em Configurações.
 
-1. **Sem ações na campanha interna** — gestor da TI não consegue **concluir manualmente**, **cancelar** nem **reenviar o e-mail** ao owner pelo `/revisoes/:id`.
-2. **Revogação ignora terceiros** — `save-external-review` só consulta `colaboradores`. Itens vindos de terceiros têm `colaborador_id` nulo e a revogação silenciosamente não enfileira nada no Entra (apenas marca a decisão). Falha funcional.
-3. **Sem audit log** das decisões externas (apenas e-mail). Adicionar `auditoria` com `acao=decisao_revisao_externa`.
-4. **Status `cancelada` existe no UI mas nunca é gravado** — sem ação para cancelar.
+## 5. Drill-down reverso
+- Na ficha do colaborador (`/colaboradores/:id`), nova seção **Funções Privilegiadas** listando todas as roles (ativas + elegíveis) com tipo de atribuição.
 
----
+## 6. Tipagem
+- Regenerar `src/integrations/supabase/types.ts` para incluir `entra_roles` e `entra_role_members` e remover os `as any` em `PrivilegiadosPage.tsx`.
 
-## Plano de implementação
+## Detalhes técnicos
 
-### A. Exceções
-- `src/pages/excecoes/ExcecoesPage.tsx`
-  - Em `handleCreate` (tipo `acesso` ou `manter_ativo`): após gravar a exceção, chamar `startWorkflow({ escopo: "excecao", ctx: { colaboradorId, perfilId } })`; se nenhum fluxo bater, manter fallback atual (admins).
-  - Em `handleDecision` (aprovação tipo `acesso`): antes de inserir `perfil_atribuicoes`, fazer `select` por `(colaborador_id, perfil_id, ativo=true)` e pular insert se já existir; em qualquer caso, gravar `origem=excecao` + `excecao_id` (já existe coluna?).
-- **Expiração automática de exceções `acesso`:**
-  - Nova Edge Function `expire-access-exceptions` (manual, conforme política "sem cron"): varre `excecoes` com `tipo_excecao=acesso`, `status=aprovada`, `validade < hoje`, e para cada uma:
-    - marca `status=expirada`,
-    - desativa `perfil_atribuicoes` correspondente (`origem=excecao`),
-    - enfileira `remove_group/license/app` do perfil para o colaborador,
-    - loga auditoria.
-  - Botão "Expirar exceções vencidas" na aba **Aprovadas/Expiradas** da própria página, chamando essa função.
+Arquivos afetados:
+- `supabase/functions/sync-entra-roles/index.ts` — adicionar chamadas PIM, normalizar `assignment_type`, dedup por (`role_id`, `user_entra_id`, `assignment_type`, `start_at`).
+- Nova migração:
+  - `alter table entra_role_members add column assignment_type text, start_at timestamptz, end_at timestamptz, directory_scope_id text;`
+  - `create table contas_admin_conhecidas (...)` com RLS (admin/operador rw, authenticated read) + GRANTs.
+  - `insert into parametros` defaults.
+- `src/pages/privilegiados/PrivilegiadosPage.tsx` — coluna Tipo, filtros, header de frescor, modal de contas admin.
+- `src/pages/colaboradores/ColaboradorDetalhe*.tsx` — nova seção.
 
-### B. Revisões
-- `src/pages/revisoes/RevisaoDetalhePage.tsx`: adicionar barra de ações para campanhas `em_andamento`:
-  - **Reenviar e-mail** → `supabase.functions.invoke("send-review-email")`.
-  - **Concluir agora** → marca `status=concluida`, processa decisões já gravadas (chamando `save-external-review` internamente, ou nova função `finalize-review`).
-  - **Cancelar campanha** → AlertDialog → `status=cancelada` + audit.
-- `supabase/functions/save-external-review/index.ts`:
-  - Quando `colaborador_id` for nulo, buscar em `terceiros` por `revisao_itens.terceiro_id` (já existe na seleção em RevisoesPage) e enfileirar `remove_*` usando email/sam do terceiro.
-  - Após o loop, inserir em `auditoria` com resumo `Revisão externa concluída: X mantidos, Y revogados (token …)`.
-- `revisao_itens`: garantir coluna `terceiro_id` (já consultada em `RevisoesPage`); se faltar no schema, migração para adicioná-la.
+Fora de escopo: integração com fluxo de aprovação para ativar PIM via Lovable (apenas leitura/governança).
 
-### C. Itens fora de escopo
-- Não mexer em Perfis de Acesso.
-- Não criar cron — expiração de exceções e finalização de revisão são acionadas manualmente, conforme memória `sync-policy`.
-- Workflow `escopo=jml` permanece para depois.
-
-### Detalhes técnicos
-- Migrações necessárias:
-  - `ALTER TABLE excecoes ADD COLUMN IF NOT EXISTS excecao_id` — já não, mas adicionar `perfil_atribuicoes.excecao_id uuid` para permitir a expiração revogar a atribuição certa.
-  - `ALTER TABLE revisao_itens ADD COLUMN IF NOT EXISTS terceiro_id uuid` se ausente (verificar schema atual antes).
-- Edge Functions novas: `expire-access-exceptions`, `finalize-review` — com CORS padrão e service_role.
-- UI: AlertDialog para Cancelar Campanha (memory rule de confirmações destrutivas).
-
-Quer que eu prossiga com tudo, ou prefere fasear (ex.: primeiro Revisões, depois Exceções)?
+## Critérios de aceite
+1. Após sync, total de membros = ativos + elegíveis + ativos_pim, com badges visíveis.
+2. Alertas "não vinculado" caem para apenas contas humanas reais (excluindo breakglass cadastradas).
+3. Header mostra frescor da última sincronização.
+4. Ficha do colaborador lista funções privilegiadas atribuídas.
+5. `PrivilegiadosPage.tsx` sem `as any` nas queries de `entra_roles*`.
