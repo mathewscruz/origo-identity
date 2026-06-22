@@ -3,12 +3,23 @@ import { useParams, Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ExternalLink, Search } from "lucide-react";
+import { ArrowLeft, ExternalLink, Search, Send, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { useRevisao, useRevisaoItens } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
 import EmptyState from "@/components/EmptyState";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCanEdit } from "@/hooks/useRole";
+import { logAuditoria } from "@/lib/auditLogger";
+import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+
 
 const decisaoColors: Record<string, string> = {
   manter: "bg-success/15 text-success border-success/30",
