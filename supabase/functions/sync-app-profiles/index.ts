@@ -160,17 +160,23 @@ Deno.serve(async (req) => {
     const aplicacaoId = body?.aplicacao_id;
     if (!aplicacaoId) return jsonResponse({ error: "aplicacao_id obrigatório" }, 400);
 
-    // Fetch app with connector config
+    // Fetch app + connector config (split table)
     const { data: app, error: appErr } = await supabase
       .from("aplicacoes")
-      .select("id, nome, connector_type, connector_config")
+      .select("id, nome, connector_type")
       .eq("id", aplicacaoId)
       .single();
 
     if (appErr || !app) return jsonResponse({ error: "Aplicação não encontrada" }, 404);
 
+    const { data: connRow } = await supabase
+      .from("aplicacao_connectors")
+      .select("config")
+      .eq("aplicacao_id", aplicacaoId)
+      .maybeSingle();
+
     const connType = (app as any).connector_type || "manual";
-    const connConfig = (app as any).connector_config as Record<string, any> | null;
+    const connConfig = (connRow?.config || null) as Record<string, any> | null;
 
     if (connType === "manual" || connType === "entra") {
       return jsonResponse({ error: `Tipo de conector '${connType}' não suporta sincronização automática de perfis. Cadastre manualmente.` }, 400);
