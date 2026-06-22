@@ -203,6 +203,12 @@ export default function ColaboradorDetalhePage() {
   const [selectedAppId, setSelectedAppId] = useState("");
   const [savingIndividual, setSavingIndividual] = useState(false);
 
+  // Pre-Leaver (suspensão preventiva)
+  const [preLeaverOpen, setPreLeaverOpen] = useState(false);
+  const [revertOpen, setRevertOpen] = useState(false);
+  const [preLeaverMotivo, setPreLeaverMotivo] = useState("");
+  const [savingPreLeaver, setSavingPreLeaver] = useState(false);
+
   const eventos = (allEventos ?? []).filter((e) => e.colaborador_id === id);
 
   function getColabIdentity() {
