@@ -73,40 +73,67 @@ export async function handleStatusChange(params: StatusChangeParams): Promise<{ 
   if (oldStatus === "ativo" && newStatus !== "ativo") {
     const isHardDisable = newStatus === "desligado" || newStatus === "inativo";
 
+    // Reconcile with a prior preventive suspension (if any)
+    const { data: colabRow } = await supabase
+      .from("colaboradores")
+      .select("suspenso_preventivo, suspenso_em")
+      .eq("id", colab.id)
+      .single();
+    const wasPreSuspended = !!(colabRow as any)?.suspenso_preventivo;
+    const suspensoEm = (colabRow as any)?.suspenso_em || null;
+    const gapDias = wasPreSuspended && suspensoEm
+      ? Math.max(0, Math.round((Date.now() - new Date(suspensoEm).getTime()) / 86400000))
+      : null;
+
     await logAlerta({
       titulo: "Colaborador desabilitado",
-      mensagem: `${colab.nome} teve o status alterado para ${newStatus}`,
-      severidade: "aviso",
+      mensagem: wasPreSuspended
+        ? `${colab.nome} foi formalmente desligado. Suspensão preventiva já estava ativa há ${gapDias} dia(s) — reconciliado.`
+        : `${colab.nome} teve o status alterado para ${newStatus}`,
+      severidade: wasPreSuspended ? "info" : "aviso",
       tipo: "colaborador_desabilitado",
       ref_url: `/colaboradores/${colab.id}`,
     });
 
-    // Always disable login in AD + Entra
-    await supabase.from("iam_queue" as any).insert({
-      action_type: "disable",
-      payload_json: {
-        samAccountName: sam,
-        mail: colab.email || null,
-        displayName: colab.nome,
-        status: "disabled",
-        status_anterior: oldStatus,
-        status_novo: newStatus,
-        changed_fields: ["status"],
-        new_values: { status: "disabled" },
-      },
-      requested_by: operadorEmail || "sistema",
-      colaborador_id: colab.id,
-      target_identity: sam || null,
-    });
-
-    if (identity) {
+    // Skip duplicate disable actions if already preventively suspended
+    if (!wasPreSuspended) {
       await supabase.from("iam_queue" as any).insert({
-        action_type: "disable_entra",
-        payload_json: { mail: colab.email || null, samAccountName: sam, displayName: colab.nome },
+        action_type: "disable",
+        payload_json: {
+          samAccountName: sam,
+          mail: colab.email || null,
+          displayName: colab.nome,
+          status: "disabled",
+          status_anterior: oldStatus,
+          status_novo: newStatus,
+          changed_fields: ["status"],
+          new_values: { status: "disabled" },
+        },
         requested_by: operadorEmail || "sistema",
         colaborador_id: colab.id,
-        target_identity: identity,
+        target_identity: sam || null,
       });
+
+      if (identity) {
+        await supabase.from("iam_queue" as any).insert({
+          action_type: "disable_entra",
+          payload_json: { mail: colab.email || null, samAccountName: sam, displayName: colab.nome },
+          requested_by: operadorEmail || "sistema",
+          colaborador_id: colab.id,
+          target_identity: identity,
+        });
+      }
+    } else {
+      // Clear the preventive flag — formal Leaver supersedes it
+      await supabase
+        .from("colaboradores")
+        .update({
+          suspenso_preventivo: false,
+          suspenso_em: null,
+          suspenso_por: null,
+          suspenso_motivo: null,
+        } as any)
+        .eq("id", colab.id);
     }
 
     let activePerfilIds: string[] = [];
