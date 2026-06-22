@@ -257,16 +257,14 @@ Deno.serve(async (req) => {
           operador: "sistema",
         });
 
-        // Send email to responsavel
-        if (terceiro.email || (terceiro as any).responsavel) {
-          const responsavelEmail = (terceiro as any).responsavel && (terceiro as any).responsavel.includes("@") ? (terceiro as any).responsavel : terceiro.email;
-          if (responsavelEmail) {
-            await sendEmail({
-              to: responsavelEmail,
-              subject: `Contrato expirado — ${terceiro.nome}`,
-              htmlContent: `<p>O contrato do terceiro <strong>${terceiro.nome}</strong> expirou em ${terceiro.contrato_fim}. Todos os acessos foram revogados automaticamente.</p>`,
-            });
-          }
+        // Send email to responsavel (resolved via FK)
+        const responsavelEmail = await resolveResponsavelEmail(terceiro);
+        if (responsavelEmail) {
+          await sendEmail({
+            to: responsavelEmail,
+            subject: `Contrato expirado — ${terceiro.nome}`,
+            htmlContent: `<p>O contrato do terceiro <strong>${terceiro.nome}</strong> expirou em ${terceiro.contrato_fim}. Todos os acessos foram revogados automaticamente.</p>`,
+          });
         }
 
         results.terceiros_expirados++;
