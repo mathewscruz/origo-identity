@@ -206,14 +206,25 @@ export default function LicencasPage() {
       </div>
 
       {/* Counters */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <Card><CardContent className="py-3 px-4">
-          <p className="text-xs text-muted-foreground">Total</p>
-          <p className="text-2xl font-bold">{allLicenses.length}</p>
+          <p className="text-xs text-muted-foreground">SKUs ({hideTrials ? "pagas" : "todas"})</p>
+          <p className="text-2xl font-bold">{(hideTrials ? paidPool : allLicenses).length}</p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            MS {msLicenses.filter(l => !hideTrials || !l.is_trial).length} · Ext {extLicenses.length}
+          </p>
         </CardContent></Card>
         <Card><CardContent className="py-3 px-4">
-          <p className="text-xs text-muted-foreground flex items-center gap-1"><Monitor className="h-3 w-3" /> Microsoft</p>
-          <p className="text-2xl font-bold">{msLicenses.length}</p>
+          <p className="text-xs text-muted-foreground">Seats totais</p>
+          <p className="text-2xl font-bold">{seatsTotal.toLocaleString("pt-BR")}</p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">Excluindo trials/free</p>
+        </CardContent></Card>
+        <Card><CardContent className="py-3 px-4">
+          <p className="text-xs text-muted-foreground">Seats em uso</p>
+          <p className="text-2xl font-bold">{seatsEmUso.toLocaleString("pt-BR")}</p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            {seatsTotal > 0 ? `${Math.round((seatsEmUso / seatsTotal) * 100)}% do total` : "—"}
+          </p>
         </CardContent></Card>
         <Card><CardContent className="py-3 px-4">
           <p className="text-xs text-muted-foreground flex items-center gap-1"><Globe className="h-3 w-3" /> Externas</p>
@@ -221,26 +232,33 @@ export default function LicencasPage() {
         </CardContent></Card>
         <Card className={criticos > 0 ? "border-destructive/30" : ""}>
           <CardContent className="py-3 px-4">
-            <p className="text-xs text-muted-foreground flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Críticas (&lt;10% disp.)</p>
+            <p className="text-xs text-muted-foreground flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Críticas (≥{criticalPct}%)</p>
             <p className={`text-2xl font-bold ${criticos > 0 ? "text-destructive" : ""}`}>{criticos}</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Tabs + Search */}
+      {/* Tabs + Search + toggle */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <Tabs value={tab} onValueChange={(v) => { setTab(v); setPage(1); }}>
           <TabsList>
-            <TabsTrigger value="todas">Todas ({allLicenses.length})</TabsTrigger>
-            <TabsTrigger value="microsoft">Microsoft ({msLicenses.length})</TabsTrigger>
+            <TabsTrigger value="todas">Todas ({allLicenses.filter(l => !hideTrials || !l.is_trial).length})</TabsTrigger>
+            <TabsTrigger value="microsoft">Microsoft ({msLicenses.filter(l => !hideTrials || !l.is_trial).length})</TabsTrigger>
             <TabsTrigger value="externas">Externas ({extLicenses.length})</TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="relative w-full sm:w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Buscar licença..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="pl-9" />
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <label className="flex items-center gap-2 text-xs text-muted-foreground whitespace-nowrap">
+            <Switch checked={hideTrials} onCheckedChange={(v) => { setHideTrials(v); setPage(1); }} />
+            Ocultar trials/free
+          </label>
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Buscar licença..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="pl-9" />
+          </div>
         </div>
       </div>
+
 
       {/* Table */}
       <Card><CardContent className="p-0">
