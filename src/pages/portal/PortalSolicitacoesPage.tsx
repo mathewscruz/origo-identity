@@ -14,6 +14,8 @@ import { Plus, Clock, CheckCircle2, XCircle, Send, FileText, AppWindow, Users, K
 import { format } from "date-fns";
 import { sendNotificationEmail } from "@/lib/sendNotificationEmail";
 import EmptyState from "@/components/EmptyState";
+import CatalogResourceList from "./sections/CatalogResourceList";
+
 
 
 function extractOwnerEmail(owner: string | null): string | null {
