@@ -66,6 +66,7 @@ const tipoJMLLabels: Record<string, string> = {
 };
 
 import IndividualAccessTabs from "./sections/IndividualAccessTabs";
+import { useAssignPerfil, useRevokePerfil } from "@/hooks/mutations/usePerfilAssignment";
 
 export default function ColaboradorDetalhePage() {
   const { id } = useParams();
@@ -80,6 +81,9 @@ export default function ColaboradorDetalhePage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { profile } = useAuth();
+  const assignPerfil = useAssignPerfil();
+  const revokePerfil = useRevokePerfil();
+
 
   const [atribuirOpen, setAtribuirOpen] = useState(false);
   const [selectedPerfilId, setSelectedPerfilId] = useState("");
