@@ -52,6 +52,16 @@ const tipoJMLColors: Record<string, string> = {
   joiner: "bg-success text-success-foreground",
   mover: "bg-info text-info-foreground",
   leaver: "bg-destructive text-destructive-foreground",
+  pre_leaver: "bg-warning text-warning-foreground",
+  pre_leaver_revertido: "bg-info text-info-foreground",
+};
+
+const tipoJMLLabels: Record<string, string> = {
+  joiner: "joiner",
+  mover: "mover",
+  leaver: "leaver",
+  pre_leaver: "pré-leaver",
+  pre_leaver_revertido: "reversão",
 };
 
 const actionTypeLabels: Record<string, string> = {
