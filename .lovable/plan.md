@@ -1,54 +1,67 @@
-# Plano — Acessos Privilegiados confiável end-to-end
+## Diagnóstico do fluxo "Novo Usuário" (Configurações → Usuários)
 
-Objetivo: eliminar pontos cegos que hoje fazem a tela subestimar/poluir o risco real e dar visibilidade do frescor do dado.
+Fluxo atual revisado:
 
-## 1. Cobertura PIM (Privileged Identity Management)
-Estender `sync-entra-roles` para ler também:
-- `/roleManagement/directory/roleEligibilitySchedules` — atribuições **elegíveis** (pode ativar quando quiser).
-- `/roleManagement/directory/roleAssignmentSchedules` — atribuições **ativas** (inclui ativações PIM temporárias com janela).
+1. `UsuariosPage` → POST para `admin-create-user` (email, nome, role, password).
+2. `admin-create-user` valida JWT + role `admin`, cria usuário em `auth.users` com `email_confirm: true` e insere em `user_roles`. O trigger `handle_new_user` cria a linha em `profiles`.
+3. De volta no cliente, `sendNotificationEmail("usuario_boas_vindas", …)` chama `send-notification-email`, que monta o template HTML (logo Órigo, dados, senha temporária) e envia via SendGrid (`SENDGRID_API_KEY` já configurada).
+4. Auditoria do envio é gravada em `auditoria`.
 
-Mudanças no schema (`entra_role_members`):
-- `assignment_type` enum: `permanente` | `elegivel` | `ativo_pim`
-- `start_at` / `end_at` (nullable) para janelas PIM
-- `directory_scope_id` (para roles escopadas em AU/app)
+### O que funciona
 
-UI: nova coluna **Tipo de atribuição** (badge: Permanente / Elegível / Ativo PIM com contagem regressiva), filtro por tipo, e card extra "Elegíveis PIM".
+- Criação do usuário, role e profile.
+- Template `usuario_boas_vindas` existe, é bonito, mostra e-mail/senha/perfil e CTA "Acessar o Sistema".
+- SendGrid configurado e `requireRole(["admin","operador"])` protege o endpoint.
+- Reset de senha pelo admin funciona (chama `admin-create-user` com `action=reset_password`).
 
-## 2. Contas administrativas / breakglass
-- Nova tabela leve `contas_admin_conhecidas` (entra_id, motivo, dono_responsavel) gerenciada via UI simples na própria página.
-- Sync deixa de gerar alerta `privilegiado_nao_vinculado` quando o `user_entra_id` está nessa lista; em vez disso a linha mostra badge "Conta administrativa" com responsável.
-- Match relaxado: também tenta `colaboradores` com qualquer status antes de cair para "não vinculado" (hoje só `ativo`).
+### Gaps reais (precisam ser corrigidos)
 
-## 3. Frescor do dado
-- Persistir `last_sync_at` em `parametros` (chave `entra_roles_last_sync`).
-- Header da página exibe "Última sincronização: há X min" + cor (verde <24h, âmbar <7d, vermelho >7d).
-- Card "Sincronização" mostra duração do último job e status.
+1. **A promessa do e-mail não se cumpre.** O template diz "você será solicitado a alterar a senha temporária no primeiro login", mas `admin-create-user` nunca seta `profiles.must_change_password = true`. Resultado: o `ForcePasswordChangeDialog` (já existente em `AppLayout` e `PortalLayout`) não dispara — o usuário entra com a senha temporária e segue usando ela indefinidamente.
 
-## 4. Parametrização de alertas
-- Mover limite hardcoded "3 membros" para `parametros` (`priv_role_max_membros`, default 3) editável em Configurações.
+2. **Envio de e-mail depende do cliente.** A chamada a `sendNotificationEmail` é feita pelo navegador depois do `admin-create-user` retornar. Se a aba fechar, a rede cair ou o admin sair da página, o usuário é criado mas nunca recebe credenciais. Não há retry nem rastreio de falha visível ao admin (somente log silencioso).
 
-## 5. Drill-down reverso
-- Na ficha do colaborador (`/colaboradores/:id`), nova seção **Funções Privilegiadas** listando todas as roles (ativas + elegíveis) com tipo de atribuição.
+3. **Reset de senha não notifica o usuário.** Quando o admin troca a senha pelo ícone de chave, nada é enviado por e-mail e `must_change_password` continua `false` — o usuário fica sem saber que a senha mudou.
 
-## 6. Tipagem
-- Regenerar `src/integrations/supabase/types.ts` para incluir `entra_roles` e `entra_role_members` e remover os `as any` em `PrivilegiadosPage.tsx`.
+4. **Tipagem solta.** Em `UsuariosPage.tsx` o tipo `"usuario_boas_vindas"` é forçado com `as any` porque não consta em `NotificationType` no `sendNotificationEmail.ts`.
 
-## Detalhes técnicos
+5. **Política de senha fraca.** Mínimo de 6 caracteres e sem checagem HIBP. A configuração de auth pode habilitar `password_hibp_enabled` para reduzir uso de senhas vazadas (mantendo o mesmo fluxo).
 
-Arquivos afetados:
-- `supabase/functions/sync-entra-roles/index.ts` — adicionar chamadas PIM, normalizar `assignment_type`, dedup por (`role_id`, `user_entra_id`, `assignment_type`, `start_at`).
-- Nova migração:
-  - `alter table entra_role_members add column assignment_type text, start_at timestamptz, end_at timestamptz, directory_scope_id text;`
-  - `create table contas_admin_conhecidas (...)` com RLS (admin/operador rw, authenticated read) + GRANTs.
-  - `insert into parametros` defaults.
-- `src/pages/privilegiados/PrivilegiadosPage.tsx` — coluna Tipo, filtros, header de frescor, modal de contas admin.
-- `src/pages/colaboradores/ColaboradorDetalhe*.tsx` — nova seção.
+## Plano de correção
 
-Fora de escopo: integração com fluxo de aprovação para ativar PIM via Lovable (apenas leitura/governança).
+### 1. `admin-create-user` (Edge Function)
+- Após criar o usuário, fazer `update` em `public.profiles` com `must_change_password: true` (usando service role).
+- **Mover o envio do e-mail de boas-vindas para dentro da função**, logo após o sucesso do `createUser`. Reaproveitar `_shared/sendgrid.ts` chamando o `send-notification-email` internamente ou inline. Garante envio mesmo se o cliente fechar.
+- No branch `action=reset_password`:
+  - Setar `must_change_password: true` no profile do alvo.
+  - Disparar e-mail de "senha redefinida pelo administrador" (novo tipo `usuario_senha_redefinida`) com a nova senha temporária e aviso para troca no próximo login.
+- Retornar no JSON `{ email_enviado: true/false, email_erro?: string }` para o cliente exibir feedback.
 
-## Critérios de aceite
-1. Após sync, total de membros = ativos + elegíveis + ativos_pim, com badges visíveis.
-2. Alertas "não vinculado" caem para apenas contas humanas reais (excluindo breakglass cadastradas).
-3. Header mostra frescor da última sincronização.
-4. Ficha do colaborador lista funções privilegiadas atribuídas.
-5. `PrivilegiadosPage.tsx` sem `as any` nas queries de `entra_roles*`.
+### 2. `send-notification-email` (Edge Function)
+- Adicionar novo tipo `usuario_senha_redefinida` (template reaproveitando layout `baseLayout`, com nova senha + aviso de troca obrigatória).
+- Permitir invocação interna (sem JWT de admin) usando service-role header, **ou** continuar exigindo JWT e chamar a função a partir do `admin-create-user` repassando o `Authorization` original — caminho mais simples e mantém auditoria.
+
+### 3. Cliente `src/pages/admin/UsuariosPage.tsx`
+- Remover a chamada manual ao `sendNotificationEmail` (passa a ser feita pelo backend).
+- No retorno do `admin-create-user`, exibir toast detalhado: "Usuário criado e e-mail enviado para X" ou aviso visível em vermelho se `email_enviado=false`.
+- Mesma coisa no reset de senha: mostrar se o e-mail foi enviado.
+
+### 4. `src/lib/sendNotificationEmail.ts`
+- Adicionar `"usuario_boas_vindas"` e `"usuario_senha_redefinida"` em `NotificationType` para remover o `as any`.
+
+### 5. Segurança de senhas
+- Chamar `configure_auth` para habilitar `password_hibp_enabled: true` (mantém `disable_signup: true`, sem auto-confirm, sem anônimos — preferências já registradas).
+- Subir o mínimo do form para 8 caracteres (UI + validação no edge function).
+
+### 6. Validação manual após implementação
+- Criar usuário de teste pela UI → conferir caixa de entrada (template chega), logar com a senha temporária → o `ForcePasswordChangeDialog` deve aparecer e bloquear até trocar.
+- Resetar senha pelo ícone de chave → conferir e-mail e que o próximo login exige nova troca.
+- Conferir entradas em `auditoria` (`criar_usuario`, `enviar_email`, `resetar_senha`).
+
+### Arquivos afetados
+- `supabase/functions/admin-create-user/index.ts`
+- `supabase/functions/send-notification-email/index.ts`
+- `src/pages/admin/UsuariosPage.tsx`
+- `src/lib/sendNotificationEmail.ts`
+- Auth config (via tool `configure_auth`)
+
+Nenhuma migration de schema é necessária — `profiles.must_change_password` já existe.
