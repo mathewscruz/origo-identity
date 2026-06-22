@@ -835,7 +835,7 @@ export default function ColaboradorDetalhePage() {
                     setResetingPassword(true);
                     try {
                       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reset-entra-password`;
-                      const res = await fetch(url, {
+                      const res = await authedFetch(url, {
                         method: "POST",
                         headers: {
                           "Content-Type": "application/json",
