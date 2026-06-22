@@ -136,6 +136,18 @@ export async function handleStatusChange(params: StatusChangeParams): Promise<{ 
         .eq("id", colab.id);
     }
 
+    // Hard disable manual → mark to prevent CSV-driven reactivation
+    if (isHardDisable) {
+      await supabase
+        .from("colaboradores")
+        .update({
+          desligado_manual: true,
+          desligado_manual_em: new Date().toISOString(),
+          desligado_manual_por: operadorEmail || "sistema",
+        } as any)
+        .eq("id", colab.id);
+    }
+
     let activePerfilIds: string[] = [];
     const individualSnapshot: any[] = [];
 
