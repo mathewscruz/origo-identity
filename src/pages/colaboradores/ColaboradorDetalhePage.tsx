@@ -117,42 +117,31 @@ export default function ColaboradorDetalhePage() {
   async function handleAtribuir() {
     if (!selectedPerfilId || !id) return;
     setSaving(true);
-    const { error } = await supabase.from("perfil_atribuicoes").insert({
-      perfil_id: selectedPerfilId,
-      colaborador_id: id,
-      origem: "manual",
-    });
-    setSaving(false);
-    if (error) { toast({ title: "Erro ao atribuir", description: error.message, variant: "destructive" }); return; }
-
-    const identity = pessoa?.email || (pessoa as any)?.sam_account_name || "";
-    if (identity) {
-      await queueFullProfileActions([getColabIdentity()], [selectedPerfilId], "assign");
+    try {
+      await assignPerfil.mutateAsync({
+        identity: getColabIdentity(),
+        perfilId: selectedPerfilId,
+        operadorEmail: profile?.email,
+      });
+      setAtribuirOpen(false);
+      setSelectedPerfilId("");
+    } catch {
+      /* toast handled in hook */
+    } finally {
+      setSaving(false);
     }
-
-    toast({ title: "Perfil atribuído com sucesso" });
-    await logAuditoria({ acao: "atribuir_perfil", entidade: "perfil_atribuicoes", entidade_id: id!, resumo: `Perfil atribuído manualmente a ${pessoa.nome}`, operador: profile?.email });
-    queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
-    setAtribuirOpen(false);
-    setSelectedPerfilId("");
   }
 
   async function handleRevogar(atribuicaoId: string, perfilId?: string) {
-    const { error } = await supabase.from("perfil_atribuicoes").update({
-      ativo: false,
-      data_revogacao: new Date().toISOString(),
-    }).eq("id", atribuicaoId);
-    if (error) { toast({ title: "Erro ao revogar", description: error.message, variant: "destructive" }); return; }
-
-    const identity = pessoa?.email || (pessoa as any)?.sam_account_name || "";
-    if (identity && perfilId) {
-      await queueFullProfileActions([getColabIdentity()], [perfilId], "remove");
-    }
-
-    toast({ title: "Acesso revogado" });
-    await logAuditoria({ acao: "revogar_perfil", entidade: "perfil_atribuicoes", entidade_id: id!, resumo: `Perfil revogado de ${pessoa.nome}`, operador: profile?.email });
-    queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
+    if (!perfilId) return;
+    await revokePerfil.mutateAsync({
+      atribuicaoId,
+      identity: getColabIdentity(),
+      perfilId,
+      operadorEmail: profile?.email,
+    });
   }
+
 
   async function handleAssignIndividualGroup() {
     if (!selectedGrupoId || !id) return;
