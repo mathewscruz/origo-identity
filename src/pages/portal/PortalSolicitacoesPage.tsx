@@ -41,6 +41,14 @@ export default function PortalSolicitacoesPage() {
   const [buscaApp, setBuscaApp] = useState("");
   const [buscaGrupo, setBuscaGrupo] = useState("");
   const [buscaLicenca, setBuscaLicenca] = useState("");
+  // Catalog context: what the user already has + cargo-based recommendations
+  const [ownedAppIds, setOwnedAppIds] = useState<Set<string>>(new Set());
+  const [ownedGrupoIds, setOwnedGrupoIds] = useState<Set<string>>(new Set());
+  const [ownedLicencaIds, setOwnedLicencaIds] = useState<Set<string>>(new Set());
+  const [recAppIds, setRecAppIds] = useState<Set<string>>(new Set());
+  const [recGrupoIds, setRecGrupoIds] = useState<Set<string>>(new Set());
+  const [recLicencaIds, setRecLicencaIds] = useState<Set<string>>(new Set());
+
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
