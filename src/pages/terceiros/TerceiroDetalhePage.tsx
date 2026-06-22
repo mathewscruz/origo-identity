@@ -331,7 +331,16 @@ export default function TerceiroDetalhePage() {
             <Badge variant="outline" className={crit.class}>Criticidade {crit.label}</Badge>
             <Badge variant={terceiro.ativo ? "default" : "secondary"}>{terceiro.ativo ? "Ativo" : "Inativo"}</Badge>
           </div>
-          <p className="text-sm text-muted-foreground">{terceiro.empresa_terceira} · Responsável: {terceiro.responsavel || "—"}</p>
+          <p className="text-sm text-muted-foreground">
+            {terceiro.empresa_terceira} · Responsável:{" "}
+            {(terceiro as any).responsavel_colaborador ? (
+              <Link to={`/colaboradores/${(terceiro as any).responsavel_colaborador.id}`} className="text-primary hover:underline">
+                {(terceiro as any).responsavel_colaborador.nome}
+              </Link>
+            ) : (
+              terceiro.responsavel || "—"
+            )}
+          </p>
         </div>
         <div className="flex gap-2">
           {terceiro.ativo ? (
