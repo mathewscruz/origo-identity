@@ -279,8 +279,25 @@ export default function IntegracoesPage() {
 }
 
 function CsvProgressPanel({ job }: { job: any }) {
+  const { toast } = useToast();
+  const [resetting, setResetting] = useState(false);
   const isDone = job.status === "done";
   const isError = job.status === "error";
+  const isRunning = job.status === "running";
+  const updatedAtMs = job.updated_at ? new Date(job.updated_at).getTime() : 0;
+  const isStale = isRunning && Date.now() - updatedAtMs > 5 * 60 * 1000;
+
+  const handleReset = async () => {
+    setResetting(true);
+    const { error } = await supabase
+      .from("sync_jobs")
+      .update({ status: "error", error: "Marcado como travado pelo usuário", message: "Marcado como travado pelo usuário" })
+      .eq("id", job.id);
+    if (error) toast({ title: "Erro", description: error.message, variant: "destructive" });
+    else toast({ title: "Sincronização marcada como travada", description: "Você pode disparar um novo sync." });
+    setResetting(false);
+  };
+
   return (
     <div className="rounded-md border p-4 space-y-4">
       <div className="flex items-center gap-2">
@@ -297,8 +314,23 @@ function CsvProgressPanel({ job }: { job: any }) {
           <span className="text-muted-foreground">{job.colab_total} total</span>
         </div>}
       </div>
+      {isStale && (
+        <div className="rounded-md border border-warning/30 bg-warning/10 p-3 space-y-2">
+          <p className="text-sm font-medium text-warning-foreground flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" />
+            Sincronização parece travada (sem atualização há mais de 5 min)
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Os dados já importados foram preservados. Marque como travada para poder disparar um novo sync.
+          </p>
+          <Button size="sm" variant="outline" onClick={handleReset} disabled={resetting}>
+            {resetting ? "Marcando..." : "Marcar como travada"}
+          </Button>
+        </div>
+      )}
       {isError && job.error && <p className="text-sm text-destructive">{job.error}</p>}
       {job.filename && <p className="text-xs text-muted-foreground">Arquivo: {job.filename}</p>}
     </div>
   );
 }
+
