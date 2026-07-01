@@ -360,10 +360,11 @@ async function runReconciliation(sb: any, jobId: string) {
     }
 
     // 6. Auditoria
+    const resumoTxt = `Reconciliação: ${stats.linked_entra} linkados · ${stats.joiners_reconciled} joiners · ${stats.leavers_generated} leavers · ${stats.disable_entra_enqueued} disable Entra · ${stats.disable_ad_enqueued} disable AD · ${stats.skipped_no_entra} pulados (não existem no Entra) · ${stats.skipped_already_disabled} já desabilitados`;
     await sb.from("auditoria").insert({
       entidade: "reconciliacao_identidades",
       acao: "reconciliar",
-      resumo: `Reconciliação: ${stats.linked_entra} linkados, ${stats.duplicates.length} duplicidades, ${stats.joiners_reconciled} joiners resolvidos, ${stats.leavers_generated} leavers, ${stats.disable_enqueued} desabilitações`,
+      resumo: resumoTxt,
       detalhes: stats,
     });
 
@@ -371,7 +372,7 @@ async function runReconciliation(sb: any, jobId: string) {
       status: "done",
       phase: "done",
       users_percent: 100,
-      message: `Concluído: ${stats.linked_entra} vínculos novos · ${stats.duplicates.length} duplicidades · ${stats.joiners_reconciled} joiners · ${stats.leavers_generated} leavers · ${stats.disable_enqueued} disable enfileirados`,
+      message: resumoTxt,
       error: stats.errors.length ? stats.errors.slice(0, 5).join(" | ") : null,
     });
   } catch (err) {
