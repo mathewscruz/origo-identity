@@ -113,6 +113,19 @@ export default function AprovacaoIAMPage() {
     onError: (e: any) => toast.error(`Erro: ${e.message}`),
   });
 
+  // ─── Legacy pending count (items enqueued before the approval gate existed) ───
+  const { data: legacyPendingCount = 0, refetch: refetchLegacy } = useQuery({
+    queryKey: ["iam-legacy-pending-count"],
+    queryFn: async () => {
+      const { count } = await (supabase as any)
+        .from("iam_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending");
+      return count || 0;
+    },
+    refetchInterval: 30000,
+  });
+
   // ─── Queue data ───
   const { data: items = [], isLoading, refetch } = useQuery({
     queryKey: ["iam-approval-queue", tab],
