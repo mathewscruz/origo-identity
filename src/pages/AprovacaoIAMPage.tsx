@@ -113,6 +113,19 @@ export default function AprovacaoIAMPage() {
     onError: (e: any) => toast.error(`Erro: ${e.message}`),
   });
 
+  // ─── Legacy pending count (items enqueued before the approval gate existed) ───
+  const { data: legacyPendingCount = 0, refetch: refetchLegacy } = useQuery({
+    queryKey: ["iam-legacy-pending-count"],
+    queryFn: async () => {
+      const { count } = await (supabase as any)
+        .from("iam_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending");
+      return count || 0;
+    },
+    refetchInterval: 30000,
+  });
+
   // ─── Queue data ───
   const { data: items = [], isLoading, refetch } = useQuery({
     queryKey: ["iam-approval-queue", tab],
@@ -225,6 +238,7 @@ export default function AprovacaoIAMPage() {
       toast.success(`${n} item(ns) movido(s) para aprovação`);
       setFreezeOpen(false);
       qc.invalidateQueries({ queryKey: ["iam-approval-queue"] });
+      refetchLegacy();
     },
     onError: (e: any) => toast.error(`Erro: ${e.message}`),
   });
@@ -266,6 +280,29 @@ export default function AprovacaoIAMPage() {
           </Badge>
         )}
       </div>
+
+      {/* Legacy pending banner */}
+      {approvalMode && isAdmin && legacyPendingCount > 0 && (
+        <Card className="border-amber-300 bg-amber-50 dark:bg-amber-950/20">
+          <CardContent className="py-4 flex items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+              <div className="text-sm">
+                <p className="font-medium text-amber-900 dark:text-amber-200">
+                  {legacyPendingCount.toLocaleString("pt-BR")} ações estão em fila legada (pré-gate)
+                </p>
+                <p className="text-amber-800 dark:text-amber-300/90">
+                  Estas ações foram enfileiradas antes do modo aprovação ser ligado e serão executadas automaticamente pelo worker se nada for feito. Mova-as para a fila de aprovação para revisá-las antes.
+                </p>
+              </div>
+            </div>
+            <Button variant="default" size="sm" onClick={() => setFreezeOpen(true)} className="shrink-0">
+              <AlertTriangle className="h-4 w-4 mr-2" />
+              Mover para aprovação
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Toggle card */}
       <Card className={approvalMode ? "border-primary/40 bg-primary/5" : "border-muted"}>

@@ -1,72 +1,67 @@
-## Fila de Aprovação IAM
+## Diagnóstico
 
-Adiciona um "gate" entre a geração de ações IAM (por CSV, JML, catálogo, reconciliação etc.) e a execução real no AD/Entra ID. Enquanto o modo estiver ligado, nada é executado sem aprovação manual de um admin.
+**1. Gate de aprovação está ativo, mas a fila antiga não passou por ele**
 
-### Comportamento
+- `parametros.iam_approval_required = true` ✅
+- Trigger `iam_queue_apply_approval_gate` ativo em `BEFORE INSERT` ✅
+- Worker `process-iam-queue` filtra por `status='pending'` — não toca em `waiting_approval` ✅
 
-- Novo parâmetro global `iam_approval_required` (bool, default **true** no primeiro mês) em `parametros`, editável em Configurações → Parâmetros.
-- Quando ligado, todo `INSERT` em `iam_queue` entra com status `waiting_approval` em vez de `pending`.
-- O `process-iam-queue` e o `iam-agent-api` só puxam itens com status `pending`. Nada muda no worker — só o gate.
-- Ao aprovar: status vira `pending` e a fila roda normalmente.
-- Ao recusar: status vira `rejected` com motivo + auditoria.
-- Auto-aprovação: se o modo estiver desligado, novos itens já entram como `pending` (comportamento atual).
+Porém a fila hoje tem:
 
-### Nova tela: `/fila-aprovacao`
+| status | itens |
+|---|---|
+| pending | **3.911** |
+| cancelled | 3.881 |
+| success | 873 |
+| failed | 15 |
+| waiting_approval | **0** |
 
-Sidebar → "Aprovação IAM" (badge com contagem de pendentes).
+Os 3.911 `pending` foram enfileirados **antes** do trigger existir, então nunca entraram em `waiting_approval` — por isso a tela "Aprovação IAM" está vazia. Se nada for feito, o worker vai executá-los direto assim que o cron/manual disparar, ignorando a nova aprovação.
 
-Layout:
-- **Header**: Toggle grande "Modo Aprovação Obrigatória" (só admin). Chip com "X aguardando aprovação".
-- **Filtros**: por `action_type` (create/update/disable/enable/assign_group/…), origem (`importacao_csv`, `reconciliacao`, `catalogo`, `jml`), colaborador (busca), data.
-- **Agrupamento**: cards colapsáveis por origem (ex.: "Importação CSV — 3.899 create_if_not_exists"), com resumo e botão "Aprovar tudo do grupo".
-- **Tabela** com checkbox: colaborador, action_type, target_identity, resumo do payload (grupos/licenças/dados alterados), origem, criado em.
-- **Barra de ações em lote** (aparece com seleção): Aprovar selecionados / Recusar selecionados (modal com motivo obrigatório).
-- **Drawer de detalhes**: ao clicar num item, mostra JSON payload formatado, colaborador, histórico de tentativas, e botões individuais.
-- **Aba histórico**: itens já aprovados/recusados, com quem aprovou e quando.
+Composição dos pendentes: 3.899 `create_if_not_exists` (CSV), 4 `assign_group`, 4 `assign_license`, 3 `remove_group`, 1 `remove_license`.
 
-### Segurança
+**2. Bloqueio manual (Pré-Desligamento) — funcional, com uma ressalva**
 
-- Apenas `admin` pode aprovar/recusar (RLS policy nova).
-- `operador` vê a fila mas não age nos botões (readonly).
-- Toda decisão vai para `auditoria` (`entidade=iam_queue`, `acao=aprovar|recusar`).
+- `src/lib/preLeaver.ts` marca `desligado_manual=true` no colaborador e enfileira `disable_user` (Entra) + `disable_user` (AD) com `status='pending'`.
+- Trigger vai capturar e mover para `waiting_approval` automaticamente — comportamento correto pelo escopo escolhido ("Todas as ações IAM").
+- `sync-csv-colab` respeita `desligado_manual` e não reativa (memory: manual-disable-csv-guard) ✅.
+- **Ressalva:** hoje, com o gate ligado, a suspensão preventiva só bloqueia o usuário *depois* que o admin aprovar na fila. Isso pode ir contra a ideia de "bloqueio imediato" do Pré-Desligamento. Duas opções abaixo.
 
----
+## Plano
+
+### Passo 1 — Reprocessar a fila antiga (1 clique)
+
+O botão **"Congelar fila atual"** já existe no header da página `/aprovacao-iam`. Ele executa um `UPDATE iam_queue SET status='waiting_approval' WHERE status='pending'` retroativo. Vou:
+
+- Deixar essa ação **destacada** com um alerta no topo da página enquanto houver `pending` legado (banner amarelo com contagem: "3.911 ações foram enfileiradas antes do modo aprovação. Clique para movê-las para aprovação.").
+- Ao clicar, mover em lote os 3.911 para `waiting_approval` e registrar em `auditoria` como `queue_freeze_bulk` com o total.
+- Depois disso a tela vai listar as 3.911 aprovações agrupadas por `action_type` + origem, prontas pra aprovar/recusar em lote.
+
+### Passo 2 — Definir política do Pré-Desligamento
+
+Precisa decidir (pergunto abaixo se quiser mudar): manter como está (suspensão preventiva também exige aprovação — consistente com "tudo passa pelo gate") **ou** marcar suspensão preventiva como exceção que executa imediatamente (bypass do gate) porque é uma ação de segurança urgente.
+
+### Passo 3 — Validação end-to-end do bloqueio manual
+
+Depois do congelamento, faço um teste rápido:
+
+1. Abrir um colaborador ativo → botão "Suspender Acessos" → confirmar motivo.
+2. Verificar que `colaboradores.desligado_manual=true` e que 2 itens (`disable_user` AD + Entra) aparecem em `/aprovacao-iam` como `waiting_approval`.
+3. Aprovar → worker processa → Entra desabilita + AD desabilita (via `iam-agent-api`).
+4. Rodar `sync-csv-colab` com o colaborador ainda ativo no CSV → confirmar que não reativa (guard funciona).
 
 ## Detalhes técnicos
 
-### Migration
-1. `parametros`: seed/upsert `chave='iam_approval_required'`, `valor='true'`, `tipo='boolean'`.
-2. `iam_queue`: novas colunas
-   - `approval_status text` (não uso do `status` existente para não quebrar workers)
-   - `approved_by uuid references auth.users` nullable
-   - `approved_at timestamptz` nullable
-   - `rejection_reason text` nullable
-3. `iam_queue.status`: adicionar valores `waiting_approval` e `rejected` (o campo já é text — só documentação).
-4. Trigger `iam_queue_apply_approval_gate` BEFORE INSERT:
-   - Se `NEW.status = 'pending'` e parâmetro `iam_approval_required=true` → seta `NEW.status = 'waiting_approval'`.
-   - Isso captura **todas** as fontes (`sync-csv-colab`, `reconcile-identities`, `start-jml-event`, catálogo, `process-iam-queue` re-enqueues, etc.) sem alterar cada função.
-5. RLS: policy nova "Only admins can approve iam_queue" para UPDATE quando mudando `status` de `waiting_approval` → `pending`/`rejected`.
-6. Índice: `idx_iam_queue_waiting_approval (created_at desc) where status='waiting_approval'`.
+- Nenhuma migração nova é necessária — trigger, colunas e parâmetro já existem.
+- Alteração de UI apenas em `src/pages/AprovacaoIAMPage.tsx` para adicionar o banner de "fila legado detectada" quando `count(status='pending') > 0`.
+- O botão "Congelar fila atual" já implementado será chamado pelo banner (mesma função).
+- Se optar por bypass do Pré-Desligamento no Passo 2, alteração adicional em `src/lib/preLeaver.ts`: inserir com `status='pending'` + `bypass_approval=true` numa flag, e ajustar o trigger para não interceptar quando `action_type IN ('disable_user')` com origem `pre_leaver`. (Só implemento se você pedir.)
 
-### Frontend
-- **`src/pages/AprovacaoIAMPage.tsx`** — nova página.
-- **`src/hooks/useApprovalQueue.ts`** — React Query hooks: `useWaitingApproval()`, `useApprove()`, `useReject()`, `useApprovalMode()` (lê/grava parâmetro).
-- **Sidebar**: novo item "Aprovação IAM" com badge de contagem (visível para admin/operador).
-- **Rota**: registrar em `App.tsx` protegida por `useCanEdit`.
+## Pergunta antes de executar
 
-### Fluxo de aprovação
-1. Admin vê itens `waiting_approval`.
-2. Aprovar: `UPDATE iam_queue SET status='pending', approved_by=auth.uid(), approved_at=now() WHERE id IN (…)`.
-3. O `process-iam-queue`/`iam-agent-api` (que rodam periodicamente ou sob demanda pelo botão existente "Processar fila") pega o item e executa.
-4. Recusar: `UPDATE ... SET status='rejected', rejection_reason=?, approved_by=auth.uid(), approved_at=now()`.
+O Pré-Desligamento (Suspender Acessos manual) deve:
 
-### Interação com fluxos existentes
-- **CSV sync (3.899 pendentes hoje)**: assim que o modo estiver ligado + trigger criada, o próximo enfileiramento passa pelo gate. Os 3.899 já `pending` **não** são reclassificados retroativamente — a UI oferecerá um botão opcional "Congelar fila atual" que faz `UPDATE iam_queue SET status='waiting_approval' WHERE status='pending'`, útil pra revisar o backlog atual.
-- **Reconciliação**: idem.
-- **JML manual (start-jml-event)**: passa pelo gate normalmente.
-- **Catálogo de autoatendimento**: solicitações que já têm aprovação de gestor + segurança viram itens `iam_queue`; se o gate estiver ligado, precisam de + 1 aprovação técnica do admin IAM. (Configurável no futuro; por ora inclui tudo pra atingir "primeiro mês de gerência".)
+- **A)** Passar pelo gate como qualquer outra ação (estado atual — consistente, mas admin precisa aprovar antes do bloqueio efetivo).
+- **B)** Bypass do gate — executa imediatamente porque é ação de contenção de segurança; a auditoria fica no `desligado_manual_por`.
 
-### Toggle do modo
-- Configurações → Parâmetros ganha um switch destacado "Modo Aprovação Obrigatória (IAM Gate)" com descrição e botão de confirmação. Também replicado no header da própria página de aprovação.
-
-Depois de aprovar você segue direto para implementação, ou quer ajustar algum ponto (ex.: aplicar retroativamente aos 3.899 pendentes, mudar quem aprova, etc.)?
+Responda A ou B e eu já congelo a fila + valido o fluxo.
