@@ -121,7 +121,7 @@ Deno.serve(async (req) => {
             status: "pending",
             retry_count: newRetryCount,
             next_retry_at: nextRetryAt,
-            result_message: result_message || `Retry ${newRetryCount}/${currentItem.max_retries} — ${error_code}`,
+            result_message: result_message || `Retry ${newRetryCount}/${effectiveMax} — ${error_code}`,
             error_code,
             processed_by: processed_by || undefined,
           })
