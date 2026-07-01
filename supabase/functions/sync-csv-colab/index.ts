@@ -875,36 +875,60 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       }));
       for (const batch of chunk(joinerEvents, 200)) await sb.from("eventos_jml").insert(batch);
 
-      // Gap 2: Generate iam_queue entries with enriched payloads
-      const iamEntries = toInsert.filter(c => c.sam_account_name).map(c => {
+      // Gap 2: Generate iam_queue entries with enriched payloads.
+      // First, pre-check Entra ID: for identities that already exist, skip create_if_not_exists
+      // and just persist the entra_id — avoids the massive "user_not_found" retry storm.
+      const joinerCandidates = toInsert.filter(c => c.sam_account_name);
+      const preCheckToken = await getAzureTokenSafe();
+      let existingMapEntra = new Map<string, string>();
+      if (preCheckToken && joinerCandidates.length > 0) {
+        existingMapEntra = await preCheckEntraExistence(
+          preCheckToken,
+          joinerCandidates.map(c => ({ email: c.email || null, sam: c.sam_account_name || null })),
+        );
+        console.log(`[pre-check] ${existingMapEntra.size} identidades já existem no Entra de ${joinerCandidates.length} candidatos`);
+      }
+
+      const iamEntries: any[] = [];
+      let skippedExisting = 0;
+      for (const c of joinerCandidates) {
+        const emailKey = (c.email || "").toLowerCase();
+        const samKey = `sam:${(c.sam_account_name || "").toLowerCase()}`;
+        const foundId = (emailKey && existingMapEntra.get(emailKey)) || existingMapEntra.get(samKey);
+        if (foundId) {
+          // Persist entra_id, skip enqueue
+          const { data: inserted } = await sb.from("colaboradores").select("id").eq("matricula", c.matricula).maybeSingle();
+          if (inserted?.id) {
+            await sb.from("colaboradores").update({ entra_id: foundId }).eq("id", inserted.id);
+          }
+          skippedExisting++;
+          continue;
+        }
         const nameParts = (c.nome || "").split(" ");
         const givenName = nameParts[0] || "";
         const surname = nameParts.slice(1).join(" ") || givenName;
         const companyName = c.empresa_id ? (empresaNames.get(c.empresa_id) || null) : null;
         const titleName = c.cargo_id ? (cargoNames.get(c.cargo_id) || null) : null;
         const deptName = c.area_id ? (areaNames.get(c.area_id) || null) : null;
-        return {
+        iamEntries.push({
           action_type: "create_if_not_exists",
           payload_json: {
-            givenName,
-            surname,
+            givenName, surname,
             displayName: c.nome,
             samAccountName: c.sam_account_name,
             userPrincipalName: `${c.sam_account_name}@ebessolar.local`,
             mail: c.email,
-            department: deptName,
-            title: titleName,
-            company: companyName,
-            telephoneNumber: null,
-            manager: null,
-            ouPath: "",
+            department: deptName, title: titleName, company: companyName,
+            telephoneNumber: null, manager: null, ouPath: "",
           },
           target_identity: c.sam_account_name,
           requested_by: "importacao_csv",
           status: "pending",
-        };
-      });
+        });
+      }
+      console.log(`[iam-queue] ${iamEntries.length} enfileirados / ${skippedExisting} pulados (já existem no Entra)`);
       for (const batch of chunk(iamEntries, 200)) await sb.from("iam_queue").insert(batch);
+
 
       // Gap 5: Provision access profiles for new joiners — inline only while under time budget.
       // Above the budget, cargo provisioning is deferred: user can trigger "Reprovisionar Cargo"
