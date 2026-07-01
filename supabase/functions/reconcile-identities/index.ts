@@ -157,6 +157,7 @@ async function runReconciliation(sb: any, jobId: string) {
     disable_entra_enqueued: 0,
     disable_ad_enqueued: 0,
     skipped_no_entra: 0,
+    skipped_ad_unknown: 0,
     skipped_already_disabled: 0,
     entra_users_indexed: 0,
     create_enqueued: 0,
@@ -337,8 +338,14 @@ async function runReconciliation(sb: any, jobId: string) {
             stats.disable_entra_enqueued++;
           }
 
-          // Decisão para AD (só se tem sam e conta é on-prem OU não achado no Entra Cloud)
-          const isOnPrem = entraMatch?.onPremisesSyncEnabled === true || !entraMatch;
+          // Decisão para AD: só enfileira `disable` quando o Entra confirma que a
+          // conta é sincronizada on-prem (onPremisesSyncEnabled=true). Se o colab
+          // não tem match no Entra, NÃO presumimos que ele existe no AD — o
+          // sam_account_name aqui vem derivado do e-mail em sync-csv-colab e não
+          // é prova de existência de conta AD. Ambiente Órigo é híbrido AD Connect
+          // → Entra, então todo AD real aparece no Entra; exceções raras podem ser
+          // tratadas manualmente via "Desabilitar AD" no detalhe do colaborador.
+          const isOnPrem = entraMatch?.onPremisesSyncEnabled === true;
           if (c.sam_account_name && isOnPrem && !openByColab.has(`${c.id}|disable`)) {
             disableEntries.push({
               action_type: "disable",
@@ -351,6 +358,8 @@ async function runReconciliation(sb: any, jobId: string) {
               colaborador_id: c.id, requested_by: "reconciliacao", status: "pending",
             });
             stats.disable_ad_enqueued++;
+          } else if (c.sam_account_name && !entraMatch) {
+            stats.skipped_ad_unknown++;
           }
         }
 
