@@ -145,11 +145,17 @@ function useAccessByApp() {
         .is("data_revogacao", null);
       if (!atribuicoes?.length) return [];
       const perfilIds = [...new Set(atribuicoes.map(a => a.perfil_id))];
-      const { data: perfilApps } = await supabase
-        .from("perfil_aplicacoes")
-        .select("aplicacao_id, perfil_id")
-        .in("perfil_id", perfilIds.slice(0, 200));
-      if (!perfilApps?.length) return [];
+      // Fetch em lotes de 500 para evitar limites de URL
+      const perfilApps: { aplicacao_id: string; perfil_id: string }[] = [];
+      for (let i = 0; i < perfilIds.length; i += 500) {
+        const batch = perfilIds.slice(i, i + 500);
+        const { data } = await supabase
+          .from("perfil_aplicacoes")
+          .select("aplicacao_id, perfil_id")
+          .in("perfil_id", batch);
+        if (data) perfilApps.push(...data);
+      }
+      if (!perfilApps.length) return [];
       const appCount: Record<string, number> = {};
       const perfilCountMap: Record<string, number> = {};
       atribuicoes.forEach(a => { perfilCountMap[a.perfil_id] = (perfilCountMap[a.perfil_id] || 0) + 1; });
@@ -157,9 +163,12 @@ function useAccessByApp() {
         appCount[pa.aplicacao_id] = (appCount[pa.aplicacao_id] || 0) + (perfilCountMap[pa.perfil_id] || 1);
       });
       const appIds = Object.keys(appCount);
-      const { data: apps } = await supabase.from("aplicacoes").select("id, nome").in("id", appIds.slice(0, 50));
       const appNames: Record<string, string> = {};
-      (apps ?? []).forEach(a => { appNames[a.id] = a.nome; });
+      for (let i = 0; i < appIds.length; i += 500) {
+        const batch = appIds.slice(i, i + 500);
+        const { data: apps } = await supabase.from("aplicacoes").select("id, nome").in("id", batch);
+        (apps ?? []).forEach(a => { appNames[a.id] = a.nome; });
+      }
       const sorted = Object.entries(appCount)
         .map(([id, value]) => ({ name: appNames[id] || "Desconhecido", value }))
         .sort((a, b) => b.value - a.value);
