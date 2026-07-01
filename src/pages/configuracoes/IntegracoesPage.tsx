@@ -25,26 +25,75 @@ export default function IntegracoesPage() {
   const [cleaning, setCleaning] = useState(false);
   const [groupSyncing, setGroupSyncing] = useState(false);
   const [spSiteSyncing, setSpSiteSyncing] = useState(false);
-  const [reconciling, setReconciling] = useState(false);
+  const [cycleRunning, setCycleRunning] = useState(false);
   const { toast } = useToast();
   const { data: csvJob, refetch: refetchCsv } = useSyncJobsCsv();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
+  // Job persistente da reconciliação (tipo='reconcile_identities')
+  const { data: reconcileJob, refetch: refetchReconcileJob } = useQuery({
+    queryKey: ["sync_jobs_reconcile_identities"],
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from("sync_jobs").select("*")
+        .eq("tipo", "reconcile_identities")
+        .order("created_at", { ascending: false }).limit(1);
+      return data?.[0] ?? null;
+    },
+    refetchInterval: (q: any) => (q.state.data?.status === "running" ? 3000 : false),
+  });
+
+  // Job do ciclo diário
+  const { data: dailyJob, refetch: refetchDaily } = useQuery({
+    queryKey: ["sync_jobs_daily_cycle"],
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from("sync_jobs").select("*")
+        .eq("tipo", "daily_cycle")
+        .order("created_at", { ascending: false }).limit(1);
+      return data?.[0] ?? null;
+    },
+    refetchInterval: (q: any) => (q.state.data?.status === "running" ? 3000 : false),
+  });
+
+  const reconRunning = reconcileJob?.status === "running";
+  const reconStale = reconRunning && reconcileJob?.updated_at &&
+    Date.now() - new Date(reconcileJob.updated_at).getTime() > 5 * 60 * 1000;
+  const dailyRunning = dailyJob?.status === "running";
+  const dailyStale = dailyRunning && dailyJob?.updated_at &&
+    Date.now() - new Date(dailyJob.updated_at).getTime() > 30 * 60 * 1000;
+
   const { data: reconcileStats, refetch: refetchReconcile } = useQuery({
     queryKey: ["reconcile-stats"],
     queryFn: async () => {
-      const [{ count: total }, { count: linked }, { count: desligados }, { count: pendJoiners }, { count: pendLeavers }] = await Promise.all([
+      const [
+        { count: total }, { count: linked }, { count: desligados },
+        { count: aReconciliar }, { count: pendJoiners }, { count: pendLeavers },
+      ] = await Promise.all([
         (supabase as any).from("colaboradores").select("id", { count: "exact", head: true }),
         (supabase as any).from("colaboradores").select("id", { count: "exact", head: true }).not("entra_id", "is", null),
         (supabase as any).from("colaboradores").select("id", { count: "exact", head: true }).in("status", ["desligado", "inativo"]),
+        (supabase as any).from("colaboradores").select("id", { count: "exact", head: true })
+          .eq("status", "ativo").is("entra_id", null).not("email", "is", null),
         (supabase as any).from("eventos_jml").select("id", { count: "exact", head: true }).eq("tipo", "joiner").eq("status", "pendente"),
         (supabase as any).from("eventos_jml").select("id", { count: "exact", head: true }).eq("tipo", "leaver").eq("status", "pendente"),
       ]);
-      return { total: total || 0, linked: linked || 0, desligados: desligados || 0, pendJoiners: pendJoiners || 0, pendLeavers: pendLeavers || 0 };
+      return {
+        total: total || 0, linked: linked || 0, desligados: desligados || 0,
+        aReconciliar: aReconciliar || 0,
+        pendJoiners: pendJoiners || 0, pendLeavers: pendLeavers || 0,
+      };
     },
     refetchInterval: 15000,
   });
+
+  // Refetch stats quando um job termina
+  useEffect(() => {
+    if (reconcileJob?.status === "done" || dailyJob?.status === "done") {
+      refetchReconcile();
+    }
+  }, [reconcileJob?.status, dailyJob?.status, refetchReconcile]);
 
   const handleReconcile = useCallback(async () => {
     setReconciling(true);
