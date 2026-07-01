@@ -379,6 +379,14 @@ async function runReconciliation(sb: any, jobId: string) {
           if (qerr) stats.errors.push(`insert iam_queue: ${qerr.message}`);
           else stats.disable_enqueued += batch.length;
         }
+
+        // 5a — Revogar acessos dos leavers (perfis + individuais entra_sync/manual)
+        await updateJob(sb, jobId, {
+          phase: "revogando_acessos",
+          message: `Revogando grupos/licenças/apps de ${missingLeavers.length} desligado(s)…`,
+          users_percent: 87,
+        });
+        await revokeLeaverAccess(sb, missingLeavers, stats, "reconciliacao");
       }
     }
 
