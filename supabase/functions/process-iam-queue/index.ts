@@ -1012,22 +1012,21 @@ Deno.serve(async (req) => {
           const allColabUpdates = new Map([...colabEntraUpdates, ...queueColabUpdates]);
           let persistedLinks = 0;
           const updateEntries = Array.from(allColabUpdates.entries());
-          for (let i = 0; i < updateEntries.length; i += 500) {
-            const batch = updateEntries.slice(i, i + 500).map(([id, entra_id]) => ({ id, entra_id }));
-            const { error } = await supabase
-              .from("colaboradores")
-              .upsert(batch, { onConflict: "id" });
-            if (error) throw error;
-            persistedLinks += batch.length;
+          for (const [colabId, entraId] of updateEntries) {
+            const { error } = await supabase.from("colaboradores").update({ entra_id: entraId }).eq("id", colabId);
+            if (error) console.warn(`[reconcile] Falha ao gravar entra_id para colaborador ${colabId}: ${error.message}`);
+            else persistedLinks++;
 
-            await supabase.from("sync_jobs").update({
-              phase: "gravando_vinculos",
-              message: `${persistedLinks}/${allColabUpdates.size} vínculos gravados · ${cancelled} itens cancelados`,
-              users_created: cancelled,
-              users_updated: kept,
-              users_percent: 97,
-              updated_at: new Date().toISOString(),
-            }).eq("id", jobId);
+            if (persistedLinks % 50 === 0 || persistedLinks === updateEntries.length) {
+              await supabase.from("sync_jobs").update({
+                phase: "gravando_vinculos",
+                message: `${persistedLinks}/${allColabUpdates.size} vínculos gravados · ${cancelled} itens cancelados`,
+                users_created: cancelled,
+                users_updated: kept,
+                users_percent: 97,
+                updated_at: new Date().toISOString(),
+              }).eq("id", jobId);
+            }
           }
 
           const { count: pendingLeft } = await supabase
