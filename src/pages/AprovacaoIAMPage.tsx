@@ -460,8 +460,8 @@ export default function AprovacaoIAMPage() {
         </Card>
       )}
 
-      {/* Reconcile banner */}
-      {isAdmin && (createIfNotExistsCount > 0 || reconcileRunning || reconcileJob) && (
+      {/* Reconcile banner — only when there's work to do or an active run */}
+      {isAdmin && (createIfNotExistsCount > 0 || reconcileRunning || reconcileStale) && (
         <Card className="border-blue-300 bg-blue-50 dark:bg-blue-950/20">
           <CardContent className="py-4 flex items-center justify-between gap-4">
             <div className="flex items-start gap-3">
@@ -470,24 +470,32 @@ export default function AprovacaoIAMPage() {
                 {reconcileRunning ? (
                   <>
                     <p className="font-medium text-blue-900 dark:text-blue-200">
-                      Reconciliando contra Entra ID… {reconcileJob?.users_percent ?? 0}%
+                      {humanPhase(reconcileJob?.phase) || "Reconciliando…"} — {reconcileJob?.users_percent ?? 0}%
                     </p>
                     <p className="text-blue-800 dark:text-blue-300/90">
-                      {reconcileJob?.message || "Processando em segundo plano — você pode sair da tela."}
+                      {reconcileJob?.message || "Processando em segundo plano."}
+                      <span className="text-blue-700/70 dark:text-blue-300/70"> · atualizado há {relTime(reconcileJob?.updated_at)}</span>
                     </p>
                     <div className="mt-2 h-1.5 w-64 rounded-full bg-blue-200 dark:bg-blue-900 overflow-hidden">
                       <div className="h-full bg-blue-600 transition-all" style={{ width: `${reconcileJob?.users_percent ?? 0}%` }} />
                     </div>
                   </>
+                ) : reconcileStale ? (
+                  <>
+                    <p className="font-medium text-amber-900 dark:text-amber-200">
+                      Última execução parou em {reconcileJob?.users_percent ?? 0}% — sem atualização há {relTime(reconcileJob?.updated_at)}.
+                    </p>
+                    <p className="text-amber-800 dark:text-amber-300/90">
+                      Rode a reconciliação novamente para continuar.
+                    </p>
+                  </>
                 ) : (
                   <>
                     <p className="font-medium text-blue-900 dark:text-blue-200">
-                      {createIfNotExistsCount.toLocaleString("pt-BR")} criações de usuário na fila
+                      {createIfNotExistsCount.toLocaleString("pt-BR")} criações aguardando reconciliação
                     </p>
                     <p className="text-blue-800 dark:text-blue-300/90">
-                      {reconcileJob?.status === "success"
-                        ? `Última reconciliação: ${reconcileJob.message}`
-                        : "A reconciliação cruza a base da planilha com o Entra ID: remove da aprovação quem já existe no Entra e cancela criações pendentes de colaboradores já desligados, deixando só os usuários realmente novos."}
+                      Compara a base com o Entra ID e remove da fila quem já existe ou está desligado.
                     </p>
                   </>
                 )}
@@ -524,14 +532,6 @@ export default function AprovacaoIAMPage() {
             </div>
           </div>
         </CardHeader>
-        {approvalMode && isAdmin && (
-          <CardContent className="pt-0">
-            <Button variant="outline" size="sm" onClick={() => setFreezeOpen(true)}>
-              <AlertTriangle className="h-4 w-4 mr-2" />
-              Congelar fila atual (mover pendentes para aprovação)
-            </Button>
-          </CardContent>
-        )}
       </Card>
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
