@@ -158,6 +158,7 @@ async function runReconciliation(sb: any, jobId: string) {
     disable_ad_enqueued: 0,
     skipped_no_entra: 0,
     skipped_ad_unknown: 0,
+    skipped_ad_already_disabled: 0,
     skipped_already_disabled: 0,
     entra_users_indexed: 0,
     create_enqueued: 0,
