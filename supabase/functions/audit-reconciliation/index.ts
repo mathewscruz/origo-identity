@@ -117,11 +117,10 @@ async function runAudit(sb: any) {
     skipped: { total: skipped.length, sampled: sSkipped.length, correct: 0, wrong: 0, wrong_items: [] as any[] },
   };
 
-  const pickIdent = (q: any) =>
-    q.colaboradores?.entra_id ||
-    (q.payload_json as any)?.mail ||
-    q.colaboradores?.email ||
-    q.target_identity;
+  const pickIdent = (q: any) => {
+    const c = colabMap.get(q.colaborador_id) || {};
+    return c.entra_id || (q.payload_json as any)?.mail || c.email || q.target_identity;
+  };
 
   // Valida disable_entra: precisa existir no Entra E estar enabled
   for (const q of sDisableEntra) {
