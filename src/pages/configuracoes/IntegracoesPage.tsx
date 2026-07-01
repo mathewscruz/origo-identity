@@ -25,48 +25,118 @@ export default function IntegracoesPage() {
   const [cleaning, setCleaning] = useState(false);
   const [groupSyncing, setGroupSyncing] = useState(false);
   const [spSiteSyncing, setSpSiteSyncing] = useState(false);
-  const [reconciling, setReconciling] = useState(false);
+  const [cycleRunning, setCycleRunning] = useState(false);
   const { toast } = useToast();
   const { data: csvJob, refetch: refetchCsv } = useSyncJobsCsv();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
+  // Job persistente da reconciliação (tipo='reconcile_identities')
+  const { data: reconcileJob, refetch: refetchReconcileJob } = useQuery({
+    queryKey: ["sync_jobs_reconcile_identities"],
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from("sync_jobs").select("*")
+        .eq("tipo", "reconcile_identities")
+        .order("created_at", { ascending: false }).limit(1);
+      return data?.[0] ?? null;
+    },
+    refetchInterval: (q: any) => (q.state.data?.status === "running" ? 3000 : false),
+  });
+
+  // Job do ciclo diário
+  const { data: dailyJob, refetch: refetchDaily } = useQuery({
+    queryKey: ["sync_jobs_daily_cycle"],
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from("sync_jobs").select("*")
+        .eq("tipo", "daily_cycle")
+        .order("created_at", { ascending: false }).limit(1);
+      return data?.[0] ?? null;
+    },
+    refetchInterval: (q: any) => (q.state.data?.status === "running" ? 3000 : false),
+  });
+
+  const reconRunning = reconcileJob?.status === "running";
+  const reconStale = reconRunning && reconcileJob?.updated_at &&
+    Date.now() - new Date(reconcileJob.updated_at).getTime() > 5 * 60 * 1000;
+  const dailyRunning = dailyJob?.status === "running";
+  const dailyStale = dailyRunning && dailyJob?.updated_at &&
+    Date.now() - new Date(dailyJob.updated_at).getTime() > 30 * 60 * 1000;
+
   const { data: reconcileStats, refetch: refetchReconcile } = useQuery({
     queryKey: ["reconcile-stats"],
     queryFn: async () => {
-      const [{ count: total }, { count: linked }, { count: desligados }, { count: pendJoiners }, { count: pendLeavers }] = await Promise.all([
+      const [
+        { count: total }, { count: linked }, { count: desligados },
+        { count: aReconciliar }, { count: pendJoiners }, { count: pendLeavers },
+      ] = await Promise.all([
         (supabase as any).from("colaboradores").select("id", { count: "exact", head: true }),
         (supabase as any).from("colaboradores").select("id", { count: "exact", head: true }).not("entra_id", "is", null),
         (supabase as any).from("colaboradores").select("id", { count: "exact", head: true }).in("status", ["desligado", "inativo"]),
+        (supabase as any).from("colaboradores").select("id", { count: "exact", head: true })
+          .eq("status", "ativo").is("entra_id", null).not("email", "is", null),
         (supabase as any).from("eventos_jml").select("id", { count: "exact", head: true }).eq("tipo", "joiner").eq("status", "pendente"),
         (supabase as any).from("eventos_jml").select("id", { count: "exact", head: true }).eq("tipo", "leaver").eq("status", "pendente"),
       ]);
-      return { total: total || 0, linked: linked || 0, desligados: desligados || 0, pendJoiners: pendJoiners || 0, pendLeavers: pendLeavers || 0 };
+      return {
+        total: total || 0, linked: linked || 0, desligados: desligados || 0,
+        aReconciliar: aReconciliar || 0,
+        pendJoiners: pendJoiners || 0, pendLeavers: pendLeavers || 0,
+      };
     },
     refetchInterval: 15000,
   });
 
+  // Refetch stats quando um job termina
+  useEffect(() => {
+    if (reconcileJob?.status === "done" || dailyJob?.status === "done") {
+      refetchReconcile();
+    }
+  }, [reconcileJob?.status, dailyJob?.status, refetchReconcile]);
+
   const handleReconcile = useCallback(async () => {
-    setReconciling(true);
     try {
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reconcile-identities`;
       const res = await authedFetch(url, { method: "POST", headers: { "Content-Type": "application/json" } });
       const body = await res.json();
-      if (!res.ok) {
+      if (!res.ok && res.status !== 202) {
         toast({ title: "Erro na reconciliação", description: body.error || `HTTP ${res.status}`, variant: "destructive" });
       } else {
-        const s = body.stats;
         toast({
-          title: "Reconciliação concluída",
-          description: `${s.linked_entra} linkados no Entra, ${s.joiners_reconciled} joiners resolvidos, ${s.leavers_generated} leavers gerados, ${s.disable_enqueued} desabilitações enfileiradas`,
+          title: body.already_running ? "Reconciliação já em andamento" : "Reconciliação iniciada",
+          description: "Acompanhe o progresso no painel abaixo.",
         });
-        refetchReconcile();
+        refetchReconcileJob();
       }
     } catch (err: unknown) {
       toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
     }
-    setReconciling(false);
-  }, [toast, refetchReconcile]);
+  }, [toast, refetchReconcileJob]);
+
+  const handleDailyCycle = useCallback(async () => {
+    setCycleRunning(true);
+    try {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/run-daily-cycle`;
+      const res = await authedFetch(url, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skip_csv: false }),
+      });
+      const body = await res.json();
+      if (!res.ok && res.status !== 202) {
+        toast({ title: "Erro no ciclo diário", description: body.error || `HTTP ${res.status}`, variant: "destructive" });
+      } else {
+        toast({
+          title: body.already_running ? "Ciclo já em andamento" : "Ciclo diário iniciado",
+          description: "Etapas: CSV → Reconciliar → Processar fila.",
+        });
+        refetchDaily();
+      }
+    } catch (err: unknown) {
+      toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
+    }
+    setCycleRunning(false);
+  }, [toast, refetchDaily]);
 
   const { data: connectorStats } = useQuery({
     queryKey: ["connector-stats"],
@@ -269,9 +339,8 @@ export default function IntegracoesPage() {
               </div>
               <div className="rounded border p-2">
                 <div className="text-muted-foreground">A reconciliar</div>
-                <div className="text-lg font-semibold text-amber-600">
-                  {Math.max(0, reconcileStats.total - reconcileStats.linked - reconcileStats.desligados)}
-                </div>
+                <div className="text-lg font-semibold text-amber-600">{reconcileStats.aReconciliar}</div>
+                <div className="text-[10px] text-muted-foreground">ativos sem entra_id</div>
               </div>
               <div className="rounded border p-2">
                 <div className="text-muted-foreground">Desligados</div>
@@ -286,16 +355,27 @@ export default function IntegracoesPage() {
             </div>
           )}
           <div className="text-sm text-muted-foreground">
-            Consulta o Microsoft Graph em lote para descobrir quem já existe no Entra ID (gravando o vínculo),
-            marca joiners pendentes como concluídos quando o usuário já existe, e enfileira <code>disable</code> +{" "}
-            <code>disable_entra</code> para desligados sem processamento. Pode levar alguns minutos.
+            Fluxo diário: <strong>CSV do SharePoint</strong> → <strong>Reconciliar identidades</strong> (linka Entra, resolve joiners, gera leavers/disable) → <strong>Processar fila</strong> (executa disable/enable/assign no Entra).
+            O botão abaixo executa a reconciliação isoladamente; use "Rodar ciclo diário" para orquestrar as 3 etapas.
           </div>
-          <Button onClick={handleReconcile} disabled={reconciling}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${reconciling ? "animate-spin" : ""}`} />
-            {reconciling ? "Reconciliando..." : "Rodar reconciliação agora"}
-          </Button>
+
+          {reconcileJob && <ReconcileProgressPanel job={reconcileJob} />}
+
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={handleReconcile} disabled={reconRunning && !reconStale}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${reconRunning && !reconStale ? "animate-spin" : ""}`} />
+              {reconRunning && !reconStale ? "Reconciliando..." : "Rodar reconciliação"}
+            </Button>
+            <Button variant="secondary" onClick={handleDailyCycle} disabled={(dailyRunning && !dailyStale) || cycleRunning}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${(dailyRunning && !dailyStale) || cycleRunning ? "animate-spin" : ""}`} />
+              {dailyRunning && !dailyStale ? "Ciclo diário em andamento..." : "Rodar ciclo diário completo"}
+            </Button>
+          </div>
+
+          {dailyJob && <ReconcileProgressPanel job={dailyJob} label="Ciclo diário" />}
         </CardContent>
       </Card>
+
 
 
       <Card className="border-primary/20">
@@ -423,6 +503,41 @@ function CsvProgressPanel({ job }: { job: any }) {
       )}
       {isError && job.error && <p className="text-sm text-destructive">{job.error}</p>}
       {job.filename && <p className="text-xs text-muted-foreground">Arquivo: {job.filename}</p>}
+    </div>
+  );
+}
+
+function ReconcileProgressPanel({ job, label }: { job: any; label?: string }) {
+  const isDone = job.status === "done";
+  const isError = job.status === "error";
+  const isRunning = job.status === "running";
+  const updatedAtMs = job.updated_at ? new Date(job.updated_at).getTime() : 0;
+  const staleWindow = job.tipo === "daily_cycle" ? 30 * 60 * 1000 : 10 * 60 * 1000;
+  const isStale = isRunning && Date.now() - updatedAtMs > staleWindow;
+  const pct = job.users_percent || 0;
+  const relTime = updatedAtMs ? new Date(updatedAtMs).toLocaleTimeString("pt-BR") : "—";
+
+  return (
+    <div className="rounded-md border p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        {isError ? <AlertCircle className="h-4 w-4 text-destructive" /> :
+         isDone ? <CheckCircle className="h-4 w-4 text-success" /> :
+         <RefreshCw className="h-4 w-4 animate-spin text-primary" />}
+        <span className="font-medium text-sm">{label || "Reconciliação"}: {job.message || job.phase || "iniciando…"}</span>
+        <span className="ml-auto text-xs text-muted-foreground">{relTime}</span>
+      </div>
+      <Progress value={pct} className="h-2" />
+      <div className="flex justify-between text-xs text-muted-foreground">
+        <span>Fase: {job.phase || "—"}</span>
+        <span>{pct}%</span>
+      </div>
+      {isStale && (
+        <div className="rounded-md border border-warning/30 bg-warning/10 p-2 text-xs text-warning-foreground flex items-center gap-2">
+          <AlertTriangle className="h-3 w-3" />
+          Sem atualização há mais de {Math.round(staleWindow / 60000)} min — rode novamente.
+        </div>
+      )}
+      {isError && job.error && <p className="text-xs text-destructive">{job.error}</p>}
     </div>
   );
 }
