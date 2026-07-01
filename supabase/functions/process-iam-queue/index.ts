@@ -725,7 +725,7 @@ async function fetchAllCsvColaboradores(supabase: any): Promise<any[]> {
   while (true) {
     const { data, error } = await supabase
       .from("colaboradores")
-      .select("id, nome, email, matricula, sam_account_name, entra_id, origem")
+      .select("id, nome, email, matricula, sam_account_name, entra_id, origem, status")
       .eq("origem", "csv")
       .range(from, from + PAGE - 1);
     if (error) throw error;
