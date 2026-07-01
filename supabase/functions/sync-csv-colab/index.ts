@@ -1046,11 +1046,16 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
           // Gap 5: Re-provision profiles on cargo change
           if (item.data.cargo_id !== item.oldCargoId) {
-            await provisionCargoAcessosServer(
-              sb, item.id, item.data.cargo_id, item.oldCargoId,
-              sam, item.data.nome || "", item.data.email || ""
-            );
+            if (Date.now() - runStart > PROVISION_BUDGET_MS) {
+              skippedProvisions++;
+            } else {
+              await provisionCargoAcessosServer(
+                sb, item.id, item.data.cargo_id, item.oldCargoId,
+                sam, item.data.nome || "", item.data.email || ""
+              );
+            }
           }
+
         }
       }
     }
