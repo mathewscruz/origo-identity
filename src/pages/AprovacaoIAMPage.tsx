@@ -429,27 +429,52 @@ export default function AprovacaoIAMPage() {
       )}
 
       {/* Reconcile banner */}
-      {isAdmin && createIfNotExistsCount > 0 && (
+      {isAdmin && (createIfNotExistsCount > 0 || reconcileRunning || reconcileJob) && (
         <Card className="border-blue-300 bg-blue-50 dark:bg-blue-950/20">
           <CardContent className="py-4 flex items-center justify-between gap-4">
             <div className="flex items-start gap-3">
-              <Sparkles className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
+              <Sparkles className={`h-5 w-5 text-blue-600 mt-0.5 shrink-0 ${reconcileRunning ? "animate-pulse" : ""}`} />
               <div className="text-sm">
-                <p className="font-medium text-blue-900 dark:text-blue-200">
-                  {createIfNotExistsCount.toLocaleString("pt-BR")} criações de usuário na fila
-                </p>
-                <p className="text-blue-800 dark:text-blue-300/90">
-                  Muitas dessas podem já existir no Entra ID. Rode a reconciliação para cancelar as duplicadas e deixar só os usuários realmente novos para aprovar.
-                </p>
+                {reconcileRunning ? (
+                  <>
+                    <p className="font-medium text-blue-900 dark:text-blue-200">
+                      Reconciliando contra Entra ID… {reconcileJob?.users_percent ?? 0}%
+                    </p>
+                    <p className="text-blue-800 dark:text-blue-300/90">
+                      {reconcileJob?.message || "Processando em segundo plano — você pode sair da tela."}
+                    </p>
+                    <div className="mt-2 h-1.5 w-64 rounded-full bg-blue-200 dark:bg-blue-900 overflow-hidden">
+                      <div className="h-full bg-blue-600 transition-all" style={{ width: `${reconcileJob?.users_percent ?? 0}%` }} />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-medium text-blue-900 dark:text-blue-200">
+                      {createIfNotExistsCount.toLocaleString("pt-BR")} criações de usuário na fila
+                    </p>
+                    <p className="text-blue-800 dark:text-blue-300/90">
+                      {reconcileJob?.status === "success"
+                        ? `Última reconciliação: ${reconcileJob.message}`
+                        : "Muitas dessas podem já existir no Entra ID. Rode a reconciliação para cancelar as duplicadas e deixar só os usuários realmente novos para aprovar."}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
-            <Button variant="default" size="sm" onClick={() => setReconcileOpen(true)} className="shrink-0" disabled={reconcileMutation.isPending}>
-              <Sparkles className="h-4 w-4 mr-2" />
-              {reconcileMutation.isPending ? "Reconciliando..." : "Reconciliar contra Entra"}
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => setReconcileOpen(true)}
+              className="shrink-0"
+              disabled={reconcileMutation.isPending || reconcileRunning}
+            >
+              <Sparkles className={`h-4 w-4 mr-2 ${reconcileRunning ? "animate-spin" : ""}`} />
+              {reconcileRunning ? "Reconciliando…" : reconcileMutation.isPending ? "Iniciando…" : "Reconciliar contra Entra"}
             </Button>
           </CardContent>
         </Card>
       )}
+
 
       {/* Toggle card */}
       <Card className={approvalMode ? "border-primary/40 bg-primary/5" : "border-muted"}>
