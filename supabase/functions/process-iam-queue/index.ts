@@ -575,63 +575,199 @@ Deno.serve(async (req) => {
     }
 
     // ─── RECONCILE MODE: scan queued create_if_not_exists against Entra ───
+    // Runs in background (EdgeRuntime.waitUntil) with progress tracked in sync_jobs.
     if (reconcileMode) {
       if (!TENANT_ID || !CLIENT_ID || !CLIENT_SECRET) {
         return jsonResponse({ error: "Credenciais Azure não configuradas" }, 500);
       }
-      const token = await getAzureToken(TENANT_ID, CLIENT_ID, CLIENT_SECRET);
 
-      let cancelled = 0;
-      let kept = 0;
-      let scanned = 0;
-      let cursor = 0;
-      const PAGE = 200;
-
-      while (true) {
-        const { data: items } = await supabase
-          .from("iam_queue")
-          .select("id, target_identity, payload_json, colaborador_id")
-          .eq("action_type", "create_if_not_exists")
-          .in("status", ["waiting_approval", "pending"])
-          .order("created_at", { ascending: true })
-          .range(cursor, cursor + PAGE - 1);
-        if (!items || items.length === 0) break;
-
-        for (const it of items) {
-          scanned++;
-          const payload = (it.payload_json || {}) as any;
-          const email = payload.mail || null;
-          const sam = payload.samAccountName || it.target_identity || null;
-          const { userId } = await resolveUserId(token, email, sam);
-
-          if (userId) {
-            await supabase.from("iam_queue").update({
-              status: "cancelled",
-              processed_at: new Date().toISOString(),
-              processed_by: "reconcile-create",
-              result_message: `Usuário já existe no Entra ID (${userId}) — cancelado pela reconciliação.`,
-              error_code: null,
-            }).eq("id", it.id);
-            if (it.colaborador_id) {
-              await supabase.from("colaboradores").update({ entra_id: userId }).eq("id", it.colaborador_id);
-            }
-            cancelled++;
-          } else {
-            kept++;
-          }
-        }
-
-        cursor += items.length;
-        if (items.length < PAGE) break;
+      // Concurrency guard: return existing running job if any
+      const { data: existing } = await supabase
+        .from("sync_jobs")
+        .select("id, status, users_total, users_created, users_updated, users_percent, message, updated_at")
+        .eq("tipo", "reconcile_entra")
+        .eq("status", "running")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (existing) {
+        return new Response(JSON.stringify({ success: true, already_running: true, job: existing }), {
+          status: 202, headers: corsHeaders,
+        });
       }
 
-      await supabase.from("auditoria").insert({
-        entidade: "iam_queue", acao: "reconciliar_create",
-        resumo: `Reconciliação: ${cancelled} canceladas, ${kept} mantidas de ${scanned} verificadas.`,
-        detalhes: { scanned, cancelled, kept },
-      });
+      // Count total items to process
+      const { count: totalCount } = await supabase
+        .from("iam_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("action_type", "create_if_not_exists")
+        .in("status", ["waiting_approval", "pending"]);
 
-      return jsonResponse({ success: true, mode: "reconcile-create", scanned, cancelled, kept });
+      const total = totalCount || 0;
+      const { data: job, error: jobErr } = await supabase
+        .from("sync_jobs")
+        .insert({
+          tipo: "reconcile_entra",
+          status: "running",
+          phase: "iniciando",
+          message: `Verificando ${total} item(ns) contra o Entra ID…`,
+          users_total: total,
+          users_created: 0,
+          users_updated: 0,
+          users_percent: 0,
+        })
+        .select("id")
+        .single();
+      if (jobErr || !job) {
+        return jsonResponse({ error: `Falha ao criar job: ${jobErr?.message}` }, 500);
+      }
+      const jobId = job.id;
+
+      const runReconcile = async () => {
+        let cancelled = 0;
+        let kept = 0;
+        let scanned = 0;
+        try {
+          const token = await getAzureToken(TENANT_ID, CLIENT_ID, CLIENT_SECRET);
+          const BATCH = 20; // Graph $batch limit
+          const PAGE = 200;
+          let cursor = 0;
+
+          while (true) {
+            const { data: items } = await supabase
+              .from("iam_queue")
+              .select("id, target_identity, payload_json, colaborador_id")
+              .eq("action_type", "create_if_not_exists")
+              .in("status", ["waiting_approval", "pending"])
+              .order("created_at", { ascending: true })
+              .range(cursor, cursor + PAGE - 1);
+            if (!items || items.length === 0) break;
+
+            // Process in Graph $batch chunks of 20
+            for (let i = 0; i < items.length; i += BATCH) {
+              const chunk = items.slice(i, i + BATCH);
+              const reqs = chunk.map((it, idx) => {
+                const p = (it.payload_json || {}) as any;
+                const email = p.mail || null;
+                const sam = p.samAccountName || it.target_identity || null;
+                const parts: string[] = [];
+                if (email) {
+                  const e = email.replace(/'/g, "''");
+                  parts.push(`mail eq '${e}'`);
+                  parts.push(`userPrincipalName eq '${e}'`);
+                }
+                if (sam) {
+                  const s = sam.replace(/'/g, "''");
+                  parts.push(`onPremisesSamAccountName eq '${s}'`);
+                }
+                const filter = parts.length ? parts.join(" or ") : `id eq 'none'`;
+                return {
+                  id: String(idx),
+                  method: "GET",
+                  url: `/users?$filter=${encodeURIComponent(filter)}&$select=id,mail,userPrincipalName&$top=1`,
+                };
+              });
+
+              let responses: any[] = [];
+              try {
+                const res = await fetch("https://graph.microsoft.com/v1.0/$batch", {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                  body: JSON.stringify({ requests: reqs }),
+                });
+                if (res.ok) {
+                  const body = await res.json();
+                  responses = body.responses || [];
+                } else {
+                  console.warn(`[reconcile] $batch failed ${res.status}: ${await res.text()}`);
+                }
+              } catch (e) {
+                console.warn(`[reconcile] $batch error`, e);
+              }
+
+              const foundMap = new Map<string, string>();
+              for (const r of responses) {
+                const users = r.body?.value || [];
+                if (users.length > 0) foundMap.set(String(r.id), users[0].id);
+              }
+
+              for (let idx = 0; idx < chunk.length; idx++) {
+                const it = chunk[idx];
+                scanned++;
+                const userId = foundMap.get(String(idx));
+                if (userId) {
+                  await supabase.from("iam_queue").update({
+                    status: "cancelled",
+                    processed_at: new Date().toISOString(),
+                    processed_by: "reconcile-create",
+                    result_message: `Usuário já existe no Entra ID (${userId}) — cancelado pela reconciliação.`,
+                    error_code: null,
+                  }).eq("id", it.id);
+                  if (it.colaborador_id) {
+                    await supabase.from("colaboradores").update({ entra_id: userId }).eq("id", it.colaborador_id);
+                  }
+                  cancelled++;
+                } else {
+                  kept++;
+                }
+              }
+
+              // Update job progress after each chunk
+              const percent = total > 0 ? Math.min(100, Math.floor((scanned / total) * 100)) : 0;
+              await supabase.from("sync_jobs").update({
+                phase: "verificando",
+                message: `${scanned}/${total} verificados · ${cancelled} canceladas · ${kept} mantidas`,
+                users_created: cancelled,
+                users_updated: kept,
+                users_percent: percent,
+                updated_at: new Date().toISOString(),
+              }).eq("id", jobId);
+            }
+
+            cursor += items.length;
+            if (items.length < PAGE) break;
+          }
+
+          await supabase.from("sync_jobs").update({
+            status: "success",
+            phase: "concluido",
+            message: `Reconciliação concluída: ${cancelled} canceladas, ${kept} mantidas de ${scanned} verificadas.`,
+            users_created: cancelled,
+            users_updated: kept,
+            users_percent: 100,
+            updated_at: new Date().toISOString(),
+          }).eq("id", jobId);
+
+          await supabase.from("auditoria").insert({
+            entidade: "iam_queue", acao: "reconciliar_create",
+            resumo: `Reconciliação: ${cancelled} canceladas, ${kept} mantidas de ${scanned} verificadas.`,
+            detalhes: { scanned, cancelled, kept, job_id: jobId },
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("[reconcile bg] failed:", msg);
+          await supabase.from("sync_jobs").update({
+            status: "error",
+            phase: "erro",
+            error: msg,
+            message: `Falha na reconciliação: ${msg}`,
+            updated_at: new Date().toISOString(),
+          }).eq("id", jobId);
+        }
+      };
+
+      // @ts-ignore EdgeRuntime is provided by Supabase Edge Functions runtime
+      if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
+        // @ts-ignore
+        EdgeRuntime.waitUntil(runReconcile());
+      } else {
+        // Fallback: fire and forget
+        runReconcile();
+      }
+
+      return new Response(JSON.stringify({
+        success: true, mode: "reconcile-create", job_id: jobId, total, background: true,
+      }), { status: 202, headers: corsHeaders });
     }
 
 
