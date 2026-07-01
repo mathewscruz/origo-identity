@@ -614,7 +614,7 @@ async function runReconciliation(sb: any, jobId: string) {
           dados_depois: { status: c.status },
         }));
         for (const batch of chunk(leaverEvents, 200)) {
-          const { error: ierr } = await sb.from("eventos_jml").insert(batch);
+          const { error: ierr } = await sb.from("eventos_jml").insert(batch, { ignoreDuplicates: true });
           if (ierr) stats.errors.push(`insert leaver events: ${ierr.message}`);
           else stats.leavers_generated += batch.length;
         }
