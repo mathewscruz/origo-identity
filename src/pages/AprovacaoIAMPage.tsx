@@ -386,9 +386,7 @@ export default function AprovacaoIAMPage() {
                 <div className="p-8 text-center text-sm text-muted-foreground">Carregando...</div>
               ) : filtered.length === 0 ? (
                 <EmptyState
-                  icon={tab === "waiting" ? CheckCircle2 : Clock}
-                  title={tab === "waiting" ? "Nada aguardando aprovação" : "Sem histórico"}
-                  description={tab === "waiting" ? "Todas as ações IAM foram processadas." : "Ainda não há decisões registradas."}
+                  message={tab === "waiting" ? "Nada aguardando aprovação. Todas as ações IAM foram processadas." : "Sem histórico de decisões ainda."}
                 />
               ) : (
                 <Table>
