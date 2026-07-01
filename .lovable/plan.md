@@ -1,49 +1,94 @@
-## Diagnóstico
+Plano completo em três frentes, conforme aprovado. Referências file:line vêm da auditoria.
 
-Olhei o banco e a rede do preview.
+## 1) Divergência CSV × Entra → itens de aprovação
 
-- O último `sync_jobs.tipo='reconcile_entra'` (`d5e6fb11-…`) está com `status='running'`, parou em 95% na fase `limpando_aprovacao` com a mensagem `2028/2028 avaliados · 2 no Entra · 2026 desligados · 0 mantidos` e **não recebe update há ~19 min**. Ele morreu (timeout do Edge Runtime, sem `try/finally`), mas ninguém marcou como `error`. A tabela `iam_queue` já não tem mais nada em `waiting_approval` — o trabalho real acabou; o que sobrou é só o registro zumbi.
-- O frontend (`src/pages/AprovacaoIAMPage.tsx:327`) faz polling a cada 3s enquanto `job.status === 'running'`. Como o job nunca vira `error`, o banner "Reconciliando… 95%" fica **para sempre**, e o botão "Reconciliar contra Entra" fica desabilitado — foi isso que você viu.
-- O banner de reconciliação também aparece mesmo com `createIfNotExistsCount = 0` porque a condição inclui `|| reconcileJob` (`AprovacaoIAMPage.tsx:432`), sem se importar se o job é antigo/concluído.
-- Existem opções redundantes na tela: "Congelar fila atual" aparece **duas vezes** (banner amarelo em `:409-428` e dentro do card "Modo Aprovação Obrigatória" em `:495-502`); o texto do dialog de reconciliar está longo demais; o subtítulo da página é técnico.
+Hoje o sistema é write-only: nenhum lugar lê `accountEnabled` do Entra para comparar com `colaboradores.status` (auditoria §3). Vou fechar isso dentro do "Reconciliar contra Entra" que já existe.
 
-## Correção
+**Backend — `supabase/functions/process-iam-queue/index.ts`**
 
-### 1. Backend — `supabase/functions/process-iam-queue/index.ts`
+- Em `fetchAllGraphUsers` (`:594-606`) adicionar `accountEnabled` ao `$select`.
+- Em `buildEntraUserIndex` (`:624-667`) persistir `accountEnabled` no objeto indexado.
+- Dentro do `runReconcile`, após a fase `vinculando_colaboradores`, adicionar nova fase `checando_divergencia_status`:
+  - Para cada colaborador com match no Entra:
+    - Se `colab.status IN ('desligado','inativo')` E `entra.accountEnabled === true` → enfileirar `disable_entra_account` (status `pending`, gate promove a `waiting_approval`).
+    - Se `colab.status === 'ativo'` E `entra.accountEnabled === false` E não há evento leaver em `eventos_jml` recente → enfileirar `enable_entra_account`.
+  - Deduplicação: só enfileirar se **não existir** item aberto (`status IN ('pending','waiting_approval')`) para o mesmo `colaborador_id` + `action_type`. Usa a mesma normalização já existente em `enqueue.ts`.
+  - Payload inclui `reason: 'status_divergence'`, `colab_status`, `entra_account_enabled`, `entra_id`, `displayName`, `mail`.
+- Somar no relatório final do `sync_jobs.message` e no `auditoria`: `X divergências ativa→inativa · Y divergências inativa→ativa`.
 
-- Envolver `runReconcile` em `try/catch/finally`.
-  - `catch`: marcar `sync_jobs` como `status='error'`, `phase='falha'`, `error=<mensagem>`, `updated_at=now()`.
-  - `finally`: se, ao sair, o registro ainda estiver `running`, promover para `error` com mensagem "Execução interrompida inesperadamente".
-- Endurecer o guard de job travado que roda no início da rota `reconcile-create`: se o último `reconcile_entra` estiver `running` e `updated_at` for mais antigo que **3 min**, marcar como `error` e permitir novo start (hoje o corte é 5 min e mais frouxo).
-- Emitir `updated_at = now()` a cada batch do cancelamento (a cada 500) durante a fase `limpando_aprovacao`, para o próprio corte de "stale" não disparar em vão.
+**Frontend — `src/pages/AprovacaoIAMPage.tsx`**
 
-### 2. Dados — corrigir o job zumbi agora
+- Adicionar rótulos em `actionLabels` (`:43-62`):
+  - `disable_entra_account: "Desabilitar conta (Entra)"`
+  - `enable_entra_account: "Reabilitar conta (Entra)"`
+- No detalhe (`Sheet`, `:646-697`) quando `payload.reason === 'status_divergence'`, mostrar bloco:
+  > "Base: <status DB> · Entra: <habilitado/desabilitado>"
+  para o aprovador entender o motivo antes de decidir.
 
-Fazer um update pontual em `sync_jobs` marcando `d5e6fb11-…` como `status='error'`, `phase='timeout'`, `error='Job interrompido — reconciliação retomada.'`. Assim o banner some imediatamente.
+## 2) Contas órfãs no Entra → itens de revisão
 
-### 3. Frontend — `src/pages/AprovacaoIAMPage.tsx`
+**Backend — `process-iam-queue/index.ts`, dentro do `runReconcile`**
 
-- **Detecção de "stale" no cliente:** considerar `reconcileRunning = job.status === 'running' && (now - job.updated_at) < 3 min`. Aplicar em:
-  - condição do banner (`:432`),
-  - `disabled` do botão (`:469`),
-  - `refetchInterval` do polling (`:327`) — para de pollar se `stale`.
-- **Estado "travado":** quando `job.status === 'running'` mas `stale`, mostrar mensagem "Última execução parou em X% — clique para rodar novamente" e liberar o botão.
-- **Banner só quando fizer sentido:** exibir apenas se `createIfNotExistsCount > 0` ou `reconcileRunning === true`. Se o job apenas terminou (`success`/`error`), sem itens na fila, esconder o banner (mantendo o resumo dentro do dialog quando o usuário abrir).
-- **Remover redundância:**
-  - Tirar o botão "Congelar fila atual" do card "Modo Aprovação Obrigatória" (`:495-502`). Mantido só no banner amarelo (contexto real de uso: existem `pending` legados).
-- **Textos:**
-  - Subtítulo curto: "Aprove ou recuse cada ação IAM antes que ela vá para o AD/Entra."
-  - Descrição do dialog de reconciliação encurtada (uma frase): "Compara a base com o Entra ID: cancela criações de quem já existe lá e de colaboradores desligados."
-  - Toast do disparo: "Reconciliação iniciada — acompanhe o progresso aqui." (remover o parênteses com contagem e o "você pode sair da tela").
-- **Barra de progresso mais honesta:** exibir também `phase` em label humano ("Baixando Entra…", "Vinculando colaboradores…", "Limpando fila…") e o timestamp do último update ("atualizado há 4s"). Se `stale`, mostra "sem atualização há Xm".
+- Nova fase `detectando_orfaos` após checagem de divergência:
+  - Para cada usuário Entra que **não** casou com nenhum colaborador (`matched === false`), aplicar filtros de exclusão:
+    - Domínio `@` estranho ao tenant corporativo (guest, `#EXT#`).
+    - Contas de sistema / conhecidas em `contas_admin_conhecidas` (tabela já existe).
+    - Prefixos técnicos (`svc.`, `admin.`, `test.`, `sa.`) — configurável via `parametros(chave='iam_orphan_ignore_prefixes')`.
+  - Restantes são "órfãos": enfileirar `review_orphan_entra` com `status='waiting_approval'` (pula gate: já nasce em revisão).
+  - Payload: `entra_id`, `displayName`, `userPrincipalName`, `mail`, `accountEnabled`, `createdDateTime`, `lastSignInDateTime` (adicionar `signInActivity` ao `$select` do Graph — só está disponível com licença adequada; se vier `null`, apenas omitir do payload).
+  - Deduplicação por `entra_id` — não recriar se já existe item aberto.
 
-### 4. Fora de escopo (não farei agora, mas anoto)
+**Frontend — `AprovacaoIAMPage.tsx`**
 
-- Reindexação/lint de `iam_queue(status, action_type)` — pode ser feita depois se `slow_queries` mostrar dor.
-- Job cron que auto-marca reconcile stale — o guard no start da rota já resolve na prática enquanto os disparos forem manuais.
+- Adicionar `review_orphan_entra: "Revisar conta órfã (Entra)"` em `actionLabels`.
+- Aprovar orfão = enfileirar `disable_entra_account` para aquele `entra_id` (novo passo em `approveMutation` quando `action_type === 'review_orphan_entra'`).
+- Recusar = marca `status='rejected'`, `rejection_reason='conta legítima'` e grava `contas_admin_conhecidas` para não voltar (via edge helper).
 
-## Resultado esperado
+## 3) Saúde e otimização do fluxo de aprovação
 
-- Banner e botão voltam ao normal imediatamente após o update em `sync_jobs`.
-- Uma reconciliação futura que morrer sem terminar vira `error` sozinha e libera nova execução em ≤ 3 min.
-- Tela mais limpa: um único ponto de "congelar fila", banner de reconciliação só quando há trabalho a fazer, textos mais curtos e progresso com fase legível.
+Baseado nos gaps 5.2 a 5.10 da auditoria. Escolhi os que afetam usuário/perf direto.
+
+**a. Índices em `iam_queue`** (gap 5.6)
+Migração adicionando:
+```
+CREATE INDEX IF NOT EXISTS ix_iam_queue_status_action ON public.iam_queue(status, action_type);
+CREATE INDEX IF NOT EXISTS ix_iam_queue_status_created ON public.iam_queue(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_iam_queue_colab_status ON public.iam_queue(colaborador_id, action_type, status);
+```
+Elimina seq scans do worker (`:1173-1185`) e da dedup do item 1.
+
+**b. Backfills em batch** (gaps 5.4 / 5.5)
+Trocar os loops `Promise.all` individuais em `process-iam-queue/index.ts:1046-1052` e `:1083-1097` por uma RPC única `apply_reconcile_updates(queue_updates jsonb, colab_updates jsonb)` que faz `UPDATE ... FROM jsonb_to_recordset(...)`. Reduz N queries a 2 para o Postgres. Migração cria a função como `SECURITY DEFINER` com `search_path=public`.
+
+**c. Remover polling redundante** (gap 5.7)
+Em `AprovacaoIAMPage.tsx:165`, remover `refetchInterval: 15000` da query `iam-approval-queue`. Realtime (`:200-209`) já cobre.
+
+**d. Filtros com todas as opções** (gap 5.2)
+Trocar `filterOptions` (`:174-186`) por RPC `iam_queue_distinct_actions_origins(status_filter text[])` retornando `DISTINCT action_type, requested_by`. Some the `.limit(2000)` cliff.
+
+**e. Busca server-side** (gap 5.3)
+Passar `busca` como parâmetro `.or("target_identity.ilike.%q%,payload_json->>displayName.ilike.%q%")` na query paginada; remover o filtro client-side. Assim busca funciona na fila inteira.
+
+**f. Histórico completo** (gap 5.10)
+Remover o `.not("approved_at","is",null)` (`:158`). Passar a mostrar cancelamentos automáticos (ex.: pelo reconciliador) no Histórico. Coluna Status já distingue.
+
+**g. Rótulo "Selecionar tudo"** (gap 5.9)
+Renomear para "Selecionar página" — deixa claro que é a página corrente. Sem mudança de comportamento.
+
+## Fora de escopo agora
+
+- Bypass de gate para suspensão preventiva do `preLeaver` (gap 5.1) — decisão de segurança separada, prefiro perguntar antes de mexer.
+- Reordenação de filas por prioridade / SLA.
+
+## Ordem de execução
+
+1. Migração: índices + RPC `apply_reconcile_updates` + RPC `iam_queue_distinct_actions_origins`.
+2. Backend `process-iam-queue`: Graph `$select`, novas fases (divergência + órfãos), enqueue com dedup, uso das RPCs.
+3. Frontend `AprovacaoIAMPage`: rótulos, detalhe com motivo, aprovar-órfão, histórico sem filtro, busca server-side, remoção do polling, rename.
+
+## Como validar
+
+- Rodar "Reconciliar contra Entra" com o gate ligado; conferir na tabela `iam_queue` que aparecem `disable_entra_account` / `enable_entra_account` / `review_orphan_entra` como `waiting_approval`, e nada duplicado ao rodar 2x seguidas.
+- Aprovar um `disable_entra_account` e verificar em `process-iam-queue` que o Graph PATCH `accountEnabled=false` é enviado.
+- `EXPLAIN` da query do worker antes/depois para confirmar uso do novo índice.
+- Histórico exibindo os `cancelled` da reconciliação anterior.
