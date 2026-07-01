@@ -613,10 +613,15 @@ async function runReconciliation(sb: any, jobId: string) {
           dados_antes: { matricula: c.matricula, nome: c.nome, status: "ativo" },
           dados_depois: { status: c.status },
         }));
-        for (const batch of chunk(leaverEvents, 200)) {
-          const { error: ierr } = await sb.from("eventos_jml").insert(batch, { ignoreDuplicates: true });
-          if (ierr) stats.errors.push(`insert leaver events: ${ierr.message}`);
-          else stats.leavers_generated += batch.length;
+        for (const event of leaverEvents) {
+          const { error: ierr } = await sb.from("eventos_jml").insert(event);
+          if (ierr) {
+            const msg = ierr.message || String(ierr);
+            if (ierr.code === "23505" || msg.includes("duplicate key")) continue;
+            stats.errors.push(`insert leaver events: ${msg}`);
+          } else {
+            stats.leavers_generated++;
+          }
         }
 
         await updateJob(sb, jobId, {
