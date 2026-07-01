@@ -385,6 +385,21 @@ function generateOrigoEmail(displayName: string, existingEmails: Set<string>): s
 }
 
 async function processCsvData(sb: any, csvText: string, filename: string) {
+  // ── 0. Watchdog: mark stale running jobs as errored to unblock UI ──
+  const staleCutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  await sb.from("sync_jobs")
+    .update({ status: "error", error: "Interrompido por timeout do runtime", message: "Interrompido por timeout do runtime; dados parciais já importados" })
+    .eq("tipo", "csv_colab")
+    .eq("status", "running")
+    .lt("updated_at", staleCutoff);
+
+  // Time budget for inline provisioning of cargo access (in ms).
+  // Beyond this, cargo provisioning is skipped inline and left to be re-provisioned
+  // via the "Reprovisionar Cargo" flow in the UI. Prevents runtime timeouts on bulk imports.
+  const runStart = Date.now();
+  const PROVISION_BUDGET_MS = 60_000;
+  let skippedProvisions = 0;
+
   // ── 1. Create sync_job ──
   const { data: job, error: jobErr } = await sb
     .from("sync_jobs")
@@ -392,6 +407,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     .select().single();
   if (jobErr) throw jobErr;
   const jobId = job.id;
+
 
   try {
     // ── 2. Parse CSV ──
@@ -831,34 +847,24 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       });
       for (const batch of chunk(iamEntries, 200)) await sb.from("iam_queue").insert(batch);
 
-      // Gap 5: Provision access profiles for new joiners (immediate - Gap 6 option A)
+      // Gap 5: Provision access profiles for new joiners — inline only while under time budget.
+      // Above the budget, cargo provisioning is deferred: user can trigger "Reprovisionar Cargo"
+      // per cargo in the UI. This prevents Edge Function timeouts on bulk imports.
+      // Per-user Entra sync (sync-user-access) is NOT called here — it happens after the
+      // create_if_not_exists action is processed by process-iam-queue, or on demand from the UI.
       for (const ins of insertedIds) {
-        if (ins.data.cargo_id && ins.data.sam_account_name) {
-          await provisionCargoAcessosServer(
-            sb, ins.id, ins.data.cargo_id, null,
-            ins.data.sam_account_name, ins.data.nome || "", ins.data.email || ""
-          );
+        if (!ins.data.cargo_id || !ins.data.sam_account_name) continue;
+        if (Date.now() - runStart > PROVISION_BUDGET_MS) {
+          skippedProvisions++;
+          continue;
         }
-
-        // Sync current Entra ID access as individual records
-        if (ins.data.email || ins.data.sam_account_name) {
-          try {
-            const syncUrl = `${supabaseUrl}/functions/v1/sync-user-access`;
-            await fetch(syncUrl, {
-              method: "POST",
-              headers: {
-                apikey: serviceKey,
-                Authorization: `Bearer ${serviceKey}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ colaborador_id: ins.id }),
-            });
-          } catch (e) {
-            console.warn(`[sync-user-access] Error for ${ins.id}:`, e);
-          }
-        }
+        await provisionCargoAcessosServer(
+          sb, ins.id, ins.data.cargo_id, null,
+          ins.data.sam_account_name, ins.data.nome || "", ins.data.email || ""
+        );
       }
     }
+
 
     if (toUpdate.length > 0) {
       const moverEvents = toUpdate.map(u => ({
@@ -905,8 +911,13 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
           // Revoke cargo-based access profiles (removes groups/licenses/apps)
           if (item.oldCargoId) {
-            await provisionCargoAcessosServer(sb, item.id, null, item.oldCargoId, sam, item.data.nome || "", item.data.email || "");
+            if (Date.now() - runStart > PROVISION_BUDGET_MS) {
+              skippedProvisions++;
+            } else {
+              await provisionCargoAcessosServer(sb, item.id, null, item.oldCargoId, sam, item.data.nome || "", item.data.email || "");
+            }
           }
+
 
           // Also remove resources from non-cargo profiles (manual/exception)
           const { data: otherAtribuicoes } = await sb.from("perfil_atribuicoes")
@@ -1035,11 +1046,16 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
           // Gap 5: Re-provision profiles on cargo change
           if (item.data.cargo_id !== item.oldCargoId) {
-            await provisionCargoAcessosServer(
-              sb, item.id, item.data.cargo_id, item.oldCargoId,
-              sam, item.data.nome || "", item.data.email || ""
-            );
+            if (Date.now() - runStart > PROVISION_BUDGET_MS) {
+              skippedProvisions++;
+            } else {
+              await provisionCargoAcessosServer(
+                sb, item.id, item.data.cargo_id, item.oldCargoId,
+                sam, item.data.nome || "", item.data.email || ""
+              );
+            }
           }
+
         }
       }
     }
@@ -1055,19 +1071,21 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     }
 
     // ── 12. Finalize ──
+    const skipNote = skippedProvisions > 0 ? ` (${skippedProvisions} provisionamentos de cargo diferidos — use "Reprovisionar Cargo")` : "";
     await sb.from("sync_jobs").update({
       status: "done", phase: "done", colab_percent: 100,
       colab_created: created, colab_updated: updated, colab_quarentena: leaverMatriculas.length,
-      message: `Concluído: ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos`,
+      message: `Concluído: ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos${skipNote}`,
     }).eq("id", jobId);
 
     await sb.from("auditoria").insert({
       entidade: "importacao_csv", acao: "importar",
       resumo: `CSV importado: ${totalRows} linhas → ${created} novos, ${updated} atualizados, ${leaverMatriculas.length} removidos`,
-      detalhes: { filename, totalRows, created, updated, unchanged, removed: leaverMatriculas.length, jobId },
+      detalhes: { filename, totalRows, created, updated, unchanged, removed: leaverMatriculas.length, jobId, skippedProvisions },
     });
 
-    return { success: true, jobId, created, updated, unchanged, removed: leaverMatriculas.length, total: totalRows };
+    return { success: true, jobId, created, updated, unchanged, removed: leaverMatriculas.length, total: totalRows, skippedProvisions };
+
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro desconhecido";
     console.error("Processing error:", msg);
