@@ -1,110 +1,46 @@
-## Objetivos
+## Problema
 
-1. **Aprovação instantânea** — reduzir latência entre clicar "Aprovar" e ver o item sair da fila / começar a executar.
-2. **Paginação** na tela `/aprovacao-iam` (hoje puxa até 1000 e renderiza tudo — some da tela e trava filtros).
-3. **Corrigir erro `not_found` em massa** — no CSV, ao invés de enfileirar `create_if_not_exists` para 3.899 pessoas, fazer varredura prévia no Entra ID e só enfileirar os que realmente faltam.
+Ao clicar em **"Reconciliar contra Entra"**, o processo é executado em modo síncrono dentro da Edge Function `process-iam-queue`:
 
----
+- Faz **uma chamada HTTP separada ao Microsoft Graph por item** (3.819 chamadas sequenciais).
+- Cada chamada leva ~200-500ms → o processo total demora **15-30 minutos**.
+- Edge Functions têm limite de execução (~150s / desconexão do cliente encerra o request).
+- Como o `fetch` está atrelado à aba do navegador, sair da tela **aborta a requisição** e o worker para no meio.
 
-## Diagnóstico do que está acontecendo hoje
+Por isso o usuário precisa ficar clicando várias vezes: cada clique processa só o que couber antes do timeout, e o restante fica pendente.
 
-### Latência ao aprovar
-- `approveMutation` (em `AprovacaoIAMPage.tsx` linhas 179–200) faz `UPDATE status='pending'` e depois insere auditoria — **mas não dispara o worker**.
-- O worker (`process-iam-queue`) só roda quando alguém chama `triggerEntraProcessing()` ou pelo botão manual. Enquanto isso, o item fica em `pending` esperando o próximo tick, dando a impressão de "não fez nada".
-- A tela usa `refetchInterval: 10000` — mesmo com realtime ligado, o loading state de 200 itens travando renderiza lento.
+## Solução
 
-### `Retry 1/10 — not_found` em massa
-- No screenshot são todos `create_if_not_exists` do CSV. O AD Agent tenta encontrar o usuário no AD, não acha, marca como `user_not_found` → entra em retry exponencial (5min, 10min, 20min…) até 10 tentativas.
-- Isso acontece porque `sync-csv-colab` (linha ~820) enfileira `create_if_not_exists` para **todo colaborador novo do CSV**, sem antes verificar se ele já existe no AD/Entra por outros meios (`onPremisesSamAccountName`, `mail`, `userPrincipalName`).
-- Muitos desses 3.899 já existem no Entra ID mas com identidade diferente (email empresarial vs `@ebessolar.local`, ou casing diferente). O agente PowerShell no cliente devolve `not_found` porque procura por SAM e o SAM foi gerado pela regra do CSV, que nem sempre bate.
+Rodar a reconciliação em **background persistente** com progresso rastreável, retornando resposta imediata ao cliente. A UI passa a **acompanhar o job** em vez de segurar a requisição HTTP.
 
-### Paginação
-- Query atual: `.limit(1000)` + filtro/render client-side. Para 3.911+ itens, a tabela renderiza tudo de uma vez — daí o "demorou para atualizar a tela".
+### 1. Backend — `process-iam-queue` modo `reconcile-create`
 
----
+- Ao receber `mode: "reconcile-create"`, criar um registro em `sync_jobs` (`tipo = 'reconcile_entra'`, `status = 'running'`, `total`, `processados`, `sucesso`, `erros`).
+- Disparar o loop de reconciliação via `EdgeRuntime.waitUntil(...)` — a Edge Function retorna **`202 Accepted` com `{ job_id }` imediatamente**, e o loop continua executando no servidor mesmo se o cliente fechar a aba.
+- Substituir os lookups individuais por **Microsoft Graph `$batch` (20 usuários por requisição HTTP)** — reduz o tempo total em ~20x e diminui chance de throttling.
+- Atualizar `sync_jobs` a cada bloco processado (`processados`, `sucesso`, `erros`, `updated_at`), e marcar `status = 'success' | 'error'` no final com resumo.
+- Guarda de concorrência: se já existir um `sync_jobs` `reconcile_entra` com status `running`, retornar 409 com o `job_id` em execução (evita disparos duplicados).
 
-## Plano de mudanças
+### 2. Frontend — `AprovacaoIAMPage.tsx`
 
-### 1. Paginação server-side em `AprovacaoIAMPage.tsx`
-- Trocar o `useQuery` por paginação com `range()`:
-  - 50 itens por página (padrão), navegação com componente `TablePagination` já existente.
-  - Query paralela leve com `count: 'exact', head: true` para o total.
-- Mover filtro por `action_type`/`origem` para o servidor (`.eq('action_type', …)`, `.eq('requested_by', …)`) para reduzir payload. Busca por texto continua client-side apenas na página atual.
-- Manter realtime, mas em vez de refetch completo, invalidar só o `queryKey` da página atual.
+- `reconcileMutation` passa a apenas **iniciar o job** (POST → recebe `job_id`) e mostrar toast "Reconciliação iniciada em segundo plano".
+- Novo hook `useReconcileJobStatus` faz polling em `sync_jobs` a cada 5s enquanto houver job `running` (ou toda vez que a página abre) para exibir:
+  - Progresso no card superior: `Reconciliando: 1.240 / 3.819 verificados · 812 canceladas · 428 mantidas`.
+  - Botão desabilitado enquanto `running`, com spinner.
+- Ao concluir: toast final com o resumo, refetch da fila e da contagem.
+- Como o estado vive no banco, **o progresso continua visível mesmo se o usuário sair e voltar depois** — a próxima abertura da página já mostra o job em andamento ou o último resultado.
 
-### 2. Aprovação imediata + UI otimista
-- No `onMutate` da `approveMutation`, remover otimisticamente os IDs aprovados do cache (item some da tela na hora).
-- Após o `UPDATE`, disparar `triggerEntraProcessing(true)` **em background** (fire-and-forget) — o worker começa a executar antes mesmo do toast fechar.
-- Mesmo pattern para `rejectMutation` (só remove da tela, sem trigger).
-- Reduzir o `refetchInterval` do modo "waiting" para 5s enquanto houver aprovação em andamento; voltar para 30s quando idle.
-- Toast passa a mostrar "Aprovado — executando…" com ação de "Ver histórico".
+### 3. Sem mudanças de schema
 
-### 3. Reduzir `not_found` na criação em massa (a peça central)
+`sync_jobs` já existe com os campos usados por outros syncs (tipo, status, total, processados, sucesso, erros, mensagem, updated_at). Reaproveitamos o mesmo padrão.
 
-Nova função `pre-check-identities` no fluxo do `sync-csv-colab` (executada **antes** de enfileirar `create_if_not_exists`):
+## Arquivos afetados
 
-```text
-CSV parsed → lista de novos joiners (toInsert)
-  ↓
-[novo passo] pre-check no Entra ID em lote:
-  - Graph batch: /users?$filter=mail in (...) or userPrincipalName in (...) or onPremisesSamAccountName in (...)
-  - Batches de 15 filtros por request (limite Graph OData)
-  ↓
-Marca em cada joiner: entra_id_encontrado? sim / não
-  ↓
-Se SIM  → grava colaborador com entra_id preenchido, NÃO enfileira create_if_not_exists
-          (apenas registra JML "joiner_existing_identity" e provisiona acessos do cargo)
-Se NÃO  → enfileira create_if_not_exists normalmente
-```
+- `supabase/functions/process-iam-queue/index.ts` — modo reconcile passa a rodar em background com Graph `$batch` e registro em `sync_jobs`.
+- `src/pages/AprovacaoIAMPage.tsx` — mutation dispara e retorna; adiciona polling de `sync_jobs` e UI de progresso.
 
-Complementos:
-- Se o joiner é encontrado no Entra mas o `samAccountName` do CSV diverge, usar o SAM do Entra (verdade em produção) e atualizar o registro em `colaboradores`.
-- Enfileirar `create_if_not_exists` para o AD local **apenas quando `entra_id_encontrado = false E existe agente AD configurado**. Se não houver agente, cair para "criar somente no Entra" via novo `action_type = create_entra` (a implementar no `process-iam-queue`).
-- Para os 3.899 já enfileirados hoje: uma job manual (botão "Reconciliar fila `create_if_not_exists`" na página de Aprovação IAM, admin only) que pega os `waiting_approval`/`pending` desse tipo, roda o mesmo pre-check e:
-  - marca como `cancelled` os que já existem (com `result_message: "usuário já existe no Entra — reconciliado"`),
-  - deixa em `waiting_approval` só os que realmente faltam.
+## Resultado esperado
 
-### 4. Ajuste no retry para `not_found`
-- Hoje `iam-agent-api` re-tenta `user_not_found` até 10x. Depois da mudança #3, isso praticamente some. Ainda assim, baixar `max_retries` de 10 → 3 para `user_not_found` (não é falha transitória de rede — é ausência real do usuário) e mudar `result_message` para uma ação clara: "Usuário não existe no AD — aprovar criação manual ou revisar identidade".
-
----
-
-## Detalhes técnicos
-
-### Arquivos afetados
-- `src/pages/AprovacaoIAMPage.tsx` — paginação, UI otimista, banner de reconciliação.
-- `src/lib/triggerEntraProcessing.ts` — reaproveitado (fire-and-forget após approve).
-- `supabase/functions/sync-csv-colab/index.ts` — pre-check antes de enfileirar `create_if_not_exists`.
-- `supabase/functions/process-iam-queue/index.ts` — novo endpoint `POST /reconcile-create-queue` (varre a fila existente contra Graph e cancela duplicados).
-- `supabase/functions/iam-agent-api/index.ts` — `max_retries` reduzido para 3 quando `error_code === "user_not_found"`.
-
-### Sem migração de banco
-Nenhuma alteração de schema; apenas UPDATEs de status via lógica.
-
-### Diagrama de fluxo (novo)
-
-```text
-sync-csv-colab
-   │
-   ├── parse CSV → toInsert[]
-   │
-   ├── pre-check Entra (Graph batch)
-   │      │
-   │      ├── found      → grava entra_id, NÃO enfileira create
-   │      └── not found  → enfileira create_if_not_exists (waiting_approval)
-   │
-   └── UI aprovador
-          │
-          ├── clica "Aprovar" → UPDATE status=pending + fire-and-forget triggerEntraProcessing
-          │                       ↓
-          │                    process-iam-queue roda imediatamente
-          │
-          └── (opcional) "Reconciliar fila" → cancela create_if_not_exists que já existem no Entra
-```
-
----
-
-## Fora de escopo
-- Reescrever a lógica de retry global (só ajuste pontual em `user_not_found`).
-- Mexer no fluxo Pré-Desligamento (segue como está).
-- Alterar RLS / roles.
+- Um único clique reconcilia **todos os 3.819 itens** sem intervenção manual.
+- Sair da tela **não interrompe** — o job continua no servidor.
+- A UI mostra progresso em tempo real e o resultado final quando o usuário voltar.
