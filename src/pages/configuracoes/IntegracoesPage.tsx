@@ -507,3 +507,38 @@ function CsvProgressPanel({ job }: { job: any }) {
   );
 }
 
+function ReconcileProgressPanel({ job, label }: { job: any; label?: string }) {
+  const isDone = job.status === "done";
+  const isError = job.status === "error";
+  const isRunning = job.status === "running";
+  const updatedAtMs = job.updated_at ? new Date(job.updated_at).getTime() : 0;
+  const staleWindow = job.tipo === "daily_cycle" ? 30 * 60 * 1000 : 10 * 60 * 1000;
+  const isStale = isRunning && Date.now() - updatedAtMs > staleWindow;
+  const pct = job.users_percent || 0;
+  const relTime = updatedAtMs ? new Date(updatedAtMs).toLocaleTimeString("pt-BR") : "—";
+
+  return (
+    <div className="rounded-md border p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        {isError ? <AlertCircle className="h-4 w-4 text-destructive" /> :
+         isDone ? <CheckCircle className="h-4 w-4 text-success" /> :
+         <RefreshCw className="h-4 w-4 animate-spin text-primary" />}
+        <span className="font-medium text-sm">{label || "Reconciliação"}: {job.message || job.phase || "iniciando…"}</span>
+        <span className="ml-auto text-xs text-muted-foreground">{relTime}</span>
+      </div>
+      <Progress value={pct} className="h-2" />
+      <div className="flex justify-between text-xs text-muted-foreground">
+        <span>Fase: {job.phase || "—"}</span>
+        <span>{pct}%</span>
+      </div>
+      {isStale && (
+        <div className="rounded-md border border-warning/30 bg-warning/10 p-2 text-xs text-warning-foreground flex items-center gap-2">
+          <AlertTriangle className="h-3 w-3" />
+          Sem atualização há mais de {Math.round(staleWindow / 60000)} min — rode novamente.
+        </div>
+      )}
+      {isError && job.error && <p className="text-xs text-destructive">{job.error}</p>}
+    </div>
+  );
+}
+
