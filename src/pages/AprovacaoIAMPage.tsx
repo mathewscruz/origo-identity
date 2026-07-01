@@ -222,15 +222,60 @@ export default function AprovacaoIAMPage() {
     mutationFn: async (ids: string[]) => {
       const { data: userData } = await supabase.auth.getUser();
       const uid = userData?.user?.id;
-      const { error } = await (supabase as any)
-        .from("iam_queue")
-        .update({ status: "pending", approved_by: uid, approved_at: new Date().toISOString(), rejection_reason: null })
-        .in("id", ids);
-      if (error) throw error;
+
+      // Buscar itens para saber se algum é revisão de órfão (fluxo especial)
+      const { data: rows } = await (supabase as any)
+        .from("iam_queue").select("id, action_type, payload_json, target_identity").in("id", ids);
+
+      const orphans = (rows || []).filter((r: any) => r.action_type === "review_orphan_entra");
+      const regularIds = ids.filter((id) => !orphans.find((o: any) => o.id === id));
+
+      // 1) Itens regulares: promove para "pending" (worker executa)
+      if (regularIds.length > 0) {
+        const { error } = await (supabase as any)
+          .from("iam_queue")
+          .update({ status: "pending", approved_by: uid, approved_at: new Date().toISOString(), rejection_reason: null })
+          .in("id", regularIds);
+        if (error) throw error;
+      }
+
+      // 2) Órfãos aprovados: marca revisão como success e enfileira disable_entra para a conta
+      if (orphans.length > 0) {
+        const nowIso = new Date().toISOString();
+        const { error: markErr } = await (supabase as any)
+          .from("iam_queue")
+          .update({
+            status: "success",
+            approved_by: uid,
+            approved_at: nowIso,
+            processed_at: nowIso,
+            processed_by: "orphan-approval",
+            result_message: "Revisão aprovada — conta enfileirada para desabilitação no Entra.",
+          })
+          .in("id", orphans.map((o: any) => o.id));
+        if (markErr) throw markErr;
+
+        const disableRows = orphans.map((o: any) => ({
+          action_type: "disable_entra",
+          status: "pending",
+          target_identity: o.target_identity || o.payload_json?.userPrincipalName || o.payload_json?.mail,
+          requested_by: "orphan-approval",
+          payload_json: {
+            reason: "orphan_approved",
+            entra_id: o.payload_json?.entra_id,
+            mail: o.payload_json?.mail || o.payload_json?.userPrincipalName,
+            samAccountName: null,
+            displayName: o.payload_json?.displayName,
+          },
+        }));
+        const { error: insErr } = await (supabase as any).from("iam_queue").insert(disableRows);
+        if (insErr) throw insErr;
+      }
+
       await (supabase as any).from("auditoria").insert({
         entidade: "iam_queue", acao: "aprovar",
-        resumo: `${ids.length} ação(ões) IAM aprovada(s)`,
-        detalhes: { ids },
+        resumo: `${ids.length} ação(ões) IAM aprovada(s)${orphans.length ? ` (${orphans.length} órfão(s))` : ""}`,
+        detalhes: { ids, orphan_ids: orphans.map((o: any) => o.id) },
       });
       // Fire-and-forget: kicks the worker immediately, don't await
       triggerEntraProcessing(true).catch(() => {});
