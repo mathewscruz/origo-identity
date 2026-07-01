@@ -602,6 +602,9 @@ async function fetchAllGraphUsers(token: string, onProgress?: (count: number) =>
     "employeeId",
     "otherMails",
     "proxyAddresses",
+    "accountEnabled",
+    "createdDateTime",
+    "signInActivity",
   ].join(",");
   let url = `https://graph.microsoft.com/v1.0/users?$select=${select}&$top=999`;
 
