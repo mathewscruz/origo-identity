@@ -145,8 +145,16 @@ export default function AprovacaoIAMPage() {
     refetchInterval: 30000,
   });
 
+  // Debounce a busca para não bater no banco a cada tecla
+  const [buscaDebounced, setBuscaDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setBuscaDebounced(busca.trim()), 300);
+    return () => clearTimeout(t);
+  }, [busca]);
+  useEffect(() => { setPage(0); }, [buscaDebounced]);
+
   // ─── Paginated queue ───
-  const queryKey = ["iam-approval-queue", tab, page, actionFilter, originFilter];
+  const queryKey = ["iam-approval-queue", tab, page, actionFilter, originFilter, buscaDebounced];
   const { data: pageData, isLoading, refetch } = useQuery({
     queryKey,
     queryFn: async () => {
@@ -156,14 +164,18 @@ export default function AprovacaoIAMPage() {
         .order("created_at", { ascending: false })
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
       if (tab === "waiting") q = q.eq("status", "waiting_approval");
-      else q = q.in("status", ["rejected", "success", "failed", "cancelled"]).not("approved_at", "is", null);
+      else q = q.in("status", ["rejected", "success", "failed", "cancelled"]);
       if (actionFilter !== "todos") q = q.eq("action_type", actionFilter);
       if (originFilter !== "todos") q = q.eq("requested_by", originFilter);
+      if (buscaDebounced) {
+        const safe = buscaDebounced.replace(/[%,()]/g, " ");
+        q = q.or(`target_identity.ilike.%${safe}%,payload_json->>displayName.ilike.%${safe}%,payload_json->>mail.ilike.%${safe}%`);
+      }
       const { data, error, count } = await q;
       if (error) throw error;
       return { items: (data || []) as IamQueueItem[], total: count || 0 };
     },
-    refetchInterval: 15000,
+    // Realtime cobre atualizações; sem polling aqui.
     placeholderData: (prev) => prev,
   });
 
@@ -171,30 +183,26 @@ export default function AprovacaoIAMPage() {
   const total = pageData?.total || 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  // ─── Available filter options (fetched separately, small) ───
+  // ─── Available filter options via RPC (sem truncar em 2000) ───
   const { data: filterOptions } = useQuery({
     queryKey: ["iam-filter-options", tab],
     queryFn: async () => {
-      const q: any = (supabase as any).from("iam_queue").select("action_type,requested_by").limit(2000);
-      if (tab === "waiting") q.eq("status", "waiting_approval");
-      else q.in("status", ["rejected", "success", "failed", "cancelled"]);
-      const { data } = await q;
-      const actions = Array.from(new Set((data || []).map((d: any) => d.action_type))).sort();
+      const statusFilter = tab === "waiting"
+        ? ["waiting_approval"]
+        : ["rejected", "success", "failed", "cancelled"];
+      const { data, error } = await (supabase as any).rpc("iam_queue_distinct_actions_origins", {
+        status_filter: statusFilter,
+      });
+      if (error) throw error;
+      const actions = Array.from(new Set((data || []).map((d: any) => d.action_type).filter(Boolean))).sort();
       const origins = Array.from(new Set((data || []).map((d: any) => d.requested_by).filter(Boolean))).sort();
       return { actions, origins };
     },
     refetchInterval: 60000,
   });
 
-  // Client-side text search only within the current page
-  const filtered = useMemo(() => {
-    const q = busca.toLowerCase().trim();
-    if (!q) return items;
-    return items.filter((it) => {
-      const hay = `${it.target_identity || ""} ${summarizePayload(it.payload_json)} ${it.action_type} ${it.requested_by || ""}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [items, busca]);
+  // Sem filtro client-side extra — a busca já é server-side.
+  const filtered = items;
 
   // Realtime — invalidate current page on any change
   useEffect(() => {
