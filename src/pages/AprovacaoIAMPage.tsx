@@ -312,6 +312,11 @@ export default function AprovacaoIAMPage() {
   });
 
   // ─── Reconcile job: fetch latest reconcile_entra sync_job and poll while running ───
+  const STALE_MS = 3 * 60 * 1000;
+  const isJobStale = (job: any) =>
+    !!job && job.status === "running" &&
+    Date.now() - new Date(job.updated_at).getTime() > STALE_MS;
+
   const { data: reconcileJob, refetch: refetchReconcileJob } = useQuery({
     queryKey: ["reconcile-entra-job"],
     queryFn: async () => {
@@ -324,8 +329,16 @@ export default function AprovacaoIAMPage() {
         .maybeSingle();
       return data as any;
     },
-    refetchInterval: (query) => (query.state.data?.status === "running" ? 3000 : false),
+    // Poll every 3s only while actually running AND fresh; stop otherwise so a zombie job doesn't hog the UI.
+    refetchInterval: (query) => {
+      const j = query.state.data;
+      if (!j || j.status !== "running") return false;
+      return isJobStale(j) ? false : 3000;
+    },
   });
+
+  const reconcileRunning = !!reconcileJob && reconcileJob.status === "running" && !isJobStale(reconcileJob);
+  const reconcileStale = !!reconcileJob && reconcileJob.status === "running" && isJobStale(reconcileJob);
 
   // Toast when a running job transitions to success/error
   useEffect(() => {
@@ -333,16 +346,14 @@ export default function AprovacaoIAMPage() {
     const key = `reconcile-toast-${reconcileJob.id}-${reconcileJob.status}`;
     if (reconcileJob.status === "success" && !sessionStorage.getItem(key)) {
       sessionStorage.setItem(key, "1");
-      toast.success(reconcileJob.message || "Reconciliação concluída");
+      toast.success("Reconciliação concluída.");
       qc.invalidateQueries({ queryKey: ["iam-approval-queue"] });
       qc.invalidateQueries({ queryKey: ["iam-create-if-not-exists-count"] });
     } else if (reconcileJob.status === "error" && !sessionStorage.getItem(key)) {
       sessionStorage.setItem(key, "1");
-      toast.error(reconcileJob.message || "Falha na reconciliação");
+      toast.error(reconcileJob.error || reconcileJob.message || "Falha na reconciliação");
     }
   }, [reconcileJob?.id, reconcileJob?.status]);
-
-  const reconcileRunning = reconcileJob?.status === "running";
 
   const reconcileMutation = useMutation({
     mutationFn: async () => {
@@ -358,15 +369,36 @@ export default function AprovacaoIAMPage() {
     },
     onSuccess: (body: any) => {
       if (body?.already_running) {
-        toast.info("Uma reconciliação já está em andamento — acompanhando o progresso.");
+        toast.info("Reconciliação já em andamento.");
       } else {
-        toast.success(`Reconciliação iniciada em segundo plano (${(body?.total ?? 0).toLocaleString("pt-BR")} itens). Você pode sair da tela — o processo continua.`);
+        toast.success("Reconciliação iniciada — acompanhe o progresso aqui.");
       }
       setReconcileOpen(false);
       refetchReconcileJob();
     },
     onError: (e: any) => toast.error(`Erro ao iniciar reconciliação: ${e.message}`),
   });
+
+  const phaseLabels: Record<string, string> = {
+    iniciando: "Iniciando…",
+    baixando_entra: "Baixando Entra ID…",
+    indexando: "Indexando usuários…",
+    vinculando_colaboradores: "Vinculando colaboradores…",
+    limpando_aprovacao: "Limpando fila de aprovação…",
+    gravando_vinculos: "Gravando vínculos…",
+    concluido: "Concluído",
+    erro: "Erro",
+    timeout: "Interrompido",
+    falha: "Falhou",
+  };
+  const humanPhase = (p?: string | null) => (p ? phaseLabels[p] || p : "");
+  const relTime = (iso?: string | null) => {
+    if (!iso) return "";
+    const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+    if (s < 60) return `${s}s`;
+    if (s < 3600) return `${Math.floor(s / 60)}m`;
+    return `${Math.floor(s / 3600)}h`;
+  };
 
 
   // ─── UI helpers ───
@@ -394,7 +426,7 @@ export default function AprovacaoIAMPage() {
             Aprovação IAM
           </h1>
           <p className="text-sm text-muted-foreground">
-            Gate de aprovação para toda ação IAM (criação, alteração, exclusão, grupos, licenças, apps).
+            Aprove ou recuse cada ação IAM antes que ela vá para o AD/Entra.
           </p>
         </div>
         {tab === "waiting" && (
@@ -428,8 +460,8 @@ export default function AprovacaoIAMPage() {
         </Card>
       )}
 
-      {/* Reconcile banner */}
-      {isAdmin && (createIfNotExistsCount > 0 || reconcileRunning || reconcileJob) && (
+      {/* Reconcile banner — only when there's work to do or an active run */}
+      {isAdmin && (createIfNotExistsCount > 0 || reconcileRunning || reconcileStale) && (
         <Card className="border-blue-300 bg-blue-50 dark:bg-blue-950/20">
           <CardContent className="py-4 flex items-center justify-between gap-4">
             <div className="flex items-start gap-3">
@@ -438,24 +470,32 @@ export default function AprovacaoIAMPage() {
                 {reconcileRunning ? (
                   <>
                     <p className="font-medium text-blue-900 dark:text-blue-200">
-                      Reconciliando contra Entra ID… {reconcileJob?.users_percent ?? 0}%
+                      {humanPhase(reconcileJob?.phase) || "Reconciliando…"} — {reconcileJob?.users_percent ?? 0}%
                     </p>
                     <p className="text-blue-800 dark:text-blue-300/90">
-                      {reconcileJob?.message || "Processando em segundo plano — você pode sair da tela."}
+                      {reconcileJob?.message || "Processando em segundo plano."}
+                      <span className="text-blue-700/70 dark:text-blue-300/70"> · atualizado há {relTime(reconcileJob?.updated_at)}</span>
                     </p>
                     <div className="mt-2 h-1.5 w-64 rounded-full bg-blue-200 dark:bg-blue-900 overflow-hidden">
                       <div className="h-full bg-blue-600 transition-all" style={{ width: `${reconcileJob?.users_percent ?? 0}%` }} />
                     </div>
                   </>
+                ) : reconcileStale ? (
+                  <>
+                    <p className="font-medium text-amber-900 dark:text-amber-200">
+                      Última execução parou em {reconcileJob?.users_percent ?? 0}% — sem atualização há {relTime(reconcileJob?.updated_at)}.
+                    </p>
+                    <p className="text-amber-800 dark:text-amber-300/90">
+                      Rode a reconciliação novamente para continuar.
+                    </p>
+                  </>
                 ) : (
                   <>
                     <p className="font-medium text-blue-900 dark:text-blue-200">
-                      {createIfNotExistsCount.toLocaleString("pt-BR")} criações de usuário na fila
+                      {createIfNotExistsCount.toLocaleString("pt-BR")} criações aguardando reconciliação
                     </p>
                     <p className="text-blue-800 dark:text-blue-300/90">
-                      {reconcileJob?.status === "success"
-                        ? `Última reconciliação: ${reconcileJob.message}`
-                        : "A reconciliação cruza a base da planilha com o Entra ID: remove da aprovação quem já existe no Entra e cancela criações pendentes de colaboradores já desligados, deixando só os usuários realmente novos."}
+                      Compara a base com o Entra ID e remove da fila quem já existe ou está desligado.
                     </p>
                   </>
                 )}
@@ -492,14 +532,6 @@ export default function AprovacaoIAMPage() {
             </div>
           </div>
         </CardHeader>
-        {approvalMode && isAdmin && (
-          <CardContent className="pt-0">
-            <Button variant="outline" size="sm" onClick={() => setFreezeOpen(true)}>
-              <AlertTriangle className="h-4 w-4 mr-2" />
-              Congelar fila atual (mover pendentes para aprovação)
-            </Button>
-          </CardContent>
-        )}
       </Card>
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
@@ -731,9 +763,9 @@ export default function AprovacaoIAMPage() {
       <AD open={reconcileOpen} onOpenChange={setReconcileOpen}>
         <ADContent>
           <ADHeader>
-            <ADTitle>Reconciliar criações contra Entra ID?</ADTitle>
+            <ADTitle>Rodar reconciliação contra Entra ID?</ADTitle>
             <ADDesc>
-              Vai baixar os usuários do Entra ID e comparar com a base da planilha. Cancela da aprovação: (1) quem já existe no Entra (gravando o <code>entra_id</code> no colaborador) e (2) criações pendentes de colaboradores já <strong>desligados</strong>. Sobram apenas usuários realmente novos ou não localizados.
+              Compara a base com o Entra ID: cancela criações de quem já existe lá e de colaboradores desligados.
             </ADDesc>
           </ADHeader>
           <ADFooter>

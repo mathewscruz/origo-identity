@@ -1,38 +1,49 @@
 ## Diagnóstico
 
-Consultei a base. Dos 77 `create_if_not_exists` que ainda estão em `waiting_approval`:
+Olhei o banco e a rede do preview.
 
-- **26 já estão vinculados a um colaborador** (`colaborador_id` preenchido) — **todos com `status = 'desligado'`**.
-- **51 estão órfãos** (`colaborador_id = NULL`). Cruzando pelo e-mail do payload contra `colaboradores`, **todos batem em colaboradores `desligado`** (o cruzamento retorna 57 linhas porque alguns e-mails têm duplicidade histórica, mas nenhum bate em colaborador `ativo`).
-- **Zero itens ativos.** Ou seja, não há ninguém que "ainda precise ser criado no AD/Entra". É 100% lixo de desligados que ficou preso porque:
-  1. Meu último passo de reconciliação resolve órfãos por e-mail/SAM/matrícula, mas o cancelamento por "desligado" só é executado **depois** da tentativa de match no Entra — e para esses 51 o `colaborador_id` continua nulo no momento da decisão, então a regra "desligado → cancelar" não dispara.
-  2. O `sync-csv-colab` continua enfileirando `create_if_not_exists` para linhas do CSV que, na base, correspondem a colaboradores já marcados como `desligado` (reentrada, homônimos, e-mails antigos, etc.), então mesmo depois de limpar a fila volta a encher.
+- O último `sync_jobs.tipo='reconcile_entra'` (`d5e6fb11-…`) está com `status='running'`, parou em 95% na fase `limpando_aprovacao` com a mensagem `2028/2028 avaliados · 2 no Entra · 2026 desligados · 0 mantidos` e **não recebe update há ~19 min**. Ele morreu (timeout do Edge Runtime, sem `try/finally`), mas ninguém marcou como `error`. A tabela `iam_queue` já não tem mais nada em `waiting_approval` — o trabalho real acabou; o que sobrou é só o registro zumbi.
+- O frontend (`src/pages/AprovacaoIAMPage.tsx:327`) faz polling a cada 3s enquanto `job.status === 'running'`. Como o job nunca vira `error`, o banner "Reconciliando… 95%" fica **para sempre**, e o botão "Reconciliar contra Entra" fica desabilitado — foi isso que você viu.
+- O banner de reconciliação também aparece mesmo com `createIfNotExistsCount = 0` porque a condição inclui `|| reconcileJob` (`AprovacaoIAMPage.tsx:432`), sem se importar se o job é antigo/concluído.
+- Existem opções redundantes na tela: "Congelar fila atual" aparece **duas vezes** (banner amarelo em `:409-428` e dentro do card "Modo Aprovação Obrigatória" em `:495-502`); o texto do dialog de reconciliar está longo demais; o subtítulo da página é técnico.
 
-## O que vou corrigir
+## Correção
 
-### 1. `supabase/functions/process-iam-queue/index.ts` — `runReconcile`
+### 1. Backend — `supabase/functions/process-iam-queue/index.ts`
 
-- Na resolução de órfão, **gravar `colaborador_id` no item em memória antes de decidir** (não só no update em lote), para que a regra "desligado → cancelar" enxergue o vínculo já nesta execução.
-- Reordenar a decisão por item:
-  1. Se resolveu colaborador e `status = 'desligado'` → cancelar como `cancelledDesligado` (não tenta Entra, não gasta match).
-  2. Senão, tenta match no Entra → `cancelledEntra` + grava `entra_id`.
-  3. Senão → `kept`.
-- Persistir `colaborador_id` no `iam_queue` em lote, como já faz hoje, mas sem depender disso para a decisão.
+- Envolver `runReconcile` em `try/catch/finally`.
+  - `catch`: marcar `sync_jobs` como `status='error'`, `phase='falha'`, `error=<mensagem>`, `updated_at=now()`.
+  - `finally`: se, ao sair, o registro ainda estiver `running`, promover para `error` com mensagem "Execução interrompida inesperadamente".
+- Endurecer o guard de job travado que roda no início da rota `reconcile-create`: se o último `reconcile_entra` estiver `running` e `updated_at` for mais antigo que **3 min**, marcar como `error` e permitir novo start (hoje o corte é 5 min e mais frouxo).
+- Emitir `updated_at = now()` a cada batch do cancelamento (a cada 500) durante a fase `limpando_aprovacao`, para o próprio corte de "stale" não disparar em vão.
 
-Resultado esperado: os 77 caem para **0** na próxima execução de "Reconciliar contra Entra".
+### 2. Dados — corrigir o job zumbi agora
 
-### 2. `supabase/functions/sync-csv-colab/index.ts` — bloqueio na entrada
+Fazer um update pontual em `sync_jobs` marcando `d5e6fb11-…` como `status='error'`, `phase='timeout'`, `error='Job interrompido — reconciliação retomada.'`. Assim o banner some imediatamente.
 
-- Antes de enfileirar `create_if_not_exists` para uma linha do CSV, checar se já existe colaborador com mesma chave (email/matrícula) e `status = 'desligado'`.
-- Se existir: **não enfileirar** e registrar no `sync_jobs`/auditoria como "criação ignorada — colaborador desligado".
-- Isso evita que a fila volte a acumular esse tipo de item a cada sync do CSV.
+### 3. Frontend — `src/pages/AprovacaoIAMPage.tsx`
 
-### 3. UI — `src/pages/AprovacaoIAMPage.tsx`
+- **Detecção de "stale" no cliente:** considerar `reconcileRunning = job.status === 'running' && (now - job.updated_at) < 3 min`. Aplicar em:
+  - condição do banner (`:432`),
+  - `disabled` do botão (`:469`),
+  - `refetchInterval` do polling (`:327`) — para de pollar se `stale`.
+- **Estado "travado":** quando `job.status === 'running'` mas `stale`, mostrar mensagem "Última execução parou em X% — clique para rodar novamente" e liberar o botão.
+- **Banner só quando fizer sentido:** exibir apenas se `createIfNotExistsCount > 0` ou `reconcileRunning === true`. Se o job apenas terminou (`success`/`error`), sem itens na fila, esconder o banner (mantendo o resumo dentro do dialog quando o usuário abrir).
+- **Remover redundância:**
+  - Tirar o botão "Congelar fila atual" do card "Modo Aprovação Obrigatória" (`:495-502`). Mantido só no banner amarelo (contexto real de uso: existem `pending` legados).
+- **Textos:**
+  - Subtítulo curto: "Aprove ou recuse cada ação IAM antes que ela vá para o AD/Entra."
+  - Descrição do dialog de reconciliação encurtada (uma frase): "Compara a base com o Entra ID: cancela criações de quem já existe lá e de colaboradores desligados."
+  - Toast do disparo: "Reconciliação iniciada — acompanhe o progresso aqui." (remover o parênteses com contagem e o "você pode sair da tela").
+- **Barra de progresso mais honesta:** exibir também `phase` em label humano ("Baixando Entra…", "Vinculando colaboradores…", "Limpando fila…") e o timestamp do último update ("atualizado há 4s"). Se `stale`, mostra "sem atualização há Xm".
 
-- Apenas ajuste de texto no banner/descrição: deixar explícito que a reconciliação também cancela criações de colaboradores desligados, e que o sync de CSV agora ignora desligados na entrada. Sem mudança de lógica.
+### 4. Fora de escopo (não farei agora, mas anoto)
 
-## Observação para a sua pergunta
+- Reindexação/lint de `iam_queue(status, action_type)` — pode ser feita depois se `slow_queries` mostrar dor.
+- Job cron que auto-marca reconcile stale — o guard no start da rota já resolve na prática enquanto os disparos forem manuais.
 
-> "Se estiverem ativos, ainda precisam ser criados no AD/Entra, certo?"
+## Resultado esperado
 
-Certo — mas hoje **não há nenhum ativo** entre os 77. Se depois do fix aparecer algum em `waiting_approval`, aí sim significa "colaborador ativo que ainda não existe no Entra" e deve seguir para aprovação/criação normal. A regra continua: só cancelamos automaticamente quando é `desligado` **ou** quando já existe no Entra.
+- Banner e botão voltam ao normal imediatamente após o update em `sync_jobs`.
+- Uma reconciliação futura que morrer sem terminar vira `error` sozinha e libera nova execução em ≤ 3 min.
+- Tela mais limpa: um único ponto de "congelar fila", banner de reconciliação só quando há trabalho a fazer, textos mais curtos e progresso com fase legível.
