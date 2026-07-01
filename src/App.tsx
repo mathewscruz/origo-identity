@@ -70,6 +70,7 @@ const App = () => (
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/fila-provisionamento" element={<FilaProvisionamentoPage />} />
+              <Route path="/aprovacao-iam" element={<AprovacaoIAMPage />} />
               <Route path="/fila-provisionamento/:id" element={<SolicitacaoDetalhePage />} />
               <Route path="/colaboradores" element={<ColaboradoresPage />} />
               <Route path="/colaboradores/:id" element={<ColaboradorDetalhePage />} />
