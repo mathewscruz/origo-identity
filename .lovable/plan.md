@@ -1,46 +1,37 @@
-## Plano
+## Diagnóstico
 
-1. **Trocar a estratégia da reconciliação**
-   - Em vez de verificar cada item de aprovação isoladamente por email/SAM exato, a função vai baixar todos os usuários do Entra ID uma vez, com paginação.
-   - Criar índices em memória por email, UPN, SAM, matrícula/employeeId, aliases/proxyAddresses, prefixo do email e nome normalizado.
+Consultei o banco e o motivo dos 2.028 itens que sobraram ficou muito claro:
 
-2. **Comparar a base de colaboradores importada da planilha contra o Entra**
-   - Buscar os colaboradores da base interna originados do CSV/SharePoint, especialmente os que estão sem `entra_id`.
-   - Para cada colaborador, tentar vínculo por critérios em cascata:
-     - email da planilha / email gerado
-     - UPN
-     - `sam_account_name`
-     - matrícula vs `employeeId`
-     - prefixo do email
-     - nome normalizado, apenas quando o match for seguro
+- Dos 2.028 `create_if_not_exists` em `waiting_approval`, **praticamente todos (≈2.025) correspondem a colaboradores com `status = 'desligado'`** (só 3 batem com colaboradores `ativo`).
+- Ou seja, são pedidos antigos de criação de conta para pessoas que já foram desligadas. No Entra ID esses usuários geralmente não existem mais (foram removidos ou tiveram e-mail/UPN alterados), então a reconciliação por e-mail/UPN/SAM/matrícula/nome não encontra correspondência e o item continua parado — para sempre.
+- Além disso os itens estão com `colaborador_id = NULL` no `iam_queue`, o que impede qualquer ligação direta com a tabela `colaboradores`. A reconciliação atual só resolve isso quando o Entra tem o usuário.
 
-3. **Limpar a fila de aprovação corretamente**
-   - Quando um colaborador já existir no Entra:
-     - gravar o `entra_id` no colaborador;
-     - cancelar os itens `create_if_not_exists` em `waiting_approval`/`pending` ligados a ele;
-     - também cancelar itens equivalentes encontrados por identidade/email/SAM, mesmo se `colaborador_id` estiver ausente.
-   - O que permanecer em aprovação será apenas o que realmente não foi encontrado no Entra.
+Por isso o número não cai para "10 ou pouco mais": não é falha de matching contra o Entra — é lixo histórico de gente já desligada.
 
-4. **Corrigir o ponto que causou os 3 mil itens restantes**
-   - A reconciliação atual procura só por `mail`, `userPrincipalName` e `onPremisesSamAccountName` do payload da fila.
-   - Como a importação pode gerar email corporativo diferente do identificador existente no Entra, muitos usuários reais não são encontrados.
-   - A nova lógica usará a base completa do CSV + múltiplos identificadores do Entra, reduzindo falsos “não encontrado”.
+## O que vou corrigir
 
-5. **Melhorar rastreabilidade e progresso**
-   - Atualizar o job com fases claras: baixando Entra, indexando, vinculando colaboradores, limpando aprovação e concluído.
-   - Registrar quantos colaboradores foram vinculados, quantos itens foram cancelados e quantos ficaram pendentes.
+### 1. `supabase/functions/process-iam-queue/index.ts` — bloco `reconcileMode`
 
-## Arquivos a alterar
+- Antes do loop dos itens da fila, montar um **índice de colaboradores por chave** (email, sam, matrícula, prefixo de e-mail, nome normalizado) e um `Map<id, colab>`.
+- Para cada item `create_if_not_exists` sem `colaborador_id`, tentar **resolver o colaborador** por essas chaves (mail, upn/prefixo, samAccountName, employeeId, displayName do payload + `target_identity`).
+- Regras novas de decisão por item, na ordem:
+  1. Se encontrou colaborador e `colab.status = 'desligado'` → **cancelar** com mensagem "Colaborador desligado — criação de conta cancelada." (contador `cancelledDesligado`).
+  2. Senão, se bateu no Entra (lógica atual) → cancelar com a mensagem atual (contador `cancelledEntra`) e gravar `entra_id` no colaborador.
+  3. Senão → manter (`kept`).
+- Aproveitar a resolução para popular `colaborador_id` nos itens que ficaram como órfãos (update em lote), para que futuras execuções não precisem re-resolver.
 
-- `supabase/functions/process-iam-queue/index.ts`
-  - Substituir o bloco `reconcile-create` pela reconciliação completa por índice do Entra + base CSV.
-- `src/pages/AprovacaoIAMPage.tsx`
-  - Ajustar textos da tela para deixar claro que a reconciliação compara a base da planilha/colaboradores contra o Entra ID, não apenas os itens da fila.
+### 2. Mensagem/telemetria do `sync_jobs`
 
-## Validação
+- Trocar o texto final para algo como:
+  `Reconciliação concluída: N colaboradores vinculados · A cancelados (já existem no Entra) · B cancelados (desligados) · C ainda pendentes.`
+- Registrar os mesmos números em `auditoria.detalhes`.
 
-- Conferir contagem antes/depois da reconciliação:
-  - colaboradores CSV sem `entra_id`;
-  - itens `create_if_not_exists` em aprovação;
-  - itens cancelados pela reconciliação.
-- Validar logs da função e o progresso do job em tempo real na tela.
+### 3. `src/pages/AprovacaoIAMPage.tsx`
+
+- Ajustar apenas o texto do banner/descrição da ação para deixar claro que a reconciliação também limpa criações pendentes de colaboradores já desligados.
+- Sem mudanças de lógica no frontend.
+
+## Observações
+
+- Não vou mexer em `sync-csv-colab` neste passo — o script já só enfileira `create_if_not_exists` para joiners novos; o entulho atual é histórico. Se depois quisermos blindagem extra (checar `status != 'desligado'` antes de enfileirar), faço numa próxima rodada.
+- Expectativa após executar "Reconciliar contra Entra" novamente: os ~2.028 devem cair para a casa de 0–20 (só sobrarão itens realmente ambíguos, sem match no Entra e sem colaborador `desligado` correspondente).

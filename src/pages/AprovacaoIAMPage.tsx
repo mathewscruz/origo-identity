@@ -455,7 +455,7 @@ export default function AprovacaoIAMPage() {
                     <p className="text-blue-800 dark:text-blue-300/90">
                       {reconcileJob?.status === "success"
                         ? `Última reconciliação: ${reconcileJob.message}`
-                        : "A reconciliação cruza a base da planilha/colaboradores com o Entra ID e remove da aprovação quem já existe, deixando só os usuários realmente novos."}
+                        : "A reconciliação cruza a base da planilha com o Entra ID: remove da aprovação quem já existe no Entra e cancela criações pendentes de colaboradores já desligados, deixando só os usuários realmente novos."}
                     </p>
                   </>
                 )}
@@ -733,7 +733,7 @@ export default function AprovacaoIAMPage() {
           <ADHeader>
             <ADTitle>Reconciliar criações contra Entra ID?</ADTitle>
             <ADDesc>
-              Vai baixar os usuários do Entra ID, comparar com a base importada da planilha/colaboradores e cancelar da aprovação tudo que já existir. O <code>entra_id</code> será gravado no colaborador e o que sobrar serão apenas usuários realmente novos ou não localizados.
+              Vai baixar os usuários do Entra ID e comparar com a base da planilha. Cancela da aprovação: (1) quem já existe no Entra (gravando o <code>entra_id</code> no colaborador) e (2) criações pendentes de colaboradores já <strong>desligados</strong>. Sobram apenas usuários realmente novos ou não localizados.
             </ADDesc>
           </ADHeader>
           <ADFooter>
