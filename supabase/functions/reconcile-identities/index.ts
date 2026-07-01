@@ -201,7 +201,7 @@ async function revokeLeaverAccess(
     // Groups
     const { data: pg } = await sb
       .from("perfil_grupos")
-      .select("perfil_id, entra_grupo_id, entra_grupos(entra_id, nome)")
+      .select("perfil_id, grupo_id, entra_grupos(entra_id, nome)")
       .in("perfil_id", perfilIds);
     for (const r of pg || []) {
       const g = r.entra_grupos;
@@ -223,7 +223,7 @@ async function revokeLeaverAccess(
     // Apps
     const { data: pa } = await sb
       .from("perfil_aplicacoes")
-      .select("perfil_id, aplicacao_id, app_role_id, aplicacoes(entra_id, nome, default_app_role_id)")
+      .select("perfil_id, aplicacao_id, aplicacoes(entra_id, nome, default_app_role_id)")
       .in("perfil_id", perfilIds);
     for (const r of pa || []) {
       const a = r.aplicacoes;
@@ -232,7 +232,7 @@ async function revokeLeaverAccess(
       perfilApps.get(r.perfil_id)!.push({
         entra_id: a.entra_id,
         nome: a.nome,
-        role_id: r.app_role_id || a.default_app_role_id || null,
+        role_id: a.default_app_role_id || null,
       });
     }
   }
