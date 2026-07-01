@@ -312,6 +312,11 @@ export default function AprovacaoIAMPage() {
   });
 
   // ─── Reconcile job: fetch latest reconcile_entra sync_job and poll while running ───
+  const STALE_MS = 3 * 60 * 1000;
+  const isJobStale = (job: any) =>
+    !!job && job.status === "running" &&
+    Date.now() - new Date(job.updated_at).getTime() > STALE_MS;
+
   const { data: reconcileJob, refetch: refetchReconcileJob } = useQuery({
     queryKey: ["reconcile-entra-job"],
     queryFn: async () => {
@@ -324,8 +329,16 @@ export default function AprovacaoIAMPage() {
         .maybeSingle();
       return data as any;
     },
-    refetchInterval: (query) => (query.state.data?.status === "running" ? 3000 : false),
+    // Poll every 3s only while actually running AND fresh; stop otherwise so a zombie job doesn't hog the UI.
+    refetchInterval: (query) => {
+      const j = query.state.data;
+      if (!j || j.status !== "running") return false;
+      return isJobStale(j) ? false : 3000;
+    },
   });
+
+  const reconcileRunning = !!reconcileJob && reconcileJob.status === "running" && !isJobStale(reconcileJob);
+  const reconcileStale = !!reconcileJob && reconcileJob.status === "running" && isJobStale(reconcileJob);
 
   // Toast when a running job transitions to success/error
   useEffect(() => {
@@ -333,16 +346,14 @@ export default function AprovacaoIAMPage() {
     const key = `reconcile-toast-${reconcileJob.id}-${reconcileJob.status}`;
     if (reconcileJob.status === "success" && !sessionStorage.getItem(key)) {
       sessionStorage.setItem(key, "1");
-      toast.success(reconcileJob.message || "Reconciliação concluída");
+      toast.success("Reconciliação concluída.");
       qc.invalidateQueries({ queryKey: ["iam-approval-queue"] });
       qc.invalidateQueries({ queryKey: ["iam-create-if-not-exists-count"] });
     } else if (reconcileJob.status === "error" && !sessionStorage.getItem(key)) {
       sessionStorage.setItem(key, "1");
-      toast.error(reconcileJob.message || "Falha na reconciliação");
+      toast.error(reconcileJob.error || reconcileJob.message || "Falha na reconciliação");
     }
   }, [reconcileJob?.id, reconcileJob?.status]);
-
-  const reconcileRunning = reconcileJob?.status === "running";
 
   const reconcileMutation = useMutation({
     mutationFn: async () => {
@@ -358,15 +369,36 @@ export default function AprovacaoIAMPage() {
     },
     onSuccess: (body: any) => {
       if (body?.already_running) {
-        toast.info("Uma reconciliação já está em andamento — acompanhando o progresso.");
+        toast.info("Reconciliação já em andamento.");
       } else {
-        toast.success(`Reconciliação iniciada em segundo plano (${(body?.total ?? 0).toLocaleString("pt-BR")} itens). Você pode sair da tela — o processo continua.`);
+        toast.success("Reconciliação iniciada — acompanhe o progresso aqui.");
       }
       setReconcileOpen(false);
       refetchReconcileJob();
     },
     onError: (e: any) => toast.error(`Erro ao iniciar reconciliação: ${e.message}`),
   });
+
+  const phaseLabels: Record<string, string> = {
+    iniciando: "Iniciando…",
+    baixando_entra: "Baixando Entra ID…",
+    indexando: "Indexando usuários…",
+    vinculando_colaboradores: "Vinculando colaboradores…",
+    limpando_aprovacao: "Limpando fila de aprovação…",
+    gravando_vinculos: "Gravando vínculos…",
+    concluido: "Concluído",
+    erro: "Erro",
+    timeout: "Interrompido",
+    falha: "Falhou",
+  };
+  const humanPhase = (p?: string | null) => (p ? phaseLabels[p] || p : "");
+  const relTime = (iso?: string | null) => {
+    if (!iso) return "";
+    const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+    if (s < 60) return `${s}s`;
+    if (s < 3600) return `${Math.floor(s / 60)}m`;
+    return `${Math.floor(s / 3600)}h`;
+  };
 
 
   // ─── UI helpers ───

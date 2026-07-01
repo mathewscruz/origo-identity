@@ -801,7 +801,7 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: "Credenciais Azure não configuradas" }, 500);
       }
 
-      const staleReconcileCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const staleReconcileCutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString();
       await supabase
         .from("sync_jobs")
         .update({
@@ -1142,6 +1142,18 @@ Deno.serve(async (req) => {
             message: `Falha na reconciliação: ${msg}`,
             updated_at: new Date().toISOString(),
           }).eq("id", jobId);
+        } finally {
+          // Safety net: if the job is still marked as running (e.g. runtime was forcibly shut down
+          // mid-loop before catch could fire on a later invocation), demote it to error so the UI recovers.
+          try {
+            await supabase.from("sync_jobs").update({
+              status: "error",
+              phase: "erro",
+              error: "Execução interrompida inesperadamente.",
+              message: "Execução interrompida inesperadamente — rode a reconciliação novamente.",
+              updated_at: new Date().toISOString(),
+            }).eq("id", jobId).eq("status", "running");
+          } catch { /* best effort */ }
         }
       };
 
