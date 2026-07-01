@@ -180,6 +180,8 @@ async function runReconciliation(sb: any, jobId: string) {
     const needsLookup = list.filter((c) => !c.entra_id && c.email);
     stats.checked_entra = needsLookup.length;
 
+    const token = await getGraphToken();
+
     if (needsLookup.length > 0) {
       await updateJob(sb, jobId, {
         phase: "consultando_graph",
@@ -187,7 +189,6 @@ async function runReconciliation(sb: any, jobId: string) {
         users_percent: 15,
       });
 
-      const token = await getGraphToken();
       const superBatches = chunk(needsLookup, 200);
       let processed = 0;
 
@@ -219,6 +220,21 @@ async function runReconciliation(sb: any, jobId: string) {
         });
       }
     }
+
+    // 2.5 Baixa index completo do Entra (para cross-check de disables — evita
+    // enfileirar Desabilitar Entra ID para conta que não existe lá).
+    await updateJob(sb, jobId, {
+      phase: "baixando_entra",
+      message: "Baixando index de usuários do Entra ID…",
+      users_percent: 57,
+    });
+    const entraIdx = await fetchAllEntraUsers(token);
+    stats.entra_users_indexed = entraIdx.byId.size;
+    await updateJob(sb, jobId, {
+      phase: "baixando_entra",
+      message: `${stats.entra_users_indexed.toLocaleString("pt-BR")} usuários do Entra ID indexados.`,
+      users_percent: 60,
+    });
 
     // 3. Recarrega colabs
     await updateJob(sb, jobId, { phase: "resolvendo_joiners", message: "Resolvendo joiners pendentes…", users_percent: 60 });
