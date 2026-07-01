@@ -1,37 +1,38 @@
 ## Diagnóstico
 
-Consultei o banco e o motivo dos 2.028 itens que sobraram ficou muito claro:
+Consultei a base. Dos 77 `create_if_not_exists` que ainda estão em `waiting_approval`:
 
-- Dos 2.028 `create_if_not_exists` em `waiting_approval`, **praticamente todos (≈2.025) correspondem a colaboradores com `status = 'desligado'`** (só 3 batem com colaboradores `ativo`).
-- Ou seja, são pedidos antigos de criação de conta para pessoas que já foram desligadas. No Entra ID esses usuários geralmente não existem mais (foram removidos ou tiveram e-mail/UPN alterados), então a reconciliação por e-mail/UPN/SAM/matrícula/nome não encontra correspondência e o item continua parado — para sempre.
-- Além disso os itens estão com `colaborador_id = NULL` no `iam_queue`, o que impede qualquer ligação direta com a tabela `colaboradores`. A reconciliação atual só resolve isso quando o Entra tem o usuário.
-
-Por isso o número não cai para "10 ou pouco mais": não é falha de matching contra o Entra — é lixo histórico de gente já desligada.
+- **26 já estão vinculados a um colaborador** (`colaborador_id` preenchido) — **todos com `status = 'desligado'`**.
+- **51 estão órfãos** (`colaborador_id = NULL`). Cruzando pelo e-mail do payload contra `colaboradores`, **todos batem em colaboradores `desligado`** (o cruzamento retorna 57 linhas porque alguns e-mails têm duplicidade histórica, mas nenhum bate em colaborador `ativo`).
+- **Zero itens ativos.** Ou seja, não há ninguém que "ainda precise ser criado no AD/Entra". É 100% lixo de desligados que ficou preso porque:
+  1. Meu último passo de reconciliação resolve órfãos por e-mail/SAM/matrícula, mas o cancelamento por "desligado" só é executado **depois** da tentativa de match no Entra — e para esses 51 o `colaborador_id` continua nulo no momento da decisão, então a regra "desligado → cancelar" não dispara.
+  2. O `sync-csv-colab` continua enfileirando `create_if_not_exists` para linhas do CSV que, na base, correspondem a colaboradores já marcados como `desligado` (reentrada, homônimos, e-mails antigos, etc.), então mesmo depois de limpar a fila volta a encher.
 
 ## O que vou corrigir
 
-### 1. `supabase/functions/process-iam-queue/index.ts` — bloco `reconcileMode`
+### 1. `supabase/functions/process-iam-queue/index.ts` — `runReconcile`
 
-- Antes do loop dos itens da fila, montar um **índice de colaboradores por chave** (email, sam, matrícula, prefixo de e-mail, nome normalizado) e um `Map<id, colab>`.
-- Para cada item `create_if_not_exists` sem `colaborador_id`, tentar **resolver o colaborador** por essas chaves (mail, upn/prefixo, samAccountName, employeeId, displayName do payload + `target_identity`).
-- Regras novas de decisão por item, na ordem:
-  1. Se encontrou colaborador e `colab.status = 'desligado'` → **cancelar** com mensagem "Colaborador desligado — criação de conta cancelada." (contador `cancelledDesligado`).
-  2. Senão, se bateu no Entra (lógica atual) → cancelar com a mensagem atual (contador `cancelledEntra`) e gravar `entra_id` no colaborador.
-  3. Senão → manter (`kept`).
-- Aproveitar a resolução para popular `colaborador_id` nos itens que ficaram como órfãos (update em lote), para que futuras execuções não precisem re-resolver.
+- Na resolução de órfão, **gravar `colaborador_id` no item em memória antes de decidir** (não só no update em lote), para que a regra "desligado → cancelar" enxergue o vínculo já nesta execução.
+- Reordenar a decisão por item:
+  1. Se resolveu colaborador e `status = 'desligado'` → cancelar como `cancelledDesligado` (não tenta Entra, não gasta match).
+  2. Senão, tenta match no Entra → `cancelledEntra` + grava `entra_id`.
+  3. Senão → `kept`.
+- Persistir `colaborador_id` no `iam_queue` em lote, como já faz hoje, mas sem depender disso para a decisão.
 
-### 2. Mensagem/telemetria do `sync_jobs`
+Resultado esperado: os 77 caem para **0** na próxima execução de "Reconciliar contra Entra".
 
-- Trocar o texto final para algo como:
-  `Reconciliação concluída: N colaboradores vinculados · A cancelados (já existem no Entra) · B cancelados (desligados) · C ainda pendentes.`
-- Registrar os mesmos números em `auditoria.detalhes`.
+### 2. `supabase/functions/sync-csv-colab/index.ts` — bloqueio na entrada
 
-### 3. `src/pages/AprovacaoIAMPage.tsx`
+- Antes de enfileirar `create_if_not_exists` para uma linha do CSV, checar se já existe colaborador com mesma chave (email/matrícula) e `status = 'desligado'`.
+- Se existir: **não enfileirar** e registrar no `sync_jobs`/auditoria como "criação ignorada — colaborador desligado".
+- Isso evita que a fila volte a acumular esse tipo de item a cada sync do CSV.
 
-- Ajustar apenas o texto do banner/descrição da ação para deixar claro que a reconciliação também limpa criações pendentes de colaboradores já desligados.
-- Sem mudanças de lógica no frontend.
+### 3. UI — `src/pages/AprovacaoIAMPage.tsx`
 
-## Observações
+- Apenas ajuste de texto no banner/descrição: deixar explícito que a reconciliação também cancela criações de colaboradores desligados, e que o sync de CSV agora ignora desligados na entrada. Sem mudança de lógica.
 
-- Não vou mexer em `sync-csv-colab` neste passo — o script já só enfileira `create_if_not_exists` para joiners novos; o entulho atual é histórico. Se depois quisermos blindagem extra (checar `status != 'desligado'` antes de enfileirar), faço numa próxima rodada.
-- Expectativa após executar "Reconciliar contra Entra" novamente: os ~2.028 devem cair para a casa de 0–20 (só sobrarão itens realmente ambíguos, sem match no Entra e sem colaborador `desligado` correspondente).
+## Observação para a sua pergunta
+
+> "Se estiverem ativos, ainda precisam ser criados no AD/Entra, certo?"
+
+Certo — mas hoje **não há nenhum ativo** entre os 77. Se depois do fix aparecer algum em `waiting_approval`, aí sim significa "colaborador ativo que ainda não existe no Entra" e deve seguir para aprovação/criação normal. A regra continua: só cancelamos automaticamente quando é `desligado` **ou** quando já existe no Entra.
