@@ -339,9 +339,8 @@ export default function IntegracoesPage() {
               </div>
               <div className="rounded border p-2">
                 <div className="text-muted-foreground">A reconciliar</div>
-                <div className="text-lg font-semibold text-amber-600">
-                  {Math.max(0, reconcileStats.total - reconcileStats.linked - reconcileStats.desligados)}
-                </div>
+                <div className="text-lg font-semibold text-amber-600">{reconcileStats.aReconciliar}</div>
+                <div className="text-[10px] text-muted-foreground">ativos sem entra_id</div>
               </div>
               <div className="rounded border p-2">
                 <div className="text-muted-foreground">Desligados</div>
@@ -356,16 +355,27 @@ export default function IntegracoesPage() {
             </div>
           )}
           <div className="text-sm text-muted-foreground">
-            Consulta o Microsoft Graph em lote para descobrir quem já existe no Entra ID (gravando o vínculo),
-            marca joiners pendentes como concluídos quando o usuário já existe, e enfileira <code>disable</code> +{" "}
-            <code>disable_entra</code> para desligados sem processamento. Pode levar alguns minutos.
+            Fluxo diário: <strong>CSV do SharePoint</strong> → <strong>Reconciliar identidades</strong> (linka Entra, resolve joiners, gera leavers/disable) → <strong>Processar fila</strong> (executa disable/enable/assign no Entra).
+            O botão abaixo executa a reconciliação isoladamente; use "Rodar ciclo diário" para orquestrar as 3 etapas.
           </div>
-          <Button onClick={handleReconcile} disabled={reconciling}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${reconciling ? "animate-spin" : ""}`} />
-            {reconciling ? "Reconciliando..." : "Rodar reconciliação agora"}
-          </Button>
+
+          {reconcileJob && <ReconcileProgressPanel job={reconcileJob} />}
+
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={handleReconcile} disabled={reconRunning && !reconStale}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${reconRunning && !reconStale ? "animate-spin" : ""}`} />
+              {reconRunning && !reconStale ? "Reconciliando..." : "Rodar reconciliação"}
+            </Button>
+            <Button variant="secondary" onClick={handleDailyCycle} disabled={(dailyRunning && !dailyStale) || cycleRunning}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${(dailyRunning && !dailyStale) || cycleRunning ? "animate-spin" : ""}`} />
+              {dailyRunning && !dailyStale ? "Ciclo diário em andamento..." : "Rodar ciclo diário completo"}
+            </Button>
+          </div>
+
+          {dailyJob && <ReconcileProgressPanel job={dailyJob} label="Ciclo diário" />}
         </CardContent>
       </Card>
+
 
 
       <Card className="border-primary/20">
