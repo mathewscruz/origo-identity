@@ -96,26 +96,47 @@ export default function IntegracoesPage() {
   }, [reconcileJob?.status, dailyJob?.status, refetchReconcile]);
 
   const handleReconcile = useCallback(async () => {
-    setReconciling(true);
     try {
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reconcile-identities`;
       const res = await authedFetch(url, { method: "POST", headers: { "Content-Type": "application/json" } });
       const body = await res.json();
-      if (!res.ok) {
+      if (!res.ok && res.status !== 202) {
         toast({ title: "Erro na reconciliação", description: body.error || `HTTP ${res.status}`, variant: "destructive" });
       } else {
-        const s = body.stats;
         toast({
-          title: "Reconciliação concluída",
-          description: `${s.linked_entra} linkados no Entra, ${s.joiners_reconciled} joiners resolvidos, ${s.leavers_generated} leavers gerados, ${s.disable_enqueued} desabilitações enfileiradas`,
+          title: body.already_running ? "Reconciliação já em andamento" : "Reconciliação iniciada",
+          description: "Acompanhe o progresso no painel abaixo.",
         });
-        refetchReconcile();
+        refetchReconcileJob();
       }
     } catch (err: unknown) {
       toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
     }
-    setReconciling(false);
-  }, [toast, refetchReconcile]);
+  }, [toast, refetchReconcileJob]);
+
+  const handleDailyCycle = useCallback(async () => {
+    setCycleRunning(true);
+    try {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/run-daily-cycle`;
+      const res = await authedFetch(url, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skip_csv: false }),
+      });
+      const body = await res.json();
+      if (!res.ok && res.status !== 202) {
+        toast({ title: "Erro no ciclo diário", description: body.error || `HTTP ${res.status}`, variant: "destructive" });
+      } else {
+        toast({
+          title: body.already_running ? "Ciclo já em andamento" : "Ciclo diário iniciado",
+          description: "Etapas: CSV → Reconciliar → Processar fila.",
+        });
+        refetchDaily();
+      }
+    } catch (err: unknown) {
+      toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
+    }
+    setCycleRunning(false);
+  }, [toast, refetchDaily]);
 
   const { data: connectorStats } = useQuery({
     queryKey: ["connector-stats"],
