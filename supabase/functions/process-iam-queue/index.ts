@@ -1409,6 +1409,19 @@ Deno.serve(async (req) => {
           const { userId, resolvedBy } = await resolveUserId(token, email, samAccount);
 
           if (!userId) {
+            // Guard-rail: para ações que só fazem sentido se a conta existe no Entra ID,
+            // cancelar imediatamente em vez de acumular retries e virar 'failed'.
+            const cancelOnMissing = ["disable_entra", "enable_entra", "update_entra"].includes(item.action_type);
+            if (cancelOnMissing) {
+              await supabase.from("iam_queue").update({
+                status: "cancelled", error_code: "user_not_in_entra",
+                result_message: `Cancelado: usuário não existe no Entra ID (${resolvedBy})`,
+                processed_at: new Date().toISOString(), processed_by: "lovable_cloud",
+              }).eq("id", item.id);
+              allResults.push({ id: item.id, action: item.action_type, status: "cancelled", message: `Usuário não existe no Entra ID` });
+              continue;
+            }
+
             const retryCount = (item.retry_count || 0) + 1;
             const maxRetries = item.max_retries || 10;
             if (retryCount >= maxRetries) {
