@@ -859,7 +859,8 @@ Deno.serve(async (req) => {
 
       const runReconcile = async () => {
         let linkedColabs = 0;
-        let cancelled = 0;
+        let cancelledEntra = 0;
+        let cancelledDesligado = 0;
         let kept = 0;
         let scannedColabs = 0;
         try {
@@ -895,23 +896,27 @@ Deno.serve(async (req) => {
           ]);
 
           const colabById = new Map<string, any>();
+          const colabByKey = new Map<string, any>();
           const matchedByColabId = new Map<string, { user: any; matchedBy: string }>();
           const matchedKeys = new Map<string, { user: any; matchedBy: string; colabId?: string }>();
           const colabEntraUpdates = new Map<string, string>();
 
           for (const colab of colaboradores) {
             colabById.set(colab.id, colab);
+            const colabKeys = [
+              normalizeIdentifier(colab.email),
+              normalizeIdentifier(colab.sam_account_name),
+              normalizeIdentifier(colab.matricula),
+              emailPrefix(colab.email),
+              nameSignature(colab.nome),
+            ].filter(Boolean);
+            for (const k of colabKeys) if (!colabByKey.has(k)) colabByKey.set(k, colab);
+
             const match = matchEntraUserForIdentity(colab, entraIndex);
             scannedColabs++;
             if (match.user) {
               matchedByColabId.set(colab.id, match);
-              const keys = [
-                normalizeIdentifier(colab.email),
-                normalizeIdentifier(colab.sam_account_name),
-                normalizeIdentifier(colab.matricula),
-                emailPrefix(colab.email),
-              ].filter(Boolean);
-              for (const key of keys) matchedKeys.set(key, { ...match, colabId: colab.id });
+              for (const key of colabKeys) matchedKeys.set(key, { ...match, colabId: colab.id });
 
               if (colab.entra_id !== match.user.id) {
                 colabEntraUpdates.set(colab.id, match.user.id);
@@ -938,58 +943,98 @@ Deno.serve(async (req) => {
             updated_at: new Date().toISOString(),
           }).eq("id", jobId);
 
-          const cancelIds: string[] = [];
+          const cancelEntraIds: string[] = [];
+          const cancelDesligadoIds: string[] = [];
           const queueColabUpdates = new Map<string, string>();
+          const queueColabBackfill = new Map<string, string>(); // queue item id → colab id
+
+          const resolveColab = (item: any, payload: Record<string, any>): any | null => {
+            if (item.colaborador_id && colabById.has(item.colaborador_id)) {
+              return colabById.get(item.colaborador_id);
+            }
+            const keys = [
+              normalizeIdentifier(payload.mail),
+              normalizeIdentifier(payload.email),
+              normalizeIdentifier(payload.userPrincipalName),
+              normalizeIdentifier(payload.samAccountName),
+              normalizeIdentifier(payload.sAMAccountName),
+              normalizeIdentifier(item.target_identity),
+              normalizeIdentifier(payload.employeeId),
+              normalizeIdentifier(payload.employID),
+              emailPrefix(payload.mail),
+              emailPrefix(payload.email),
+              emailPrefix(payload.userPrincipalName),
+              nameSignature(payload.displayName || payload.nome),
+            ].filter(Boolean);
+            for (const k of keys) {
+              const hit = colabByKey.get(k);
+              if (hit) return hit;
+            }
+            return null;
+          };
 
           for (let i = 0; i < queueItems.length; i++) {
             const item = queueItems[i];
             const payload = (item.payload_json || {}) as Record<string, any>;
-            let match = item.colaborador_id ? matchedByColabId.get(item.colaborador_id) || null : null;
 
-            if (!match) {
-              const colab = item.colaborador_id ? colabById.get(item.colaborador_id) : null;
-              const direct = matchEntraUserForIdentity({
-                nome: colab?.nome || payload.displayName || payload.nome,
-                email: colab?.email || payload.mail || payload.email,
-                matricula: colab?.matricula || payload.employeeId || payload.employID || payload.matricula,
-                sam_account_name: colab?.sam_account_name || item.target_identity || payload.samAccountName,
-                payload,
-              }, entraIndex);
-              if (direct.user) match = direct;
+            const resolvedColab = resolveColab(item, payload);
+            if (resolvedColab && !item.colaborador_id) {
+              queueColabBackfill.set(item.id, resolvedColab.id);
             }
 
-            if (!match) {
-              const keys = [
-                normalizeIdentifier(item.target_identity),
-                normalizeIdentifier(payload.mail),
-                normalizeIdentifier(payload.email),
-                normalizeIdentifier(payload.samAccountName),
-                normalizeIdentifier(payload.sAMAccountName),
-                normalizeIdentifier(payload.employeeId),
-                normalizeIdentifier(payload.employID),
-                emailPrefix(payload.mail),
-                emailPrefix(payload.email),
-              ].filter(Boolean);
-              for (const key of keys) {
-                const hit = matchedKeys.get(key);
-                if (hit) { match = hit; break; }
-              }
-            }
-
-            if (match?.user?.id) {
-              cancelIds.push(item.id);
-              if (item.colaborador_id) queueColabUpdates.set(item.colaborador_id, match.user.id);
-              cancelled++;
+            // Rule 1: colaborador desligado → cancel with dedicated reason
+            if (resolvedColab && resolvedColab.status === "desligado") {
+              cancelDesligadoIds.push(item.id);
+              cancelledDesligado++;
             } else {
-              kept++;
+              // Rule 2: matched in Entra → cancel and persist entra_id
+              let match = resolvedColab ? matchedByColabId.get(resolvedColab.id) || null : null;
+
+              if (!match) {
+                const direct = matchEntraUserForIdentity({
+                  nome: resolvedColab?.nome || payload.displayName || payload.nome,
+                  email: resolvedColab?.email || payload.mail || payload.email,
+                  matricula: resolvedColab?.matricula || payload.employeeId || payload.employID || payload.matricula,
+                  sam_account_name: resolvedColab?.sam_account_name || item.target_identity || payload.samAccountName,
+                  payload,
+                }, entraIndex);
+                if (direct.user) match = direct;
+              }
+
+              if (!match) {
+                const keys = [
+                  normalizeIdentifier(item.target_identity),
+                  normalizeIdentifier(payload.mail),
+                  normalizeIdentifier(payload.email),
+                  normalizeIdentifier(payload.samAccountName),
+                  normalizeIdentifier(payload.sAMAccountName),
+                  normalizeIdentifier(payload.employeeId),
+                  normalizeIdentifier(payload.employID),
+                  emailPrefix(payload.mail),
+                  emailPrefix(payload.email),
+                ].filter(Boolean);
+                for (const key of keys) {
+                  const hit = matchedKeys.get(key);
+                  if (hit) { match = hit; break; }
+                }
+              }
+
+              if (match?.user?.id) {
+                cancelEntraIds.push(item.id);
+                const colabIdForUpdate = resolvedColab?.id || item.colaborador_id;
+                if (colabIdForUpdate) queueColabUpdates.set(colabIdForUpdate, match.user.id);
+                cancelledEntra++;
+              } else {
+                kept++;
+              }
             }
 
             if ((i + 1) % 100 === 0 || i + 1 === queueItems.length) {
               const percent = 70 + Math.floor(((i + 1) / Math.max(queueItems.length, 1)) * 25);
               await supabase.from("sync_jobs").update({
                 phase: "limpando_aprovacao",
-                message: `${i + 1}/${queueItems.length} itens avaliados · ${cancelled} cancelados · ${kept} mantidos`,
-                users_created: cancelled,
+                message: `${i + 1}/${queueItems.length} avaliados · ${cancelledEntra} no Entra · ${cancelledDesligado} desligados · ${kept} mantidos`,
+                users_created: cancelledEntra + cancelledDesligado,
                 users_updated: kept,
                 users_percent: Math.min(95, percent),
                 updated_at: new Date().toISOString(),
@@ -997,13 +1042,36 @@ Deno.serve(async (req) => {
             }
           }
 
-          for (let i = 0; i < cancelIds.length; i += 500) {
-            const ids = cancelIds.slice(i, i + 500);
+          // Backfill colaborador_id in queue items (batches of 200 individual updates via upsert-like loop)
+          const backfillEntries = Array.from(queueColabBackfill.entries());
+          for (let i = 0; i < backfillEntries.length; i += 200) {
+            const slice = backfillEntries.slice(i, i + 200);
+            await Promise.all(slice.map(([qId, cId]) =>
+              supabase.from("iam_queue").update({ colaborador_id: cId }).eq("id", qId)
+            ));
+          }
+
+          // Cancel: Entra-matched items
+          for (let i = 0; i < cancelEntraIds.length; i += 500) {
+            const ids = cancelEntraIds.slice(i, i + 500);
             const { error } = await supabase.from("iam_queue").update({
               status: "cancelled",
               processed_at: new Date().toISOString(),
               processed_by: "reconcile-create",
               result_message: "Usuário já existe no Entra ID — item removido pela reconciliação da base da planilha.",
+              error_code: null,
+            }).in("id", ids);
+            if (error) throw error;
+          }
+
+          // Cancel: desligado items
+          for (let i = 0; i < cancelDesligadoIds.length; i += 500) {
+            const ids = cancelDesligadoIds.slice(i, i + 500);
+            const { error } = await supabase.from("iam_queue").update({
+              status: "cancelled",
+              processed_at: new Date().toISOString(),
+              processed_by: "reconcile-create",
+              result_message: "Colaborador desligado — criação de conta cancelada automaticamente.",
               error_code: null,
             }).in("id", ids);
             if (error) throw error;
@@ -1020,8 +1088,8 @@ Deno.serve(async (req) => {
             if (persistedLinks % 50 === 0 || persistedLinks === updateEntries.length) {
               await supabase.from("sync_jobs").update({
                 phase: "gravando_vinculos",
-                message: `${persistedLinks}/${allColabUpdates.size} vínculos gravados · ${cancelled} itens cancelados`,
-                users_created: cancelled,
+                message: `${persistedLinks}/${allColabUpdates.size} vínculos gravados · ${cancelledEntra} Entra · ${cancelledDesligado} desligados`,
+                users_created: cancelledEntra + cancelledDesligado,
                 users_updated: kept,
                 users_percent: 97,
                 updated_at: new Date().toISOString(),
@@ -1035,11 +1103,12 @@ Deno.serve(async (req) => {
             .eq("action_type", "create_if_not_exists")
             .in("status", ["waiting_approval", "pending"]);
 
+          const totalCancelled = cancelledEntra + cancelledDesligado;
           await supabase.from("sync_jobs").update({
             status: "success",
             phase: "concluido",
-            message: `Reconciliação concluída: ${persistedLinks} colaboradores vinculados, ${cancelled} itens removidos da aprovação, ${pendingLeft || 0} ainda pendentes.`,
-            users_created: cancelled,
+            message: `Reconciliação concluída: ${persistedLinks} vinculados · ${cancelledEntra} cancelados (já existem no Entra) · ${cancelledDesligado} cancelados (desligados) · ${pendingLeft || 0} pendentes.`,
+            users_created: totalCancelled,
             users_updated: kept,
             users_percent: 100,
             updated_at: new Date().toISOString(),
@@ -1047,7 +1116,7 @@ Deno.serve(async (req) => {
 
           await supabase.from("auditoria").insert({
             entidade: "iam_queue", acao: "reconciliar_create",
-            resumo: `Reconciliação: ${persistedLinks} colaboradores vinculados, ${cancelled} itens cancelados, ${kept} mantidos.`,
+            resumo: `Reconciliação: ${persistedLinks} vinculados, ${cancelledEntra} no Entra, ${cancelledDesligado} desligados, ${kept} mantidos.`,
             detalhes: {
               job_id: jobId,
               entra_users: entraUsers.length,
@@ -1055,7 +1124,10 @@ Deno.serve(async (req) => {
               scanned_colabs: scannedColabs,
               linked_colabs: persistedLinks,
               queue_items: queueItems.length,
-              cancelled,
+              cancelled_entra: cancelledEntra,
+              cancelled_desligado: cancelledDesligado,
+              cancelled_total: totalCancelled,
+              backfilled_colaborador_id: queueColabBackfill.size,
               kept,
               pending_left: pendingLeft || 0,
             },
