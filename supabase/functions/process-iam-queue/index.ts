@@ -319,12 +319,25 @@ async function executeAction(
     }
 
     case "disable_entra": {
+      // Pre-check: se conta já está desabilitada, no-op.
+      const chk = await fetch(`${graphBase}/users/${userId}?$select=accountEnabled`, { headers });
+      if (chk.status === 404) return { success: true, message: `Usuário não existe mais no Entra ID (no-op)`, alreadyExists: true };
+      if (chk.ok) {
+        const d = await chk.json();
+        if (d.accountEnabled === false) return { success: true, message: `Conta já estava desabilitada`, alreadyExists: true };
+      }
       const res = await fetch(`${graphBase}/users/${userId}`, { method: "PATCH", headers, body: JSON.stringify({ accountEnabled: false }) });
       if (res.status === 204 || res.ok) return { success: true, message: `Conta desabilitada no Entra ID` };
       return { success: false, message: await buildErr(res, "desabilitar conta no Entra ID") };
     }
 
     case "enable_entra": {
+      const chk = await fetch(`${graphBase}/users/${userId}?$select=accountEnabled`, { headers });
+      if (chk.status === 404) return { success: true, message: `Usuário não existe mais no Entra ID (no-op)`, alreadyExists: true };
+      if (chk.ok) {
+        const d = await chk.json();
+        if (d.accountEnabled === true) return { success: true, message: `Conta já estava habilitada`, alreadyExists: true };
+      }
       const res = await fetch(`${graphBase}/users/${userId}`, { method: "PATCH", headers, body: JSON.stringify({ accountEnabled: true }) });
       if (res.status === 204 || res.ok) return { success: true, message: `Conta reabilitada no Entra ID` };
       return { success: false, message: await buildErr(res, "reabilitar conta no Entra ID") };
@@ -1409,6 +1422,19 @@ Deno.serve(async (req) => {
           const { userId, resolvedBy } = await resolveUserId(token, email, samAccount);
 
           if (!userId) {
+            // Guard-rail: para ações que só fazem sentido se a conta existe no Entra ID,
+            // cancelar imediatamente em vez de acumular retries e virar 'failed'.
+            const cancelOnMissing = ["disable_entra", "enable_entra", "update_entra"].includes(item.action_type);
+            if (cancelOnMissing) {
+              await supabase.from("iam_queue").update({
+                status: "cancelled", error_code: "user_not_in_entra",
+                result_message: `Cancelado: usuário não existe no Entra ID (${resolvedBy})`,
+                processed_at: new Date().toISOString(), processed_by: "lovable_cloud",
+              }).eq("id", item.id);
+              allResults.push({ id: item.id, action: item.action_type, status: "cancelled", message: `Usuário não existe no Entra ID` });
+              continue;
+            }
+
             const retryCount = (item.retry_count || 0) + 1;
             const maxRetries = item.max_retries || 10;
             if (retryCount >= maxRetries) {
