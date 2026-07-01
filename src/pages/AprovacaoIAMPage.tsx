@@ -371,23 +371,6 @@ export default function AprovacaoIAMPage() {
     },
   });
 
-  const freezeMutation = useMutation({
-    mutationFn: async () => {
-      const { error, count } = await (supabase as any)
-        .from("iam_queue")
-        .update({ status: "waiting_approval" }, { count: "exact" })
-        .eq("status", "pending");
-      if (error) throw error;
-      return count || 0;
-    },
-    onSuccess: (n) => {
-      toast.success(`${n} item(ns) movido(s) para aprovação`);
-      setFreezeOpen(false);
-      qc.invalidateQueries({ queryKey: ["iam-approval-queue"] });
-      refetchLegacy();
-    },
-    onError: (e: any) => toast.error(`Erro: ${e.message}`),
-  });
 
   // ─── Reconcile job: fetch latest reconcile_entra sync_job and poll while running ───
   const STALE_MS = 3 * 60 * 1000;
