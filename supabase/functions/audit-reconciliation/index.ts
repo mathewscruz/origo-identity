@@ -76,14 +76,14 @@ function sample<T>(arr: T[], n: number): T[] {
 async function runAudit(sb: any) {
   const token = await getGraphToken();
 
-  // Amostras da fila
+  // Amostras da fila (join com colab para pegar entra_id/email reais)
   const { data: disableEntra } = await sb.from("iam_queue")
-    .select("id, colaborador_id, target_identity, payload_json")
+    .select("id, colaborador_id, target_identity, payload_json, colaboradores!inner(entra_id, email, sam_account_name)")
     .eq("action_type", "disable_entra")
     .eq("requested_by", "reconciliacao")
     .in("status", ["pending", "waiting_approval"]);
   const { data: disableAd } = await sb.from("iam_queue")
-    .select("id, colaborador_id, target_identity, payload_json")
+    .select("id, colaborador_id, target_identity, payload_json, colaboradores!inner(entra_id, email, sam_account_name)")
     .eq("action_type", "disable")
     .eq("requested_by", "reconciliacao")
     .in("status", ["pending", "waiting_approval"]);
@@ -107,9 +107,15 @@ async function runAudit(sb: any) {
     skipped: { total: skipped.length, sampled: sSkipped.length, correct: 0, wrong: 0, wrong_items: [] as any[] },
   };
 
+  const pickIdent = (q: any) =>
+    q.colaboradores?.entra_id ||
+    (q.payload_json as any)?.mail ||
+    q.colaboradores?.email ||
+    q.target_identity;
+
   // Valida disable_entra: precisa existir no Entra E estar enabled
   for (const q of sDisableEntra) {
-    const ident = q.target_identity || (q.payload_json as any)?.mail;
+    const ident = pickIdent(q);
     if (!ident) continue;
     const r = await graphGetUser(token, ident);
     if (r.found && r.accountEnabled) result.disable_entra.correct++;
@@ -117,12 +123,11 @@ async function runAudit(sb: any) {
       result.disable_entra.wrong++;
       result.disable_entra.wrong_items.push({ id: q.id, ident, reason: !r.found ? "not_in_entra" : "already_disabled" });
     }
-    
   }
 
   // Valida disable AD: on-prem OU não existe no Entra Cloud
   for (const q of sDisableAd) {
-    const ident = q.target_identity || (q.payload_json as any)?.mail;
+    const ident = pickIdent(q);
     if (!ident) continue;
     const r = await graphGetUser(token, ident);
     const ok = !r.found || (r.found && r.onPremisesSyncEnabled);
@@ -131,7 +136,6 @@ async function runAudit(sb: any) {
       result.disable_ad.wrong++;
       result.disable_ad.wrong_items.push({ id: q.id, ident, reason: "cloud_only_should_be_entra" });
     }
-    
   }
 
   // Valida pulados: NÃO devem existir no Entra
