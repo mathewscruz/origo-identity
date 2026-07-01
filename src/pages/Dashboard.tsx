@@ -347,10 +347,10 @@ export default function Dashboard() {
 
   const kpiCards = [
     { title: "Pessoas Ativas", value: kpis?.pessoasAtivas ?? 0, sub: `${kpis?.terceirosAtivos ?? 0} terceiros`, icon: Users, href: "/colaboradores", color: "text-primary" },
-    { title: "Aplicações Conectadas", value: kpis?.appsConectadas ?? 0, sub: "com conector ativo", icon: AppWindow, href: "/aplicacoes", color: "text-info" },
+    { title: "Aplicações", value: kpis?.appsConectadas ?? 0, sub: "aplicações cadastradas", icon: AppWindow, href: "/aplicacoes", color: "text-info" },
     { title: "Perfis Ativos", value: kpis?.perfisAtivos ?? 0, sub: "perfis de acesso", icon: ShieldCheck, href: "/perfis-acesso", color: "text-success" },
     { title: "Solicitações Pendentes", value: kpis?.solicitPendentes ?? 0, sub: "aguardando decisão", icon: FileCheck, href: "/solicitacoes", color: "text-warning" },
-    { title: "Fila de Provisionamento", value: kpis?.filaPendente ?? 0, sub: "itens pendentes", icon: RefreshCw, href: "/fila-provisionamento", color: "text-info" },
+    { title: "Fila de Provisionamento", value: kpis?.filaPendente ?? 0, sub: `${kpis?.filaAguardandoAprovacao ?? 0} aguardando aprovação · ${kpis?.filaProntoExecucao ?? 0} p/ execução`, icon: RefreshCw, href: "/fila-provisionamento", color: "text-info" },
     { title: "Alertas Não Lidos", value: kpis?.alertasNaoLidos ?? 0, sub: "requerem atenção", icon: AlertTriangle, href: "/alertas", color: (kpis?.alertasNaoLidos ?? 0) > 0 ? "text-destructive" : "text-success" },
   ];
 
