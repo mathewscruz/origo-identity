@@ -161,6 +161,65 @@ function chunk<T>(arr: T[], size: number): T[][] {
 
 const PLACEHOLDER_EMPRESA_ID = "00000000-0000-0000-0000-000000000000";
 
+// ─── Entra ID pre-check (avoid enqueueing create_if_not_exists for identities that already exist) ───
+async function getAzureTokenSafe(): Promise<string | null> {
+  const TENANT = Deno.env.get("AZURE_TENANT_ID");
+  const CLIENT = Deno.env.get("AZURE_CLIENT_ID");
+  const SECRET = Deno.env.get("AZURE_CLIENT_SECRET");
+  if (!TENANT || !CLIENT || !SECRET) return null;
+  try {
+    const res = await fetch(`https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: CLIENT, client_secret: SECRET,
+        scope: "https://graph.microsoft.com/.default",
+        grant_type: "client_credentials",
+      }),
+    });
+    if (!res.ok) return null;
+    const j = await res.json();
+    return j.access_token || null;
+  } catch { return null; }
+}
+
+/** Given a list of {email, sam} pairs, returns a Map keyed by email OR sam → entra userId */
+async function preCheckEntraExistence(
+  token: string,
+  identities: { email: string | null; sam: string | null }[],
+): Promise<Map<string, string>> {
+  const found = new Map<string, string>();
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  // Build unique filter values (Graph OData $filter with `or` — max ~15 terms per request is safe)
+  const CHUNK = 15;
+  const emailValues = Array.from(new Set(identities.map((i) => i.email).filter(Boolean) as string[]));
+  const samValues = Array.from(new Set(identities.map((i) => i.sam).filter(Boolean) as string[]));
+
+  async function runFilter(values: string[], build: (v: string) => string) {
+    for (let i = 0; i < values.length; i += CHUNK) {
+      const batch = values.slice(i, i + CHUNK);
+      const filter = batch.map((v) => build(v.replace(/'/g, "''"))).join(" or ");
+      const url = `https://graph.microsoft.com/v1.0/users?$filter=${encodeURIComponent(filter)}&$select=id,mail,userPrincipalName,onPremisesSamAccountName&$top=999`;
+      try {
+        const res = await fetch(url, { headers });
+        if (!res.ok) { console.warn(`[preCheck] Graph ${res.status}: ${(await res.text()).slice(0, 200)}`); continue; }
+        const data = await res.json();
+        for (const u of (data.value || [])) {
+          if (u.mail) found.set(u.mail.toLowerCase(), u.id);
+          if (u.userPrincipalName) found.set(u.userPrincipalName.toLowerCase(), u.id);
+          if (u.onPremisesSamAccountName) found.set(`sam:${u.onPremisesSamAccountName.toLowerCase()}`, u.id);
+        }
+      } catch (e) { console.warn(`[preCheck] error:`, e); }
+    }
+  }
+
+  await runFilter(emailValues, (v) => `mail eq '${v}' or userPrincipalName eq '${v}'`);
+  await runFilter(samValues, (v) => `onPremisesSamAccountName eq '${v}'`);
+
+  return found;
+}
+
+
 function buildFingerprint(row: CsvRow): string {
   return [
     row.displayName || "",
