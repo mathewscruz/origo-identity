@@ -75,13 +75,14 @@ function useKpiCounts() {
   return useQuery({
     queryKey: ["dashboard_kpis"],
     queryFn: async () => {
-      const [colabs, terceiros, apps, perfis, solicit, fila, alertas] = await Promise.all([
+      const [colabs, terceiros, apps, perfis, solicit, filaPending, filaWaiting, alertas] = await Promise.all([
         supabase.from("colaboradores").select("id", { count: "exact", head: true }).eq("status", "ativo"),
         supabase.from("terceiros").select("id", { count: "exact", head: true }).eq("ativo", true),
-        supabase.from("aplicacoes").select("id", { count: "exact", head: true }).neq("connector_type", "manual"),
+        supabase.from("aplicacoes").select("id", { count: "exact", head: true }),
         supabase.from("perfis_acesso").select("id", { count: "exact", head: true }).eq("ativo", true),
         supabase.from("solicitacoes_acesso").select("id", { count: "exact", head: true }).in("status", ["pendente", "em_aprovacao"]),
         supabase.from("iam_queue").select("id", { count: "exact", head: true }).eq("status", "pending"),
+        supabase.from("iam_queue").select("id", { count: "exact", head: true }).eq("status", "waiting_approval"),
         supabase.from("alertas").select("id", { count: "exact", head: true }).eq("lido", false),
       ]);
       return {
@@ -90,7 +91,9 @@ function useKpiCounts() {
         appsConectadas: apps.count ?? 0,
         perfisAtivos: perfis.count ?? 0,
         solicitPendentes: solicit.count ?? 0,
-        filaPendente: fila.count ?? 0,
+        filaPendente: (filaPending.count ?? 0) + (filaWaiting.count ?? 0),
+        filaAguardandoAprovacao: filaWaiting.count ?? 0,
+        filaProntoExecucao: filaPending.count ?? 0,
         alertasNaoLidos: alertas.count ?? 0,
       };
     },
@@ -142,11 +145,17 @@ function useAccessByApp() {
         .is("data_revogacao", null);
       if (!atribuicoes?.length) return [];
       const perfilIds = [...new Set(atribuicoes.map(a => a.perfil_id))];
-      const { data: perfilApps } = await supabase
-        .from("perfil_aplicacoes")
-        .select("aplicacao_id, perfil_id")
-        .in("perfil_id", perfilIds.slice(0, 200));
-      if (!perfilApps?.length) return [];
+      // Fetch em lotes de 500 para evitar limites de URL
+      const perfilApps: { aplicacao_id: string; perfil_id: string }[] = [];
+      for (let i = 0; i < perfilIds.length; i += 500) {
+        const batch = perfilIds.slice(i, i + 500);
+        const { data } = await supabase
+          .from("perfil_aplicacoes")
+          .select("aplicacao_id, perfil_id")
+          .in("perfil_id", batch);
+        if (data) perfilApps.push(...data);
+      }
+      if (!perfilApps.length) return [];
       const appCount: Record<string, number> = {};
       const perfilCountMap: Record<string, number> = {};
       atribuicoes.forEach(a => { perfilCountMap[a.perfil_id] = (perfilCountMap[a.perfil_id] || 0) + 1; });
@@ -154,9 +163,12 @@ function useAccessByApp() {
         appCount[pa.aplicacao_id] = (appCount[pa.aplicacao_id] || 0) + (perfilCountMap[pa.perfil_id] || 1);
       });
       const appIds = Object.keys(appCount);
-      const { data: apps } = await supabase.from("aplicacoes").select("id, nome").in("id", appIds.slice(0, 50));
       const appNames: Record<string, string> = {};
-      (apps ?? []).forEach(a => { appNames[a.id] = a.nome; });
+      for (let i = 0; i < appIds.length; i += 500) {
+        const batch = appIds.slice(i, i + 500);
+        const { data: apps } = await supabase.from("aplicacoes").select("id, nome").in("id", batch);
+        (apps ?? []).forEach(a => { appNames[a.id] = a.nome; });
+      }
       const sorted = Object.entries(appCount)
         .map(([id, value]) => ({ name: appNames[id] || "Desconhecido", value }))
         .sort((a, b) => b.value - a.value);
@@ -344,10 +356,10 @@ export default function Dashboard() {
 
   const kpiCards = [
     { title: "Pessoas Ativas", value: kpis?.pessoasAtivas ?? 0, sub: `${kpis?.terceirosAtivos ?? 0} terceiros`, icon: Users, href: "/colaboradores", color: "text-primary" },
-    { title: "Aplicações Conectadas", value: kpis?.appsConectadas ?? 0, sub: "com conector ativo", icon: AppWindow, href: "/aplicacoes", color: "text-info" },
+    { title: "Aplicações", value: kpis?.appsConectadas ?? 0, sub: "aplicações cadastradas", icon: AppWindow, href: "/aplicacoes", color: "text-info" },
     { title: "Perfis Ativos", value: kpis?.perfisAtivos ?? 0, sub: "perfis de acesso", icon: ShieldCheck, href: "/perfis-acesso", color: "text-success" },
     { title: "Solicitações Pendentes", value: kpis?.solicitPendentes ?? 0, sub: "aguardando decisão", icon: FileCheck, href: "/solicitacoes", color: "text-warning" },
-    { title: "Fila de Provisionamento", value: kpis?.filaPendente ?? 0, sub: "itens pendentes", icon: RefreshCw, href: "/fila-provisionamento", color: "text-info" },
+    { title: "Fila de Provisionamento", value: kpis?.filaPendente ?? 0, sub: `${kpis?.filaAguardandoAprovacao ?? 0} aguardando aprovação · ${kpis?.filaProntoExecucao ?? 0} p/ execução`, icon: RefreshCw, href: "/fila-provisionamento", color: "text-info" },
     { title: "Alertas Não Lidos", value: kpis?.alertasNaoLidos ?? 0, sub: "requerem atenção", icon: AlertTriangle, href: "/alertas", color: (kpis?.alertasNaoLidos ?? 0) > 0 ? "text-destructive" : "text-success" },
   ];
 

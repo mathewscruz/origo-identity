@@ -1,66 +1,60 @@
-## Contexto pós-reconciliação
+## Auditoria dos KPIs do Dashboard vs banco
 
-Resumo da reconciliação de 18:01:
-- **171 disable_entra** enfileirados (cross-checked contra Entra ID e enabled)
-- **3189 disable AD** enfileirados (on-prem ou sem match Entra)
-- **1974 pulados** (desligados que não existem no Entra Cloud)
-- **1061 já desabilitados** (skip, no-op)
-- **0 create_if_not_exists** / **0 review_orphan_entra** pendentes
+Comparei cada consulta do `Dashboard.tsx` contra o banco real:
 
-Estado do banco: 604 ativos (27 sem entra_id · email presente), 3288 desligados (1191 linkados).
+| Card | Valor exibido (lógica) | Realidade no banco | Status |
+|---|---|---|---|
+| Pessoas Ativas | colabs ativos + terceiros ativos = **604** | 604 + 0 = 604 | ✅ |
+| Aplicações Conectadas | `connector_type != 'manual'` = **0** | 535 aplicações, todas `manual` | ❌ **Bug: sempre 0** |
+| Perfis Ativos | 4 | 4 | ✅ |
+| Solicitações Pendentes | 0 | 0 | ✅ |
+| **Fila de Provisionamento** | apenas `status='pending'` = **8** | 8 pending + **3360 waiting_approval** | ❌ **Não reflete a fila real** |
+| Alertas Não Lidos | 56 | 56 | ✅ |
 
-## Diagnóstico de cobertura
+Outras verificações:
+- Gráfico "Provisionamento" (área): filtra `!= cancelled` e classifica por prefixo `assign`/`remove`/`disable` — correto.
+- Gráfico "Acessos por Aplicação" (donut): usa `perfilIds.slice(0, 200)` e `appIds.slice(0, 50)` — cap silencioso; pode subestimar em ambientes maiores. Hoje temos só 4 perfis, então não impacta.
+- Solicitações por Status: OK, agrupa `created_at >= período`.
+- Atividade Recente: OK, mistura queue + solicitações.
 
-**O que a reconciliação atual COBRE (com cross-check contra Entra):**
-- Desligado + existe no Entra + enabled → `disable_entra` ✓
-- Desligado + on-prem/sem match Entra → `disable` AD ✓
+## Correções propostas
 
-**O que a reconciliação atual NÃO cobre (lacunas para 100% assertividade CSV × Entra × AD):**
-1. **Ativo no CSV sem conta no Entra ID** → deveria gerar `create_if_not_exists`. Hoje só o `sync-csv-colab` faz isso na hora do import; se o colab já existia com `entra_id NULL` e não passou por sync, fica ignorado. Temos 27 casos assim agora.
-2. **Ativo no CSV com conta disabled no Entra** (voltou/reativou) → deveria gerar `enable_entra`. Reconcile não gera.
-3. **Conta no Entra sem match no CSV** (órfã) → deveria gerar `review_orphan_entra`. Reconcile não gera.
-4. **Divergência de atributos** (department, jobTitle, companyName) → `update_entra`. Reconcile não gera.
+### 1. Fila de Provisionamento (crítico)
 
-## Plano — validação e completude
+Incluir `waiting_approval` no card (é o estado onde os itens ficam quando o gate de aprovação está ligado — hoje 3360 itens).
 
-### Fase 1: Auditoria de amostragem contra Graph (READ-ONLY)
+**Mudança em `useKpiCounts`:**
+```ts
+supabase.from("iam_queue").select("id", { count: "exact", head: true })
+  .in("status", ["pending", "waiting_approval"])
+```
+Sub-label passa de "itens pendentes" para "aguardando execução/aprovação".
 
-Nova edge function `audit-reconciliation` que gera relatório em `auditoria`:
-- Pega até 50 itens aleatórios de cada bucket da última reconciliação:
-  - `disable_entra` enfileirados → confirma via Graph que a conta existe E está `accountEnabled=true`.
-  - `disable` AD enfileirados → confirma via Graph que a conta é `onPremisesSyncEnabled=true` OU não existe no Entra.
-  - Colabs "pulados no Entra" (via re-fetch por email) → confirma que Graph retorna 0 resultados.
-- Retorna 3 números: `entra_correct/entra_wrong`, `ad_correct/ad_wrong`, `skipped_correct/skipped_wrong`.
-- Se algum `_wrong > 0`, marca o item na fila com `error_code='audit_flag'` e comentário, sem cancelar (para revisão manual).
+### 2. Aplicações Conectadas (crítico)
 
-### Fase 2: Estender `reconcile-identities` para cobertura completa
+Como todas as aplicações hoje são `manual`, o filtro atual sempre dá 0. Duas opções — vou aplicar a **A** (mostra realidade sem esconder nada):
 
-Após a etapa 5 (desligados) atual, adicionar:
+**A. Mostrar todas as aplicações cadastradas** (mais fiel — o usuário quer saber quantas apps existem):
+```ts
+supabase.from("aplicacoes").select("id", { count: "exact", head: true })
+```
+Sub-label: "aplicações cadastradas".
 
-**5b. Ativos sem conta no Entra** — Para cada colab `status='ativo'` sem match no `entraIdx` (por `entra_id` e por `email`), enfileirar `create_if_not_exists` com payload de identidade. Deduplica por `colaborador_id`.
+**B.** Manter só apps com conector automático, mas dropar `null`:
+```ts
+.not("connector_type", "is", null).neq("connector_type", "manual")
+```
 
-**5c. Ativos com conta disabled** — Para cada colab `status='ativo'` cujo `entraIdx` retorna `accountEnabled=false`, enfileirar `enable_entra`. Deduplica.
+### 3. Access-by-App: remover caps silenciosos
 
-**5d. Órfãs no Entra** — Para cada `entraIdx` sem match em `colaboradores` (via `entra_id`, `mail`, `upn`) E não em `contas_admin_conhecidas` E `accountEnabled=true`, enfileirar `review_orphan_entra` com payload contendo `entra_id`, `mail`, `upn`, `displayName`. Deduplica.
+Trocar `.slice(0, 200)` e `.slice(0, 50)` por paginação simples em lotes de 1000 até esgotar. Baixo impacto agora (4 perfis), mas evita bug futuro.
 
-**5e. Divergência de atributos** *(escopo separado — pode ficar para depois)* — comparar `department/jobTitle/companyName` entre colab e Entra, enfileirar `update_entra` quando diferir.
+### 4. Extras (opcional)
 
-Novos contadores em `stats`: `create_enqueued`, `enable_enqueued`, `orphans_flagged`.
+- Adicionar tooltip explicativo nos KPIs alterados (o que "aguardando execução/aprovação" significa).
+- No card "Fila de Provisionamento" mostrar breakdown "X aguardando aprovação · Y prontos p/ execução" no sub-label.
 
-### Fase 3: UI e relatório
+## Fora de escopo
 
-- Painel de reconciliação em Integrações exibe todos os contadores no `job.message` (já feito, precisa só ler os novos campos).
-- Auditoria da reconciliação inclui breakdown completo.
-- Toast de "Rodar ciclo diário" mostra "N criações · N reativações · N órfãs · N desligamentos Entra · N desligamentos AD".
-
-### Ordem de execução
-
-1. **Fase 1 primeiro** para responder objetivamente "está 100%?" com números da amostragem sobre os itens ATUAIS.
-2. Se a Fase 1 mostrar wrongs, corrigir root cause antes da Fase 2.
-3. **Fase 2** para eliminar as lacunas de cobertura (criações, reativações, órfãs).
-4. Fase 5e (atributos) opcional em passo posterior.
-
-### Fora de escopo
-
-- Comparação diária de grupos/licenças (fluxo separado).
-- Auto-cancelar itens flagados na Fase 1 (só marca; usuário decide).
+- Redesign de gráficos.
+- Novos cards (órfãos, criações pendentes etc.) — pode virar próximo pedido.
