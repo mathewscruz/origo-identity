@@ -767,6 +767,32 @@ export default function AprovacaoIAMPage() {
                 </SheetDescription>
               </SheetHeader>
               <div className="mt-4 space-y-4">
+                {detailItem.payload_json?.reason === "status_divergence" && (
+                  <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs dark:bg-amber-950/20">
+                    <div className="font-medium text-amber-900 dark:text-amber-200">Divergência de status</div>
+                    <div className="mt-1 text-amber-900/90 dark:text-amber-100/90">
+                      Base: <strong>{String(detailItem.payload_json.colab_status || "?")}</strong>
+                      {" · "}Entra: <strong>{detailItem.payload_json.entra_account_enabled === false ? "desabilitado" : "habilitado"}</strong>
+                    </div>
+                    <div className="mt-1 text-amber-800/80 dark:text-amber-200/80">
+                      Aprovar aplica a ação <em>{actionLabels[detailItem.action_type] || detailItem.action_type}</em> no Entra ID.
+                    </div>
+                  </div>
+                )}
+                {detailItem.action_type === "review_orphan_entra" && (
+                  <div className="rounded-md border border-blue-300 bg-blue-50 p-3 text-xs dark:bg-blue-950/20">
+                    <div className="font-medium text-blue-900 dark:text-blue-200">Conta órfã no Entra ID</div>
+                    <div className="mt-1 text-blue-900/90 dark:text-blue-100/90">
+                      Existe no Entra e não casou com nenhum colaborador da base.
+                      {detailItem.payload_json?.createdDateTime && (
+                        <> Criada em {new Date(detailItem.payload_json.createdDateTime).toLocaleDateString("pt-BR")}.</>
+                      )}
+                    </div>
+                    <div className="mt-1 text-blue-800/80 dark:text-blue-200/80">
+                      <strong>Aprovar</strong> desabilita a conta no Entra. <strong>Recusar</strong> marca como conta legítima e não voltará à revisão.
+                    </div>
+                  </div>
+                )}
                 <div>
                   <Label className="text-xs text-muted-foreground">Payload</Label>
                   <pre className="mt-1 text-xs bg-muted p-3 rounded overflow-x-auto max-h-96">
