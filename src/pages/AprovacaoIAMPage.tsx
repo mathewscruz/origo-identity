@@ -238,6 +238,7 @@ export default function AprovacaoIAMPage() {
       toast.success(`${n} item(ns) movido(s) para aprovação`);
       setFreezeOpen(false);
       qc.invalidateQueries({ queryKey: ["iam-approval-queue"] });
+      refetchLegacy();
     },
     onError: (e: any) => toast.error(`Erro: ${e.message}`),
   });
