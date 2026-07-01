@@ -515,28 +515,6 @@ export default function AprovacaoIAMPage() {
         )}
       </div>
 
-      {/* Legacy pending banner */}
-      {approvalMode && isAdmin && legacyPendingCount > 0 && (
-        <Card className="border-amber-300 bg-amber-50 dark:bg-amber-950/20">
-          <CardContent className="py-4 flex items-center justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
-              <div className="text-sm">
-                <p className="font-medium text-amber-900 dark:text-amber-200">
-                  {legacyPendingCount.toLocaleString("pt-BR")} ações estão em fila legada (pré-gate)
-                </p>
-                <p className="text-amber-800 dark:text-amber-300/90">
-                  Serão executadas automaticamente pelo worker se nada for feito. Mova-as para a fila de aprovação para revisar antes.
-                </p>
-              </div>
-            </div>
-            <Button variant="default" size="sm" onClick={() => setFreezeOpen(true)} className="shrink-0">
-              <AlertTriangle className="h-4 w-4 mr-2" />
-              Mover para aprovação
-            </Button>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Reconcile banner — only when there's work to do or an active run */}
       {isAdmin && (createIfNotExistsCount > 0 || reconcileRunning || reconcileStale) && (
