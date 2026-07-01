@@ -141,8 +141,58 @@ async function fetchAllEntraUsers(token: string): Promise<{
   return { byId, byEmail };
 }
 
+function resolveEntraMatch(
+  c: Colab,
+  entraIdx: { byId: Map<string, EntraUser>; byEmail: Map<string, EntraUser> },
+): EntraUser | null {
+  return (
+    (c.entra_id && entraIdx.byId.get(c.entra_id)) ||
+    (c.email && entraIdx.byEmail.get(c.email.toLowerCase())) ||
+    null
+  );
+}
+
 async function updateJob(sb: any, jobId: string, patch: Record<string, unknown>) {
   await sb.from("sync_jobs").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", jobId);
+}
+
+async function cleanupPhantomLeavers(
+  sb: any,
+  phantoms: Colab[],
+  stats: any,
+) {
+  if (phantoms.length === 0) return;
+  const ids = phantoms.map((c) => c.id);
+  const now = new Date().toISOString();
+
+  for (const batch of chunk(ids, 200)) {
+    const { count, error } = await sb
+      .from("iam_queue")
+      .update({
+        status: "cancelled",
+        processed_at: now,
+        processed_by: "reconcile-identities",
+        result_message: "Usuário não encontrado no AD/Entra ID — removido/ignorado pela reconciliação.",
+        error_code: null,
+      }, { count: "exact" })
+      .in("colaborador_id", batch)
+      .in("status", ["pending", "waiting_approval", "processing"]);
+    if (error) stats.errors.push(`cancel phantom queue: ${error.message}`);
+    else stats.phantom_queue_cancelled += count || 0;
+  }
+
+  for (const batch of chunk(ids, 200)) {
+    await sb.from("perfil_atribuicoes").delete().in("colaborador_id", batch);
+    await sb.from("colab_quarentena").delete().in("colaborador_id", batch);
+    await sb.from("excecoes").delete().in("colaborador_id", batch);
+    await sb.from("revisao_itens").delete().in("colaborador_id", batch);
+    const { count, error } = await sb
+      .from("colaboradores")
+      .delete({ count: "exact" })
+      .in("id", batch);
+    if (error) stats.errors.push(`delete phantom colabs: ${error.message}`);
+    else stats.phantom_colabs_removed += count || 0;
+  }
 }
 
 /**
@@ -407,6 +457,8 @@ async function runReconciliation(sb: any, jobId: string) {
     create_enqueued: 0,
     enable_enqueued: 0,
     orphans_flagged: 0,
+    phantom_colabs_removed: 0,
+    phantom_queue_cancelled: 0,
     duplicates: [] as Array<{ colab_id: string; entra_id: string }>,
     errors: [] as string[],
   };
@@ -487,6 +539,7 @@ async function runReconciliation(sb: any, jobId: string) {
     // 3. Recarrega colabs
     await updateJob(sb, jobId, { phase: "resolvendo_joiners", message: "Resolvendo joiners pendentes…", users_percent: 60 });
     const list2 = await fetchAllColabs(sb);
+    let effectiveList = list2;
 
     // 4. Marca joiners pendentes como executados quando colab já existe no Entra
     const linkedIds = list2.filter((c) => c.entra_id).map((c) => c.id);
@@ -510,7 +563,19 @@ async function runReconciliation(sb: any, jobId: string) {
 
     // 5. Gera leavers + enqueue disable para desligados sem evento leaver
     await updateJob(sb, jobId, { phase: "gerando_leavers", message: "Gerando eventos leaver…", users_percent: 75 });
-    const desligados = list2.filter((c) => c.status === "desligado" || c.status === "inativo");
+    const desligadosAll = list2.filter((c) => c.status === "desligado" || c.status === "inativo");
+    const phantomLeavers = desligadosAll.filter((c) => !resolveEntraMatch(c, entraIdx));
+    const phantomLeaverIds = new Set(phantomLeavers.map((c) => c.id));
+    if (phantomLeavers.length > 0) {
+      await updateJob(sb, jobId, {
+        phase: "limpando_fantasmas",
+        message: `Removendo ${phantomLeavers.length.toLocaleString("pt-BR")} desligado(s) sem AD/Entra ID…`,
+        users_percent: 78,
+      });
+      await cleanupPhantomLeavers(sb, phantomLeavers, stats);
+      effectiveList = list2.filter((c) => !phantomLeaverIds.has(c.id));
+    }
+    const desligados = desligadosAll.filter((c) => !phantomLeaverIds.has(c.id));
     if (desligados.length > 0) {
       const desligIds = desligados.map((c) => c.id);
       const existingLeavers = new Set<string>();
@@ -562,10 +627,7 @@ async function runReconciliation(sb: any, jobId: string) {
         // Cross-check cada desligado contra o índice do Entra ID
         const disableEntries: any[] = [];
         for (const c of missingLeavers) {
-          const entraMatch =
-            (c.entra_id && entraIdx.byId.get(c.entra_id)) ||
-            (c.email && entraIdx.byEmail.get(c.email.toLowerCase())) ||
-            null;
+          const entraMatch = resolveEntraMatch(c, entraIdx);
 
           // Decisão para Entra ID
           if (!entraMatch) {
@@ -636,7 +698,7 @@ async function runReconciliation(sb: any, jobId: string) {
       users_percent: 90,
     });
 
-    const ativos = list2.filter((c) => c.status === "ativo");
+    const ativos = effectiveList.filter((c) => c.status === "ativo");
 
     // Índice de itens já abertos na fila (por colaborador+action_type e para órfãos por entra_id)
     const ativoIds = ativos.map((c) => c.id);
@@ -657,10 +719,7 @@ async function runReconciliation(sb: any, jobId: string) {
     // 5b — Ativo no CSV sem conta no Entra → create_if_not_exists
     // 5c — Ativo no CSV com conta disabled no Entra → enable_entra
     for (const c of ativos) {
-      const entraMatch =
-        (c.entra_id && entraIdx.byId.get(c.entra_id)) ||
-        (c.email && entraIdx.byEmail.get(c.email.toLowerCase())) ||
-        null;
+      const entraMatch = resolveEntraMatch(c, entraIdx);
 
       if (!entraMatch) {
         if (!c.email) continue; // sem email não dá para criar
@@ -706,7 +765,7 @@ async function runReconciliation(sb: any, jobId: string) {
     // Constrói set de todos os entra_ids/emails que pertencem a colabs
     const knownEntraIds = new Set<string>();
     const knownEmails = new Set<string>();
-    for (const c of list2) {
+    for (const c of effectiveList) {
       if (c.entra_id) knownEntraIds.add(c.entra_id);
       if (c.email) knownEmails.add(c.email.toLowerCase());
     }
@@ -763,7 +822,7 @@ async function runReconciliation(sb: any, jobId: string) {
     }
 
     // 6. Auditoria
-    const resumoTxt = `Reconciliação: ${stats.linked_entra} linkados · ${stats.create_enqueued} criações · ${stats.enable_enqueued} reativações · ${stats.leavers_generated} leavers · ${stats.disable_entra_enqueued} disable Entra · ${stats.disable_ad_enqueued} disable AD · ${stats.orphans_flagged} órfãos · ${stats.skipped_no_entra} pulados · ${stats.skipped_already_disabled} já desabilitados`;
+    const resumoTxt = `Reconciliação: ${stats.linked_entra} linkados · ${stats.create_enqueued} criações · ${stats.enable_enqueued} reativações · ${stats.leavers_generated} leavers · ${stats.disable_entra_enqueued} disable Entra · ${stats.disable_ad_enqueued} disable AD · ${stats.orphans_flagged} órfãos · ${stats.phantom_colabs_removed} fantasmas removidos · ${stats.phantom_queue_cancelled} filas canceladas · ${stats.skipped_no_entra} pulados · ${stats.skipped_already_disabled} já desabilitados`;
     await sb.from("auditoria").insert({
       entidade: "reconciliacao_identidades",
       acao: "reconciliar",
