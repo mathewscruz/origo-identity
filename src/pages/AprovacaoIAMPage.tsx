@@ -121,16 +121,6 @@ export default function AprovacaoIAMPage() {
     onError: (e: any) => toast.error(`Erro: ${e.message}`),
   });
 
-  // ─── Legacy pending count ───
-  const { data: legacyPendingCount = 0, refetch: refetchLegacy } = useQuery({
-    queryKey: ["iam-legacy-pending-count"],
-    queryFn: async () => {
-      const { count } = await (supabase as any)
-        .from("iam_queue").select("id", { count: "exact", head: true }).eq("status", "pending");
-      return count || 0;
-    },
-    refetchInterval: 30000,
-  });
 
   // ─── Count of create_if_not_exists in waiting_approval (for reconcile banner) ───
   const { data: createIfNotExistsCount = 0, refetch: refetchCreateCount } = useQuery({
