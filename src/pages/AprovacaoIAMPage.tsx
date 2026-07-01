@@ -426,7 +426,7 @@ export default function AprovacaoIAMPage() {
             Aprovação IAM
           </h1>
           <p className="text-sm text-muted-foreground">
-            Gate de aprovação para toda ação IAM (criação, alteração, exclusão, grupos, licenças, apps).
+            Aprove ou recuse cada ação IAM antes que ela vá para o AD/Entra.
           </p>
         </div>
         {tab === "waiting" && (
