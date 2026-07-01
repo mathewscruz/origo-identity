@@ -810,19 +810,6 @@ export default function AprovacaoIAMPage() {
         </ADContent>
       </AD>
 
-      {/* Freeze dialog */}
-      <AD open={freezeOpen} onOpenChange={setFreezeOpen}>
-        <ADContent>
-          <ADHeader>
-            <ADTitle>Congelar fila atual?</ADTitle>
-            <ADDesc>Todos os itens em <strong>pendente</strong> serão movidos para <strong>aguardando aprovação</strong>.</ADDesc>
-          </ADHeader>
-          <ADFooter>
-            <ADCancel>Cancelar</ADCancel>
-            <ADAction onClick={() => freezeMutation.mutate()} disabled={freezeMutation.isPending}>Congelar</ADAction>
-          </ADFooter>
-        </ADContent>
-      </AD>
 
       {/* Reconcile dialog */}
       <AD open={reconcileOpen} onOpenChange={setReconcileOpen}>
