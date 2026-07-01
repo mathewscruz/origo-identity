@@ -93,7 +93,7 @@ export default function AprovacaoIAMPage() {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [rejectTargetIds, setRejectTargetIds] = useState<string[]>([]);
-  const [freezeOpen, setFreezeOpen] = useState(false);
+  
   const [reconcileOpen, setReconcileOpen] = useState(false);
   const [page, setPage] = useState(0);
 
