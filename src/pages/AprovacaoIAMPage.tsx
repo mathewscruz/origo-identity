@@ -555,7 +555,7 @@ export default function AprovacaoIAMPage() {
             <CardContent className="pt-4 flex flex-wrap gap-2 items-center">
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Buscar nesta página..." value={busca} onChange={(e) => setBusca(e.target.value)} className="pl-8 h-9" />
+                <Input placeholder="Buscar por nome, email ou identidade…" value={busca} onChange={(e) => setBusca(e.target.value)} className="pl-8 h-9" />
               </div>
               <Select value={actionFilter} onValueChange={setActionFilter}>
                 <SelectTrigger className="w-[200px] h-9"><SelectValue /></SelectTrigger>
