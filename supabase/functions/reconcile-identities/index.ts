@@ -565,12 +565,22 @@ async function runReconciliation(sb: any, jobId: string) {
     // 5. Gera leavers + enqueue disable para desligados sem evento leaver
     await updateJob(sb, jobId, { phase: "gerando_leavers", message: "Gerando eventos leaver…", users_percent: 75 });
     const desligadosAll = list2.filter((c) => c.status === "desligado" || c.status === "inativo");
-    const phantomLeavers = desligadosAll.filter((c) => c.origem === "csv" && !resolveEntraMatch(c, entraIdx));
+    const ownerByEntraId = new Map<string, Colab>();
+    for (const c of list2) {
+      if (c.entra_id && !ownerByEntraId.has(c.entra_id)) ownerByEntraId.set(c.entra_id, c);
+    }
+    const phantomLeavers = desligadosAll.filter((c) => {
+      if (c.origem !== "csv") return false;
+      const match = resolveEntraMatch(c, entraIdx);
+      if (!match) return true;
+      const owner = ownerByEntraId.get(match.id);
+      return !!owner && owner.id !== c.id && c.entra_id !== match.id;
+    });
     const phantomLeaverIds = new Set(phantomLeavers.map((c) => c.id));
     if (phantomLeavers.length > 0) {
       await updateJob(sb, jobId, {
         phase: "limpando_fantasmas",
-        message: `Removendo ${phantomLeavers.length.toLocaleString("pt-BR")} desligado(s) sem AD/Entra ID…`,
+        message: `Removendo ${phantomLeavers.length.toLocaleString("pt-BR")} desligado(s) sem AD/Entra ID ou duplicados…`,
         users_percent: 78,
       });
       await cleanupPhantomLeavers(sb, phantomLeavers, stats);
