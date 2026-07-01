@@ -556,6 +556,21 @@ function emailPrefix(value: unknown): string {
   return v.includes("@") ? v.split("@")[0] : v;
 }
 
+const NAME_STOP_WORDS = new Set(["de", "da", "do", "dos", "das", "e", "del", "di"]);
+
+function nameTokens(value: unknown): string[] {
+  return normalizeText(value)
+    .split(/\s+/)
+    .map((token) => token.replace(/[^a-z0-9]/g, ""))
+    .filter((token) => token.length > 1 && !NAME_STOP_WORDS.has(token));
+}
+
+function nameSignature(value: unknown): string {
+  const tokens = nameTokens(value);
+  if (tokens.length < 2) return "";
+  return `${tokens[0]}|${tokens[tokens.length - 1]}`;
+}
+
 function addIndexValue(index: Map<string, any[]>, key: string, user: any) {
   if (!key) return;
   const current = index.get(key) || [];
@@ -579,6 +594,8 @@ async function fetchAllGraphUsers(token: string, onProgress?: (count: number) =>
   const select = [
     "id",
     "displayName",
+    "givenName",
+    "surname",
     "mail",
     "userPrincipalName",
     "onPremisesSamAccountName",
@@ -610,6 +627,7 @@ function buildEntraUserIndex(users: any[]) {
   const byEmployee = new Map<string, any[]>();
   const byPrefix = new Map<string, any[]>();
   const byName = new Map<string, any[]>();
+  const byNameSignature = new Map<string, any[]>();
 
   for (const user of users) {
     const emails = new Set<string>();
@@ -633,11 +651,19 @@ function buildEntraUserIndex(users: any[]) {
     const employee = normalizeIdentifier(user.employeeId);
     if (employee) addIndexValue(byEmployee, employee, user);
 
-    const name = normalizeText(user.displayName).replace(/\s+/g, " ");
-    if (name) addIndexValue(byName, name, user);
+    const nameCandidates = [
+      user.displayName,
+      [user.givenName, user.surname].filter(Boolean).join(" "),
+    ].filter(Boolean);
+    for (const candidate of nameCandidates) {
+      const name = normalizeText(candidate).replace(/\s+/g, " ");
+      if (name) addIndexValue(byName, name, user);
+      const signature = nameSignature(candidate);
+      if (signature) addIndexValue(byNameSignature, signature, user);
+    }
   }
 
-  return { byEmail, bySam, byEmployee, byPrefix, byName };
+  return { byEmail, bySam, byEmployee, byPrefix, byName, byNameSignature };
 }
 
 function matchEntraUserForIdentity(identity: {
@@ -683,6 +709,10 @@ function matchEntraUserForIdentity(identity: {
   if (name) {
     const hit = firstUnique(index.byName, name);
     if (hit) return { user: hit, matchedBy: `nome:${name}` };
+
+    const signature = nameSignature(identity.nome || payload.displayName || payload.nome);
+    const signatureHit = firstUnique(index.byNameSignature, signature);
+    if (signatureHit) return { user: signatureHit, matchedBy: `nome_assinatura:${signature}` };
   }
 
   return { user: null, matchedBy: "not_found" };
