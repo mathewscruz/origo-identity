@@ -277,15 +277,17 @@ async function runReconciliation(sb: any, jobId: string) {
       const missingLeavers = desligados.filter((c) => !existingLeavers.has(c.id));
 
       if (missingLeavers.length > 0) {
-        const targetIds = missingLeavers.filter((c) => c.sam_account_name).map((c) => c.sam_account_name!);
-        const existingDisables = new Set<string>();
-        for (const batch of chunk(targetIds, 500)) {
+        // Índice do queue existente (por colaborador_id) para evitar duplicar itens abertos
+        const missingIds = missingLeavers.map((c) => c.id);
+        const openByColab = new Set<string>();
+        for (const batch of chunk(missingIds, 500)) {
           const { data: qs } = await sb
             .from("iam_queue")
-            .select("target_identity")
-            .in("target_identity", batch)
-            .eq("action_type", "disable_entra");
-          for (const q of qs || []) existingDisables.add(q.target_identity);
+            .select("colaborador_id, action_type")
+            .in("colaborador_id", batch)
+            .in("action_type", ["disable", "disable_entra"])
+            .in("status", ["pending", "waiting_approval", "processing"]);
+          for (const q of qs || []) openByColab.add(`${q.colaborador_id}|${q.action_type}`);
         }
 
         const leaverEvents = missingLeavers.map((c) => ({
@@ -305,14 +307,37 @@ async function runReconciliation(sb: any, jobId: string) {
 
         await updateJob(sb, jobId, {
           phase: "enfileirando_disable",
-          message: `Enfileirando ${missingLeavers.length} desabilitações…`,
+          message: `Analisando ${missingLeavers.length} desligados contra Entra ID…`,
           users_percent: 85,
         });
 
-        const disableEntries = missingLeavers
-          .filter((c) => c.sam_account_name && !existingDisables.has(c.sam_account_name!))
-          .flatMap((c) => [
-            {
+        // Cross-check cada desligado contra o índice do Entra ID
+        const disableEntries: any[] = [];
+        for (const c of missingLeavers) {
+          const entraMatch =
+            (c.entra_id && entraIdx.byId.get(c.entra_id)) ||
+            (c.email && entraIdx.byEmail.get(c.email.toLowerCase())) ||
+            null;
+
+          // Decisão para Entra ID
+          if (!entraMatch) {
+            stats.skipped_no_entra++;
+          } else if (!entraMatch.accountEnabled) {
+            stats.skipped_already_disabled++;
+          } else if (!openByColab.has(`${c.id}|disable_entra`)) {
+            disableEntries.push({
+              action_type: "disable_entra",
+              payload_json: { samAccountName: c.sam_account_name, displayName: c.nome, mail: c.email || "" },
+              target_identity: c.sam_account_name || entraMatch.upn || c.email,
+              colaborador_id: c.id, requested_by: "reconciliacao", status: "pending",
+            });
+            stats.disable_entra_enqueued++;
+          }
+
+          // Decisão para AD (só se tem sam e conta é on-prem OU não achado no Entra Cloud)
+          const isOnPrem = entraMatch?.onPremisesSyncEnabled === true || !entraMatch;
+          if (c.sam_account_name && isOnPrem && !openByColab.has(`${c.id}|disable`)) {
+            disableEntries.push({
               action_type: "disable",
               payload_json: {
                 samAccountName: c.sam_account_name, displayName: c.nome, mail: c.email || "",
@@ -321,14 +346,11 @@ async function runReconciliation(sb: any, jobId: string) {
               },
               target_identity: c.sam_account_name,
               colaborador_id: c.id, requested_by: "reconciliacao", status: "pending",
-            },
-            {
-              action_type: "disable_entra",
-              payload_json: { samAccountName: c.sam_account_name, displayName: c.nome, mail: c.email || "" },
-              target_identity: c.sam_account_name,
-              colaborador_id: c.id, requested_by: "reconciliacao", status: "pending",
-            },
-          ]);
+            });
+            stats.disable_ad_enqueued++;
+          }
+        }
+
         for (const batch of chunk(disableEntries, 200)) {
           const { error: qerr } = await sb.from("iam_queue").insert(batch);
           if (qerr) stats.errors.push(`insert iam_queue: ${qerr.message}`);
