@@ -10,7 +10,7 @@ const corsHeaders = {
   "Content-Type": "application/json",
 };
 
-const SAMPLE = 50;
+const SAMPLE = 20;
 
 async function getGraphToken(): Promise<string> {
   const tenantId = Deno.env.get("AZURE_TENANT_ID")!;
