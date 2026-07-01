@@ -93,7 +93,7 @@ export default function AprovacaoIAMPage() {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [rejectTargetIds, setRejectTargetIds] = useState<string[]>([]);
-  const [freezeOpen, setFreezeOpen] = useState(false);
+  
   const [reconcileOpen, setReconcileOpen] = useState(false);
   const [page, setPage] = useState(0);
 
@@ -121,16 +121,6 @@ export default function AprovacaoIAMPage() {
     onError: (e: any) => toast.error(`Erro: ${e.message}`),
   });
 
-  // ─── Legacy pending count ───
-  const { data: legacyPendingCount = 0, refetch: refetchLegacy } = useQuery({
-    queryKey: ["iam-legacy-pending-count"],
-    queryFn: async () => {
-      const { count } = await (supabase as any)
-        .from("iam_queue").select("id", { count: "exact", head: true }).eq("status", "pending");
-      return count || 0;
-    },
-    refetchInterval: 30000,
-  });
 
   // ─── Count of create_if_not_exists in waiting_approval (for reconcile banner) ───
   const { data: createIfNotExistsCount = 0, refetch: refetchCreateCount } = useQuery({
@@ -371,23 +361,6 @@ export default function AprovacaoIAMPage() {
     },
   });
 
-  const freezeMutation = useMutation({
-    mutationFn: async () => {
-      const { error, count } = await (supabase as any)
-        .from("iam_queue")
-        .update({ status: "waiting_approval" }, { count: "exact" })
-        .eq("status", "pending");
-      if (error) throw error;
-      return count || 0;
-    },
-    onSuccess: (n) => {
-      toast.success(`${n} item(ns) movido(s) para aprovação`);
-      setFreezeOpen(false);
-      qc.invalidateQueries({ queryKey: ["iam-approval-queue"] });
-      refetchLegacy();
-    },
-    onError: (e: any) => toast.error(`Erro: ${e.message}`),
-  });
 
   // ─── Reconcile job: fetch latest reconcile_entra sync_job and poll while running ───
   const STALE_MS = 3 * 60 * 1000;
@@ -515,28 +488,6 @@ export default function AprovacaoIAMPage() {
         )}
       </div>
 
-      {/* Legacy pending banner */}
-      {approvalMode && isAdmin && legacyPendingCount > 0 && (
-        <Card className="border-amber-300 bg-amber-50 dark:bg-amber-950/20">
-          <CardContent className="py-4 flex items-center justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
-              <div className="text-sm">
-                <p className="font-medium text-amber-900 dark:text-amber-200">
-                  {legacyPendingCount.toLocaleString("pt-BR")} ações estão em fila legada (pré-gate)
-                </p>
-                <p className="text-amber-800 dark:text-amber-300/90">
-                  Serão executadas automaticamente pelo worker se nada for feito. Mova-as para a fila de aprovação para revisar antes.
-                </p>
-              </div>
-            </div>
-            <Button variant="default" size="sm" onClick={() => setFreezeOpen(true)} className="shrink-0">
-              <AlertTriangle className="h-4 w-4 mr-2" />
-              Mover para aprovação
-            </Button>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Reconcile banner — only when there's work to do or an active run */}
       {isAdmin && (createIfNotExistsCount > 0 || reconcileRunning || reconcileStale) && (
@@ -849,19 +800,6 @@ export default function AprovacaoIAMPage() {
         </ADContent>
       </AD>
 
-      {/* Freeze dialog */}
-      <AD open={freezeOpen} onOpenChange={setFreezeOpen}>
-        <ADContent>
-          <ADHeader>
-            <ADTitle>Congelar fila atual?</ADTitle>
-            <ADDesc>Todos os itens em <strong>pendente</strong> serão movidos para <strong>aguardando aprovação</strong>.</ADDesc>
-          </ADHeader>
-          <ADFooter>
-            <ADCancel>Cancelar</ADCancel>
-            <ADAction onClick={() => freezeMutation.mutate()} disabled={freezeMutation.isPending}>Congelar</ADAction>
-          </ADFooter>
-        </ADContent>
-      </AD>
 
       {/* Reconcile dialog */}
       <AD open={reconcileOpen} onOpenChange={setReconcileOpen}>
