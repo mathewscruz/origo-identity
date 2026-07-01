@@ -75,13 +75,14 @@ function useKpiCounts() {
   return useQuery({
     queryKey: ["dashboard_kpis"],
     queryFn: async () => {
-      const [colabs, terceiros, apps, perfis, solicit, fila, alertas] = await Promise.all([
+      const [colabs, terceiros, apps, perfis, solicit, filaPending, filaWaiting, alertas] = await Promise.all([
         supabase.from("colaboradores").select("id", { count: "exact", head: true }).eq("status", "ativo"),
         supabase.from("terceiros").select("id", { count: "exact", head: true }).eq("ativo", true),
-        supabase.from("aplicacoes").select("id", { count: "exact", head: true }).neq("connector_type", "manual"),
+        supabase.from("aplicacoes").select("id", { count: "exact", head: true }),
         supabase.from("perfis_acesso").select("id", { count: "exact", head: true }).eq("ativo", true),
         supabase.from("solicitacoes_acesso").select("id", { count: "exact", head: true }).in("status", ["pendente", "em_aprovacao"]),
         supabase.from("iam_queue").select("id", { count: "exact", head: true }).eq("status", "pending"),
+        supabase.from("iam_queue").select("id", { count: "exact", head: true }).eq("status", "waiting_approval"),
         supabase.from("alertas").select("id", { count: "exact", head: true }).eq("lido", false),
       ]);
       return {
@@ -90,7 +91,9 @@ function useKpiCounts() {
         appsConectadas: apps.count ?? 0,
         perfisAtivos: perfis.count ?? 0,
         solicitPendentes: solicit.count ?? 0,
-        filaPendente: fila.count ?? 0,
+        filaPendente: (filaPending.count ?? 0) + (filaWaiting.count ?? 0),
+        filaAguardandoAprovacao: filaWaiting.count ?? 0,
+        filaProntoExecucao: filaPending.count ?? 0,
         alertasNaoLidos: alertas.count ?? 0,
       };
     },
