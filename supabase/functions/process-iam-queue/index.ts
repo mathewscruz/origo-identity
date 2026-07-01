@@ -319,12 +319,25 @@ async function executeAction(
     }
 
     case "disable_entra": {
+      // Pre-check: se conta já está desabilitada, no-op.
+      const chk = await fetch(`${graphBase}/users/${userId}?$select=accountEnabled`, { headers });
+      if (chk.status === 404) return { success: true, message: `Usuário não existe mais no Entra ID (no-op)`, alreadyExists: true };
+      if (chk.ok) {
+        const d = await chk.json();
+        if (d.accountEnabled === false) return { success: true, message: `Conta já estava desabilitada`, alreadyExists: true };
+      }
       const res = await fetch(`${graphBase}/users/${userId}`, { method: "PATCH", headers, body: JSON.stringify({ accountEnabled: false }) });
       if (res.status === 204 || res.ok) return { success: true, message: `Conta desabilitada no Entra ID` };
       return { success: false, message: await buildErr(res, "desabilitar conta no Entra ID") };
     }
 
     case "enable_entra": {
+      const chk = await fetch(`${graphBase}/users/${userId}?$select=accountEnabled`, { headers });
+      if (chk.status === 404) return { success: true, message: `Usuário não existe mais no Entra ID (no-op)`, alreadyExists: true };
+      if (chk.ok) {
+        const d = await chk.json();
+        if (d.accountEnabled === true) return { success: true, message: `Conta já estava habilitada`, alreadyExists: true };
+      }
       const res = await fetch(`${graphBase}/users/${userId}`, { method: "PATCH", headers, body: JSON.stringify({ accountEnabled: true }) });
       if (res.status === 204 || res.ok) return { success: true, message: `Conta reabilitada no Entra ID` };
       return { success: false, message: await buildErr(res, "reabilitar conta no Entra ID") };
