@@ -1,110 +1,72 @@
-## Diagnóstico do último sync (job `47da616e…`, 01/07)
+## Fila de Aprovação IAM
 
-Fiz uma avaliação direta na base. O resumo é: **o import bruto funcionou, mas a etapa de "distinguir quem já existe no AD/Entra vs quem precisa ser criado/desligado" está incompleta**.
+Adiciona um "gate" entre a geração de ações IAM (por CSV, JML, catálogo, reconciliação etc.) e a execução real no AD/Entra ID. Enquanto o modo estiver ligado, nada é executado sem aprovação manual de um admin.
 
-### Números atuais da base
+### Comportamento
 
-| Métrica | Valor |
-|---|---|
-| Colaboradores no CSV (origem=csv) | 3.910 |
-| Status = ativo | 604 |
-| Status = desligado | 3.287 |
-| Com `sam_account_name` preenchido | 3.912 (100%) |
-| Com `entra_id` preenchido (link real com Entra) | **13** |
-| Com `email` | 3.785 |
-| Eventos JML `joiner pendente` | **7.788** (esperado ≈3.899) |
-| Eventos JML `leaver` gerados no último sync | **0** (deveria haver p/ desligados novos) |
-| Fila `create_if_not_exists` pending (hoje) | 3.899 |
-| Fila `create_if_not_exists` cancelled (Abr) | 3.879 |
+- Novo parâmetro global `iam_approval_required` (bool, default **true** no primeiro mês) em `parametros`, editável em Configurações → Parâmetros.
+- Quando ligado, todo `INSERT` em `iam_queue` entra com status `waiting_approval` em vez de `pending`.
+- O `process-iam-queue` e o `iam-agent-api` só puxam itens com status `pending`. Nada muda no worker — só o gate.
+- Ao aprovar: status vira `pending` e a fila roda normalmente.
+- Ao recusar: status vira `rejected` com motivo + auditoria.
+- Auto-aprovação: se o modo estiver desligado, novos itens já entram como `pending` (comportamento atual).
 
-### O que está certo
-- Parser do CSV importou os 3.910 colaboradores corretamente (nomes, matrícula, cargo, área, empresa, gestor).
-- Watchdog marcou o job travado como `error` e a UI voltou a permitir novo sync.
-- Fila IAM tem 3.899 ações `create_if_not_exists` prontas — é o caminho correto para o `iam-agent-api` (AD) e depois `process-iam-queue` (Entra) resolverem "existe? cria : linka".
+### Nova tela: `/fila-aprovacao`
 
-### O que está errado ou incompleto
+Sidebar → "Aprovação IAM" (badge com contagem de pendentes).
 
-1. **Reconciliação com Entra ID não está acontecendo no import.**
-   Apenas 13 de 3.912 colaboradores têm `entra_id` gravado. O `sync-csv-colab` gera `sam_account_name` e `email` deterministicamente, mas **nunca consulta Graph API** para descobrir se o usuário já existe. Resultado: quem já está no Entra vai virar `create_if_not_exists` e só será "descoberto" quando o agente AD/Entra rodar item a item. Isso é lento e mascara o status real na UI.
+Layout:
+- **Header**: Toggle grande "Modo Aprovação Obrigatória" (só admin). Chip com "X aguardando aprovação".
+- **Filtros**: por `action_type` (create/update/disable/enable/assign_group/…), origem (`importacao_csv`, `reconciliacao`, `catalogo`, `jml`), colaborador (busca), data.
+- **Agrupamento**: cards colapsáveis por origem (ex.: "Importação CSV — 3.899 create_if_not_exists"), com resumo e botão "Aprovar tudo do grupo".
+- **Tabela** com checkbox: colaborador, action_type, target_identity, resumo do payload (grupos/licenças/dados alterados), origem, criado em.
+- **Barra de ações em lote** (aparece com seleção): Aprovar selecionados / Recusar selecionados (modal com motivo obrigatório).
+- **Drawer de detalhes**: ao clicar num item, mostra JSON payload formatado, colaborador, histórico de tentativas, e botões individuais.
+- **Aba histórico**: itens já aprovados/recusados, com quem aprovou e quando.
 
-2. **Reconciliação com AD só existe via agent, não no import.**
-   Mesmo problema — não há lookup no AD durante o import para linkar `sam_account_name` a uma conta pré-existente. Todo mundo entra como "novo".
+### Segurança
 
-3. **Nenhum evento `leaver` foi gerado para os desligados.**
-   3.287 estão marcados `desligado` na base, mas o último sync gerou apenas `joiner`. O código de comparação (fase `events` do `sync-csv-colab`) foi interrompido pelo timeout **antes** de processar movers/leavers, então quem deveria desabilitar não entrou na fila.
-
-4. **Eventos JML `joiner` duplicados/acumulados (7.788).**
-   Há eventos de execuções anteriores nunca marcados como `executado`. Precisa dedup por `colaborador_id + tipo + status=pendente`.
-
-5. **3.879 itens `create_if_not_exists` ficaram `cancelled` em abril** — provavelmente da execução travada anterior. Precisa entender se foi cancelamento intencional (watchdog) ou perda de trabalho.
-
----
-
-## Plano de correção
-
-### Etapa 1 — Reconciliação no import (sync-csv-colab)
-
-Adicionar, **antes** da fase `events`, uma sub-fase `reconcile`:
-
-1. Coletar todos os emails/UPNs dos colaboradores importados.
-2. Chamar Microsoft Graph em lotes (`/users?$filter=mail in (...) or userPrincipalName in (...)`, batch de 15 via `$batch`) para descobrir quem já existe no Entra.
-3. Para cada match, gravar `entra_id` e marcar internamente como "já existente".
-4. (Opcional, mesma etapa) chamar `iam-agent-api` num endpoint novo `POST /ad/lookup-bulk` que devolve quais `sam_account_name` já existem no AD on-prem.
-5. Usar esse mapa para decidir na fase `events`:
-   - Não existe em nenhum lado → `joiner` real + `create_if_not_exists`.
-   - Existe em um lado só → `create_if_not_exists` só no lado faltante.
-   - Existe nos dois → apenas link, sem joiner.
-
-Time-budget: 30s dedicados à reconciliação (Graph batch resolve ~3.900 em segundos).
-
-### Etapa 2 — Gerar leavers/movers corretamente mesmo sob pressão
-
-Na fase `events`, processar na ordem **leavers → movers → joiners** (hoje é o inverso) para que, se houver timeout, os desligamentos (mais críticos) já tenham entrado na fila. Aplicar o mesmo `PROVISION_BUDGET_MS` só ao trecho de provisionamento pesado.
-
-### Etapa 3 — Dedupe de eventos JML pendentes
-
-Migration única:
-- Marcar como `executado` (com nota "reconciliado por import") os `eventos_jml` `joiner pendente` cujo colaborador já tem `entra_id` OU já tem `iam_queue.create_if_not_exists` com status `success`.
-- Criar unique constraint parcial: `unique(colaborador_id, tipo) where status='pendente'`.
-
-### Etapa 4 — Reprocessar o backlog atual
-
-1. Rodar a reconciliação em modo "só marca `entra_id`, não gera evento" para o snapshot atual (script one-off na Edge Function).
-2. Gerar eventos `leaver` para os 3.287 desligados que não têm evento leaver executado.
-3. Deixar a fila `create_if_not_exists` (3.899 pending) rodar normalmente via `iam-agent-api` + `process-iam-queue`. Após reconciliação, muitos vão virar no-op (usuário já existe → só linka).
-
-### Etapa 5 — UI de diagnóstico
-
-Adicionar na tela **Integrações** um card "Reconciliação AD/Entra" mostrando:
-- Total no CSV
-- Já linkados no Entra (verde)
-- Já linkados no AD (verde)
-- A criar no Entra (amarelo)
-- A criar no AD (amarelo)
-- A desabilitar (vermelho)
-- Órfãos (existem no AD/Entra mas não no CSV)
-
-Assim dá pra validar visualmente o resultado de cada sync.
+- Apenas `admin` pode aprovar/recusar (RLS policy nova).
+- `operador` vê a fila mas não age nos botões (readonly).
+- Toda decisão vai para `auditoria` (`entidade=iam_queue`, `acao=aprovar|recusar`).
 
 ---
 
 ## Detalhes técnicos
 
-- **Arquivo principal:** `supabase/functions/sync-csv-colab/index.ts`
-  - Nova função `reconcileWithEntra(colabs, sb, token)` usando `POST /$batch` do Graph.
-  - Nova função `reconcileWithAd(colabs)` chamando `iam-agent-api` (endpoint a criar no agent PowerShell: `Get-ADUser -Filter` em batch).
-  - Reordenar loop de eventos: leavers → movers → joiners.
-- **Migration:** dedup + unique parcial em `eventos_jml`.
-- **Nova Edge Function:** `reconcile-identities` (one-off, invocável pela UI) para rodar as etapas 4.1 e 4.2 sem precisar reimportar CSV.
-- **UI:** novo componente `ReconciliationCard.tsx` em `IntegracoesPage.tsx` alimentado por uma view SQL `v_reconciliation_stats`.
-- **Agent PowerShell (`iam-agent-api`):** endpoint novo `POST /ad/lookup-bulk` que aceita `["sam1","sam2",...]` e retorna quais existem.
+### Migration
+1. `parametros`: seed/upsert `chave='iam_approval_required'`, `valor='true'`, `tipo='boolean'`.
+2. `iam_queue`: novas colunas
+   - `approval_status text` (não uso do `status` existente para não quebrar workers)
+   - `approved_by uuid references auth.users` nullable
+   - `approved_at timestamptz` nullable
+   - `rejection_reason text` nullable
+3. `iam_queue.status`: adicionar valores `waiting_approval` e `rejected` (o campo já é text — só documentação).
+4. Trigger `iam_queue_apply_approval_gate` BEFORE INSERT:
+   - Se `NEW.status = 'pending'` e parâmetro `iam_approval_required=true` → seta `NEW.status = 'waiting_approval'`.
+   - Isso captura **todas** as fontes (`sync-csv-colab`, `reconcile-identities`, `start-jml-event`, catálogo, `process-iam-queue` re-enqueues, etc.) sem alterar cada função.
+5. RLS: policy nova "Only admins can approve iam_queue" para UPDATE quando mudando `status` de `waiting_approval` → `pending`/`rejected`.
+6. Índice: `idx_iam_queue_waiting_approval (created_at desc) where status='waiting_approval'`.
 
-### Ordem de execução sugerida
+### Frontend
+- **`src/pages/AprovacaoIAMPage.tsx`** — nova página.
+- **`src/hooks/useApprovalQueue.ts`** — React Query hooks: `useWaitingApproval()`, `useApprove()`, `useReject()`, `useApprovalMode()` (lê/grava parâmetro).
+- **Sidebar**: novo item "Aprovação IAM" com badge de contagem (visível para admin/operador).
+- **Rota**: registrar em `App.tsx` protegida por `useCanEdit`.
 
-1. Migration de dedup JML (rápido, desbloqueia UI).
-2. Edge Function `reconcile-identities` + botão na UI → rodar agora contra o backlog.
-3. Refatorar `sync-csv-colab` com reconciliação + reordenação de eventos.
-4. Card de reconciliação na UI.
-5. Endpoint AD `lookup-bulk` no agent (pode ser feito em paralelo; sem ele, reconciliação Entra-only já resolve ~90%).
+### Fluxo de aprovação
+1. Admin vê itens `waiting_approval`.
+2. Aprovar: `UPDATE iam_queue SET status='pending', approved_by=auth.uid(), approved_at=now() WHERE id IN (…)`.
+3. O `process-iam-queue`/`iam-agent-api` (que rodam periodicamente ou sob demanda pelo botão existente "Processar fila") pega o item e executa.
+4. Recusar: `UPDATE ... SET status='rejected', rejection_reason=?, approved_by=auth.uid(), approved_at=now()`.
 
-Quer que eu siga com esse plano ou prefere focar primeiro só na Etapa 4 (reprocessar backlog atual sem mexer no fluxo)?
+### Interação com fluxos existentes
+- **CSV sync (3.899 pendentes hoje)**: assim que o modo estiver ligado + trigger criada, o próximo enfileiramento passa pelo gate. Os 3.899 já `pending` **não** são reclassificados retroativamente — a UI oferecerá um botão opcional "Congelar fila atual" que faz `UPDATE iam_queue SET status='waiting_approval' WHERE status='pending'`, útil pra revisar o backlog atual.
+- **Reconciliação**: idem.
+- **JML manual (start-jml-event)**: passa pelo gate normalmente.
+- **Catálogo de autoatendimento**: solicitações que já têm aprovação de gestor + segurança viram itens `iam_queue`; se o gate estiver ligado, precisam de + 1 aprovação técnica do admin IAM. (Configurável no futuro; por ora inclui tudo pra atingir "primeiro mês de gerência".)
+
+### Toggle do modo
+- Configurações → Parâmetros ganha um switch destacado "Modo Aprovação Obrigatória (IAM Gate)" com descrição e botão de confirmação. Também replicado no header da própria página de aprovação.
+
+Depois de aprovar você segue direto para implementação, ou quer ajustar algum ponto (ex.: aplicar retroativamente aos 3.899 pendentes, mudar quem aprova, etc.)?
