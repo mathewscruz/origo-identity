@@ -1071,19 +1071,21 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     }
 
     // ── 12. Finalize ──
+    const skipNote = skippedProvisions > 0 ? ` (${skippedProvisions} provisionamentos de cargo diferidos — use "Reprovisionar Cargo")` : "";
     await sb.from("sync_jobs").update({
       status: "done", phase: "done", colab_percent: 100,
       colab_created: created, colab_updated: updated, colab_quarentena: leaverMatriculas.length,
-      message: `Concluído: ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos`,
+      message: `Concluído: ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos${skipNote}`,
     }).eq("id", jobId);
 
     await sb.from("auditoria").insert({
       entidade: "importacao_csv", acao: "importar",
       resumo: `CSV importado: ${totalRows} linhas → ${created} novos, ${updated} atualizados, ${leaverMatriculas.length} removidos`,
-      detalhes: { filename, totalRows, created, updated, unchanged, removed: leaverMatriculas.length, jobId },
+      detalhes: { filename, totalRows, created, updated, unchanged, removed: leaverMatriculas.length, jobId, skippedProvisions },
     });
 
-    return { success: true, jobId, created, updated, unchanged, removed: leaverMatriculas.length, total: totalRows };
+    return { success: true, jobId, created, updated, unchanged, removed: leaverMatriculas.length, total: totalRows, skippedProvisions };
+
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro desconhecido";
     console.error("Processing error:", msg);
