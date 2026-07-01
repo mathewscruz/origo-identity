@@ -763,9 +763,9 @@ export default function AprovacaoIAMPage() {
       <AD open={reconcileOpen} onOpenChange={setReconcileOpen}>
         <ADContent>
           <ADHeader>
-            <ADTitle>Reconciliar criações contra Entra ID?</ADTitle>
+            <ADTitle>Rodar reconciliação contra Entra ID?</ADTitle>
             <ADDesc>
-              Vai baixar os usuários do Entra ID e comparar com a base da planilha. Cancela da aprovação: (1) quem já existe no Entra (gravando o <code>entra_id</code> no colaborador) e (2) criações pendentes de colaboradores já <strong>desligados</strong>. Sobram apenas usuários realmente novos ou não localizados.
+              Compara a base com o Entra ID: cancela criações de quem já existe lá e de colaboradores desligados.
             </ADDesc>
           </ADHeader>
           <ADFooter>
