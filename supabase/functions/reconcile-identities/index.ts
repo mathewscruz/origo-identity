@@ -362,8 +362,141 @@ async function runReconciliation(sb: any, jobId: string) {
       }
     }
 
+    // 5b/5c/5d — Cobertura completa: joiners faltantes, reativações e órfãos
+    await updateJob(sb, jobId, {
+      phase: "cobertura_completa",
+      message: "Analisando ativos sem conta, reativações e órfãos…",
+      users_percent: 90,
+    });
+
+    const ativos = list2.filter((c) => c.status === "ativo");
+
+    // Índice de itens já abertos na fila (por colaborador+action_type e para órfãos por entra_id)
+    const ativoIds = ativos.map((c) => c.id);
+    const openActive = new Set<string>();
+    for (const batch of chunk(ativoIds, 500)) {
+      if (batch.length === 0) break;
+      const { data: qs } = await sb
+        .from("iam_queue")
+        .select("colaborador_id, action_type")
+        .in("colaborador_id", batch)
+        .in("action_type", ["create_if_not_exists", "enable_entra"])
+        .in("status", ["pending", "waiting_approval", "processing"]);
+      for (const q of qs || []) openActive.add(`${q.colaborador_id}|${q.action_type}`);
+    }
+
+    const coverageEntries: any[] = [];
+
+    // 5b — Ativo no CSV sem conta no Entra → create_if_not_exists
+    // 5c — Ativo no CSV com conta disabled no Entra → enable_entra
+    for (const c of ativos) {
+      const entraMatch =
+        (c.entra_id && entraIdx.byId.get(c.entra_id)) ||
+        (c.email && entraIdx.byEmail.get(c.email.toLowerCase())) ||
+        null;
+
+      if (!entraMatch) {
+        if (!c.email) continue; // sem email não dá para criar
+        if (openActive.has(`${c.id}|create_if_not_exists`)) continue;
+        const [firstName, ...rest] = (c.nome || "").trim().split(/\s+/);
+        const lastName = rest.join(" ");
+        coverageEntries.push({
+          action_type: "create_if_not_exists",
+          payload_json: {
+            displayName: c.nome,
+            givenName: firstName || c.nome,
+            surname: lastName || "",
+            mail: c.email,
+            userPrincipalName: c.email,
+            samAccountName: c.sam_account_name || null,
+            usageLocation: "BR",
+          },
+          target_identity: c.email,
+          colaborador_id: c.id,
+          requested_by: "reconciliacao",
+          status: "pending",
+        });
+        stats.create_enqueued++;
+      } else if (!entraMatch.accountEnabled) {
+        if (openActive.has(`${c.id}|enable_entra`)) continue;
+        coverageEntries.push({
+          action_type: "enable_entra",
+          payload_json: {
+            samAccountName: c.sam_account_name,
+            displayName: c.nome,
+            mail: c.email || "",
+          },
+          target_identity: entraMatch.upn || c.email || c.sam_account_name,
+          colaborador_id: c.id,
+          requested_by: "reconciliacao",
+          status: "pending",
+        });
+        stats.enable_enqueued++;
+      }
+    }
+
+    // 5d — Órfãos: conta no Entra ativa sem match em colaboradores nem em contas_admin_conhecidas
+    // Constrói set de todos os entra_ids/emails que pertencem a colabs
+    const knownEntraIds = new Set<string>();
+    const knownEmails = new Set<string>();
+    for (const c of list2) {
+      if (c.entra_id) knownEntraIds.add(c.entra_id);
+      if (c.email) knownEmails.add(c.email.toLowerCase());
+    }
+    const { data: adminRows } = await sb
+      .from("contas_admin_conhecidas")
+      .select("entra_id, email");
+    for (const a of adminRows || []) {
+      if (a.entra_id) knownEntraIds.add(a.entra_id);
+      if (a.email) knownEmails.add(String(a.email).toLowerCase());
+    }
+
+    // Itens de órfãos já abertos
+    const openOrphan = new Set<string>();
+    {
+      const { data: qs } = await sb
+        .from("iam_queue")
+        .select("target_identity, payload_json")
+        .eq("action_type", "review_orphan_entra")
+        .in("status", ["pending", "waiting_approval", "processing"]);
+      for (const q of qs || []) {
+        const eid = (q.payload_json as any)?.entra_id;
+        if (eid) openOrphan.add(String(eid));
+        if (q.target_identity) openOrphan.add(String(q.target_identity));
+      }
+    }
+
+    for (const [eid, eu] of entraIdx.byId) {
+      if (!eu.accountEnabled) continue;
+      if (knownEntraIds.has(eid)) continue;
+      const upnLc = eu.upn?.toLowerCase() || "";
+      const mailLc = eu.mail?.toLowerCase() || "";
+      if (upnLc && knownEmails.has(upnLc)) continue;
+      if (mailLc && knownEmails.has(mailLc)) continue;
+      if (openOrphan.has(eid) || (upnLc && openOrphan.has(upnLc))) continue;
+      coverageEntries.push({
+        action_type: "review_orphan_entra",
+        payload_json: {
+          entra_id: eid,
+          upn: eu.upn,
+          mail: eu.mail,
+          onPremisesSyncEnabled: eu.onPremisesSyncEnabled,
+        },
+        target_identity: eu.upn || eu.mail || eid,
+        colaborador_id: null,
+        requested_by: "reconciliacao",
+        status: "pending",
+      });
+      stats.orphans_flagged++;
+    }
+
+    for (const batch of chunk(coverageEntries, 200)) {
+      const { error: cerr } = await sb.from("iam_queue").insert(batch);
+      if (cerr) stats.errors.push(`insert coverage iam_queue: ${cerr.message}`);
+    }
+
     // 6. Auditoria
-    const resumoTxt = `Reconciliação: ${stats.linked_entra} linkados · ${stats.joiners_reconciled} joiners · ${stats.leavers_generated} leavers · ${stats.disable_entra_enqueued} disable Entra · ${stats.disable_ad_enqueued} disable AD · ${stats.skipped_no_entra} pulados (não existem no Entra) · ${stats.skipped_already_disabled} já desabilitados`;
+    const resumoTxt = `Reconciliação: ${stats.linked_entra} linkados · ${stats.create_enqueued} criações · ${stats.enable_enqueued} reativações · ${stats.leavers_generated} leavers · ${stats.disable_entra_enqueued} disable Entra · ${stats.disable_ad_enqueued} disable AD · ${stats.orphans_flagged} órfãos · ${stats.skipped_no_entra} pulados · ${stats.skipped_already_disabled} já desabilitados`;
     await sb.from("auditoria").insert({
       entidade: "reconciliacao_identidades",
       acao: "reconciliar",
