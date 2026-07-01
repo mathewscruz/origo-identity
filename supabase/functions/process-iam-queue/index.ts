@@ -538,6 +538,226 @@ function calculateNextRetry(retryCount: number): string {
   return new Date(Date.now() + delayMinutes * 60 * 1000).toISOString();
 }
 
+function normalizeText(value: unknown): string {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9@._-]+/g, " ")
+    .trim();
+}
+
+function normalizeIdentifier(value: unknown): string {
+  return normalizeText(value).replace(/\s+/g, "");
+}
+
+function emailPrefix(value: unknown): string {
+  const v = normalizeIdentifier(value);
+  return v.includes("@") ? v.split("@")[0] : v;
+}
+
+const NAME_STOP_WORDS = new Set(["de", "da", "do", "dos", "das", "e", "del", "di"]);
+
+function nameTokens(value: unknown): string[] {
+  return normalizeText(value)
+    .split(/\s+/)
+    .map((token) => token.replace(/[^a-z0-9]/g, ""))
+    .filter((token) => token.length > 1 && !NAME_STOP_WORDS.has(token));
+}
+
+function nameSignature(value: unknown): string {
+  const tokens = nameTokens(value);
+  if (tokens.length < 2) return "";
+  return `${tokens[0]}|${tokens[tokens.length - 1]}`;
+}
+
+function addIndexValue(index: Map<string, any[]>, key: string, user: any) {
+  if (!key) return;
+  const current = index.get(key) || [];
+  if (!current.some((u) => u.id === user.id)) current.push(user);
+  index.set(key, current);
+}
+
+function firstUnique(index: Map<string, any[]>, key: string): any | null {
+  if (!key) return null;
+  const hits = index.get(key) || [];
+  return hits.length === 1 ? hits[0] : null;
+}
+
+async function fetchAllGraphUsers(token: string, onProgress?: (count: number) => Promise<void>): Promise<any[]> {
+  const users: any[] = [];
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+    ConsistencyLevel: "eventual",
+  };
+  const select = [
+    "id",
+    "displayName",
+    "givenName",
+    "surname",
+    "mail",
+    "userPrincipalName",
+    "onPremisesSamAccountName",
+    "employeeId",
+    "otherMails",
+    "proxyAddresses",
+  ].join(",");
+  let url = `https://graph.microsoft.com/v1.0/users?$select=${select}&$top=999`;
+
+  while (url) {
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Falha ao baixar usuários do Entra (${res.status}): ${text.substring(0, 500)}`);
+    }
+    const body = await res.json();
+    const page = body.value || [];
+    users.push(...page);
+    if (onProgress) await onProgress(users.length);
+    url = body["@odata.nextLink"] || "";
+  }
+
+  return users;
+}
+
+function buildEntraUserIndex(users: any[]) {
+  const byEmail = new Map<string, any[]>();
+  const bySam = new Map<string, any[]>();
+  const byEmployee = new Map<string, any[]>();
+  const byPrefix = new Map<string, any[]>();
+  const byName = new Map<string, any[]>();
+  const byNameSignature = new Map<string, any[]>();
+
+  for (const user of users) {
+    const emails = new Set<string>();
+    if (user.mail) emails.add(normalizeIdentifier(user.mail));
+    if (user.userPrincipalName) emails.add(normalizeIdentifier(user.userPrincipalName));
+    for (const other of user.otherMails || []) emails.add(normalizeIdentifier(other));
+    for (const proxy of user.proxyAddresses || []) {
+      const cleaned = String(proxy || "").replace(/^smtp:/i, "");
+      if (cleaned) emails.add(normalizeIdentifier(cleaned));
+    }
+
+    for (const email of emails) {
+      addIndexValue(byEmail, email, user);
+      const prefix = emailPrefix(email);
+      if (prefix && prefix.length >= 4) addIndexValue(byPrefix, prefix, user);
+    }
+
+    const sam = normalizeIdentifier(user.onPremisesSamAccountName);
+    if (sam) addIndexValue(bySam, sam, user);
+
+    const employee = normalizeIdentifier(user.employeeId);
+    if (employee) addIndexValue(byEmployee, employee, user);
+
+    const nameCandidates = [
+      user.displayName,
+      [user.givenName, user.surname].filter(Boolean).join(" "),
+    ].filter(Boolean);
+    for (const candidate of nameCandidates) {
+      const name = normalizeText(candidate).replace(/\s+/g, " ");
+      if (name) addIndexValue(byName, name, user);
+      const signature = nameSignature(candidate);
+      if (signature) addIndexValue(byNameSignature, signature, user);
+    }
+  }
+
+  return { byEmail, bySam, byEmployee, byPrefix, byName, byNameSignature };
+}
+
+function matchEntraUserForIdentity(identity: {
+  nome?: string | null;
+  email?: string | null;
+  matricula?: string | null;
+  sam_account_name?: string | null;
+  payload?: Record<string, any> | null;
+}, index: ReturnType<typeof buildEntraUserIndex>): { user: any | null; matchedBy: string } {
+  const payload = identity.payload || {};
+  const emailCandidates = [identity.email, payload.mail, payload.email, payload.userPrincipalName]
+    .map(normalizeIdentifier)
+    .filter(Boolean);
+  for (const email of emailCandidates) {
+    const hit = firstUnique(index.byEmail, email);
+    if (hit) return { user: hit, matchedBy: `email:${email}` };
+  }
+
+  const samCandidates = [identity.sam_account_name, payload.samAccountName, payload.sAMAccountName, payload.sam, payload.userName]
+    .map(normalizeIdentifier)
+    .filter(Boolean);
+  for (const sam of samCandidates) {
+    const hit = firstUnique(index.bySam, sam);
+    if (hit) return { user: hit, matchedBy: `sam:${sam}` };
+  }
+
+  const employeeCandidates = [identity.matricula, payload.employeeId, payload.employID, payload.matricula]
+    .map(normalizeIdentifier)
+    .filter(Boolean);
+  for (const employee of employeeCandidates) {
+    const hit = firstUnique(index.byEmployee, employee);
+    if (hit) return { user: hit, matchedBy: `employeeId:${employee}` };
+  }
+
+  const prefixCandidates = [...emailCandidates.map(emailPrefix), ...samCandidates]
+    .filter((v, idx, arr) => v && v.length >= 4 && arr.indexOf(v) === idx);
+  for (const prefix of prefixCandidates) {
+    const hit = firstUnique(index.byPrefix, prefix);
+    if (hit) return { user: hit, matchedBy: `prefix:${prefix}` };
+  }
+
+  const name = normalizeText(identity.nome || payload.displayName || payload.nome).replace(/\s+/g, " ");
+  if (name) {
+    const hit = firstUnique(index.byName, name);
+    if (hit) return { user: hit, matchedBy: `nome:${name}` };
+
+    const signature = nameSignature(identity.nome || payload.displayName || payload.nome);
+    const signatureHit = firstUnique(index.byNameSignature, signature);
+    if (signatureHit) return { user: signatureHit, matchedBy: `nome_assinatura:${signature}` };
+  }
+
+  return { user: null, matchedBy: "not_found" };
+}
+
+async function fetchAllCsvColaboradores(supabase: any): Promise<any[]> {
+  const rows: any[] = [];
+  const PAGE = 1000;
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from("colaboradores")
+      .select("id, nome, email, matricula, sam_account_name, entra_id, origem")
+      .eq("origem", "csv")
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    rows.push(...data);
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  return rows;
+}
+
+async function fetchAllCreateQueueItems(supabase: any): Promise<any[]> {
+  const rows: any[] = [];
+  const PAGE = 1000;
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from("iam_queue")
+      .select("id, target_identity, payload_json, colaborador_id, status")
+      .eq("action_type", "create_if_not_exists")
+      .in("status", ["waiting_approval", "pending"])
+      .order("created_at", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    rows.push(...data);
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  return rows;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -580,6 +800,20 @@ Deno.serve(async (req) => {
       if (!TENANT_ID || !CLIENT_ID || !CLIENT_SECRET) {
         return jsonResponse({ error: "Credenciais Azure não configuradas" }, 500);
       }
+
+      const staleReconcileCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      await supabase
+        .from("sync_jobs")
+        .update({
+          status: "error",
+          phase: "timeout",
+          error: "Reconciliação sem atualização recente; liberada para nova execução.",
+          message: "Reconciliação anterior ficou sem atualização recente; inicie novamente para continuar.",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("tipo", "reconcile_entra")
+        .eq("status", "running")
+        .lt("updated_at", staleReconcileCutoff);
 
       // Concurrency guard: return existing running job if any
       const { data: existing } = await supabase
@@ -624,114 +858,187 @@ Deno.serve(async (req) => {
       const jobId = job.id;
 
       const runReconcile = async () => {
+        let linkedColabs = 0;
         let cancelled = 0;
         let kept = 0;
-        let scanned = 0;
+        let scannedColabs = 0;
         try {
           const token = await getAzureToken(TENANT_ID, CLIENT_ID, CLIENT_SECRET);
-          const BATCH = 20; // Graph $batch limit
-          const PAGE = 200;
-          let cursor = 0;
 
-          while (true) {
-            const { data: items } = await supabase
-              .from("iam_queue")
-              .select("id, target_identity, payload_json, colaborador_id")
-              .eq("action_type", "create_if_not_exists")
-              .in("status", ["waiting_approval", "pending"])
-              .order("created_at", { ascending: true })
-              .range(cursor, cursor + PAGE - 1);
-            if (!items || items.length === 0) break;
+          await supabase.from("sync_jobs").update({
+            phase: "baixando_entra",
+            message: "Baixando usuários do Entra ID com paginação…",
+            users_percent: 5,
+            updated_at: new Date().toISOString(),
+          }).eq("id", jobId);
 
-            // Process in Graph $batch chunks of 20
-            for (let i = 0; i < items.length; i += BATCH) {
-              const chunk = items.slice(i, i + BATCH);
-              const reqs = chunk.map((it, idx) => {
-                const p = (it.payload_json || {}) as any;
-                const email = p.mail || null;
-                const sam = p.samAccountName || it.target_identity || null;
-                const parts: string[] = [];
-                if (email) {
-                  const e = email.replace(/'/g, "''");
-                  parts.push(`mail eq '${e}'`);
-                  parts.push(`userPrincipalName eq '${e}'`);
-                }
-                if (sam) {
-                  const s = sam.replace(/'/g, "''");
-                  parts.push(`onPremisesSamAccountName eq '${s}'`);
-                }
-                const filter = parts.length ? parts.join(" or ") : `id eq 'none'`;
-                return {
-                  id: String(idx),
-                  method: "GET",
-                  url: `/users?$filter=${encodeURIComponent(filter)}&$select=id,mail,userPrincipalName&$top=1`,
-                };
-              });
+          const entraUsers = await fetchAllGraphUsers(token, async (count) => {
+            await supabase.from("sync_jobs").update({
+              phase: "baixando_entra",
+              message: `${count.toLocaleString("pt-BR")} usuários baixados do Entra ID…`,
+              users_percent: 10,
+              updated_at: new Date().toISOString(),
+            }).eq("id", jobId);
+          });
 
-              let responses: any[] = [];
-              try {
-                const res = await fetch("https://graph.microsoft.com/v1.0/$batch", {
-                  method: "POST",
-                  headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-                  body: JSON.stringify({ requests: reqs }),
-                });
-                if (res.ok) {
-                  const body = await res.json();
-                  responses = body.responses || [];
-                } else {
-                  console.warn(`[reconcile] $batch failed ${res.status}: ${await res.text()}`);
-                }
-              } catch (e) {
-                console.warn(`[reconcile] $batch error`, e);
+          await supabase.from("sync_jobs").update({
+            phase: "indexando",
+            message: `Indexando ${entraUsers.length.toLocaleString("pt-BR")} usuários do Entra ID…`,
+            users_percent: 20,
+            updated_at: new Date().toISOString(),
+          }).eq("id", jobId);
+
+          const entraIndex = buildEntraUserIndex(entraUsers);
+          const [colaboradores, queueItems] = await Promise.all([
+            fetchAllCsvColaboradores(supabase),
+            fetchAllCreateQueueItems(supabase),
+          ]);
+
+          const colabById = new Map<string, any>();
+          const matchedByColabId = new Map<string, { user: any; matchedBy: string }>();
+          const matchedKeys = new Map<string, { user: any; matchedBy: string; colabId?: string }>();
+          const colabEntraUpdates = new Map<string, string>();
+
+          for (const colab of colaboradores) {
+            colabById.set(colab.id, colab);
+            const match = matchEntraUserForIdentity(colab, entraIndex);
+            scannedColabs++;
+            if (match.user) {
+              matchedByColabId.set(colab.id, match);
+              const keys = [
+                normalizeIdentifier(colab.email),
+                normalizeIdentifier(colab.sam_account_name),
+                normalizeIdentifier(colab.matricula),
+                emailPrefix(colab.email),
+              ].filter(Boolean);
+              for (const key of keys) matchedKeys.set(key, { ...match, colabId: colab.id });
+
+              if (colab.entra_id !== match.user.id) {
+                colabEntraUpdates.set(colab.id, match.user.id);
+                linkedColabs++;
               }
+            }
 
-              const foundMap = new Map<string, string>();
-              for (const r of responses) {
-                const users = r.body?.value || [];
-                if (users.length > 0) foundMap.set(String(r.id), users[0].id);
-              }
-
-              for (let idx = 0; idx < chunk.length; idx++) {
-                const it = chunk[idx];
-                scanned++;
-                const userId = foundMap.get(String(idx));
-                if (userId) {
-                  await supabase.from("iam_queue").update({
-                    status: "cancelled",
-                    processed_at: new Date().toISOString(),
-                    processed_by: "reconcile-create",
-                    result_message: `Usuário já existe no Entra ID (${userId}) — cancelado pela reconciliação.`,
-                    error_code: null,
-                  }).eq("id", it.id);
-                  if (it.colaborador_id) {
-                    await supabase.from("colaboradores").update({ entra_id: userId }).eq("id", it.colaborador_id);
-                  }
-                  cancelled++;
-                } else {
-                  kept++;
-                }
-              }
-
-              // Update job progress after each chunk
-              const percent = total > 0 ? Math.min(100, Math.floor((scanned / total) * 100)) : 0;
+            if (scannedColabs % 250 === 0) {
+              const percent = 20 + Math.floor((scannedColabs / Math.max(colaboradores.length, 1)) * 45);
               await supabase.from("sync_jobs").update({
-                phase: "verificando",
-                message: `${scanned}/${total} verificados · ${cancelled} canceladas · ${kept} mantidas`,
-                users_created: cancelled,
-                users_updated: kept,
-                users_percent: percent,
+                phase: "vinculando_colaboradores",
+                message: `${scannedColabs}/${colaboradores.length} colaboradores comparados · ${linkedColabs} vinculados`,
+                users_created: linkedColabs,
+                users_percent: Math.min(65, percent),
                 updated_at: new Date().toISOString(),
               }).eq("id", jobId);
             }
-
-            cursor += items.length;
-            if (items.length < PAGE) break;
           }
+
+          await supabase.from("sync_jobs").update({
+            phase: "limpando_aprovacao",
+            message: `Limpando ${queueItems.length.toLocaleString("pt-BR")} criação(ões) em aprovação…`,
+            users_percent: 70,
+            updated_at: new Date().toISOString(),
+          }).eq("id", jobId);
+
+          const cancelIds: string[] = [];
+          const queueColabUpdates = new Map<string, string>();
+
+          for (let i = 0; i < queueItems.length; i++) {
+            const item = queueItems[i];
+            const payload = (item.payload_json || {}) as Record<string, any>;
+            let match = item.colaborador_id ? matchedByColabId.get(item.colaborador_id) || null : null;
+
+            if (!match) {
+              const colab = item.colaborador_id ? colabById.get(item.colaborador_id) : null;
+              const direct = matchEntraUserForIdentity({
+                nome: colab?.nome || payload.displayName || payload.nome,
+                email: colab?.email || payload.mail || payload.email,
+                matricula: colab?.matricula || payload.employeeId || payload.employID || payload.matricula,
+                sam_account_name: colab?.sam_account_name || item.target_identity || payload.samAccountName,
+                payload,
+              }, entraIndex);
+              if (direct.user) match = direct;
+            }
+
+            if (!match) {
+              const keys = [
+                normalizeIdentifier(item.target_identity),
+                normalizeIdentifier(payload.mail),
+                normalizeIdentifier(payload.email),
+                normalizeIdentifier(payload.samAccountName),
+                normalizeIdentifier(payload.sAMAccountName),
+                normalizeIdentifier(payload.employeeId),
+                normalizeIdentifier(payload.employID),
+                emailPrefix(payload.mail),
+                emailPrefix(payload.email),
+              ].filter(Boolean);
+              for (const key of keys) {
+                const hit = matchedKeys.get(key);
+                if (hit) { match = hit; break; }
+              }
+            }
+
+            if (match?.user?.id) {
+              cancelIds.push(item.id);
+              if (item.colaborador_id) queueColabUpdates.set(item.colaborador_id, match.user.id);
+              cancelled++;
+            } else {
+              kept++;
+            }
+
+            if ((i + 1) % 100 === 0 || i + 1 === queueItems.length) {
+              const percent = 70 + Math.floor(((i + 1) / Math.max(queueItems.length, 1)) * 25);
+              await supabase.from("sync_jobs").update({
+                phase: "limpando_aprovacao",
+                message: `${i + 1}/${queueItems.length} itens avaliados · ${cancelled} cancelados · ${kept} mantidos`,
+                users_created: cancelled,
+                users_updated: kept,
+                users_percent: Math.min(95, percent),
+                updated_at: new Date().toISOString(),
+              }).eq("id", jobId);
+            }
+          }
+
+          for (let i = 0; i < cancelIds.length; i += 500) {
+            const ids = cancelIds.slice(i, i + 500);
+            const { error } = await supabase.from("iam_queue").update({
+              status: "cancelled",
+              processed_at: new Date().toISOString(),
+              processed_by: "reconcile-create",
+              result_message: "Usuário já existe no Entra ID — item removido pela reconciliação da base da planilha.",
+              error_code: null,
+            }).in("id", ids);
+            if (error) throw error;
+          }
+
+          const allColabUpdates = new Map([...colabEntraUpdates, ...queueColabUpdates]);
+          let persistedLinks = 0;
+          const updateEntries = Array.from(allColabUpdates.entries());
+          for (const [colabId, entraId] of updateEntries) {
+            const { error } = await supabase.from("colaboradores").update({ entra_id: entraId }).eq("id", colabId);
+            if (error) console.warn(`[reconcile] Falha ao gravar entra_id para colaborador ${colabId}: ${error.message}`);
+            else persistedLinks++;
+
+            if (persistedLinks % 50 === 0 || persistedLinks === updateEntries.length) {
+              await supabase.from("sync_jobs").update({
+                phase: "gravando_vinculos",
+                message: `${persistedLinks}/${allColabUpdates.size} vínculos gravados · ${cancelled} itens cancelados`,
+                users_created: cancelled,
+                users_updated: kept,
+                users_percent: 97,
+                updated_at: new Date().toISOString(),
+              }).eq("id", jobId);
+            }
+          }
+
+          const { count: pendingLeft } = await supabase
+            .from("iam_queue")
+            .select("id", { count: "exact", head: true })
+            .eq("action_type", "create_if_not_exists")
+            .in("status", ["waiting_approval", "pending"]);
 
           await supabase.from("sync_jobs").update({
             status: "success",
             phase: "concluido",
-            message: `Reconciliação concluída: ${cancelled} canceladas, ${kept} mantidas de ${scanned} verificadas.`,
+            message: `Reconciliação concluída: ${persistedLinks} colaboradores vinculados, ${cancelled} itens removidos da aprovação, ${pendingLeft || 0} ainda pendentes.`,
             users_created: cancelled,
             users_updated: kept,
             users_percent: 100,
@@ -740,8 +1047,18 @@ Deno.serve(async (req) => {
 
           await supabase.from("auditoria").insert({
             entidade: "iam_queue", acao: "reconciliar_create",
-            resumo: `Reconciliação: ${cancelled} canceladas, ${kept} mantidas de ${scanned} verificadas.`,
-            detalhes: { scanned, cancelled, kept, job_id: jobId },
+            resumo: `Reconciliação: ${persistedLinks} colaboradores vinculados, ${cancelled} itens cancelados, ${kept} mantidos.`,
+            detalhes: {
+              job_id: jobId,
+              entra_users: entraUsers.length,
+              colaboradores: colaboradores.length,
+              scanned_colabs: scannedColabs,
+              linked_colabs: persistedLinks,
+              queue_items: queueItems.length,
+              cancelled,
+              kept,
+              pending_left: pendingLeft || 0,
+            },
           });
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
