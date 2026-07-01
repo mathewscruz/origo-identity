@@ -951,6 +951,8 @@ export type Database = {
       iam_queue: {
         Row: {
           action_type: string
+          approved_at: string | null
+          approved_by: string | null
           colaborador_id: string | null
           correlation_id: string
           created_at: string
@@ -961,6 +963,7 @@ export type Database = {
           payload_json: Json
           processed_at: string | null
           processed_by: string | null
+          rejection_reason: string | null
           requested_by: string | null
           result_message: string | null
           retry_count: number
@@ -969,6 +972,8 @@ export type Database = {
         }
         Insert: {
           action_type: string
+          approved_at?: string | null
+          approved_by?: string | null
           colaborador_id?: string | null
           correlation_id?: string
           created_at?: string
@@ -979,6 +984,7 @@ export type Database = {
           payload_json: Json
           processed_at?: string | null
           processed_by?: string | null
+          rejection_reason?: string | null
           requested_by?: string | null
           result_message?: string | null
           retry_count?: number
@@ -987,6 +993,8 @@ export type Database = {
         }
         Update: {
           action_type?: string
+          approved_at?: string | null
+          approved_by?: string | null
           colaborador_id?: string | null
           correlation_id?: string
           created_at?: string
@@ -997,6 +1005,7 @@ export type Database = {
           payload_json?: Json
           processed_at?: string | null
           processed_by?: string | null
+          rejection_reason?: string | null
           requested_by?: string | null
           result_message?: string | null
           retry_count?: number

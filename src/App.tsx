@@ -43,6 +43,7 @@ import LoginPage from "./pages/auth/LoginPage";
 import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
 import FilaProvisionamentoPage from "./pages/fila-provisionamento/FilaProvisionamentoPage";
 import SolicitacaoDetalhePage from "./pages/fila-provisionamento/SolicitacaoDetalhePage";
+import AprovacaoIAMPage from "./pages/AprovacaoIAMPage";
 
 import NotFound from "./pages/NotFound";
 import PortalLayout from "./pages/portal/PortalLayout";
@@ -69,6 +70,7 @@ const App = () => (
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/fila-provisionamento" element={<FilaProvisionamentoPage />} />
+              <Route path="/aprovacao-iam" element={<AprovacaoIAMPage />} />
               <Route path="/fila-provisionamento/:id" element={<SolicitacaoDetalhePage />} />
               <Route path="/colaboradores" element={<ColaboradoresPage />} />
               <Route path="/colaboradores/:id" element={<ColaboradorDetalhePage />} />

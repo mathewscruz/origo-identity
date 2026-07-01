@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   LayoutDashboard, Users, UserCheck, AppWindow, Shield,
-  AlertTriangle, ClipboardCheck, Cog, Key, LogOut, UsersRound, ListOrdered, ShieldAlert, BarChart3, HandHelping, GitBranch, Crown, Settings,
+  AlertTriangle, ClipboardCheck, Cog, Key, LogOut, UsersRound, ListOrdered, ShieldAlert, BarChart3, HandHelping, GitBranch, Crown, Settings, ShieldCheck,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -18,6 +18,7 @@ import { toast } from "sonner";
 const sidebarGroups = [
   { label: "Operação", items: [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
+    { title: "Aprovação IAM", url: "/aprovacao-iam", icon: ShieldCheck },
     { title: "Fila de Provisionamento", url: "/fila-provisionamento", icon: ListOrdered },
     { title: "Solicitações", url: "/solicitacoes", icon: HandHelping },
   ]},
