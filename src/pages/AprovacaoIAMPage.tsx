@@ -733,7 +733,7 @@ export default function AprovacaoIAMPage() {
           <ADHeader>
             <ADTitle>Reconciliar criações contra Entra ID?</ADTitle>
             <ADDesc>
-              Vai baixar os usuários do Entra ID, comparar com a base importada da planilha/colaboradores e cancelar da aprovação tudo que já existir. O <code>entra_id</code> será gravado no colaborador e o que sobrar serão apenas usuários realmente novos ou não localizados.
+              Vai baixar os usuários do Entra ID e comparar com a base da planilha. Cancela da aprovação: (1) quem já existe no Entra (gravando o <code>entra_id</code> no colaborador) e (2) criações pendentes de colaboradores já <strong>desligados</strong>. Sobram apenas usuários realmente novos ou não localizados.
             </ADDesc>
           </ADHeader>
           <ADFooter>
