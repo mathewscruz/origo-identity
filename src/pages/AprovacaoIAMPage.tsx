@@ -59,6 +59,7 @@ const actionLabels: Record<string, string> = {
   update_user_app: "Atualizar em app externo",
   disable_user_app: "Desabilitar em app externo",
   delete_user_app: "Excluir em app externo",
+  review_orphan_entra: "Revisar conta órfã (Entra)",
 };
 
 function actionColor(action: string): string {
