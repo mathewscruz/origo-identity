@@ -346,8 +346,12 @@ async function runReconciliation(sb: any, jobId: string) {
           // é prova de existência de conta AD. Ambiente Órigo é híbrido AD Connect
           // → Entra, então todo AD real aparece no Entra; exceções raras podem ser
           // tratadas manualmente via "Desabilitar AD" no detalhe do colaborador.
+          // Só enfileira se: on-prem sync + conta ainda accountEnabled=true no
+          // Entra (AD Connect propaga o estado do AD para o Entra, então
+          // accountEnabled=false já indica AD desabilitado — não precisa novo disable).
           const isOnPrem = entraMatch?.onPremisesSyncEnabled === true;
-          if (c.sam_account_name && isOnPrem && !openByColab.has(`${c.id}|disable`)) {
+          const adAlreadyDisabled = isOnPrem && entraMatch?.accountEnabled === false;
+          if (c.sam_account_name && isOnPrem && entraMatch?.accountEnabled === true && !openByColab.has(`${c.id}|disable`)) {
             disableEntries.push({
               action_type: "disable",
               payload_json: {
@@ -359,6 +363,8 @@ async function runReconciliation(sb: any, jobId: string) {
               colaborador_id: c.id, requested_by: "reconciliacao", status: "pending",
             });
             stats.disable_ad_enqueued++;
+          } else if (c.sam_account_name && adAlreadyDisabled) {
+            stats.skipped_ad_already_disabled++;
           } else if (c.sam_account_name && !entraMatch) {
             stats.skipped_ad_unknown++;
           }
