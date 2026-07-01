@@ -18,6 +18,7 @@ import { toast } from "sonner";
 const sidebarGroups = [
   { label: "Operação", items: [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
+    { title: "Aprovação IAM", url: "/aprovacao-iam", icon: ShieldCheck },
     { title: "Fila de Provisionamento", url: "/fila-provisionamento", icon: ListOrdered },
     { title: "Solicitações", url: "/solicitacoes", icon: HandHelping },
   ]},
