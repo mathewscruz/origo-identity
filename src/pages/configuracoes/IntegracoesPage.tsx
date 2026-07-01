@@ -243,6 +243,61 @@ export default function IntegracoesPage() {
         </CardContent>
       </Card>
 
+      <Card className="border-primary/30 bg-primary/5">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <Users className="h-5 w-5 text-primary" />
+            <div>
+              <CardTitle className="text-base">Reconciliar Identidades — AD / Entra ID</CardTitle>
+              <CardDescription>
+                Linka colaboradores existentes ao Entra ID, resolve joiners pendentes e gera desabilitações
+                para desligados que ainda não foram processados
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {reconcileStats && (
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+              <div className="rounded border p-2">
+                <div className="text-muted-foreground">Total</div>
+                <div className="text-lg font-semibold">{reconcileStats.total}</div>
+              </div>
+              <div className="rounded border p-2">
+                <div className="text-muted-foreground">Linkados no Entra</div>
+                <div className="text-lg font-semibold text-emerald-600">{reconcileStats.linked}</div>
+              </div>
+              <div className="rounded border p-2">
+                <div className="text-muted-foreground">A reconciliar</div>
+                <div className="text-lg font-semibold text-amber-600">
+                  {Math.max(0, reconcileStats.total - reconcileStats.linked - reconcileStats.desligados)}
+                </div>
+              </div>
+              <div className="rounded border p-2">
+                <div className="text-muted-foreground">Desligados</div>
+                <div className="text-lg font-semibold text-red-600">{reconcileStats.desligados}</div>
+              </div>
+              <div className="rounded border p-2">
+                <div className="text-muted-foreground">JML pendentes</div>
+                <div className="text-lg font-semibold">
+                  {reconcileStats.pendJoiners}J / {reconcileStats.pendLeavers}L
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="text-sm text-muted-foreground">
+            Consulta o Microsoft Graph em lote para descobrir quem já existe no Entra ID (gravando o vínculo),
+            marca joiners pendentes como concluídos quando o usuário já existe, e enfileira <code>disable</code> +{" "}
+            <code>disable_entra</code> para desligados sem processamento. Pode levar alguns minutos.
+          </div>
+          <Button onClick={handleReconcile} disabled={reconciling}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${reconciling ? "animate-spin" : ""}`} />
+            {reconciling ? "Reconciliando..." : "Rodar reconciliação agora"}
+          </Button>
+        </CardContent>
+      </Card>
+
+
       <Card className="border-primary/20">
         <CardHeader>
           <div className="flex items-center gap-3">
