@@ -19,6 +19,7 @@ interface Colab {
   status: string;
   entra_id: string | null;
   sam_account_name: string | null;
+  origem: string | null;
 }
 
 async function getGraphToken(): Promise<string> {
@@ -53,7 +54,7 @@ async function fetchAllColabs(sb: any): Promise<Colab[]> {
   while (true) {
     const { data, error } = await sb
       .from("colaboradores")
-      .select("id, nome, email, matricula, status, entra_id, sam_account_name")
+      .select("id, nome, email, matricula, status, entra_id, sam_account_name, origem")
       .order("id", { ascending: true })
       .range(offset, offset + PAGE - 1);
     if (error) throw new Error(`Falha ao carregar colaboradores: ${error.message}`);
@@ -564,7 +565,7 @@ async function runReconciliation(sb: any, jobId: string) {
     // 5. Gera leavers + enqueue disable para desligados sem evento leaver
     await updateJob(sb, jobId, { phase: "gerando_leavers", message: "Gerando eventos leaver…", users_percent: 75 });
     const desligadosAll = list2.filter((c) => c.status === "desligado" || c.status === "inativo");
-    const phantomLeavers = desligadosAll.filter((c) => !resolveEntraMatch(c, entraIdx));
+    const phantomLeavers = desligadosAll.filter((c) => c.origem === "csv" && !resolveEntraMatch(c, entraIdx));
     const phantomLeaverIds = new Set(phantomLeavers.map((c) => c.id));
     if (phantomLeavers.length > 0) {
       await updateJob(sb, jobId, {
