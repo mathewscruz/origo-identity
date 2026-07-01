@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "Authenticated can subscribe to non-sensitive realtime topics" ON realtime.messages;
