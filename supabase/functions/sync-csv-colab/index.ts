@@ -847,34 +847,24 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       });
       for (const batch of chunk(iamEntries, 200)) await sb.from("iam_queue").insert(batch);
 
-      // Gap 5: Provision access profiles for new joiners (immediate - Gap 6 option A)
+      // Gap 5: Provision access profiles for new joiners — inline only while under time budget.
+      // Above the budget, cargo provisioning is deferred: user can trigger "Reprovisionar Cargo"
+      // per cargo in the UI. This prevents Edge Function timeouts on bulk imports.
+      // Per-user Entra sync (sync-user-access) is NOT called here — it happens after the
+      // create_if_not_exists action is processed by process-iam-queue, or on demand from the UI.
       for (const ins of insertedIds) {
-        if (ins.data.cargo_id && ins.data.sam_account_name) {
-          await provisionCargoAcessosServer(
-            sb, ins.id, ins.data.cargo_id, null,
-            ins.data.sam_account_name, ins.data.nome || "", ins.data.email || ""
-          );
+        if (!ins.data.cargo_id || !ins.data.sam_account_name) continue;
+        if (Date.now() - runStart > PROVISION_BUDGET_MS) {
+          skippedProvisions++;
+          continue;
         }
-
-        // Sync current Entra ID access as individual records
-        if (ins.data.email || ins.data.sam_account_name) {
-          try {
-            const syncUrl = `${supabaseUrl}/functions/v1/sync-user-access`;
-            await fetch(syncUrl, {
-              method: "POST",
-              headers: {
-                apikey: serviceKey,
-                Authorization: `Bearer ${serviceKey}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ colaborador_id: ins.id }),
-            });
-          } catch (e) {
-            console.warn(`[sync-user-access] Error for ${ins.id}:`, e);
-          }
-        }
+        await provisionCargoAcessosServer(
+          sb, ins.id, ins.data.cargo_id, null,
+          ins.data.sam_account_name, ins.data.nome || "", ins.data.email || ""
+        );
       }
     }
+
 
     if (toUpdate.length > 0) {
       const moverEvents = toUpdate.map(u => ({
