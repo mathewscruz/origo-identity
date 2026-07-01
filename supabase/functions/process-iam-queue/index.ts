@@ -555,9 +555,11 @@ Deno.serve(async (req) => {
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
   let forceMode = false;
+  let reconcileMode = false;
   try {
     const body = await req.json();
     forceMode = body?.force === true;
+    reconcileMode = body?.mode === "reconcile-create";
   } catch { /* no body */ }
 
   try {
@@ -568,9 +570,70 @@ Deno.serve(async (req) => {
       .eq("chave", "modo_operacao")
       .single();
 
-    if (modoParam?.valor === "simulacao") {
+    if (modoParam?.valor === "simulacao" && !reconcileMode) {
       return jsonResponse({ success: true, processed: 0, mode: "simulacao", message: "Modo simulação ativo" });
     }
+
+    // ─── RECONCILE MODE: scan queued create_if_not_exists against Entra ───
+    if (reconcileMode) {
+      if (!TENANT_ID || !CLIENT_ID || !CLIENT_SECRET) {
+        return jsonResponse({ error: "Credenciais Azure não configuradas" }, 500);
+      }
+      const token = await getAzureToken(TENANT_ID, CLIENT_ID, CLIENT_SECRET);
+
+      let cancelled = 0;
+      let kept = 0;
+      let scanned = 0;
+      let cursor = 0;
+      const PAGE = 200;
+
+      while (true) {
+        const { data: items } = await supabase
+          .from("iam_queue")
+          .select("id, target_identity, payload_json, colaborador_id")
+          .eq("action_type", "create_if_not_exists")
+          .in("status", ["waiting_approval", "pending"])
+          .order("created_at", { ascending: true })
+          .range(cursor, cursor + PAGE - 1);
+        if (!items || items.length === 0) break;
+
+        for (const it of items) {
+          scanned++;
+          const payload = (it.payload_json || {}) as any;
+          const email = payload.mail || null;
+          const sam = payload.samAccountName || it.target_identity || null;
+          const { userId } = await resolveUserId(token, email, sam);
+
+          if (userId) {
+            await supabase.from("iam_queue").update({
+              status: "cancelled",
+              processed_at: new Date().toISOString(),
+              processed_by: "reconcile-create",
+              result_message: `Usuário já existe no Entra ID (${userId}) — cancelado pela reconciliação.`,
+              error_code: null,
+            }).eq("id", it.id);
+            if (it.colaborador_id) {
+              await supabase.from("colaboradores").update({ entra_id: userId }).eq("id", it.colaborador_id);
+            }
+            cancelled++;
+          } else {
+            kept++;
+          }
+        }
+
+        cursor += items.length;
+        if (items.length < PAGE) break;
+      }
+
+      await supabase.from("auditoria").insert({
+        entidade: "iam_queue", acao: "reconciliar_create",
+        resumo: `Reconciliação: ${cancelled} canceladas, ${kept} mantidas de ${scanned} verificadas.`,
+        detalhes: { scanned, cancelled, kept },
+      });
+
+      return jsonResponse({ success: true, mode: "reconcile-create", scanned, cancelled, kept });
+    }
+
 
     const allResults: { id: string; action: string; status: string; message: string }[] = [];
     let totalProcessed = 0;

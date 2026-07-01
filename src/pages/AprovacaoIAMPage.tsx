@@ -11,16 +11,19 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialog as AD, AlertDialogAction as ADAction, AlertDialogCancel as ADCancel,
+  AlertDialogContent as ADContent, AlertDialogDescription as ADDesc,
+  AlertDialogFooter as ADFooter, AlertDialogHeader as ADHeader, AlertDialogTitle as ADTitle,
 } from "@/components/ui/alert-dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { Shield, Check, X, Search, RefreshCw, AlertTriangle, Clock, CheckCircle2, XCircle } from "lucide-react";
+import { Shield, Check, X, Search, RefreshCw, AlertTriangle, Clock, CheckCircle2, XCircle, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import EmptyState from "@/components/EmptyState";
+import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
+import { authedFetch } from "@/lib/authedFetch";
 
 interface IamQueueItem {
   id: string;
@@ -73,6 +76,8 @@ function summarizePayload(p: any): string {
   return Object.keys(p).slice(0, 3).join(", ");
 }
 
+const PAGE_SIZE = 50;
+
 export default function AprovacaoIAMPage() {
   const { role } = useAuth();
   const qc = useQueryClient();
@@ -88,6 +93,11 @@ export default function AprovacaoIAMPage() {
   const [rejectReason, setRejectReason] = useState("");
   const [rejectTargetIds, setRejectTargetIds] = useState<string[]>([]);
   const [freezeOpen, setFreezeOpen] = useState(false);
+  const [reconcileOpen, setReconcileOpen] = useState(false);
+  const [page, setPage] = useState(0);
+
+  // Reset page when filters/tab change
+  useEffect(() => { setPage(0); setSelected(new Set()); }, [tab, actionFilter, originFilter]);
 
   // ─── Approval mode toggle ───
   const { data: approvalMode, refetch: refetchMode } = useQuery({
@@ -106,74 +116,97 @@ export default function AprovacaoIAMPage() {
         .eq("chave", "iam_approval_required");
       if (error) throw error;
     },
-    onSuccess: () => {
-      refetchMode();
-      toast.success("Modo atualizado");
-    },
+    onSuccess: () => { refetchMode(); toast.success("Modo atualizado"); },
     onError: (e: any) => toast.error(`Erro: ${e.message}`),
   });
 
-  // ─── Legacy pending count (items enqueued before the approval gate existed) ───
+  // ─── Legacy pending count ───
   const { data: legacyPendingCount = 0, refetch: refetchLegacy } = useQuery({
     queryKey: ["iam-legacy-pending-count"],
     queryFn: async () => {
       const { count } = await (supabase as any)
-        .from("iam_queue")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "pending");
+        .from("iam_queue").select("id", { count: "exact", head: true }).eq("status", "pending");
       return count || 0;
     },
     refetchInterval: 30000,
   });
 
-  // ─── Queue data ───
-  const { data: items = [], isLoading, refetch } = useQuery({
-    queryKey: ["iam-approval-queue", tab],
+  // ─── Count of create_if_not_exists in waiting_approval (for reconcile banner) ───
+  const { data: createIfNotExistsCount = 0, refetch: refetchCreateCount } = useQuery({
+    queryKey: ["iam-create-if-not-exists-count"],
     queryFn: async () => {
-      const q = (supabase as any).from("iam_queue").select("*").order("created_at", { ascending: false }).limit(1000);
-      if (tab === "waiting") q.eq("status", "waiting_approval");
-      else q.in("status", ["rejected", "success", "failed", "cancelled"]).not("approved_at", "is", null);
-      const { data, error } = await q;
-      if (error) throw error;
-      return (data || []) as IamQueueItem[];
+      const { count } = await (supabase as any)
+        .from("iam_queue").select("id", { count: "exact", head: true })
+        .eq("action_type", "create_if_not_exists")
+        .in("status", ["waiting_approval", "pending"]);
+      return count || 0;
     },
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   });
 
-  // Realtime auto-refresh
+  // ─── Paginated queue ───
+  const queryKey = ["iam-approval-queue", tab, page, actionFilter, originFilter];
+  const { data: pageData, isLoading, refetch } = useQuery({
+    queryKey,
+    queryFn: async () => {
+      let q: any = (supabase as any)
+        .from("iam_queue")
+        .select("*", { count: "exact" })
+        .order("created_at", { ascending: false })
+        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
+      if (tab === "waiting") q = q.eq("status", "waiting_approval");
+      else q = q.in("status", ["rejected", "success", "failed", "cancelled"]).not("approved_at", "is", null);
+      if (actionFilter !== "todos") q = q.eq("action_type", actionFilter);
+      if (originFilter !== "todos") q = q.eq("requested_by", originFilter);
+      const { data, error, count } = await q;
+      if (error) throw error;
+      return { items: (data || []) as IamQueueItem[], total: count || 0 };
+    },
+    refetchInterval: 15000,
+    placeholderData: (prev) => prev,
+  });
+
+  const items = pageData?.items || [];
+  const total = pageData?.total || 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  // ─── Available filter options (fetched separately, small) ───
+  const { data: filterOptions } = useQuery({
+    queryKey: ["iam-filter-options", tab],
+    queryFn: async () => {
+      const q: any = (supabase as any).from("iam_queue").select("action_type,requested_by").limit(2000);
+      if (tab === "waiting") q.eq("status", "waiting_approval");
+      else q.in("status", ["rejected", "success", "failed", "cancelled"]);
+      const { data } = await q;
+      const actions = Array.from(new Set((data || []).map((d: any) => d.action_type))).sort();
+      const origins = Array.from(new Set((data || []).map((d: any) => d.requested_by).filter(Boolean))).sort();
+      return { actions, origins };
+    },
+    refetchInterval: 60000,
+  });
+
+  // Client-side text search only within the current page
+  const filtered = useMemo(() => {
+    const q = busca.toLowerCase().trim();
+    if (!q) return items;
+    return items.filter((it) => {
+      const hay = `${it.target_identity || ""} ${summarizePayload(it.payload_json)} ${it.action_type} ${it.requested_by || ""}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [items, busca]);
+
+  // Realtime — invalidate current page on any change
   useEffect(() => {
     const ch = supabase
       .channel("iam_queue_approval")
-      .on("postgres_changes", { event: "*", schema: "public", table: "iam_queue" }, () => refetch())
+      .on("postgres_changes", { event: "*", schema: "public", table: "iam_queue" }, () => {
+        qc.invalidateQueries({ queryKey: ["iam-approval-queue"] });
+        qc.invalidateQueries({ queryKey: ["iam-legacy-pending-count"] });
+        qc.invalidateQueries({ queryKey: ["iam-create-if-not-exists-count"] });
+      })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [refetch]);
-
-  const filtered = useMemo(() => {
-    const q = busca.toLowerCase();
-    return items.filter((it) => {
-      if (actionFilter !== "todos" && it.action_type !== actionFilter) return false;
-      if (originFilter !== "todos" && it.requested_by !== originFilter) return false;
-      if (q) {
-        const hay = `${it.target_identity || ""} ${summarizePayload(it.payload_json)} ${it.action_type} ${it.requested_by || ""}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-  }, [items, busca, actionFilter, originFilter]);
-
-  const actionTypes = useMemo(() => Array.from(new Set(items.map((i) => i.action_type))).sort(), [items]);
-  const origins = useMemo(() => Array.from(new Set(items.map((i) => i.requested_by).filter(Boolean) as string[])).sort(), [items]);
-
-  const groups = useMemo(() => {
-    const map = new Map<string, { origin: string; action: string; items: IamQueueItem[] }>();
-    for (const it of filtered) {
-      const key = `${it.requested_by || "—"}::${it.action_type}`;
-      if (!map.has(key)) map.set(key, { origin: it.requested_by || "—", action: it.action_type, items: [] });
-      map.get(key)!.items.push(it);
-    }
-    return Array.from(map.values()).sort((a, b) => b.items.length - a.items.length);
-  }, [filtered]);
+  }, [qc]);
 
   // ─── Mutations ───
   const approveMutation = useMutation({
@@ -190,13 +223,32 @@ export default function AprovacaoIAMPage() {
         resumo: `${ids.length} ação(ões) IAM aprovada(s)`,
         detalhes: { ids },
       });
+      // Fire-and-forget: kicks the worker immediately, don't await
+      triggerEntraProcessing(true).catch(() => {});
+      return ids;
     },
-    onSuccess: (_d, ids) => {
-      toast.success(`${ids.length} item(ns) aprovado(s)`);
-      setSelected(new Set());
+    onMutate: async (ids) => {
+      // Optimistic: remove IDs from current page cache
+      await qc.cancelQueries({ queryKey });
+      const prev = qc.getQueryData<any>(queryKey);
+      if (prev) {
+        qc.setQueryData(queryKey, {
+          ...prev,
+          items: prev.items.filter((i: IamQueueItem) => !ids.includes(i.id)),
+          total: Math.max(0, prev.total - ids.length),
+        });
+      }
+      setSelected((s) => { const n = new Set(s); ids.forEach((id) => n.delete(id)); return n; });
+      return { prev };
+    },
+    onSuccess: (ids) => {
+      toast.success(`${ids.length} item(ns) aprovado(s) — executando…`);
       qc.invalidateQueries({ queryKey: ["iam-approval-queue"] });
     },
-    onError: (e: any) => toast.error(`Erro ao aprovar: ${e.message}`),
+    onError: (e: any, _ids, ctx: any) => {
+      if (ctx?.prev) qc.setQueryData(queryKey, ctx.prev);
+      toast.error(`Erro ao aprovar: ${e.message}`);
+    },
   });
 
   const rejectMutation = useMutation({
@@ -213,16 +265,32 @@ export default function AprovacaoIAMPage() {
         resumo: `${ids.length} ação(ões) IAM recusada(s)`,
         detalhes: { ids, reason },
       });
+      return ids;
     },
-    onSuccess: (_d, v) => {
-      toast.success(`${v.ids.length} item(ns) recusado(s)`);
+    onMutate: async ({ ids }) => {
+      await qc.cancelQueries({ queryKey });
+      const prev = qc.getQueryData<any>(queryKey);
+      if (prev) {
+        qc.setQueryData(queryKey, {
+          ...prev,
+          items: prev.items.filter((i: IamQueueItem) => !ids.includes(i.id)),
+          total: Math.max(0, prev.total - ids.length),
+        });
+      }
+      return { prev };
+    },
+    onSuccess: (ids) => {
+      toast.success(`${ids.length} item(ns) recusado(s)`);
       setSelected(new Set());
       setRejectOpen(false);
       setRejectReason("");
       setRejectTargetIds([]);
       qc.invalidateQueries({ queryKey: ["iam-approval-queue"] });
     },
-    onError: (e: any) => toast.error(`Erro ao recusar: ${e.message}`),
+    onError: (e: any, _v, ctx: any) => {
+      if (ctx?.prev) qc.setQueryData(queryKey, ctx.prev);
+      toast.error(`Erro ao recusar: ${e.message}`);
+    },
   });
 
   const freezeMutation = useMutation({
@@ -243,6 +311,29 @@ export default function AprovacaoIAMPage() {
     onError: (e: any) => toast.error(`Erro: ${e.message}`),
   });
 
+  const reconcileMutation = useMutation({
+    mutationFn: async () => {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-iam-queue`;
+      const res = await authedFetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "reconcile-create" }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+      return body;
+    },
+    onSuccess: (body: any) => {
+      const cancelled = body?.cancelled ?? 0;
+      const kept = body?.kept ?? 0;
+      toast.success(`Reconciliação concluída: ${cancelled} já existiam (canceladas), ${kept} realmente novos.`);
+      setReconcileOpen(false);
+      qc.invalidateQueries({ queryKey: ["iam-approval-queue"] });
+      refetchCreateCount();
+    },
+    onError: (e: any) => toast.error(`Erro ao reconciliar: ${e.message}`),
+  });
+
   // ─── UI helpers ───
   function toggleOne(id: string) {
     const s = new Set(selected);
@@ -259,8 +350,6 @@ export default function AprovacaoIAMPage() {
     setRejectOpen(true);
   }
 
-  const waitingCount = tab === "waiting" ? filtered.length : items.length;
-
   return (
     <div className="p-6 space-y-4 max-w-full">
       <div className="flex items-start justify-between gap-4">
@@ -276,7 +365,7 @@ export default function AprovacaoIAMPage() {
         {tab === "waiting" && (
           <Badge variant="outline" className="text-sm">
             <Clock className="h-3 w-3 mr-1" />
-            {waitingCount} aguardando
+            {total} aguardando
           </Badge>
         )}
       </div>
@@ -292,13 +381,36 @@ export default function AprovacaoIAMPage() {
                   {legacyPendingCount.toLocaleString("pt-BR")} ações estão em fila legada (pré-gate)
                 </p>
                 <p className="text-amber-800 dark:text-amber-300/90">
-                  Estas ações foram enfileiradas antes do modo aprovação ser ligado e serão executadas automaticamente pelo worker se nada for feito. Mova-as para a fila de aprovação para revisá-las antes.
+                  Serão executadas automaticamente pelo worker se nada for feito. Mova-as para a fila de aprovação para revisar antes.
                 </p>
               </div>
             </div>
             <Button variant="default" size="sm" onClick={() => setFreezeOpen(true)} className="shrink-0">
               <AlertTriangle className="h-4 w-4 mr-2" />
               Mover para aprovação
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Reconcile banner */}
+      {isAdmin && createIfNotExistsCount > 0 && (
+        <Card className="border-blue-300 bg-blue-50 dark:bg-blue-950/20">
+          <CardContent className="py-4 flex items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <Sparkles className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
+              <div className="text-sm">
+                <p className="font-medium text-blue-900 dark:text-blue-200">
+                  {createIfNotExistsCount.toLocaleString("pt-BR")} criações de usuário na fila
+                </p>
+                <p className="text-blue-800 dark:text-blue-300/90">
+                  Muitas dessas podem já existir no Entra ID. Rode a reconciliação para cancelar as duplicadas e deixar só os usuários realmente novos para aprovar.
+                </p>
+              </div>
+            </div>
+            <Button variant="default" size="sm" onClick={() => setReconcileOpen(true)} className="shrink-0" disabled={reconcileMutation.isPending}>
+              <Sparkles className="h-4 w-4 mr-2" />
+              {reconcileMutation.isPending ? "Reconciliando..." : "Reconciliar contra Entra"}
             </Button>
           </CardContent>
         </Card>
@@ -315,15 +427,8 @@ export default function AprovacaoIAMPage() {
               </CardDescription>
             </div>
             <div className="flex items-center gap-3">
-              <Label htmlFor="mode" className="text-sm">
-                {approvalMode ? "Ativado" : "Desativado"}
-              </Label>
-              <Switch
-                id="mode"
-                checked={!!approvalMode}
-                disabled={!isAdmin || toggleMode.isPending}
-                onCheckedChange={(v) => toggleMode.mutate(v)}
-              />
+              <Label htmlFor="mode" className="text-sm">{approvalMode ? "Ativado" : "Desativado"}</Label>
+              <Switch id="mode" checked={!!approvalMode} disabled={!isAdmin || toggleMode.isPending} onCheckedChange={(v) => toggleMode.mutate(v)} />
             </div>
           </div>
         </CardHeader>
@@ -337,9 +442,9 @@ export default function AprovacaoIAMPage() {
         )}
       </Card>
 
-      <Tabs value={tab} onValueChange={(v) => { setTab(v as any); setSelected(new Set()); }}>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
         <TabsList>
-          <TabsTrigger value="waiting">Aguardando ({tab === "waiting" ? items.length : "—"})</TabsTrigger>
+          <TabsTrigger value="waiting">Aguardando ({tab === "waiting" ? total : "—"})</TabsTrigger>
           <TabsTrigger value="history">Histórico</TabsTrigger>
         </TabsList>
 
@@ -349,20 +454,20 @@ export default function AprovacaoIAMPage() {
             <CardContent className="pt-4 flex flex-wrap gap-2 items-center">
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Buscar por colaborador, ação, origem..." value={busca} onChange={(e) => setBusca(e.target.value)} className="pl-8 h-9" />
+                <Input placeholder="Buscar nesta página..." value={busca} onChange={(e) => setBusca(e.target.value)} className="pl-8 h-9" />
               </div>
               <Select value={actionFilter} onValueChange={setActionFilter}>
                 <SelectTrigger className="w-[200px] h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todas as ações</SelectItem>
-                  {actionTypes.map((a) => <SelectItem key={a} value={a}>{actionLabels[a] || a}</SelectItem>)}
+                  {(filterOptions?.actions || []).map((a: string) => <SelectItem key={a} value={a}>{actionLabels[a] || a}</SelectItem>)}
                 </SelectContent>
               </Select>
               <Select value={originFilter} onValueChange={setOriginFilter}>
                 <SelectTrigger className="w-[200px] h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todas as origens</SelectItem>
-                  {origins.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                  {(filterOptions?.origins || []).map((o: string) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
                 </SelectContent>
               </Select>
               <Button variant="outline" size="sm" onClick={() => refetch()} className="h-9">
@@ -370,36 +475,6 @@ export default function AprovacaoIAMPage() {
               </Button>
             </CardContent>
           </Card>
-
-          {/* Groups summary */}
-          {tab === "waiting" && groups.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Resumo por origem / ação</CardTitle></CardHeader>
-              <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                {groups.slice(0, 12).map((g) => (
-                  <div key={`${g.origin}-${g.action}`} className="flex items-center justify-between rounded border p-2 text-xs">
-                    <div className="min-w-0">
-                      <div className="font-medium truncate">{actionLabels[g.action] || g.action}</div>
-                      <div className="text-muted-foreground truncate">{g.origin}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="secondary">{g.items.length}</Badge>
-                      {isAdmin && (
-                        <>
-                          <Button size="sm" variant="ghost" className="h-7 px-2 text-emerald-700" onClick={() => approveMutation.mutate(g.items.map((i) => i.id))} disabled={approveMutation.isPending}>
-                            <Check className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button size="sm" variant="ghost" className="h-7 px-2 text-red-700" onClick={() => openReject(g.items.map((i) => i.id))}>
-                            <X className="h-3.5 w-3.5" />
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
 
           {/* Bulk action bar */}
           {tab === "waiting" && selected.size > 0 && isAdmin && (
@@ -422,9 +497,7 @@ export default function AprovacaoIAMPage() {
               {isLoading ? (
                 <div className="p-8 text-center text-sm text-muted-foreground">Carregando...</div>
               ) : filtered.length === 0 ? (
-                <EmptyState
-                  message={tab === "waiting" ? "Nada aguardando aprovação. Todas as ações IAM foram processadas." : "Sem histórico de decisões ainda."}
-                />
+                <EmptyState message={tab === "waiting" ? "Nada aguardando aprovação." : "Sem histórico de decisões ainda."} />
               ) : (
                 <Table>
                   <TableHeader>
@@ -444,7 +517,7 @@ export default function AprovacaoIAMPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filtered.slice(0, 500).map((it) => (
+                    {filtered.map((it) => (
                       <TableRow key={it.id} className="cursor-pointer" onClick={() => setDetailItem(it)}>
                         {tab === "waiting" && isAdmin && (
                           <TableCell onClick={(e) => e.stopPropagation()}>
@@ -474,7 +547,7 @@ export default function AprovacaoIAMPage() {
                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                           {tab === "waiting" && isAdmin && (
                             <div className="flex gap-1 justify-end">
-                              <Button size="sm" variant="ghost" className="h-7 px-2 text-emerald-700" onClick={() => approveMutation.mutate([it.id])}>
+                              <Button size="sm" variant="ghost" className="h-7 px-2 text-emerald-700" onClick={() => approveMutation.mutate([it.id])} disabled={approveMutation.isPending}>
                                 <Check className="h-3.5 w-3.5" />
                               </Button>
                               <Button size="sm" variant="ghost" className="h-7 px-2 text-red-700" onClick={() => openReject([it.id])}>
@@ -488,9 +561,20 @@ export default function AprovacaoIAMPage() {
                   </TableBody>
                 </Table>
               )}
-              {filtered.length > 500 && (
-                <div className="p-2 text-xs text-muted-foreground text-center border-t">
-                  Mostrando 500 de {filtered.length}. Refine os filtros para ver mais.
+              {/* Pagination */}
+              {total > 0 && (
+                <div className="flex items-center justify-between gap-4 p-3 border-t text-sm">
+                  <span className="text-muted-foreground">
+                    Página {page + 1} de {totalPages} — {total.toLocaleString("pt-BR")} itens
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
+                      <ChevronLeft className="h-4 w-4 mr-1" /> Anterior
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={page + 1 >= totalPages} onClick={() => setPage((p) => p + 1)}>
+                      Próxima <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -553,42 +637,53 @@ export default function AprovacaoIAMPage() {
       </Sheet>
 
       {/* Reject dialog */}
-      <AlertDialog open={rejectOpen} onOpenChange={setRejectOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Recusar {rejectTargetIds.length} ação(ões)?</AlertDialogTitle>
-            <AlertDialogDescription>
-              As ações não serão executadas no AD/Entra ID. Informe o motivo (obrigatório):
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <Textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Ex.: colaborador em férias sem previsão de retorno..." rows={4} />
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction disabled={!rejectReason.trim() || rejectMutation.isPending} onClick={() => rejectMutation.mutate({ ids: rejectTargetIds, reason: rejectReason.trim() })}>
+      <AD open={rejectOpen} onOpenChange={setRejectOpen}>
+        <ADContent>
+          <ADHeader>
+            <ADTitle>Recusar {rejectTargetIds.length} ação(ões)?</ADTitle>
+            <ADDesc>As ações não serão executadas. Informe o motivo (obrigatório):</ADDesc>
+          </ADHeader>
+          <Textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Ex.: colaborador em férias sem previsão..." rows={4} />
+          <ADFooter>
+            <ADCancel>Cancelar</ADCancel>
+            <ADAction disabled={!rejectReason.trim() || rejectMutation.isPending} onClick={() => rejectMutation.mutate({ ids: rejectTargetIds, reason: rejectReason.trim() })}>
               Recusar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </ADAction>
+          </ADFooter>
+        </ADContent>
+      </AD>
 
       {/* Freeze dialog */}
-      <AlertDialog open={freezeOpen} onOpenChange={setFreezeOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Congelar fila atual?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Todos os itens atualmente em status <strong>pendente</strong> serão movidos para <strong>aguardando aprovação</strong>.
-              Use isso para revisar backlog gerado antes do gate ser ativado.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => freezeMutation.mutate()} disabled={freezeMutation.isPending}>
-              Congelar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <AD open={freezeOpen} onOpenChange={setFreezeOpen}>
+        <ADContent>
+          <ADHeader>
+            <ADTitle>Congelar fila atual?</ADTitle>
+            <ADDesc>Todos os itens em <strong>pendente</strong> serão movidos para <strong>aguardando aprovação</strong>.</ADDesc>
+          </ADHeader>
+          <ADFooter>
+            <ADCancel>Cancelar</ADCancel>
+            <ADAction onClick={() => freezeMutation.mutate()} disabled={freezeMutation.isPending}>Congelar</ADAction>
+          </ADFooter>
+        </ADContent>
+      </AD>
+
+      {/* Reconcile dialog */}
+      <AD open={reconcileOpen} onOpenChange={setReconcileOpen}>
+        <ADContent>
+          <ADHeader>
+            <ADTitle>Reconciliar criações contra Entra ID?</ADTitle>
+            <ADDesc>
+              Vai verificar cada <code>create_if_not_exists</code> em fila contra o Entra (por email/UPN/SAM). Se o usuário já existe, o item é <strong>cancelado</strong> e o <code>entra_id</code> é gravado no colaborador. O que sobrar são os usuários realmente novos, prontos para você aprovar.
+            </ADDesc>
+          </ADHeader>
+          <ADFooter>
+            <ADCancel>Cancelar</ADCancel>
+            <ADAction onClick={() => reconcileMutation.mutate()} disabled={reconcileMutation.isPending}>
+              {reconcileMutation.isPending ? "Reconciliando..." : "Rodar reconciliação"}
+            </ADAction>
+          </ADFooter>
+        </ADContent>
+      </AD>
     </div>
   );
 }

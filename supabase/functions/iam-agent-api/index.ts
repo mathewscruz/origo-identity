@@ -105,7 +105,13 @@ Deno.serve(async (req) => {
         .eq("id", id)
         .single();
 
-      if (currentItem && currentItem.retry_count < currentItem.max_retries) {
+      // For user_not_found (identidade ausente — não é falha transitória), cap at 3 retries.
+      // Other retryable errors keep the item's normal max_retries (default 10).
+      const effectiveMax = error_code === "user_not_found"
+        ? Math.min(3, currentItem?.max_retries ?? 3)
+        : (currentItem?.max_retries ?? 10);
+
+      if (currentItem && currentItem.retry_count < effectiveMax) {
         const newRetryCount = currentItem.retry_count + 1;
         const nextRetryAt = calculateNextRetry(newRetryCount);
 
@@ -115,7 +121,7 @@ Deno.serve(async (req) => {
             status: "pending",
             retry_count: newRetryCount,
             next_retry_at: nextRetryAt,
-            result_message: result_message || `Retry ${newRetryCount}/${currentItem.max_retries} — ${error_code}`,
+            result_message: result_message || `Retry ${newRetryCount}/${effectiveMax} — ${error_code}`,
             error_code,
             processed_by: processed_by || undefined,
           })

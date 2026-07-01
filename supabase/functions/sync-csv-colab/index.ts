@@ -161,6 +161,65 @@ function chunk<T>(arr: T[], size: number): T[][] {
 
 const PLACEHOLDER_EMPRESA_ID = "00000000-0000-0000-0000-000000000000";
 
+// ─── Entra ID pre-check (avoid enqueueing create_if_not_exists for identities that already exist) ───
+async function getAzureTokenSafe(): Promise<string | null> {
+  const TENANT = Deno.env.get("AZURE_TENANT_ID");
+  const CLIENT = Deno.env.get("AZURE_CLIENT_ID");
+  const SECRET = Deno.env.get("AZURE_CLIENT_SECRET");
+  if (!TENANT || !CLIENT || !SECRET) return null;
+  try {
+    const res = await fetch(`https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: CLIENT, client_secret: SECRET,
+        scope: "https://graph.microsoft.com/.default",
+        grant_type: "client_credentials",
+      }),
+    });
+    if (!res.ok) return null;
+    const j = await res.json();
+    return j.access_token || null;
+  } catch { return null; }
+}
+
+/** Given a list of {email, sam} pairs, returns a Map keyed by email OR sam → entra userId */
+async function preCheckEntraExistence(
+  token: string,
+  identities: { email: string | null; sam: string | null }[],
+): Promise<Map<string, string>> {
+  const found = new Map<string, string>();
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  // Build unique filter values (Graph OData $filter with `or` — max ~15 terms per request is safe)
+  const CHUNK = 15;
+  const emailValues = Array.from(new Set(identities.map((i) => i.email).filter(Boolean) as string[]));
+  const samValues = Array.from(new Set(identities.map((i) => i.sam).filter(Boolean) as string[]));
+
+  async function runFilter(values: string[], build: (v: string) => string) {
+    for (let i = 0; i < values.length; i += CHUNK) {
+      const batch = values.slice(i, i + CHUNK);
+      const filter = batch.map((v) => build(v.replace(/'/g, "''"))).join(" or ");
+      const url = `https://graph.microsoft.com/v1.0/users?$filter=${encodeURIComponent(filter)}&$select=id,mail,userPrincipalName,onPremisesSamAccountName&$top=999`;
+      try {
+        const res = await fetch(url, { headers });
+        if (!res.ok) { console.warn(`[preCheck] Graph ${res.status}: ${(await res.text()).slice(0, 200)}`); continue; }
+        const data = await res.json();
+        for (const u of (data.value || [])) {
+          if (u.mail) found.set(u.mail.toLowerCase(), u.id);
+          if (u.userPrincipalName) found.set(u.userPrincipalName.toLowerCase(), u.id);
+          if (u.onPremisesSamAccountName) found.set(`sam:${u.onPremisesSamAccountName.toLowerCase()}`, u.id);
+        }
+      } catch (e) { console.warn(`[preCheck] error:`, e); }
+    }
+  }
+
+  await runFilter(emailValues, (v) => `mail eq '${v}' or userPrincipalName eq '${v}'`);
+  await runFilter(samValues, (v) => `onPremisesSamAccountName eq '${v}'`);
+
+  return found;
+}
+
+
 function buildFingerprint(row: CsvRow): string {
   return [
     row.displayName || "",
@@ -816,36 +875,60 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       }));
       for (const batch of chunk(joinerEvents, 200)) await sb.from("eventos_jml").insert(batch);
 
-      // Gap 2: Generate iam_queue entries with enriched payloads
-      const iamEntries = toInsert.filter(c => c.sam_account_name).map(c => {
+      // Gap 2: Generate iam_queue entries with enriched payloads.
+      // First, pre-check Entra ID: for identities that already exist, skip create_if_not_exists
+      // and just persist the entra_id — avoids the massive "user_not_found" retry storm.
+      const joinerCandidates = toInsert.filter(c => c.sam_account_name);
+      const preCheckToken = await getAzureTokenSafe();
+      let existingMapEntra = new Map<string, string>();
+      if (preCheckToken && joinerCandidates.length > 0) {
+        existingMapEntra = await preCheckEntraExistence(
+          preCheckToken,
+          joinerCandidates.map(c => ({ email: c.email || null, sam: c.sam_account_name || null })),
+        );
+        console.log(`[pre-check] ${existingMapEntra.size} identidades já existem no Entra de ${joinerCandidates.length} candidatos`);
+      }
+
+      const iamEntries: any[] = [];
+      let skippedExisting = 0;
+      for (const c of joinerCandidates) {
+        const emailKey = (c.email || "").toLowerCase();
+        const samKey = `sam:${(c.sam_account_name || "").toLowerCase()}`;
+        const foundId = (emailKey && existingMapEntra.get(emailKey)) || existingMapEntra.get(samKey);
+        if (foundId) {
+          // Persist entra_id, skip enqueue
+          const { data: inserted } = await sb.from("colaboradores").select("id").eq("matricula", c.matricula).maybeSingle();
+          if (inserted?.id) {
+            await sb.from("colaboradores").update({ entra_id: foundId }).eq("id", inserted.id);
+          }
+          skippedExisting++;
+          continue;
+        }
         const nameParts = (c.nome || "").split(" ");
         const givenName = nameParts[0] || "";
         const surname = nameParts.slice(1).join(" ") || givenName;
         const companyName = c.empresa_id ? (empresaNames.get(c.empresa_id) || null) : null;
         const titleName = c.cargo_id ? (cargoNames.get(c.cargo_id) || null) : null;
         const deptName = c.area_id ? (areaNames.get(c.area_id) || null) : null;
-        return {
+        iamEntries.push({
           action_type: "create_if_not_exists",
           payload_json: {
-            givenName,
-            surname,
+            givenName, surname,
             displayName: c.nome,
             samAccountName: c.sam_account_name,
             userPrincipalName: `${c.sam_account_name}@ebessolar.local`,
             mail: c.email,
-            department: deptName,
-            title: titleName,
-            company: companyName,
-            telephoneNumber: null,
-            manager: null,
-            ouPath: "",
+            department: deptName, title: titleName, company: companyName,
+            telephoneNumber: null, manager: null, ouPath: "",
           },
           target_identity: c.sam_account_name,
           requested_by: "importacao_csv",
           status: "pending",
-        };
-      });
+        });
+      }
+      console.log(`[iam-queue] ${iamEntries.length} enfileirados / ${skippedExisting} pulados (já existem no Entra)`);
       for (const batch of chunk(iamEntries, 200)) await sb.from("iam_queue").insert(batch);
+
 
       // Gap 5: Provision access profiles for new joiners — inline only while under time budget.
       // Above the budget, cargo provisioning is deferred: user can trigger "Reprovisionar Cargo"
