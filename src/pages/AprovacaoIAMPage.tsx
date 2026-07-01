@@ -309,15 +309,39 @@ export default function AprovacaoIAMPage() {
     mutationFn: async ({ ids, reason }: { ids: string[]; reason: string }) => {
       const { data: userData } = await supabase.auth.getUser();
       const uid = userData?.user?.id;
+
+      // Descobre órfãos para registrá-los como contas conhecidas (não voltam à revisão)
+      const { data: rows } = await (supabase as any)
+        .from("iam_queue").select("id, action_type, payload_json").in("id", ids);
+      const orphans = (rows || []).filter((r: any) => r.action_type === "review_orphan_entra");
+
       const { error } = await (supabase as any)
         .from("iam_queue")
         .update({ status: "rejected", approved_by: uid, approved_at: new Date().toISOString(), rejection_reason: reason })
         .in("id", ids);
       if (error) throw error;
+
+      if (orphans.length > 0) {
+        const inserts = orphans
+          .filter((o: any) => o.payload_json?.entra_id)
+          .map((o: any) => ({
+            entra_id: o.payload_json.entra_id,
+            display_name: o.payload_json.displayName || null,
+            email: o.payload_json.mail || o.payload_json.userPrincipalName || null,
+            motivo: reason || "Conta legítima (marcada na revisão)",
+            created_by: uid || null,
+          }));
+        if (inserts.length > 0) {
+          await (supabase as any)
+            .from("contas_admin_conhecidas")
+            .upsert(inserts, { onConflict: "entra_id" });
+        }
+      }
+
       await (supabase as any).from("auditoria").insert({
         entidade: "iam_queue", acao: "recusar",
-        resumo: `${ids.length} ação(ões) IAM recusada(s)`,
-        detalhes: { ids, reason },
+        resumo: `${ids.length} ação(ões) IAM recusada(s)${orphans.length ? ` (${orphans.length} órfão(s) marcado(s) como legítimos)` : ""}`,
+        detalhes: { ids, reason, orphan_ids: orphans.map((o: any) => o.id) },
       });
       return ids;
     },
