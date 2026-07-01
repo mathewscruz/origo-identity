@@ -145,6 +145,245 @@ async function updateJob(sb: any, jobId: string, patch: Record<string, unknown>)
   await sb.from("sync_jobs").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", jobId);
 }
 
+/**
+ * For each leaver colab: deactivate perfil_atribuicoes, enqueue remove_group/license/app
+ * for both profile-driven resources and individually-assigned ones (entra_sync/manual_individual).
+ * Mirrors the client-side logic in src/lib/colaboradorLifecycle.ts so the automated
+ * reconciliation path revokes access too, not just disables the account.
+ */
+async function revokeLeaverAccess(
+  sb: any,
+  leavers: Colab[],
+  stats: any,
+  requestedBy: string,
+) {
+  if (leavers.length === 0) return;
+  const leaverIds = leavers.map((c) => c.id);
+  const colabById = new Map(leavers.map((c) => [c.id, c]));
+
+  // 1. Load active perfil_atribuicoes for all leavers at once
+  const atribByColab = new Map<string, string[]>(); // colab_id -> perfil_ids
+  const allPerfilIds = new Set<string>();
+  for (const batch of chunk(leaverIds, 500)) {
+    const { data } = await sb
+      .from("perfil_atribuicoes")
+      .select("colaborador_id, perfil_id")
+      .in("colaborador_id", batch)
+      .eq("ativo", true);
+    for (const r of data || []) {
+      if (!atribByColab.has(r.colaborador_id)) atribByColab.set(r.colaborador_id, []);
+      atribByColab.get(r.colaborador_id)!.push(r.perfil_id);
+      allPerfilIds.add(r.perfil_id);
+    }
+  }
+
+  // 2. Deactivate them
+  const colabsWithPerfis = Array.from(atribByColab.keys());
+  if (colabsWithPerfis.length > 0) {
+    for (const batch of chunk(colabsWithPerfis, 500)) {
+      const { error } = await sb
+        .from("perfil_atribuicoes")
+        .update({ ativo: false, data_revogacao: new Date().toISOString() })
+        .in("colaborador_id", batch)
+        .eq("ativo", true);
+      if (error) stats.errors.push(`deactivate perfis: ${error.message}`);
+      else stats.perfis_desativados += batch.length;
+    }
+  }
+
+  // 3. Resolve resources per perfil
+  const perfilIds = Array.from(allPerfilIds);
+  const perfilGroups = new Map<string, Array<{ entra_id: string; nome: string }>>();
+  const perfilLicenses = new Map<string, Array<{ sku_id: string; nome: string }>>();
+  const perfilApps = new Map<string, Array<{ entra_id: string; nome: string; role_id: string | null }>>();
+
+  if (perfilIds.length > 0) {
+    // Groups
+    const { data: pg } = await sb
+      .from("perfil_grupos")
+      .select("perfil_id, entra_grupo_id, entra_grupos(entra_id, nome)")
+      .in("perfil_id", perfilIds);
+    for (const r of pg || []) {
+      const g = r.entra_grupos;
+      if (!g?.entra_id) continue;
+      if (!perfilGroups.has(r.perfil_id)) perfilGroups.set(r.perfil_id, []);
+      perfilGroups.get(r.perfil_id)!.push({ entra_id: g.entra_id, nome: g.nome });
+    }
+    // Licenses (Entra only — external licenças não têm sku_id no Graph)
+    const { data: pl } = await sb
+      .from("perfil_licencas")
+      .select("perfil_id, licenca_id, entra_licencas(sku_id, nome, friendly_name)")
+      .in("perfil_id", perfilIds);
+    for (const r of pl || []) {
+      const l = r.entra_licencas;
+      if (!l?.sku_id) continue;
+      if (!perfilLicenses.has(r.perfil_id)) perfilLicenses.set(r.perfil_id, []);
+      perfilLicenses.get(r.perfil_id)!.push({ sku_id: l.sku_id, nome: l.friendly_name || l.nome });
+    }
+    // Apps
+    const { data: pa } = await sb
+      .from("perfil_aplicacoes")
+      .select("perfil_id, aplicacao_id, app_role_id, aplicacoes(entra_id, nome, default_app_role_id)")
+      .in("perfil_id", perfilIds);
+    for (const r of pa || []) {
+      const a = r.aplicacoes;
+      if (!a?.entra_id) continue;
+      if (!perfilApps.has(r.perfil_id)) perfilApps.set(r.perfil_id, []);
+      perfilApps.get(r.perfil_id)!.push({
+        entra_id: a.entra_id,
+        nome: a.nome,
+        role_id: r.app_role_id || a.default_app_role_id || null,
+      });
+    }
+  }
+
+  // 4. Load individual assignments (manual_individual + entra_sync) with success
+  const individualByColab = new Map<string, any[]>();
+  for (const batch of chunk(leaverIds, 500)) {
+    const { data } = await sb
+      .from("iam_queue")
+      .select("colaborador_id, action_type, payload_json, target_identity")
+      .in("colaborador_id", batch)
+      .in("requested_by", ["manual_individual", "entra_sync"])
+      .eq("status", "success")
+      .in("action_type", ["assign_group", "assign_license", "assign_app"]);
+    for (const r of data || []) {
+      if (!individualByColab.has(r.colaborador_id)) individualByColab.set(r.colaborador_id, []);
+      individualByColab.get(r.colaborador_id)!.push(r);
+    }
+  }
+
+  // 5. Load already-open remove_* to avoid dup enqueue
+  const openRemove = new Set<string>(); // key: colab|action|resourceKey
+  for (const batch of chunk(leaverIds, 500)) {
+    const { data } = await sb
+      .from("iam_queue")
+      .select("colaborador_id, action_type, payload_json")
+      .in("colaborador_id", batch)
+      .in("action_type", ["remove_group", "remove_license", "remove_app"])
+      .in("status", ["pending", "waiting_approval", "processing", "success"]);
+    for (const r of data || []) {
+      const p = r.payload_json || {};
+      const rk = r.action_type === "remove_group" ? p.groupId
+              : r.action_type === "remove_license" ? p.skuId
+              : p.appId;
+      if (rk) openRemove.add(`${r.colaborador_id}|${r.action_type}|${rk}`);
+    }
+  }
+
+  // 6. Build queue entries
+  const reverseMap: Record<string, string> = {
+    assign_group: "remove_group",
+    assign_license: "remove_license",
+    assign_app: "remove_app",
+  };
+  const entries: any[] = [];
+  const snapshotByColab = new Map<string, { perfis: string[]; recursos_individuais: any[] }>();
+
+  for (const c of leavers) {
+    const target = c.entra_id || c.email || c.sam_account_name;
+    if (!target) continue;
+    const perfis = atribByColab.get(c.id) || [];
+    const snap = { perfis, recursos_individuais: [] as any[] };
+    const seenKeys = new Set<string>();
+
+    // Profile-driven
+    for (const pid of perfis) {
+      for (const g of perfilGroups.get(pid) || []) {
+        const k = `remove_group|${g.entra_id}`;
+        if (seenKeys.has(k)) continue; seenKeys.add(k);
+        if (openRemove.has(`${c.id}|remove_group|${g.entra_id}`)) continue;
+        entries.push({
+          action_type: "remove_group",
+          payload_json: { groupId: g.entra_id, groupName: g.nome, reason: "leaver_reconciliacao" },
+          colaborador_id: c.id, target_identity: target,
+          requested_by: requestedBy, status: "pending",
+        });
+        stats.remove_group_enqueued++;
+      }
+      for (const l of perfilLicenses.get(pid) || []) {
+        const k = `remove_license|${l.sku_id}`;
+        if (seenKeys.has(k)) continue; seenKeys.add(k);
+        if (openRemove.has(`${c.id}|remove_license|${l.sku_id}`)) continue;
+        entries.push({
+          action_type: "remove_license",
+          payload_json: { skuId: l.sku_id, licenseName: l.nome, reason: "leaver_reconciliacao" },
+          colaborador_id: c.id, target_identity: target,
+          requested_by: requestedBy, status: "pending",
+        });
+        stats.remove_license_enqueued++;
+      }
+      for (const a of perfilApps.get(pid) || []) {
+        const k = `remove_app|${a.entra_id}`;
+        if (seenKeys.has(k)) continue; seenKeys.add(k);
+        if (openRemove.has(`${c.id}|remove_app|${a.entra_id}`)) continue;
+        entries.push({
+          action_type: "remove_app",
+          payload_json: { appId: a.entra_id, appName: a.nome, appRoleId: a.role_id, reason: "leaver_reconciliacao" },
+          colaborador_id: c.id, target_identity: target,
+          requested_by: requestedBy, status: "pending",
+        });
+        stats.remove_app_enqueued++;
+      }
+    }
+
+    // Individual (entra_sync / manual_individual)
+    for (const item of individualByColab.get(c.id) || []) {
+      const p = item.payload_json || {};
+      const reverse = reverseMap[item.action_type];
+      const rk = item.action_type === "assign_group" ? p.groupId
+              : item.action_type === "assign_license" ? p.skuId
+              : p.appId;
+      if (!reverse || !rk) continue;
+      const k = `${reverse}|${rk}`;
+      if (seenKeys.has(k)) continue; seenKeys.add(k);
+      if (openRemove.has(`${c.id}|${reverse}|${rk}`)) continue;
+      snap.recursos_individuais.push({
+        action_type: item.action_type, payload_json: p, target_identity: item.target_identity,
+      });
+      entries.push({
+        action_type: reverse,
+        payload_json: { ...p, reason: "leaver_reconciliacao" },
+        colaborador_id: c.id,
+        target_identity: item.target_identity || target,
+        requested_by: requestedBy, status: "pending",
+      });
+      if (reverse === "remove_group") stats.remove_group_enqueued++;
+      else if (reverse === "remove_license") stats.remove_license_enqueued++;
+      else if (reverse === "remove_app") stats.remove_app_enqueued++;
+    }
+
+    snapshotByColab.set(c.id, snap);
+  }
+
+  // 7. Insert queue rows
+  for (const batch of chunk(entries, 200)) {
+    const { error } = await sb.from("iam_queue").insert(batch);
+    if (error) stats.errors.push(`insert remove_* iam_queue: ${error.message}`);
+  }
+
+  // 8. Update the just-created leaver events with the snapshot
+  for (const [colabId, snap] of snapshotByColab) {
+    if (snap.perfis.length === 0 && snap.recursos_individuais.length === 0) continue;
+    const c = colabById.get(colabId)!;
+    await sb.from("eventos_jml")
+      .update({
+        dados_antes: {
+          matricula: c.matricula, nome: c.nome, status: "ativo",
+          tipo_desativacao: "hard",
+          perfis: snap.perfis,
+          recursos_individuais: snap.recursos_individuais,
+        },
+      })
+      .eq("colaborador_id", colabId)
+      .eq("tipo", "leaver")
+      .eq("origem", "reconciliacao")
+      .eq("status", "pendente");
+  }
+}
+
+
+
 async function runReconciliation(sb: any, jobId: string) {
   const stats = {
     total_colabs: 0,
