@@ -159,6 +159,9 @@ async function runReconciliation(sb: any, jobId: string) {
     skipped_no_entra: 0,
     skipped_already_disabled: 0,
     entra_users_indexed: 0,
+    create_enqueued: 0,
+    enable_enqueued: 0,
+    orphans_flagged: 0,
     duplicates: [] as Array<{ colab_id: string; entra_id: string }>,
     errors: [] as string[],
   };
