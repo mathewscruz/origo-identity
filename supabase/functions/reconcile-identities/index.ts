@@ -103,6 +103,44 @@ async function lookupEntraByEmails(
   return result;
 }
 
+interface EntraUser {
+  id: string;
+  upn: string | null;
+  mail: string | null;
+  accountEnabled: boolean;
+  onPremisesSyncEnabled: boolean;
+}
+
+async function fetchAllEntraUsers(token: string): Promise<{
+  byId: Map<string, EntraUser>;
+  byEmail: Map<string, EntraUser>;
+}> {
+  const byId = new Map<string, EntraUser>();
+  const byEmail = new Map<string, EntraUser>();
+  let url: string | null =
+    "https://graph.microsoft.com/v1.0/users?$select=id,userPrincipalName,mail,accountEnabled,onPremisesSyncEnabled&$top=999";
+  const headers = { Authorization: `Bearer ${token}`, ConsistencyLevel: "eventual" };
+  while (url) {
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`Graph /users failed (${res.status}): ${await res.text()}`);
+    const body = await res.json();
+    for (const u of body.value || []) {
+      const eu: EntraUser = {
+        id: u.id,
+        upn: u.userPrincipalName || null,
+        mail: u.mail || null,
+        accountEnabled: !!u.accountEnabled,
+        onPremisesSyncEnabled: !!u.onPremisesSyncEnabled,
+      };
+      byId.set(eu.id, eu);
+      if (eu.upn) byEmail.set(eu.upn.toLowerCase(), eu);
+      if (eu.mail) byEmail.set(eu.mail.toLowerCase(), eu);
+    }
+    url = body["@odata.nextLink"] || null;
+  }
+  return { byId, byEmail };
+}
+
 async function updateJob(sb: any, jobId: string, patch: Record<string, unknown>) {
   await sb.from("sync_jobs").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", jobId);
 }
