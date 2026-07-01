@@ -1,53 +1,59 @@
 ## Problema
 
-O caso do Elpidio Magno Da Costa Neto (que aparece no "Aprovação IAM" como **Desabilitar no AD** mesmo sem existir em AD nem em Entra) **não é isolado**. Rodando a query de auditoria: **2.034 itens de `disable` (AD) abertos na fila estão apontando para colaboradores que nem sequer têm `entra_id` vinculado** — ou seja, o sistema está pedindo para desabilitar contas que muito provavelmente também não existem no AD.
+Max Henrique Pereira De Souza aparece na fila como "Desabilitar no AD" mesmo já estando **desabilitado no AD**. Não é caso isolado — a mesma lógica gera esse ruído para todo colaborador desligado no CSV cuja conta já está desabilitada.
 
 ## Causa raiz
 
-Em `supabase/functions/reconcile-identities/index.ts` (linha 341), a decisão de enfileirar `disable` no AD é:
+Em `supabase/functions/reconcile-identities/index.ts`, o bloco `disable_entra` (linha 326-338) verifica corretamente se o Entra já reporta `accountEnabled=false` e pula (`skipped_already_disabled`). Já o bloco `disable` do AD (linha 340-354, corrigido na rodada anterior) **não faz essa verificação** — ele só olha `onPremisesSyncEnabled`. Como o AD Connect sincroniza o `accountEnabled` do AD para o Entra, o Entra é uma fonte confiável para saber que a conta AD já está desabilitada; só que o código nunca lê esse campo antes de enfileirar o `disable`.
 
-```
-const isOnPrem = entraMatch?.onPremisesSyncEnabled === true || !entraMatch;
-if (c.sam_account_name && isOnPrem && …) enqueue "disable"
-```
-
-O `|| !entraMatch` é o problema: sempre que o colaborador **não é encontrado no Entra**, o código presume que ele "só existe no AD on-prem" e enfileira o `disable`. Como o `sam_account_name` é derivado do e-mail no `sync-csv-colab` (não do AD), ele existe para praticamente todo mundo — inclusive para colaboradores que nunca tiveram conta nem no Entra nem no AD (terceiros antigos, cadastros manuais, imports históricos, duplicatas). Resultado: fila cheia de disables fantasmas aguardando aprovação.
-
-O bloco `disable_entra` (linha 326) já está correto — só enfileira se houver `entraMatch`. É o bloco AD que precisa da mesma proteção.
+Resultado: para toda conta híbrida já desabilitada, o reconcile cria um `disable` AD duplicado que fica em `waiting_approval` para sempre.
 
 ## O que vou fazer
 
-### 1. Corrigir a lógica do reconcile
+### 1. Corrigir o reconcile
 
-Em `supabase/functions/reconcile-identities/index.ts`:
+Em `supabase/functions/reconcile-identities/index.ts`, no bloco AD (linha ~347):
 
-- Trocar `const isOnPrem = entraMatch?.onPremisesSyncEnabled === true || !entraMatch;` por `const isOnPrem = entraMatch?.onPremisesSyncEnabled === true;`
-- Adicionar contador `stats.skipped_ad_unknown` para os casos em que não há evidência positiva de conta AD (útil no report do job).
-- Comentar a decisão explicando: só enfileiramos `disable` no AD quando o Entra confirma que a conta é sincronizada on-prem (única fonte confiável de existência no AD, já que o CSV só nos dá o `sam` derivado). Colaborador desligado sem match no Entra é apenas registrado como leaver — sem ação de provisionamento.
+- Adicionar guard `entraMatch.accountEnabled === true` antes de enfileirar `disable`.
+- Se `onPremisesSyncEnabled=true` mas `accountEnabled=false`, incrementar novo contador `stats.skipped_ad_already_disabled` e não enfileirar nada.
 
-Trade-off consciente: um usuário exclusivamente on-prem (sem Entra) não seria pego. Na prática, o ambiente da Órigo é híbrido AD Connect → Entra, então todo usuário AD real aparece no Entra. Se surgir exceção real, ela pode ser tratada manualmente via botão "Desabilitar AD" no detalhe do colaborador.
+Trecho final da decisão AD ficará:
 
-### 2. Limpar a fila atual (dados)
+```
+const isOnPrem = entraMatch?.onPremisesSyncEnabled === true;
+if (c.sam_account_name && isOnPrem && entraMatch.accountEnabled &&
+    !openByColab.has(`${c.id}|disable`)) {
+  … enqueue disable …
+} else if (c.sam_account_name && isOnPrem && !entraMatch.accountEnabled) {
+  stats.skipped_ad_already_disabled++;
+} else if (c.sam_account_name && !entraMatch) {
+  stats.skipped_ad_unknown++;
+}
+```
 
-Cancelar os itens `disable` abertos que se enquadram no bug, para você não precisar aprovar 2.034 fantasmas:
+### 2. Limpar os itens existentes
 
-- **Alvo**: `iam_queue` onde `action_type='disable'`, `status IN ('pending','waiting_approval')`, `requested_by='reconciliacao'` **e** o colaborador vinculado tem `entra_id IS NULL`.
-- **Ação**: marcar como `cancelled` com `result_message='Cancelado pelo QA: colaborador sem vínculo no Entra ID; existência no AD não pôde ser confirmada (bug do reconcile-identities corrigido em 01/07/2026).'`
-- **Preservado**: itens `disable_entra`, itens onde o colab tem `entra_id` (esses são reais on-prem sync), itens de outras origens (`requested_by <> 'reconciliacao'`) e itens já em status final.
+Não temos `accountEnabled` armazenado no banco, então não dá para filtrar "já desabilitado" via SQL. Estratégia mais segura: **cancelar em bloco os 3.441 `disable` abertos gerados por `requested_by='reconciliacao'`** e pedir para você rodar a reconciliação de novo. O reconcile corrigido vai reenfileirar apenas os disables realmente necessários (contas híbridas ainda `accountEnabled=true`).
+
+- **Alvo**: `iam_queue` onde `action_type='disable'`, `status IN ('pending','waiting_approval')`, `requested_by='reconciliacao'`.
+- **Ação**: marcar como `cancelled` com `result_message='Cancelado pelo QA para reavaliação: reconcile-identities corrigido para pular contas já desabilitadas no AD; reprocessado na próxima execução do ciclo diário.'`
+- **Preservado**: itens de outras origens (JML manual, workflow, etc.).
 
 ### 3. Validar
 
-- Rodar de novo o `reconcile-identities` (via UI ou aguardar sua ação) e confirmar via query que nenhum novo `disable` fantasma é criado.
-- Query de verificação: contar `disable` abertos com `entra_id IS NULL` deve cair para ~0 (só sobrariam casos gerados por outras origens que não o reconcile).
+Depois de rodar `reconcile-identities` novamente via UI:
 
-## Fora de escopo desta rodada
+- Query: contar `disable` abertos e comparar com o total anterior — deve cair significativamente (só contas ainda `accountEnabled=true` no Entra).
+- Conferir o caso do Max especificamente: não deve ter novo `disable` criado.
+- Ler o `sync_jobs` da reconciliação: `skipped_ad_already_disabled` e `skipped_ad_unknown` devem estar populados.
 
-- Detectar contas AD-only reais (exigiria consulta ativa ao `iam-agent-api` durante o reconcile — mudança maior).
-- Deduplicar os 2 registros do Elpidio (matrícula/e-mail iguais) — parte do backlog A-1/A-2 já reportado.
-- Alterar o comportamento do `sync-csv-colab` que gera `sam_account_name` sem checar AD.
+## Fora de escopo
+
+- Adicionar coluna `entra_account_enabled` em `colaboradores` para permitir filtro SQL em cleanups futuros.
+- Verificação equivalente para AD-only puro (impossível sem consultar `iam-agent-api` no reconcile — mudança maior).
 
 ## Detalhes técnicos
 
-- Arquivo tocado: `supabase/functions/reconcile-identities/index.ts` (uma linha alterada + contador novo + comentário).
-- Migration: nenhuma (só edge function + UPDATE de dados).
-- UPDATE de dados via `supabase--insert` — não é destrutivo (só muda status para `cancelled`, itens ficam auditáveis).
+- Arquivo: `supabase/functions/reconcile-identities/index.ts` (bloco AD + init de stats).
+- Sem migration.
+- Data change via `supabase--insert` (UPDATE não destrutivo — só muda status para `cancelled`, tudo auditável).
