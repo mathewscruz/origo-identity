@@ -25,10 +25,48 @@ export default function IntegracoesPage() {
   const [cleaning, setCleaning] = useState(false);
   const [groupSyncing, setGroupSyncing] = useState(false);
   const [spSiteSyncing, setSpSiteSyncing] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
   const { toast } = useToast();
   const { data: csvJob, refetch: refetchCsv } = useSyncJobsCsv();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+
+  const { data: reconcileStats, refetch: refetchReconcile } = useQuery({
+    queryKey: ["reconcile-stats"],
+    queryFn: async () => {
+      const [{ count: total }, { count: linked }, { count: desligados }, { count: pendJoiners }, { count: pendLeavers }] = await Promise.all([
+        (supabase as any).from("colaboradores").select("id", { count: "exact", head: true }),
+        (supabase as any).from("colaboradores").select("id", { count: "exact", head: true }).not("entra_id", "is", null),
+        (supabase as any).from("colaboradores").select("id", { count: "exact", head: true }).in("status", ["desligado", "inativo"]),
+        (supabase as any).from("eventos_jml").select("id", { count: "exact", head: true }).eq("tipo", "joiner").eq("status", "pendente"),
+        (supabase as any).from("eventos_jml").select("id", { count: "exact", head: true }).eq("tipo", "leaver").eq("status", "pendente"),
+      ]);
+      return { total: total || 0, linked: linked || 0, desligados: desligados || 0, pendJoiners: pendJoiners || 0, pendLeavers: pendLeavers || 0 };
+    },
+    refetchInterval: 15000,
+  });
+
+  const handleReconcile = useCallback(async () => {
+    setReconciling(true);
+    try {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reconcile-identities`;
+      const res = await authedFetch(url, { method: "POST", headers: { "Content-Type": "application/json" } });
+      const body = await res.json();
+      if (!res.ok) {
+        toast({ title: "Erro na reconciliação", description: body.error || `HTTP ${res.status}`, variant: "destructive" });
+      } else {
+        const s = body.stats;
+        toast({
+          title: "Reconciliação concluída",
+          description: `${s.linked_entra} linkados no Entra, ${s.joiners_reconciled} joiners resolvidos, ${s.leavers_generated} leavers gerados, ${s.disable_enqueued} desabilitações enfileiradas`,
+        });
+        refetchReconcile();
+      }
+    } catch (err: unknown) {
+      toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
+    }
+    setReconciling(false);
+  }, [toast, refetchReconcile]);
 
   const { data: connectorStats } = useQuery({
     queryKey: ["connector-stats"],
@@ -204,6 +242,61 @@ export default function IntegracoesPage() {
           {showCsvProgress && <CsvProgressPanel job={csvJob} />}
         </CardContent>
       </Card>
+
+      <Card className="border-primary/30 bg-primary/5">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <Users className="h-5 w-5 text-primary" />
+            <div>
+              <CardTitle className="text-base">Reconciliar Identidades — AD / Entra ID</CardTitle>
+              <CardDescription>
+                Linka colaboradores existentes ao Entra ID, resolve joiners pendentes e gera desabilitações
+                para desligados que ainda não foram processados
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {reconcileStats && (
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+              <div className="rounded border p-2">
+                <div className="text-muted-foreground">Total</div>
+                <div className="text-lg font-semibold">{reconcileStats.total}</div>
+              </div>
+              <div className="rounded border p-2">
+                <div className="text-muted-foreground">Linkados no Entra</div>
+                <div className="text-lg font-semibold text-emerald-600">{reconcileStats.linked}</div>
+              </div>
+              <div className="rounded border p-2">
+                <div className="text-muted-foreground">A reconciliar</div>
+                <div className="text-lg font-semibold text-amber-600">
+                  {Math.max(0, reconcileStats.total - reconcileStats.linked - reconcileStats.desligados)}
+                </div>
+              </div>
+              <div className="rounded border p-2">
+                <div className="text-muted-foreground">Desligados</div>
+                <div className="text-lg font-semibold text-red-600">{reconcileStats.desligados}</div>
+              </div>
+              <div className="rounded border p-2">
+                <div className="text-muted-foreground">JML pendentes</div>
+                <div className="text-lg font-semibold">
+                  {reconcileStats.pendJoiners}J / {reconcileStats.pendLeavers}L
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="text-sm text-muted-foreground">
+            Consulta o Microsoft Graph em lote para descobrir quem já existe no Entra ID (gravando o vínculo),
+            marca joiners pendentes como concluídos quando o usuário já existe, e enfileira <code>disable</code> +{" "}
+            <code>disable_entra</code> para desligados sem processamento. Pode levar alguns minutos.
+          </div>
+          <Button onClick={handleReconcile} disabled={reconciling}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${reconciling ? "animate-spin" : ""}`} />
+            {reconciling ? "Reconciliando..." : "Rodar reconciliação agora"}
+          </Button>
+        </CardContent>
+      </Card>
+
 
       <Card className="border-primary/20">
         <CardHeader>
