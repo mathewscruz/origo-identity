@@ -878,7 +878,14 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       // Gap 2: Generate iam_queue entries with enriched payloads.
       // First, pre-check Entra ID: for identities that already exist, skip create_if_not_exists
       // and just persist the entra_id — avoids the massive "user_not_found" retry storm.
-      const joinerCandidates = toInsert.filter(c => c.sam_account_name);
+      // Skip create_if_not_exists for CSV rows that arrive already as desligado/inativo —
+      // they represent historical leavers being re-imported and must not be created in AD/Entra.
+      const joinerActive = toInsert.filter(c => c.sam_account_name && c.status === "ativo");
+      const joinerSkippedInactive = toInsert.filter(c => c.sam_account_name && c.status !== "ativo").length;
+      if (joinerSkippedInactive > 0) {
+        console.log(`[iam-queue] Ignorados ${joinerSkippedInactive} candidatos com status != ativo (desligados/inativos vindos do CSV).`);
+      }
+      const joinerCandidates = joinerActive;
       const preCheckToken = await getAzureTokenSafe();
       let existingMapEntra = new Map<string, string>();
       if (preCheckToken && joinerCandidates.length > 0) {
