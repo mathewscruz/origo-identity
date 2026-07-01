@@ -1,58 +1,72 @@
-## Diagnóstico do run das 17:43
+## Diagnóstico
 
-Auditoria do último run mostra evidências claras de que **não** rodou correto:
+**Causa raiz do "Desabilitar Entra ID" fantasma:**
+Em `supabase/functions/reconcile-identities/index.ts` (linhas 253-272), a etapa que gera `disable` + `disable_entra` para desligados filtra apenas por `sam_account_name` presente. Nunca consulta o Graph para saber se aquele usuário existe no Entra ID. Resultado: 1868 itens enfileirados, muitos apontando para contas inexistentes.
 
-- `total_colabs: 1000` — a função só viu 1000 dos 3912 colaboradores porque `sb.from("colaboradores").select(...)` (sem `.range()`) cai no default de 1000 do PostgREST.
-- `linked_entra: 0` — todas as tentativas de update falharam com `duplicate key value violates unique constraint "colaboradores_entra_id_key"`. Emails/UPNs distintos apontam para o mesmo Entra user (já vinculado a outro colab), e o código não trata esse conflito.
-- `joiners_reconciled: 300`, `leavers_generated: 934`, `disable_enqueued: 1868` — números batem entre si (934 × 2 = 1868), mas cobrem só a fatia de 1000 processada.
-- Sem persistência em `sync_jobs` para esse kind → recarregar a página mata qualquer sinal de "rodando".
+**Casos análogos verificados:**
+- `disable_entra`/`enable_entra` em `preLeaver.ts`, `colaboradorLifecycle.ts`, `terceiroLifecycle.ts` e `sync-csv-colab/index.ts`: enfileiram sem checar Graph. Menos crítico porque geralmente rodam sobre colabs já linkados, mas ainda pode gerar falha ao processar.
+- `create_if_not_exists`: **OK** — já tem pré-check contra Entra em `sync-csv-colab` (linha 164) e no reconcile mode do `process-iam-queue`.
+- Divergência CSV × Entra em `process-iam-queue` (linhas 1151-1186): **OK** — já usa index do Entra.
 
-E o card `Reconciliar Identidades` do `IntegracoesPage.tsx` tem bug na fórmula de **A reconciliar** (`total - linked - desligados` pode dar negativo e ignora que desligados também podem estar linkados).
+## Plano — SharePoint como source of truth com guard-rails no Entra
 
-## Plano
+### 1) `reconcile-identities/index.ts` — cross-check obrigatório contra Entra
 
-### 1) Backend — `supabase/functions/reconcile-identities/index.ts`
+- Baixar index do Entra ID (id + userPrincipalName + mail + accountEnabled + onPremisesSyncEnabled) via `$select` no `/users` paginado, uma vez no início da execução, e reportar fase `baixando_entra` no `sync_jobs`.
+- Construir map por `entra_id`, `upn.toLowerCase()`, `mail.toLowerCase()` para lookup O(1).
+- Ao processar desligados sem leaver:
+  - Resolver o usuário no Entra por `colab.entra_id` → fallback `colab.email`.
+  - **Não achou** → registrar em `stats.skipped_no_entra[]`, marcar leaver como `executado` com mensagem "Reconciliado: não existe no Entra ID", **não** enfileirar `disable_entra`. Enfileirar `disable` (AD) só se `sam_account_name` presente E colab tem histórico AD (`entra.onPremisesSyncEnabled === true` OU nenhum vínculo Entra encontrado — assume conta on-prem).
+  - **Achou mas `accountEnabled === false`** → skip disable_entra (`stats.skipped_already_disabled++`), marcar leaver como executado.
+  - **Achou e enabled** → enfileira `disable_entra` (correto).
+- Novos contadores nos stats: `skipped_no_entra`, `skipped_already_disabled`, `disable_entra_enqueued`, `disable_ad_enqueued`.
 
-- Paginar `colaboradores` em blocos de 1000 (`.range(offset, offset+999)` até esgotar).
-- Ao gravar `entra_id`, detectar `23505` (unique violation) e registrar em `stats.duplicates[]` com `{ colab_id, entra_id, motivo: "já vinculado a outro colaborador" }` em vez de tratar como erro fatal.
-- Mesma pagination para eventos_jml/iam_queue lookups (já usa chunk 500 — ok).
-- Criar/atualizar linha em `sync_jobs` com `kind='reconcile_identities'` e escrever fases:
-  - `carregando_colabs` → `consultando_graph` (com contador `checked/total`) → `atualizando_vinculos` → `resolvendo_joiners` → `gerando_leavers` → `enfileirando_disable` → `done`/`error`.
-  - `progress` numérico, `updated_at` a cada fase para permitir detecção de stale (5 min).
-- No `finally`, promover job `running` órfão para `error` (mesmo padrão do `process-iam-queue`).
-- Auditoria final continua sendo escrita.
+### 2) `process-iam-queue/index.ts` — guard-rail no handler
 
-### 2) Frontend — `src/pages/configuracoes/IntegracoesPage.tsx`
+- Para `disable_entra`, `enable_entra`, `update_entra`:
+  - Antes do PATCH, fazer `GET /users/{userId}` no Graph.
+  - **404** → marcar item como `cancelled` (não `failed`) com motivo "Usuário não existe mais no Entra ID". Registrar em auditoria.
+  - Estado atual já é o desejado (`accountEnabled` bate com a ação) → `success` como no-op com mensagem "Estado já correto".
+  - Só executar PATCH quando faz sentido.
 
-- Adicionar `useQuery` polling em `sync_jobs` filtrado por `kind='reconcile_identities'` (mesmo padrão do `useSyncJobsCsv`), com `refetchInterval` 3s enquanto job fresco+running.
-- Trocar estado local `reconciling` por leitura do job persistente (`reconRunning`, `reconStale` via `updated_at > 5min`).
-- Painel de progresso equivalente ao `CsvProgressPanel`: label da fase em PT, timestamp relativo, warnings do run (duplicatas), botão `Rodar reconciliação` desabilitado enquanto fresh+running.
-- Se stale: banner "Última execução parou em X% — rode novamente" e libera botão.
-- Corrigir card **A reconciliar**: nova query dedicada (`status='ativo'` + `entra_id IS NULL` + `email IS NOT NULL`) em vez da subtração quebrada. Mesma coisa para os outros stats: garantir que refletem `count(*, {head:true})` reais, sem cap de 1000.
-- Refetch `reconcileStats` quando job vira `done`.
+### 3) Limpeza dos itens fantasmas atuais
 
-### 3) Validação do ciclo diário (create/change/disable automático)
+Migração/insert que cancela em massa (`status='cancelled'`, motivo em `execution_result`) os itens gerados pela reconciliação buggada:
 
-Segundo a memória do projeto, todos os crons estão desligados — o "diário" é operado manualmente. O fluxo atual é:
-
-```text
-sync-csv-colab  →  reconcile-identities  →  process-iam-queue
-   (RH sobe)       (linka + gera JML)        (executa no Entra)
+```sql
+UPDATE iam_queue
+   SET status = 'cancelled',
+       execution_result = jsonb_build_object(
+         'reason', 'Cancelado: gerado por reconciliação sem cross-check contra Entra ID; rode a reconciliação novamente.'
+       ),
+       updated_at = now()
+ WHERE requested_by = 'reconciliacao'
+   AND action_type IN ('disable', 'disable_entra')
+   AND status IN ('pending', 'waiting_approval');
 ```
 
-- Adicionar um botão único **"Rodar ciclo diário completo"** no card de Reconciliação que orquestra as três funções em sequência via um novo endpoint `run-daily-cycle` (edge function fina que chama as 3 e escreve fases em `sync_jobs` kind='daily_cycle'). SharePoint CSV como passo 1 (opcional, só se `spSyncing` não estiver ativo).
-- O painel de progresso do card mostra em qual etapa está.
-- Validação embutida ao fim: contadores `colabs_criados`, `colabs_atualizados`, `colabs_desligados`, `disable_enfileirados`, `disable_executados` no toast final e no `auditoria`.
-- Documentar o fluxo no `CardDescription` para deixar claro para o operador.
+Após rodar a nova reconciliação corrigida, os itens legítimos são re-enfileirados automaticamente.
+
+### 4) Frontend — visibilidade no card de Reconciliação
+
+`src/pages/configuracoes/IntegracoesPage.tsx`:
+- Ler novos contadores do último `sync_jobs` de `reconcile_identities` (via `message`/`detalhes` na auditoria) e mostrar breakdown: "X desabilitações no Entra · Y no AD · Z pulados (não existem no Entra) · W já estavam disabled".
+- Toast final de "Rodar ciclo diário" também exibe esses números.
+
+### 5) Validação geral (fora dos handlers acima)
+
+- Confirmar via `read_query` que após rerun: `iam_queue` só terá `disable_entra` com `colaborador.entra_id NOT NULL` e não terá `disable_entra` para colabs `ativo`.
+- Sanidade nos outros enqueuers (`preLeaver`, `colaboradorLifecycle`, `terceiroLifecycle`, `sync-csv-colab`): **sem mudança de código** porque o novo guard-rail no worker (item 2) já cobre o caso "não existe no Entra" sem exigir refatoração em cada call site.
 
 ### Ordem de execução
 
-1. Backend `reconcile-identities` (paginação + trap de duplicate + tracking em `sync_jobs`).
-2. Nova edge function `run-daily-cycle`.
-3. Frontend `IntegracoesPage` (painel de progresso, fórmula corrigida, botão de ciclo diário).
-4. Rodar manualmente 1× e conferir que `total_colabs` no auditoria bate com 3912 e que `linked_entra + duplicates + already_linked` cobre `checked_entra`.
+1. Backend `reconcile-identities` (cross-check).
+2. Backend `process-iam-queue` (guard-rail 404 e no-op).
+3. Migração/insert de limpeza dos fantasmas.
+4. Frontend `IntegracoesPage` (breakdown).
+5. Rerun manual do "Rodar ciclo diário" para validar.
 
 ### Fora de escopo
 
-- Reativar crons (memória diz que syncs são manuais por decisão de produto).
-- Mexer em `sync-csv-colab` ou `process-iam-queue` (já foram ajustados em passos anteriores).
+- Reescrever `enqueue.ts` para pré-checar Entra em cada ponto de origem (o guard-rail no worker resolve sem custo extra em cada call site).
+- Mexer em regras de status ou lifecycle dos colabs.
