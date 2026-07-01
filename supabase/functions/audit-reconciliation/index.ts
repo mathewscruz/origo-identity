@@ -117,7 +117,7 @@ async function runAudit(sb: any) {
       result.disable_entra.wrong++;
       result.disable_entra.wrong_items.push({ id: q.id, ident, reason: !r.found ? "not_in_entra" : "already_disabled" });
     }
-    await new Promise((r) => setTimeout(r, 30));
+    
   }
 
   // Valida disable AD: on-prem OU não existe no Entra Cloud
@@ -131,7 +131,7 @@ async function runAudit(sb: any) {
       result.disable_ad.wrong++;
       result.disable_ad.wrong_items.push({ id: q.id, ident, reason: "cloud_only_should_be_entra" });
     }
-    await new Promise((r) => setTimeout(r, 30));
+    
   }
 
   // Valida pulados: NÃO devem existir no Entra
@@ -144,7 +144,7 @@ async function runAudit(sb: any) {
       result.skipped.wrong++;
       result.skipped.wrong_items.push({ colab_id: c.id, ident, reason: "exists_in_entra_but_skipped" });
     }
-    await new Promise((r) => setTimeout(r, 30));
+    
   }
 
   await sb.from("auditoria").insert({
