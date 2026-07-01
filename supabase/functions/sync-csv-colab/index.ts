@@ -911,8 +911,13 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
           // Revoke cargo-based access profiles (removes groups/licenses/apps)
           if (item.oldCargoId) {
-            await provisionCargoAcessosServer(sb, item.id, null, item.oldCargoId, sam, item.data.nome || "", item.data.email || "");
+            if (Date.now() - runStart > PROVISION_BUDGET_MS) {
+              skippedProvisions++;
+            } else {
+              await provisionCargoAcessosServer(sb, item.id, null, item.oldCargoId, sam, item.data.nome || "", item.data.email || "");
+            }
           }
+
 
           // Also remove resources from non-cargo profiles (manual/exception)
           const { data: otherAtribuicoes } = await sb.from("perfil_atribuicoes")
