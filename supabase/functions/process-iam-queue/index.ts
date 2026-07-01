@@ -1044,13 +1044,18 @@ Deno.serve(async (req) => {
             }
           }
 
-          // Backfill colaborador_id in queue items (batches of 200 individual updates via upsert-like loop)
+          // Backfill colaborador_id in queue items via batched RPC
           const backfillEntries = Array.from(queueColabBackfill.entries());
-          for (let i = 0; i < backfillEntries.length; i += 200) {
-            const slice = backfillEntries.slice(i, i + 200);
-            await Promise.all(slice.map(([qId, cId]) =>
-              supabase.from("iam_queue").update({ colaborador_id: cId }).eq("id", qId)
-            ));
+          if (backfillEntries.length > 0) {
+            const chunk = 1000;
+            for (let i = 0; i < backfillEntries.length; i += chunk) {
+              const slice = backfillEntries.slice(i, i + chunk).map(([id, colaborador_id]) => ({ id, colaborador_id }));
+              const { error: rpcErr } = await supabase.rpc("apply_reconcile_updates", {
+                queue_updates: slice,
+                colab_updates: [],
+              });
+              if (rpcErr) throw rpcErr;
+            }
           }
 
           // Cancel: Entra-matched items
@@ -1080,24 +1085,198 @@ Deno.serve(async (req) => {
           }
 
           const allColabUpdates = new Map([...colabEntraUpdates, ...queueColabUpdates]);
-          let persistedLinks = 0;
-          const updateEntries = Array.from(allColabUpdates.entries());
-          for (const [colabId, entraId] of updateEntries) {
-            const { error } = await supabase.from("colaboradores").update({ entra_id: entraId }).eq("id", colabId);
-            if (error) console.warn(`[reconcile] Falha ao gravar entra_id para colaborador ${colabId}: ${error.message}`);
-            else persistedLinks++;
-
-            if (persistedLinks % 50 === 0 || persistedLinks === updateEntries.length) {
-              await supabase.from("sync_jobs").update({
-                phase: "gravando_vinculos",
-                message: `${persistedLinks}/${allColabUpdates.size} vínculos gravados · ${cancelledEntra} Entra · ${cancelledDesligado} desligados`,
-                users_created: cancelledEntra + cancelledDesligado,
-                users_updated: kept,
-                users_percent: 97,
-                updated_at: new Date().toISOString(),
-              }).eq("id", jobId);
+          const persistedLinks = allColabUpdates.size;
+          if (persistedLinks > 0) {
+            await supabase.from("sync_jobs").update({
+              phase: "gravando_vinculos",
+              message: `Gravando ${persistedLinks} vínculos colaborador↔Entra…`,
+              users_created: cancelledEntra + cancelledDesligado,
+              users_updated: kept,
+              users_percent: 90,
+              updated_at: new Date().toISOString(),
+            }).eq("id", jobId);
+            const entries = Array.from(allColabUpdates.entries()).map(([id, entra_id]) => ({ id, entra_id }));
+            const chunk = 1000;
+            for (let i = 0; i < entries.length; i += chunk) {
+              const slice = entries.slice(i, i + chunk);
+              const { error: rpcErr } = await supabase.rpc("apply_reconcile_updates", {
+                queue_updates: [],
+                colab_updates: slice,
+              });
+              if (rpcErr) console.warn(`[reconcile] apply_reconcile_updates falhou: ${rpcErr.message}`);
             }
           }
+
+          // ─── Divergência de status CSV × Entra ───
+          await supabase.from("sync_jobs").update({
+            phase: "checando_divergencia_status",
+            message: "Detectando divergências de status entre base e Entra…",
+            users_percent: 93,
+            updated_at: new Date().toISOString(),
+          }).eq("id", jobId);
+
+          const divergenceEnqueued = { toDisable: 0, toEnable: 0, skippedExisting: 0 };
+          const matchedEntraIds = new Set<string>();
+
+          // Coletar candidatos
+          const disableCandidates: Array<{ colab: any; user: any }> = [];
+          const enableCandidates: Array<{ colab: any; user: any }> = [];
+          for (const [colabId, match] of matchedByColabId) {
+            const colab = colabById.get(colabId);
+            if (!colab || !match?.user) continue;
+            matchedEntraIds.add(match.user.id);
+            const colabStatus = String(colab.status || "").toLowerCase();
+            const enabledInEntra = match.user.accountEnabled !== false; // treat undefined as enabled
+            if ((colabStatus === "desligado" || colabStatus === "inativo") && enabledInEntra) {
+              disableCandidates.push({ colab, user: match.user });
+            } else if (colabStatus === "ativo" && !enabledInEntra) {
+              enableCandidates.push({ colab, user: match.user });
+            }
+          }
+
+          // Dedup: fetch existing open items for these colaboradores + action_types
+          const allDivColabIds = [
+            ...disableCandidates.map((c) => c.colab.id),
+            ...enableCandidates.map((c) => c.colab.id),
+          ];
+          const existingOpen = new Set<string>();
+          if (allDivColabIds.length > 0) {
+            const uniqueIds = Array.from(new Set(allDivColabIds));
+            for (let i = 0; i < uniqueIds.length; i += 500) {
+              const slice = uniqueIds.slice(i, i + 500);
+              const { data: openRows } = await supabase
+                .from("iam_queue")
+                .select("colaborador_id, action_type")
+                .in("colaborador_id", slice)
+                .in("action_type", ["disable_entra", "enable_entra"])
+                .in("status", ["pending", "waiting_approval"]);
+              for (const r of openRows || []) existingOpen.add(`${r.colaborador_id}|${r.action_type}`);
+            }
+          }
+
+          const buildDivergenceRow = (
+            colab: any,
+            user: any,
+            actionType: "disable_entra" | "enable_entra",
+          ) => ({
+            action_type: actionType,
+            status: "pending",
+            colaborador_id: colab.id,
+            target_identity: colab.email || colab.sam_account_name || user.userPrincipalName || user.mail,
+            requested_by: "reconcile-status",
+            payload_json: {
+              reason: "status_divergence",
+              colab_status: colab.status,
+              entra_account_enabled: user.accountEnabled,
+              entra_id: user.id,
+              displayName: user.displayName,
+              mail: user.mail || user.userPrincipalName,
+              samAccountName: colab.sam_account_name || user.onPremisesSamAccountName || null,
+            },
+          });
+
+          const rowsToInsert: any[] = [];
+          for (const c of disableCandidates) {
+            if (existingOpen.has(`${c.colab.id}|disable_entra`)) { divergenceEnqueued.skippedExisting++; continue; }
+            rowsToInsert.push(buildDivergenceRow(c.colab, c.user, "disable_entra"));
+            divergenceEnqueued.toDisable++;
+          }
+          for (const c of enableCandidates) {
+            if (existingOpen.has(`${c.colab.id}|enable_entra`)) { divergenceEnqueued.skippedExisting++; continue; }
+            rowsToInsert.push(buildDivergenceRow(c.colab, c.user, "enable_entra"));
+            divergenceEnqueued.toEnable++;
+          }
+          if (rowsToInsert.length > 0) {
+            for (let i = 0; i < rowsToInsert.length; i += 500) {
+              const slice = rowsToInsert.slice(i, i + 500);
+              const { error: insErr } = await supabase.from("iam_queue").insert(slice);
+              if (insErr) console.warn(`[reconcile status] insert falhou: ${insErr.message}`);
+            }
+          }
+
+          // ─── Contas órfãs no Entra (existem no Entra, sem colaborador na base) ───
+          await supabase.from("sync_jobs").update({
+            phase: "detectando_orfaos",
+            message: "Detectando contas órfãs no Entra…",
+            users_percent: 96,
+            updated_at: new Date().toISOString(),
+          }).eq("id", jobId);
+
+          // Carregar prefixos técnicos ignorados e contas admin conhecidas
+          const { data: prefParam } = await supabase
+            .from("parametros").select("valor").eq("chave", "iam_orphan_ignore_prefixes").maybeSingle();
+          const ignorePrefixes = String(prefParam?.valor || "svc.,admin.,test.,sa.,adm.,notif.,noreply,sync.")
+            .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+          const { data: adminKnown } = await supabase
+            .from("contas_admin_conhecidas").select("email, sam_account_name, entra_id");
+          const knownEntraIds = new Set<string>((adminKnown || []).map((r: any) => r.entra_id).filter(Boolean));
+          const knownEmails = new Set<string>((adminKnown || []).map((r: any) => normalizeIdentifier(r.email)).filter(Boolean));
+
+          const orphanCandidates: any[] = [];
+          for (const u of entraUsers) {
+            if (matchedEntraIds.has(u.id)) continue;
+            if (knownEntraIds.has(u.id)) continue;
+            const upn = String(u.userPrincipalName || "").toLowerCase();
+            const mail = String(u.mail || "").toLowerCase();
+            // Guests / external accounts
+            if (upn.includes("#ext#") || upn.includes("#EXT#".toLowerCase())) continue;
+            // Prefixos técnicos
+            const prefix = (upn.split("@")[0] || "").toLowerCase();
+            if (ignorePrefixes.some((p) => prefix.startsWith(p))) continue;
+            // Admin conhecido por email
+            if (knownEmails.has(normalizeIdentifier(mail)) || knownEmails.has(normalizeIdentifier(upn))) continue;
+            orphanCandidates.push(u);
+          }
+
+          // Dedup: já existentes em iam_queue como review_orphan_entra abertos
+          let orphanExisting = new Set<string>();
+          if (orphanCandidates.length > 0) {
+            const ids = orphanCandidates.map((u) => u.id);
+            for (let i = 0; i < ids.length; i += 500) {
+              const slice = ids.slice(i, i + 500);
+              const { data: openRows } = await supabase
+                .from("iam_queue").select("payload_json, target_identity")
+                .eq("action_type", "review_orphan_entra")
+                .in("status", ["pending", "waiting_approval"])
+                .limit(2000);
+              for (const r of openRows || []) {
+                const eid = r?.payload_json?.entra_id;
+                if (eid) orphanExisting.add(String(eid));
+              }
+              // this loop is a simple over-fetch guard; break after first pass
+              break;
+            }
+          }
+
+          const orphanRows: any[] = [];
+          for (const u of orphanCandidates) {
+            if (orphanExisting.has(String(u.id))) continue;
+            orphanRows.push({
+              action_type: "review_orphan_entra",
+              status: "waiting_approval",
+              colaborador_id: null,
+              target_identity: u.mail || u.userPrincipalName,
+              requested_by: "reconcile-orphans",
+              payload_json: {
+                reason: "orphan_entra",
+                entra_id: u.id,
+                displayName: u.displayName,
+                mail: u.mail,
+                userPrincipalName: u.userPrincipalName,
+                accountEnabled: u.accountEnabled,
+                createdDateTime: u.createdDateTime,
+              },
+            });
+          }
+          if (orphanRows.length > 0) {
+            for (let i = 0; i < orphanRows.length; i += 500) {
+              const slice = orphanRows.slice(i, i + 500);
+              const { error: insErr } = await supabase.from("iam_queue").insert(slice);
+              if (insErr) console.warn(`[reconcile orphans] insert falhou: ${insErr.message}`);
+            }
+          }
+          const orphansCreated = orphanRows.length;
+          const orphansSkipped = orphanCandidates.length - orphansCreated;
 
           const { count: pendingLeft } = await supabase
             .from("iam_queue")
@@ -1109,7 +1288,7 @@ Deno.serve(async (req) => {
           await supabase.from("sync_jobs").update({
             status: "success",
             phase: "concluido",
-            message: `Reconciliação concluída: ${persistedLinks} vinculados · ${cancelledEntra} cancelados (já existem no Entra) · ${cancelledDesligado} cancelados (desligados) · ${pendingLeft || 0} pendentes.`,
+            message: `Reconciliação concluída: ${persistedLinks} vinculados · ${cancelledEntra} cancelados (já no Entra) · ${cancelledDesligado} cancelados (desligados) · ${divergenceEnqueued.toDisable} para desabilitar · ${divergenceEnqueued.toEnable} para reabilitar · ${orphansCreated} órfãos em revisão · ${pendingLeft || 0} pendentes.`,
             users_created: totalCancelled,
             users_updated: kept,
             users_percent: 100,
@@ -1118,7 +1297,7 @@ Deno.serve(async (req) => {
 
           await supabase.from("auditoria").insert({
             entidade: "iam_queue", acao: "reconciliar_create",
-            resumo: `Reconciliação: ${persistedLinks} vinculados, ${cancelledEntra} no Entra, ${cancelledDesligado} desligados, ${kept} mantidos.`,
+            resumo: `Reconciliação: ${persistedLinks} vinculados, ${cancelledEntra} no Entra, ${cancelledDesligado} desligados, ${divergenceEnqueued.toDisable}+${divergenceEnqueued.toEnable} divergências, ${orphansCreated} órfãos.`,
             detalhes: {
               job_id: jobId,
               entra_users: entraUsers.length,
@@ -1130,6 +1309,11 @@ Deno.serve(async (req) => {
               cancelled_desligado: cancelledDesligado,
               cancelled_total: totalCancelled,
               backfilled_colaborador_id: queueColabBackfill.size,
+              divergences_disable: divergenceEnqueued.toDisable,
+              divergences_enable: divergenceEnqueued.toEnable,
+              divergences_skipped_existing: divergenceEnqueued.skippedExisting,
+              orphans_created: orphansCreated,
+              orphans_skipped: orphansSkipped,
               kept,
               pending_left: pendingLeft || 0,
             },
