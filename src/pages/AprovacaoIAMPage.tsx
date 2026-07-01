@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +59,7 @@ const actionLabels: Record<string, string> = {
   update_user_app: "Atualizar em app externo",
   disable_user_app: "Desabilitar em app externo",
   delete_user_app: "Excluir em app externo",
+  review_orphan_entra: "Revisar conta órfã (Entra)",
 };
 
 function actionColor(action: string): string {
@@ -144,8 +145,16 @@ export default function AprovacaoIAMPage() {
     refetchInterval: 30000,
   });
 
+  // Debounce a busca para não bater no banco a cada tecla
+  const [buscaDebounced, setBuscaDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setBuscaDebounced(busca.trim()), 300);
+    return () => clearTimeout(t);
+  }, [busca]);
+  useEffect(() => { setPage(0); }, [buscaDebounced]);
+
   // ─── Paginated queue ───
-  const queryKey = ["iam-approval-queue", tab, page, actionFilter, originFilter];
+  const queryKey = ["iam-approval-queue", tab, page, actionFilter, originFilter, buscaDebounced];
   const { data: pageData, isLoading, refetch } = useQuery({
     queryKey,
     queryFn: async () => {
@@ -155,14 +164,18 @@ export default function AprovacaoIAMPage() {
         .order("created_at", { ascending: false })
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
       if (tab === "waiting") q = q.eq("status", "waiting_approval");
-      else q = q.in("status", ["rejected", "success", "failed", "cancelled"]).not("approved_at", "is", null);
+      else q = q.in("status", ["rejected", "success", "failed", "cancelled"]);
       if (actionFilter !== "todos") q = q.eq("action_type", actionFilter);
       if (originFilter !== "todos") q = q.eq("requested_by", originFilter);
+      if (buscaDebounced) {
+        const safe = buscaDebounced.replace(/[%,()]/g, " ");
+        q = q.or(`target_identity.ilike.%${safe}%,payload_json->>displayName.ilike.%${safe}%,payload_json->>mail.ilike.%${safe}%`);
+      }
       const { data, error, count } = await q;
       if (error) throw error;
       return { items: (data || []) as IamQueueItem[], total: count || 0 };
     },
-    refetchInterval: 15000,
+    // Realtime cobre atualizações; sem polling aqui.
     placeholderData: (prev) => prev,
   });
 
@@ -170,30 +183,26 @@ export default function AprovacaoIAMPage() {
   const total = pageData?.total || 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  // ─── Available filter options (fetched separately, small) ───
+  // ─── Available filter options via RPC (sem truncar em 2000) ───
   const { data: filterOptions } = useQuery({
     queryKey: ["iam-filter-options", tab],
     queryFn: async () => {
-      const q: any = (supabase as any).from("iam_queue").select("action_type,requested_by").limit(2000);
-      if (tab === "waiting") q.eq("status", "waiting_approval");
-      else q.in("status", ["rejected", "success", "failed", "cancelled"]);
-      const { data } = await q;
-      const actions = Array.from(new Set((data || []).map((d: any) => d.action_type))).sort();
+      const statusFilter = tab === "waiting"
+        ? ["waiting_approval"]
+        : ["rejected", "success", "failed", "cancelled"];
+      const { data, error } = await (supabase as any).rpc("iam_queue_distinct_actions_origins", {
+        status_filter: statusFilter,
+      });
+      if (error) throw error;
+      const actions = Array.from(new Set((data || []).map((d: any) => d.action_type).filter(Boolean))).sort();
       const origins = Array.from(new Set((data || []).map((d: any) => d.requested_by).filter(Boolean))).sort();
       return { actions, origins };
     },
     refetchInterval: 60000,
   });
 
-  // Client-side text search only within the current page
-  const filtered = useMemo(() => {
-    const q = busca.toLowerCase().trim();
-    if (!q) return items;
-    return items.filter((it) => {
-      const hay = `${it.target_identity || ""} ${summarizePayload(it.payload_json)} ${it.action_type} ${it.requested_by || ""}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [items, busca]);
+  // Sem filtro client-side extra — a busca já é server-side.
+  const filtered = items;
 
   // Realtime — invalidate current page on any change
   useEffect(() => {
@@ -213,15 +222,60 @@ export default function AprovacaoIAMPage() {
     mutationFn: async (ids: string[]) => {
       const { data: userData } = await supabase.auth.getUser();
       const uid = userData?.user?.id;
-      const { error } = await (supabase as any)
-        .from("iam_queue")
-        .update({ status: "pending", approved_by: uid, approved_at: new Date().toISOString(), rejection_reason: null })
-        .in("id", ids);
-      if (error) throw error;
+
+      // Buscar itens para saber se algum é revisão de órfão (fluxo especial)
+      const { data: rows } = await (supabase as any)
+        .from("iam_queue").select("id, action_type, payload_json, target_identity").in("id", ids);
+
+      const orphans = (rows || []).filter((r: any) => r.action_type === "review_orphan_entra");
+      const regularIds = ids.filter((id) => !orphans.find((o: any) => o.id === id));
+
+      // 1) Itens regulares: promove para "pending" (worker executa)
+      if (regularIds.length > 0) {
+        const { error } = await (supabase as any)
+          .from("iam_queue")
+          .update({ status: "pending", approved_by: uid, approved_at: new Date().toISOString(), rejection_reason: null })
+          .in("id", regularIds);
+        if (error) throw error;
+      }
+
+      // 2) Órfãos aprovados: marca revisão como success e enfileira disable_entra para a conta
+      if (orphans.length > 0) {
+        const nowIso = new Date().toISOString();
+        const { error: markErr } = await (supabase as any)
+          .from("iam_queue")
+          .update({
+            status: "success",
+            approved_by: uid,
+            approved_at: nowIso,
+            processed_at: nowIso,
+            processed_by: "orphan-approval",
+            result_message: "Revisão aprovada — conta enfileirada para desabilitação no Entra.",
+          })
+          .in("id", orphans.map((o: any) => o.id));
+        if (markErr) throw markErr;
+
+        const disableRows = orphans.map((o: any) => ({
+          action_type: "disable_entra",
+          status: "pending",
+          target_identity: o.target_identity || o.payload_json?.userPrincipalName || o.payload_json?.mail,
+          requested_by: "orphan-approval",
+          payload_json: {
+            reason: "orphan_approved",
+            entra_id: o.payload_json?.entra_id,
+            mail: o.payload_json?.mail || o.payload_json?.userPrincipalName,
+            samAccountName: null,
+            displayName: o.payload_json?.displayName,
+          },
+        }));
+        const { error: insErr } = await (supabase as any).from("iam_queue").insert(disableRows);
+        if (insErr) throw insErr;
+      }
+
       await (supabase as any).from("auditoria").insert({
         entidade: "iam_queue", acao: "aprovar",
-        resumo: `${ids.length} ação(ões) IAM aprovada(s)`,
-        detalhes: { ids },
+        resumo: `${ids.length} ação(ões) IAM aprovada(s)${orphans.length ? ` (${orphans.length} órfão(s))` : ""}`,
+        detalhes: { ids, orphan_ids: orphans.map((o: any) => o.id) },
       });
       // Fire-and-forget: kicks the worker immediately, don't await
       triggerEntraProcessing(true).catch(() => {});
@@ -255,15 +309,39 @@ export default function AprovacaoIAMPage() {
     mutationFn: async ({ ids, reason }: { ids: string[]; reason: string }) => {
       const { data: userData } = await supabase.auth.getUser();
       const uid = userData?.user?.id;
+
+      // Descobre órfãos para registrá-los como contas conhecidas (não voltam à revisão)
+      const { data: rows } = await (supabase as any)
+        .from("iam_queue").select("id, action_type, payload_json").in("id", ids);
+      const orphans = (rows || []).filter((r: any) => r.action_type === "review_orphan_entra");
+
       const { error } = await (supabase as any)
         .from("iam_queue")
         .update({ status: "rejected", approved_by: uid, approved_at: new Date().toISOString(), rejection_reason: reason })
         .in("id", ids);
       if (error) throw error;
+
+      if (orphans.length > 0) {
+        const inserts = orphans
+          .filter((o: any) => o.payload_json?.entra_id)
+          .map((o: any) => ({
+            entra_id: o.payload_json.entra_id,
+            display_name: o.payload_json.displayName || null,
+            email: o.payload_json.mail || o.payload_json.userPrincipalName || null,
+            motivo: reason || "Conta legítima (marcada na revisão)",
+            created_by: uid || null,
+          }));
+        if (inserts.length > 0) {
+          await (supabase as any)
+            .from("contas_admin_conhecidas")
+            .upsert(inserts, { onConflict: "entra_id" });
+        }
+      }
+
       await (supabase as any).from("auditoria").insert({
         entidade: "iam_queue", acao: "recusar",
-        resumo: `${ids.length} ação(ões) IAM recusada(s)`,
-        detalhes: { ids, reason },
+        resumo: `${ids.length} ação(ões) IAM recusada(s)${orphans.length ? ` (${orphans.length} órfão(s) marcado(s) como legítimos)` : ""}`,
+        detalhes: { ids, reason, orphan_ids: orphans.map((o: any) => o.id) },
       });
       return ids;
     },
@@ -546,7 +624,7 @@ export default function AprovacaoIAMPage() {
             <CardContent className="pt-4 flex flex-wrap gap-2 items-center">
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Buscar nesta página..." value={busca} onChange={(e) => setBusca(e.target.value)} className="pl-8 h-9" />
+                <Input placeholder="Buscar por nome, email ou identidade…" value={busca} onChange={(e) => setBusca(e.target.value)} className="pl-8 h-9" />
               </div>
               <Select value={actionFilter} onValueChange={setActionFilter}>
                 <SelectTrigger className="w-[200px] h-9"><SelectValue /></SelectTrigger>
@@ -689,6 +767,32 @@ export default function AprovacaoIAMPage() {
                 </SheetDescription>
               </SheetHeader>
               <div className="mt-4 space-y-4">
+                {detailItem.payload_json?.reason === "status_divergence" && (
+                  <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs dark:bg-amber-950/20">
+                    <div className="font-medium text-amber-900 dark:text-amber-200">Divergência de status</div>
+                    <div className="mt-1 text-amber-900/90 dark:text-amber-100/90">
+                      Base: <strong>{String(detailItem.payload_json.colab_status || "?")}</strong>
+                      {" · "}Entra: <strong>{detailItem.payload_json.entra_account_enabled === false ? "desabilitado" : "habilitado"}</strong>
+                    </div>
+                    <div className="mt-1 text-amber-800/80 dark:text-amber-200/80">
+                      Aprovar aplica a ação <em>{actionLabels[detailItem.action_type] || detailItem.action_type}</em> no Entra ID.
+                    </div>
+                  </div>
+                )}
+                {detailItem.action_type === "review_orphan_entra" && (
+                  <div className="rounded-md border border-blue-300 bg-blue-50 p-3 text-xs dark:bg-blue-950/20">
+                    <div className="font-medium text-blue-900 dark:text-blue-200">Conta órfã no Entra ID</div>
+                    <div className="mt-1 text-blue-900/90 dark:text-blue-100/90">
+                      Existe no Entra e não casou com nenhum colaborador da base.
+                      {detailItem.payload_json?.createdDateTime && (
+                        <> Criada em {new Date(detailItem.payload_json.createdDateTime).toLocaleDateString("pt-BR")}.</>
+                      )}
+                    </div>
+                    <div className="mt-1 text-blue-800/80 dark:text-blue-200/80">
+                      <strong>Aprovar</strong> desabilita a conta no Entra. <strong>Recusar</strong> marca como conta legítima e não voltará à revisão.
+                    </div>
+                  </div>
+                )}
                 <div>
                   <Label className="text-xs text-muted-foreground">Payload</Label>
                   <pre className="mt-1 text-xs bg-muted p-3 rounded overflow-x-auto max-h-96">
