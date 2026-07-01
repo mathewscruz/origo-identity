@@ -76,20 +76,30 @@ function sample<T>(arr: T[], n: number): T[] {
 async function runAudit(sb: any) {
   const token = await getGraphToken();
 
-  // Amostras da fila (join com colab para pegar entra_id/email reais)
+  // Amostras da fila + fetch de colabs relacionados em query separada (evita FK ambiguity)
   const { data: disableEntra } = await sb.from("iam_queue")
-    .select("id, colaborador_id, target_identity, payload_json, colaboradores!inner(entra_id, email, sam_account_name)")
+    .select("id, colaborador_id, target_identity, payload_json")
     .eq("action_type", "disable_entra")
     .eq("requested_by", "reconciliacao")
     .in("status", ["pending", "waiting_approval"]);
   const { data: disableAd } = await sb.from("iam_queue")
-    .select("id, colaborador_id, target_identity, payload_json, colaboradores!inner(entra_id, email, sam_account_name)")
+    .select("id, colaborador_id, target_identity, payload_json")
     .eq("action_type", "disable")
     .eq("requested_by", "reconciliacao")
     .in("status", ["pending", "waiting_approval"]);
 
   const sDisableEntra = sample(disableEntra || [], SAMPLE);
   const sDisableAd = sample(disableAd || [], SAMPLE);
+
+  // Fetch colab data for sampled items
+  const sampleColabIds = Array.from(new Set([...sDisableEntra, ...sDisableAd].map((q: any) => q.colaborador_id).filter(Boolean)));
+  const colabMap = new Map<string, any>();
+  if (sampleColabIds.length > 0) {
+    const { data: colabs } = await sb.from("colaboradores")
+      .select("id, entra_id, email, sam_account_name")
+      .in("id", sampleColabIds);
+    for (const c of colabs || []) colabMap.set(c.id, c);
+  }
 
   // Amostra de "pulados": desligados com email mas sem item na fila (não geraram disable_entra)
   const { data: desligados } = await sb.from("colaboradores")
