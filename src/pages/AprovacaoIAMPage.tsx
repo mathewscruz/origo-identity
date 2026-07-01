@@ -311,6 +311,39 @@ export default function AprovacaoIAMPage() {
     onError: (e: any) => toast.error(`Erro: ${e.message}`),
   });
 
+  // ─── Reconcile job: fetch latest reconcile_entra sync_job and poll while running ───
+  const { data: reconcileJob, refetch: refetchReconcileJob } = useQuery({
+    queryKey: ["reconcile-entra-job"],
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from("sync_jobs")
+        .select("id, status, phase, message, users_total, users_created, users_updated, users_percent, error, updated_at, created_at")
+        .eq("tipo", "reconcile_entra")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return data as any;
+    },
+    refetchInterval: (query) => (query.state.data?.status === "running" ? 3000 : false),
+  });
+
+  // Toast when a running job transitions to success/error
+  useEffect(() => {
+    if (!reconcileJob) return;
+    const key = `reconcile-toast-${reconcileJob.id}-${reconcileJob.status}`;
+    if (reconcileJob.status === "success" && !sessionStorage.getItem(key)) {
+      sessionStorage.setItem(key, "1");
+      toast.success(reconcileJob.message || "Reconciliação concluída");
+      qc.invalidateQueries({ queryKey: ["iam-approval-queue"] });
+      qc.invalidateQueries({ queryKey: ["iam-create-if-not-exists-count"] });
+    } else if (reconcileJob.status === "error" && !sessionStorage.getItem(key)) {
+      sessionStorage.setItem(key, "1");
+      toast.error(reconcileJob.message || "Falha na reconciliação");
+    }
+  }, [reconcileJob?.id, reconcileJob?.status]);
+
+  const reconcileRunning = reconcileJob?.status === "running";
+
   const reconcileMutation = useMutation({
     mutationFn: async () => {
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-iam-queue`;
@@ -320,19 +353,21 @@ export default function AprovacaoIAMPage() {
         body: JSON.stringify({ mode: "reconcile-create" }),
       });
       const body = await res.json();
-      if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+      if (!res.ok && res.status !== 202) throw new Error(body?.error || `HTTP ${res.status}`);
       return body;
     },
     onSuccess: (body: any) => {
-      const cancelled = body?.cancelled ?? 0;
-      const kept = body?.kept ?? 0;
-      toast.success(`Reconciliação concluída: ${cancelled} já existiam (canceladas), ${kept} realmente novos.`);
+      if (body?.already_running) {
+        toast.info("Uma reconciliação já está em andamento — acompanhando o progresso.");
+      } else {
+        toast.success(`Reconciliação iniciada em segundo plano (${(body?.total ?? 0).toLocaleString("pt-BR")} itens). Você pode sair da tela — o processo continua.`);
+      }
       setReconcileOpen(false);
-      qc.invalidateQueries({ queryKey: ["iam-approval-queue"] });
-      refetchCreateCount();
+      refetchReconcileJob();
     },
-    onError: (e: any) => toast.error(`Erro ao reconciliar: ${e.message}`),
+    onError: (e: any) => toast.error(`Erro ao iniciar reconciliação: ${e.message}`),
   });
+
 
   // ─── UI helpers ───
   function toggleOne(id: string) {
