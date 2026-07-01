@@ -385,6 +385,21 @@ function generateOrigoEmail(displayName: string, existingEmails: Set<string>): s
 }
 
 async function processCsvData(sb: any, csvText: string, filename: string) {
+  // ── 0. Watchdog: mark stale running jobs as errored to unblock UI ──
+  const staleCutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  await sb.from("sync_jobs")
+    .update({ status: "error", error: "Interrompido por timeout do runtime", message: "Interrompido por timeout do runtime; dados parciais já importados" })
+    .eq("tipo", "csv_colab")
+    .eq("status", "running")
+    .lt("updated_at", staleCutoff);
+
+  // Time budget for inline provisioning of cargo access (in ms).
+  // Beyond this, cargo provisioning is skipped inline and left to be re-provisioned
+  // via the "Reprovisionar Cargo" flow in the UI. Prevents runtime timeouts on bulk imports.
+  const runStart = Date.now();
+  const PROVISION_BUDGET_MS = 60_000;
+  let skippedProvisions = 0;
+
   // ── 1. Create sync_job ──
   const { data: job, error: jobErr } = await sb
     .from("sync_jobs")
@@ -392,6 +407,7 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     .select().single();
   if (jobErr) throw jobErr;
   const jobId = job.id;
+
 
   try {
     // ── 2. Parse CSV ──
