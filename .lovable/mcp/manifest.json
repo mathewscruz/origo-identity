@@ -70,7 +70,7 @@
       {
         "name": "get_colaborador",
         "title": "Detalhes do colaborador",
-        "description": "Retorna detalhes completos de um colaborador (por id, email ou employ_id), incluindo perfis atribuídos, últimos eventos JML e itens abertos na fila IAM.",
+        "description": "Retorna detalhes completos de um colaborador (por id, email, matrícula ou samAccountName), incluindo perfis atribuídos, últimos eventos JML e itens abertos na fila IAM.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -90,7 +90,10 @@
               "format": "email",
               "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
             },
-            "employ_id": {
+            "matricula": {
+              "type": "string"
+            },
+            "sam_account_name": {
               "type": "string"
             }
           }
