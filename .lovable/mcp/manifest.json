@@ -12,7 +12,7 @@
   "mcp": {
     "server": {
       "name": "origo-access-identity-mcp",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "title": "Órigo Access & Identity"
     },
     "tools": [
@@ -515,6 +515,22 @@
           "required": [
             "name"
           ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "health_check",
+        "title": "Diagnóstico MCP",
+        "description": "Diagnóstico read-only do MCP Órigo: valida autenticação, config Supabase e uma consulta mínima sem expor tokens.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
         },
         "outputSchema": null
       }
