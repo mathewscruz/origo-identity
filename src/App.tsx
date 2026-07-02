@@ -41,6 +41,7 @@ import IntegracoesPage from "./pages/configuracoes/IntegracoesPage";
 import UsuariosPage from "./pages/admin/UsuariosPage";
 import LoginPage from "./pages/auth/LoginPage";
 import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
+import OAuthConsentPage from "./pages/auth/OAuthConsentPage";
 import FilaProvisionamentoPage from "./pages/fila-provisionamento/FilaProvisionamentoPage";
 import SolicitacaoDetalhePage from "./pages/fila-provisionamento/SolicitacaoDetalhePage";
 import AprovacaoIAMPage from "./pages/AprovacaoIAMPage";
@@ -62,6 +63,7 @@ const App = () => (
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/.lovable/oauth/consent" element={<OAuthConsentPage />} />
             <Route path="/revisao-externa/:token" element={<RevisaoExternaPage />} />
             <Route path="/portal/login" element={<PortalLoginPage />} />
             <Route path="/portal" element={<PortalLayout />}>
