@@ -26,7 +26,7 @@ export default defineTool({
     const offset = input.offset ?? 0;
     let q = sb(ctx)
       .from("colaboradores")
-      .select("id,nome,email,status,cargo_id,area_id,empresa_id,entra_id,data_admissao,data_desligamento,employ_id", { count: "exact" })
+      .select("id,nome,email,matricula,status,cargo_id,area_id,empresa_id,entra_id,sam_account_name,data_admissao,data_desligamento", { count: "exact" })
       .range(offset, offset + limit - 1)
       .order("nome");
     if (input.search) q = q.or(`nome.ilike.%${input.search}%,email.ilike.%${input.search}%`);

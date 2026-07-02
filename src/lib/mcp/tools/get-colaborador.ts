@@ -7,11 +7,12 @@ export default defineTool({
   name: "get_colaborador",
   title: "Detalhes do colaborador",
   description:
-    "Retorna detalhes completos de um colaborador (por id, email ou employ_id), incluindo perfis atribuídos, últimos eventos JML e itens abertos na fila IAM.",
+    "Retorna detalhes completos de um colaborador (por id, email, matrícula ou samAccountName), incluindo perfis atribuídos, últimos eventos JML e itens abertos na fila IAM.",
   inputSchema: {
     id: z.string().uuid().optional(),
     email: z.string().email().optional(),
-    employ_id: z.string().optional(),
+    matricula: z.string().optional(),
+    sam_account_name: z.string().optional(),
   },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: async (input, ctx) => {
@@ -20,8 +21,9 @@ export default defineTool({
     let q = client.from("colaboradores").select("*").limit(1);
     if (input.id) q = q.eq("id", input.id);
     else if (input.email) q = q.eq("email", input.email);
-    else if (input.employ_id) q = q.eq("employ_id", input.employ_id);
-    else return { content: [{ type: "text", text: "Informe id, email ou employ_id." }], isError: true };
+    else if (input.matricula) q = q.eq("matricula", input.matricula);
+    else if (input.sam_account_name) q = q.eq("sam_account_name", input.sam_account_name);
+    else return { content: [{ type: "text", text: "Informe id, email, matricula ou sam_account_name." }], isError: true };
     const { data: colab, error } = await q.maybeSingle();
     if (error) return { content: [{ type: "text", text: error.message }], isError: true };
     if (!colab) return { content: [{ type: "text", text: "Colaborador não encontrado." }], isError: true };
