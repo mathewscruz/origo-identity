@@ -3,7 +3,7 @@ import { defineTool, type ToolContext } from "@lovable.dev/mcp-js";
 import { z } from "zod";
 
 function sb(ctx: ToolContext) {
-  return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_PUBLISHABLE_KEY!, {
+  return createClient((globalThis as any).process.env.SUPABASE_URL!, (globalThis as any).process.env.SUPABASE_PUBLISHABLE_KEY!, {
     global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -23,13 +23,13 @@ export default defineTool({
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   handler: async (input, ctx) => {
     if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "Não autenticado" }], isError: true };
-    const url = `${process.env.SUPABASE_URL}/functions/v1/start-jml-event`;
+    const url = `${(globalThis as any).process.env.SUPABASE_URL}/functions/v1/start-jml-event`;
     const res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${ctx.getToken()}`,
-        apikey: process.env.SUPABASE_PUBLISHABLE_KEY!,
+        apikey: (globalThis as any).process.env.SUPABASE_PUBLISHABLE_KEY!,
       },
       body: JSON.stringify({ ...input, origem: "mcp_hermes" }),
     });
