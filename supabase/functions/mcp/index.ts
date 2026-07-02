@@ -6,15 +6,28 @@
 import { auth, defineMcp } from "npm:@lovable.dev/mcp-js@0.20.0";
 
 // src/lib/mcp/tools/list-colaboradores.ts
-import { createClient } from "npm:@supabase/supabase-js@^2.110.0";
 import { defineTool } from "npm:@lovable.dev/mcp-js@0.20.0";
-import { z } from "npm:zod@^4.4.3";
+
+// src/lib/mcp/supabase-client.ts
+import { createClient } from "npm:@supabase/supabase-js@^2.110.0";
+var supabaseUrl = "https://jobopjhhxgcfanlhzlkc.supabase.co";
+var supabasePublishableKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpvYm9wamhoeGdjZmFubGh6bGtjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NzMyMTcsImV4cCI6MjA4OTM0OTIxN30.Hj5rhgW0U4XfbkjTGO9swcQhlP25ArfX1lbzKOum7QQ";
+function getSupabaseConfig() {
+  if (!supabaseUrl || !supabasePublishableKey) {
+    throw new Error("Supabase environment is not configured for MCP tools");
+  }
+  return { supabaseUrl, supabasePublishableKey };
+}
 function sb(ctx) {
-  return createClient(globalThis.process.env.SUPABASE_URL, globalThis.process.env.SUPABASE_PUBLISHABLE_KEY, {
+  const { supabaseUrl: supabaseUrl2, supabasePublishableKey: supabasePublishableKey2 } = getSupabaseConfig();
+  return createClient(supabaseUrl2, supabasePublishableKey2, {
     global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
     auth: { persistSession: false, autoRefreshToken: false }
   });
 }
+
+// src/lib/mcp/tools/list-colaboradores.ts
+import { z } from "npm:zod@^4.4.3";
 var list_colaboradores_default = defineTool({
   name: "list_colaboradores",
   title: "Listar colaboradores",
@@ -51,15 +64,8 @@ var list_colaboradores_default = defineTool({
 });
 
 // src/lib/mcp/tools/get-colaborador.ts
-import { createClient as createClient2 } from "npm:@supabase/supabase-js@^2.110.0";
 import { defineTool as defineTool2 } from "npm:@lovable.dev/mcp-js@0.20.0";
 import { z as z2 } from "npm:zod@^4.4.3";
-function sb2(ctx) {
-  return createClient2(globalThis.process.env.SUPABASE_URL, globalThis.process.env.SUPABASE_PUBLISHABLE_KEY, {
-    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
-}
 var get_colaborador_default = defineTool2({
   name: "get_colaborador",
   title: "Detalhes do colaborador",
@@ -72,7 +78,7 @@ var get_colaborador_default = defineTool2({
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: async (input, ctx) => {
     if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
-    const client = sb2(ctx);
+    const client = sb(ctx);
     let q = client.from("colaboradores").select("*").limit(1);
     if (input.id) q = q.eq("id", input.id);
     else if (input.email) q = q.eq("email", input.email);
@@ -94,15 +100,8 @@ var get_colaborador_default = defineTool2({
 });
 
 // src/lib/mcp/tools/list-terceiros.ts
-import { createClient as createClient3 } from "npm:@supabase/supabase-js@^2.110.0";
 import { defineTool as defineTool3 } from "npm:@lovable.dev/mcp-js@0.20.0";
 import { z as z3 } from "npm:zod@^4.4.3";
-function sb3(ctx) {
-  return createClient3(globalThis.process.env.SUPABASE_URL, globalThis.process.env.SUPABASE_PUBLISHABLE_KEY, {
-    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
-}
 var list_terceiros_default = defineTool3({
   name: "list_terceiros",
   title: "Listar terceiros",
@@ -119,7 +118,7 @@ var list_terceiros_default = defineTool3({
     if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
     const limit = input.limit ?? 50;
     const offset = input.offset ?? 0;
-    let q = sb3(ctx).from("terceiros").select("*", { count: "exact" }).order("nome").range(offset, offset + limit - 1);
+    let q = sb(ctx).from("terceiros").select("*", { count: "exact" }).order("nome").range(offset, offset + limit - 1);
     if (input.search) q = q.or(`nome.ilike.%${input.search}%,email.ilike.%${input.search}%`);
     if (input.status) q = q.eq("status", input.status);
     if (input.empresa_id) q = q.eq("empresa_id", input.empresa_id);
@@ -133,15 +132,8 @@ var list_terceiros_default = defineTool3({
 });
 
 // src/lib/mcp/tools/list-iam-queue.ts
-import { createClient as createClient4 } from "npm:@supabase/supabase-js@^2.110.0";
 import { defineTool as defineTool4 } from "npm:@lovable.dev/mcp-js@0.20.0";
 import { z as z4 } from "npm:zod@^4.4.3";
-function sb4(ctx) {
-  return createClient4(globalThis.process.env.SUPABASE_URL, globalThis.process.env.SUPABASE_PUBLISHABLE_KEY, {
-    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
-}
 var list_iam_queue_default = defineTool4({
   name: "list_iam_queue",
   title: "Listar fila IAM",
@@ -159,7 +151,7 @@ var list_iam_queue_default = defineTool4({
     if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
     const limit = input.limit ?? 50;
     const offset = input.offset ?? 0;
-    let q = sb4(ctx).from("iam_queue").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(offset, offset + limit - 1);
+    let q = sb(ctx).from("iam_queue").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(offset, offset + limit - 1);
     if (input.status?.length) q = q.in("status", input.status);
     if (input.action_type) q = q.eq("action_type", input.action_type);
     if (input.requested_by) q = q.eq("requested_by", input.requested_by);
@@ -174,15 +166,8 @@ var list_iam_queue_default = defineTool4({
 });
 
 // src/lib/mcp/tools/approve-iam-item.ts
-import { createClient as createClient5 } from "npm:@supabase/supabase-js@^2.110.0";
 import { defineTool as defineTool5 } from "npm:@lovable.dev/mcp-js@0.20.0";
 import { z as z5 } from "npm:zod@^4.4.3";
-function sb5(ctx) {
-  return createClient5(globalThis.process.env.SUPABASE_URL, globalThis.process.env.SUPABASE_PUBLISHABLE_KEY, {
-    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
-}
 var approve_iam_item_default = defineTool5({
   name: "approve_iam_item",
   title: "Aprovar item da fila IAM",
@@ -195,7 +180,7 @@ var approve_iam_item_default = defineTool5({
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   handler: async ({ item_id, decision, reason }, ctx) => {
     if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
-    const client = sb5(ctx);
+    const client = sb(ctx);
     const newStatus = decision === "approve" ? "pending" : "cancelled";
     const patch = {
       status: newStatus,
@@ -220,15 +205,8 @@ var approve_iam_item_default = defineTool5({
 });
 
 // src/lib/mcp/tools/start-jml-event.ts
-import { createClient as createClient6 } from "npm:@supabase/supabase-js@^2.110.0";
 import { defineTool as defineTool6 } from "npm:@lovable.dev/mcp-js@0.20.0";
 import { z as z6 } from "npm:zod@^4.4.3";
-function sb6(ctx) {
-  return createClient6(globalThis.process.env.SUPABASE_URL, globalThis.process.env.SUPABASE_PUBLISHABLE_KEY, {
-    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
-}
 var start_jml_event_default = defineTool6({
   name: "start_jml_event",
   title: "Iniciar evento JML",
@@ -242,13 +220,13 @@ var start_jml_event_default = defineTool6({
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   handler: async (input, ctx) => {
     if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
-    const url = `${globalThis.process.env.SUPABASE_URL}/functions/v1/start-jml-event`;
+    const url = `${getSupabaseConfig().supabaseUrl}/functions/v1/start-jml-event`;
     const res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${ctx.getToken()}`,
-        apikey: globalThis.process.env.SUPABASE_PUBLISHABLE_KEY
+        apikey: getSupabaseConfig().supabasePublishableKey
       },
       body: JSON.stringify({ ...input, origem: "mcp_hermes" })
     });
@@ -256,7 +234,7 @@ var start_jml_event_default = defineTool6({
     if (!res.ok || body?.error) {
       return { content: [{ type: "text", text: JSON.stringify(body) }], isError: true };
     }
-    await sb6(ctx).from("auditoria").insert({
+    await sb(ctx).from("auditoria").insert({
       acao: "iniciar_evento_jml",
       entidade: "eventos_jml",
       resumo: `Evento JML ${input.tipo} iniciado via MCP (Hermes) para ${input.colaboradorNome}`,
@@ -271,15 +249,8 @@ var start_jml_event_default = defineTool6({
 });
 
 // src/lib/mcp/tools/list-eventos-jml.ts
-import { createClient as createClient7 } from "npm:@supabase/supabase-js@^2.110.0";
 import { defineTool as defineTool7 } from "npm:@lovable.dev/mcp-js@0.20.0";
 import { z as z7 } from "npm:zod@^4.4.3";
-function sb7(ctx) {
-  return createClient7(globalThis.process.env.SUPABASE_URL, globalThis.process.env.SUPABASE_PUBLISHABLE_KEY, {
-    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
-}
 var list_eventos_jml_default = defineTool7({
   name: "list_eventos_jml",
   title: "Listar eventos JML",
@@ -296,7 +267,7 @@ var list_eventos_jml_default = defineTool7({
     if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
     const limit = input.limit ?? 50;
     const offset = input.offset ?? 0;
-    let q = sb7(ctx).from("eventos_jml").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(offset, offset + limit - 1);
+    let q = sb(ctx).from("eventos_jml").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(offset, offset + limit - 1);
     if (input.tipo) q = q.eq("tipo", input.tipo);
     if (input.status) q = q.eq("status", input.status);
     if (input.colaborador_id) q = q.eq("colaborador_id", input.colaborador_id);
@@ -310,15 +281,8 @@ var list_eventos_jml_default = defineTool7({
 });
 
 // src/lib/mcp/tools/list-auditoria.ts
-import { createClient as createClient8 } from "npm:@supabase/supabase-js@^2.110.0";
 import { defineTool as defineTool8 } from "npm:@lovable.dev/mcp-js@0.20.0";
 import { z as z8 } from "npm:zod@^4.4.3";
-function sb8(ctx) {
-  return createClient8(globalThis.process.env.SUPABASE_URL, globalThis.process.env.SUPABASE_PUBLISHABLE_KEY, {
-    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
-}
 var list_auditoria_default = defineTool8({
   name: "list_auditoria",
   title: "Consultar auditoria",
@@ -337,7 +301,7 @@ var list_auditoria_default = defineTool8({
     if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
     const limit = input.limit ?? 50;
     const offset = input.offset ?? 0;
-    let q = sb8(ctx).from("auditoria").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(offset, offset + limit - 1);
+    let q = sb(ctx).from("auditoria").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(offset, offset + limit - 1);
     if (input.acao) q = q.eq("acao", input.acao);
     if (input.entidade) q = q.eq("entidade", input.entidade);
     if (input.operador) q = q.eq("operador", input.operador);
@@ -353,15 +317,8 @@ var list_auditoria_default = defineTool8({
 });
 
 // src/lib/mcp/tools/list-alertas.ts
-import { createClient as createClient9 } from "npm:@supabase/supabase-js@^2.110.0";
 import { defineTool as defineTool9 } from "npm:@lovable.dev/mcp-js@0.20.0";
 import { z as z9 } from "npm:zod@^4.4.3";
-function sb9(ctx) {
-  return createClient9(globalThis.process.env.SUPABASE_URL, globalThis.process.env.SUPABASE_PUBLISHABLE_KEY, {
-    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
-}
 var list_alertas_default = defineTool9({
   name: "list_alertas",
   title: "Listar alertas",
@@ -377,7 +334,7 @@ var list_alertas_default = defineTool9({
     if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
     const limit = input.limit ?? 50;
     const offset = input.offset ?? 0;
-    let q = sb9(ctx).from("alertas").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(offset, offset + limit - 1);
+    let q = sb(ctx).from("alertas").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(offset, offset + limit - 1);
     if (input.severidade) q = q.eq("severidade", input.severidade);
     if (typeof input.lido === "boolean") q = q.eq("lido", input.lido);
     const { data, error, count } = await q;
@@ -390,19 +347,8 @@ var list_alertas_default = defineTool9({
 });
 
 // src/lib/mcp/tools/run-admin-sql.ts
-import { createClient as createClient10 } from "npm:@supabase/supabase-js@^2.110.0";
 import { defineTool as defineTool10 } from "npm:@lovable.dev/mcp-js@0.20.0";
 import { z as z10 } from "npm:zod@^4.4.3";
-function sb10(ctx) {
-  return createClient10(
-    globalThis.process.env.SUPABASE_URL,
-    globalThis.process.env.SUPABASE_PUBLISHABLE_KEY,
-    {
-      global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-      auth: { persistSession: false, autoRefreshToken: false }
-    }
-  );
-}
 var run_admin_sql_default = defineTool10({
   name: "run_admin_sql",
   title: "Executar SQL admin",
@@ -413,7 +359,7 @@ var run_admin_sql_default = defineTool10({
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   handler: async ({ sql }, ctx) => {
     if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
-    const { data, error } = await sb10(ctx).rpc("admin_exec_sql", { p_sql: sql });
+    const { data, error } = await sb(ctx).rpc("admin_exec_sql", { p_sql: sql });
     if (error) return { content: [{ type: "text", text: error.message }], isError: true };
     return {
       content: [{ type: "text", text: JSON.stringify(data) }],
@@ -423,19 +369,8 @@ var run_admin_sql_default = defineTool10({
 });
 
 // src/lib/mcp/tools/apply-migration.ts
-import { createClient as createClient11 } from "npm:@supabase/supabase-js@^2.110.0";
 import { defineTool as defineTool11 } from "npm:@lovable.dev/mcp-js@0.20.0";
 import { z as z11 } from "npm:zod@^4.4.3";
-function sb11(ctx) {
-  return createClient11(
-    globalThis.process.env.SUPABASE_URL,
-    globalThis.process.env.SUPABASE_PUBLISHABLE_KEY,
-    {
-      global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-      auth: { persistSession: false, autoRefreshToken: false }
-    }
-  );
-}
 var apply_migration_default = defineTool11({
   name: "apply_migration",
   title: "Aplicar migra\xE7\xE3o (DDL)",
@@ -447,7 +382,7 @@ var apply_migration_default = defineTool11({
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   handler: async ({ sql, description }, ctx) => {
     if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
-    const { data, error } = await sb11(ctx).rpc("admin_exec_ddl", { p_sql: sql, p_description: description });
+    const { data, error } = await sb(ctx).rpc("admin_exec_ddl", { p_sql: sql, p_description: description });
     if (error) return { content: [{ type: "text", text: error.message }], isError: true };
     return {
       content: [{ type: "text", text: `ok \u2014 ${description}` }],
@@ -457,19 +392,8 @@ var apply_migration_default = defineTool11({
 });
 
 // src/lib/mcp/tools/introspect-schema.ts
-import { createClient as createClient12 } from "npm:@supabase/supabase-js@^2.110.0";
 import { defineTool as defineTool12 } from "npm:@lovable.dev/mcp-js@0.20.0";
 import { z as z12 } from "npm:zod@^4.4.3";
-function sb12(ctx) {
-  return createClient12(
-    globalThis.process.env.SUPABASE_URL,
-    globalThis.process.env.SUPABASE_PUBLISHABLE_KEY,
-    {
-      global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-      auth: { persistSession: false, autoRefreshToken: false }
-    }
-  );
-}
 var introspect_schema_default = defineTool12({
   name: "introspect_schema",
   title: "Introspec\xE7\xE3o do schema",
@@ -502,7 +426,7 @@ var introspect_schema_default = defineTool12({
         sql = `SELECT n.nspname AS schema, p.proname AS name, pg_get_function_identity_arguments(p.oid) AS args, l.lanname AS language, CASE WHEN p.prosecdef THEN 'security definer' ELSE 'security invoker' END AS security FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_language l ON l.oid = p.prolang WHERE n.nspname = ${quote(s)} ORDER BY name`;
         break;
     }
-    const { data, error } = await sb12(ctx).rpc("admin_exec_sql", { p_sql: sql });
+    const { data, error } = await sb(ctx).rpc("admin_exec_sql", { p_sql: sql });
     if (error) return { content: [{ type: "text", text: error.message }], isError: true };
     return { content: [{ type: "text", text: JSON.stringify(data) }], structuredContent: { rows: data } };
   }
@@ -512,19 +436,8 @@ function quote(v) {
 }
 
 // src/lib/mcp/tools/invoke-edge-function.ts
-import { createClient as createClient13 } from "npm:@supabase/supabase-js@^2.110.0";
 import { defineTool as defineTool13 } from "npm:@lovable.dev/mcp-js@0.20.0";
 import { z as z13 } from "npm:zod@^4.4.3";
-function sb13(ctx) {
-  return createClient13(
-    globalThis.process.env.SUPABASE_URL,
-    globalThis.process.env.SUPABASE_PUBLISHABLE_KEY,
-    {
-      global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-      auth: { persistSession: false, autoRefreshToken: false }
-    }
-  );
-}
 var invoke_edge_function_default = defineTool13({
   name: "invoke_edge_function",
   title: "Invocar Edge Function",
@@ -537,14 +450,14 @@ var invoke_edge_function_default = defineTool13({
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   handler: async ({ name, payload, method }, ctx) => {
     if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
-    const { data: isAdmin, error: roleErr } = await sb13(ctx).rpc("has_role", {
+    const { data: isAdmin, error: roleErr } = await sb(ctx).rpc("has_role", {
       _user_id: ctx.getUserId(),
       _role: "admin"
     });
     if (roleErr) return { content: [{ type: "text", text: roleErr.message }], isError: true };
     if (!isAdmin) return { content: [{ type: "text", text: "Acesso negado: requer papel admin" }], isError: true };
-    const base = globalThis.process.env.SUPABASE_URL;
-    const apikey = globalThis.process.env.SUPABASE_PUBLISHABLE_KEY;
+    const base = getSupabaseConfig().supabaseUrl;
+    const apikey = getSupabaseConfig().supabasePublishableKey;
     const url = `${base}/functions/v1/${encodeURIComponent(name)}`;
     const m = method ?? "POST";
     const res = await fetch(url, {
@@ -562,7 +475,7 @@ var invoke_edge_function_default = defineTool13({
       body = JSON.parse(text);
     } catch {
     }
-    await sb13(ctx).from("auditoria").insert({
+    await sb(ctx).from("auditoria").insert({
       acao: "invoke_edge_function",
       entidade: "edge_function",
       resumo: `Invoca\xE7\xE3o de ${name} via MCP (Hermes)`,

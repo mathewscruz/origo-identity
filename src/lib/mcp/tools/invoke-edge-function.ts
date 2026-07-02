@@ -1,17 +1,7 @@
-import { createClient } from "@supabase/supabase-js";
 import { defineTool, type ToolContext } from "@lovable.dev/mcp-js";
+import { sb, getSupabaseConfig } from "../supabase-client";
 import { z } from "zod";
 
-function sb(ctx: ToolContext) {
-  return createClient(
-    (globalThis as any).process.env.SUPABASE_URL!,
-    (globalThis as any).process.env.SUPABASE_PUBLISHABLE_KEY!,
-    {
-      global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-      auth: { persistSession: false, autoRefreshToken: false },
-    },
-  );
-}
 
 export default defineTool({
   name: "invoke_edge_function",
@@ -35,8 +25,8 @@ export default defineTool({
     if (roleErr) return { content: [{ type: "text", text: roleErr.message }], isError: true };
     if (!isAdmin) return { content: [{ type: "text", text: "Acesso negado: requer papel admin" }], isError: true };
 
-    const base = (globalThis as any).process.env.SUPABASE_URL!;
-    const apikey = (globalThis as any).process.env.SUPABASE_PUBLISHABLE_KEY!;
+    const base = getSupabaseConfig().supabaseUrl;
+    const apikey = getSupabaseConfig().supabasePublishableKey;
     const url = `${base}/functions/v1/${encodeURIComponent(name)}`;
     const m = method ?? "POST";
     const res = await fetch(url, {
