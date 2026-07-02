@@ -2,6 +2,9 @@
 // To take ownership, delete this banner line; the plugin then leaves the file alone.
 // supabase function: mcp
 // Bundled from src/lib/mcp/index.ts by @lovable.dev/mcp-js.
+// <define:import.meta.env>
+var define_import_meta_env_default = { VITE_SUPABASE_PROJECT_ID: "jobopjhhxgcfanlhzlkc", VITE_SUPABASE_PUBLISHABLE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpvYm9wamhoeGdjZmFubGh6bGtjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NzMyMTcsImV4cCI6MjA4OTM0OTIxN30.Hj5rhgW0U4XfbkjTGO9swcQhlP25ArfX1lbzKOum7QQ", VITE_SUPABASE_URL: "https://jobopjhhxgcfanlhzlkc.supabase.co", MODE: "production", BASE_URL: "/", DEV: false, PROD: true, SSR: false };
+
 // src/lib/mcp/index.ts
 import { auth, defineMcp } from "npm:@lovable.dev/mcp-js@0.20.0";
 
@@ -10,17 +13,29 @@ import { defineTool } from "npm:@lovable.dev/mcp-js@0.20.0";
 
 // src/lib/mcp/supabase-client.ts
 import { createClient } from "npm:@supabase/supabase-js@^2.110.0";
-var supabaseUrl = "https://jobopjhhxgcfanlhzlkc.supabase.co";
-var supabasePublishableKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpvYm9wamhoeGdjZmFubGh6bGtjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NzMyMTcsImV4cCI6MjA4OTM0OTIxN30.Hj5rhgW0U4XfbkjTGO9swcQhlP25ArfX1lbzKOum7QQ";
+var FALLBACK_SUPABASE_URL = "https://jobopjhhxgcfanlhzlkc.supabase.co";
+var FALLBACK_SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpvYm9wamhoeGdjZmFubGh6bGtjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NzMyMTcsImV4cCI6MjA4OTM0OTIxN30.Hj5rhgW0U4XfbkjTGO9swcQhlP25ArfX1lbzKOum7QQ";
+function runtimeEnv() {
+  const metaEnv = define_import_meta_env_default ?? {};
+  const denoEnv = globalThis.Deno?.env;
+  return {
+    ...metaEnv,
+    SUPABASE_URL: metaEnv.SUPABASE_URL ?? denoEnv?.get?.("SUPABASE_URL"),
+    SUPABASE_PUBLISHABLE_KEY: metaEnv.SUPABASE_PUBLISHABLE_KEY ?? denoEnv?.get?.("SUPABASE_PUBLISHABLE_KEY")
+  };
+}
 function getSupabaseConfig() {
+  const env = runtimeEnv();
+  const supabaseUrl = env.VITE_SUPABASE_URL ?? env.SUPABASE_URL ?? FALLBACK_SUPABASE_URL;
+  const supabasePublishableKey = env.VITE_SUPABASE_PUBLISHABLE_KEY ?? env.SUPABASE_PUBLISHABLE_KEY ?? FALLBACK_SUPABASE_PUBLISHABLE_KEY;
   if (!supabaseUrl || !supabasePublishableKey) {
     throw new Error("Supabase environment is not configured for MCP tools");
   }
   return { supabaseUrl, supabasePublishableKey };
 }
 function sb(ctx) {
-  const { supabaseUrl: supabaseUrl2, supabasePublishableKey: supabasePublishableKey2 } = getSupabaseConfig();
-  return createClient(supabaseUrl2, supabasePublishableKey2, {
+  const { supabaseUrl, supabasePublishableKey } = getSupabaseConfig();
+  return createClient(supabaseUrl, supabasePublishableKey, {
     global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
     auth: { persistSession: false, autoRefreshToken: false }
   });
