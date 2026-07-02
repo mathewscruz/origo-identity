@@ -64,6 +64,7 @@ const App = () => (
             <Route path="/login" element={<LoginPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/.lovable/oauth/consent" element={<OAuthConsentPage />} />
+            <Route path="/auth/oauth/consent" element={<OAuthConsentPage />} />
             <Route path="/revisao-externa/:token" element={<RevisaoExternaPage />} />
             <Route path="/portal/login" element={<PortalLoginPage />} />
             <Route path="/portal" element={<PortalLayout />}>
