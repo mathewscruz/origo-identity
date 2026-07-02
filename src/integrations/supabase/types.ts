@@ -2289,6 +2289,11 @@ export type Database = {
       }
     }
     Functions: {
+      admin_exec_ddl: {
+        Args: { p_description?: string; p_sql: string }
+        Returns: string
+      }
+      admin_exec_sql: { Args: { p_sql: string }; Returns: Json }
       apply_reconcile_updates: {
         Args: { colab_updates?: Json; queue_updates?: Json }
         Returns: Json

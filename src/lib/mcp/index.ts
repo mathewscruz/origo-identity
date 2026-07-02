@@ -8,6 +8,10 @@ import startJmlEventTool from "./tools/start-jml-event";
 import listEventosJmlTool from "./tools/list-eventos-jml";
 import listAuditoriaTool from "./tools/list-auditoria";
 import listAlertasTool from "./tools/list-alertas";
+import runAdminSqlTool from "./tools/run-admin-sql";
+import applyMigrationTool from "./tools/apply-migration";
+import introspectSchemaTool from "./tools/introspect-schema";
+import invokeEdgeFunctionTool from "./tools/invoke-edge-function";
 
 // OAuth issuer MUST be the direct supabase.co host, built from project ref
 // (inlined at build time by Vite; import-safe for the manifest extractor).
@@ -16,9 +20,9 @@ const projectRef = import.meta.env.VITE_SUPABASE_PROJECT_ID ?? "project-ref-unse
 export default defineMcp({
   name: "origo-access-identity-mcp",
   title: "Órigo Access & Identity",
-  version: "0.1.0",
+  version: "0.2.0",
   instructions:
-    "Servidor MCP do Órigo Access & Identity (IGA para JML da Órigo Energia). Ferramentas permitem consultar colaboradores, terceiros, eventos JML, fila IAM, auditoria e alertas; iniciar eventos JML; aprovar/cancelar itens da fila IAM. Todas as ações executam como o usuário autenticado via OAuth e respeitam RLS/pápeis. Prefira sempre buscar contexto antes de agir e registre motivo claro em ações destrutivas.",
+    "Servidor MCP do Órigo Access & Identity (IGA para JML da Órigo Energia). Ferramentas de negócio permitem consultar colaboradores, terceiros, eventos JML, fila IAM, auditoria e alertas; iniciar eventos JML; aprovar/cancelar itens da fila IAM. Ferramentas admin (run_admin_sql, apply_migration, introspect_schema, invoke_edge_function) exigem papel admin e são auditadas — use com cautela e sempre com motivo claro. Todas as ações executam como o usuário autenticado via OAuth e respeitam RLS/papéis.",
   auth: auth.oauth.issuer({
     issuer: `https://${projectRef}.supabase.co/auth/v1`,
     acceptedAudiences: "authenticated",
@@ -33,5 +37,10 @@ export default defineMcp({
     listEventosJmlTool,
     listAuditoriaTool,
     listAlertasTool,
+    // Admin (requer papel admin)
+    runAdminSqlTool,
+    applyMigrationTool,
+    introspectSchemaTool,
+    invokeEdgeFunctionTool,
   ],
 });
