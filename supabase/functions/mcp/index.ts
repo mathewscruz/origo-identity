@@ -505,12 +505,63 @@ var invoke_edge_function_default = defineTool13({
   }
 });
 
+// src/lib/mcp/tools/health-check.ts
+import { defineTool as defineTool14 } from "npm:@lovable.dev/mcp-js@0.20.0";
+function safeMessage(error) {
+  if (error instanceof Error) return `${error.name}: ${error.message}`;
+  return String(error);
+}
+var health_check_default = defineTool14({
+  name: "health_check",
+  title: "Diagn\xF3stico MCP",
+  description: "Diagn\xF3stico read-only do MCP \xD3rigo: valida autentica\xE7\xE3o, config Supabase e uma consulta m\xEDnima sem expor tokens.",
+  inputSchema: {},
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async (_input, ctx) => {
+    const result = {
+      authenticated: ctx.isAuthenticated(),
+      user_id_present: Boolean(ctx.getUserId()),
+      user_email: ctx.getUserEmail() ?? null,
+      scopes: ctx.getScopes() ?? null,
+      client_id_present: Boolean(ctx.getClientId()),
+      claims_keys: Object.keys(ctx.getClaims() ?? {}).sort()
+    };
+    try {
+      const cfg = getSupabaseConfig();
+      result.supabase_url_present = Boolean(cfg.supabaseUrl);
+      result.supabase_url_host = new URL(cfg.supabaseUrl).host;
+      result.supabase_key_present = Boolean(cfg.supabasePublishableKey);
+      result.supabase_key_length = cfg.supabasePublishableKey.length;
+    } catch (error) {
+      result.config_error = safeMessage(error);
+    }
+    try {
+      const client = sb(ctx);
+      const { data: roleData, error: roleError } = await client.rpc("has_role", {
+        _user_id: ctx.getUserId(),
+        _role: "admin"
+      });
+      result.has_role_admin = roleError ? null : roleData;
+      result.has_role_error = roleError?.message ?? null;
+      const { count, error: queryError } = await client.from("colaboradores").select("id", { count: "exact", head: true });
+      result.colaboradores_count = queryError ? null : count;
+      result.colaboradores_error = queryError?.message ?? null;
+    } catch (error) {
+      result.query_exception = safeMessage(error);
+    }
+    return {
+      content: [{ type: "text", text: JSON.stringify(result) }],
+      structuredContent: result
+    };
+  }
+});
+
 // src/lib/mcp/index.ts
 var projectRef = "jobopjhhxgcfanlhzlkc";
 var mcp_default = defineMcp({
   name: "origo-access-identity-mcp",
   title: "\xD3rigo Access & Identity",
-  version: "0.2.0",
+  version: "0.2.1",
   instructions: "Servidor MCP do \xD3rigo Access & Identity (IGA para JML da \xD3rigo Energia). Ferramentas de neg\xF3cio permitem consultar colaboradores, terceiros, eventos JML, fila IAM, auditoria e alertas; iniciar eventos JML; aprovar/cancelar itens da fila IAM. Ferramentas admin (run_admin_sql, apply_migration, introspect_schema, invoke_edge_function) exigem papel admin e s\xE3o auditadas \u2014 use com cautela e sempre com motivo claro. Todas as a\xE7\xF5es executam como o usu\xE1rio autenticado via OAuth e respeitam RLS/pap\xE9is.",
   auth: auth.oauth.issuer({
     issuer: `https://${projectRef}.supabase.co/auth/v1`,
@@ -530,7 +581,8 @@ var mcp_default = defineMcp({
     run_admin_sql_default,
     apply_migration_default,
     introspect_schema_default,
-    invoke_edge_function_default
+    invoke_edge_function_default,
+    health_check_default
   ]
 });
 
