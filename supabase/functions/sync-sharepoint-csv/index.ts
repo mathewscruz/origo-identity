@@ -542,7 +542,37 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       const existing = existingMap.get(mat);
 
       if (!existing) {
-        toInsert.push(buildColabData(row));
+        // Antes de inserir, tentar VINCULAR a um colaborador manual pré-existente
+        // (Novo Colaborador criado direto no AD). Ordem: CPF → e-mail → SAM → matrícula.
+        const rowCpf = (row.Cadastro_Pessoa_Fisica || "").replace(/\D/g, "");
+        const rowMail = (row.mail || "").trim().toLowerCase();
+        const rowSam = rowMail.includes("@") ? rowMail.split("@")[0] : mat.toLowerCase();
+        let via: "cpf" | "email" | "sam" | "matricula" | null = null;
+        let manualHit: ManualIdx | undefined;
+        if (rowCpf && manualByCpf.has(rowCpf)) { manualHit = manualByCpf.get(rowCpf); via = "cpf"; }
+        else if (rowMail && manualByMail.has(rowMail)) { manualHit = manualByMail.get(rowMail); via = "email"; }
+        else if (rowSam && manualBySam.has(rowSam)) { manualHit = manualBySam.get(rowSam); via = "sam"; }
+        else if (mat && manualByMatricula.has(mat)) { manualHit = manualByMatricula.get(mat); via = "matricula"; }
+
+        if (manualHit && via) {
+          const built = buildColabData(row);
+          // Preservar override manual de status, se ativo
+          if (overrideColabIds.has(manualHit.id) && built.status !== manualHit.status) {
+            const ov = overrideByColabId.get(manualHit.id)!;
+            manualOverridePreserved.push({
+              colab_id: manualHit.id, matricula: mat, tipo_excecao: ov.tipo_excecao,
+              kept_status: manualHit.status, csv_status: built.status, action: "status_preserved",
+            });
+            built.status = manualHit.status;
+          }
+          manualLinked.push({ colab_id: manualHit.id, matricula: mat, via, previous_status: manualHit.status });
+          // origem já vem "csv" via buildColabData → migra ownership para o RH
+          toUpdate.push({ id: manualHit.id, data: built, oldCargoId: manualHit.cargo_id, oldStatus: manualHit.status, oldSam: manualHit.sam_account_name });
+          // Registrar no existingMap para evitar tratamento como leaver e futura duplicação
+          existingMap.set(mat, { id: manualHit.id, fingerprint: "", cargo_id: manualHit.cargo_id, sam_account_name: manualHit.sam_account_name, status: manualHit.status });
+        } else {
+          toInsert.push(buildColabData(row));
+        }
       } else if (existing.fingerprint !== fp) {
         const built = buildColabData(row);
         // Manual override protection: preserve the current IAM status; RH/SharePoint cannot overwrite it.
@@ -559,6 +589,10 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         unchanged++;
       }
     }
+    if (manualLinked.length > 0) {
+      console.log(`[manual-link] linked=${manualLinked.length} (via cpf=${manualLinked.filter(m => m.via === "cpf").length}, email=${manualLinked.filter(m => m.via === "email").length}, sam=${manualLinked.filter(m => m.via === "sam").length}, matricula=${manualLinked.filter(m => m.via === "matricula").length})`);
+    }
+
 
     const leaverIds: string[] = [];
     const leaverMatriculas: string[] = [];
