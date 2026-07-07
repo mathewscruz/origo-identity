@@ -257,9 +257,27 @@ def call_ad_ldap(action: str, payload: Dict[str, Any], execute: bool, target_ide
         ok = conn.add(dn, attributes=attrs)
         if not ok:
             return {"status": "failed", "error_code": "ad_create_failed", "result_message": f"Falha ao criar usuário AD: {conn.result}"[:300]}
-        if not _ad_find_user(conn, base_dn, str(sam)):
+        created_dn = _ad_find_user(conn, base_dn, str(sam))
+        if not created_dn:
             return {"status": "failed", "error_code": "ad_create_postcheck_failed", "result_message": "Pós-checagem AD: usuário criado não encontrado."}
-        return {"status": "success", "result_message": "Usuário AD criado desabilitado e validado via LDAP."}
+
+        initial_password = payload.get("initialPassword") or os.environ.get("AD_INITIAL_PASSWORD") or os.environ.get("ORIGO_AD_INITIAL_PASSWORD")
+        if initial_password:
+            # AD requires unicodePwd quoted and UTF-16-LE; most domains require LDAPS/secure channel.
+            encoded_password = ('"' + str(initial_password) + '"').encode('utf-16-le')
+            pwd_ok = conn.modify(created_dn, {"unicodePwd": [(MODIFY_REPLACE, [encoded_password])]})
+            if not pwd_ok:
+                return {"status": "failed", "error_code": "ad_password_set_failed", "result_message": f"Usuário AD criado, mas falha ao definir senha inicial; ação manual/LDAPS necessária: {conn.result}"[:300]}
+            enable_ok = conn.modify(created_dn, {"userAccountControl": [(MODIFY_REPLACE, [512])]})
+            if not enable_ok:
+                return {"status": "failed", "error_code": "ad_enable_after_password_failed", "result_message": f"Senha inicial definida, mas falha ao habilitar usuário AD: {conn.result}"[:300]}
+            conn.search(created_dn, "(objectClass=*)", attributes=["userAccountControl"])
+            after_uac = int(conn.entries[0].userAccountControl.value or 0) if conn.entries else 0
+            if after_uac & 2:
+                return {"status": "failed", "error_code": "ad_enable_postcheck_failed", "result_message": "Pós-checagem AD: usuário ainda está desabilitado após senha inicial."}
+            return {"status": "success", "result_message": "Usuário AD criado, senha inicial definida e conta habilitada via LDAP."}
+
+        return {"status": "success", "result_message": "Usuário AD criado desabilitado e validado via LDAP; senha inicial não configurada no agente."}
     finally:
         try:
             conn.unbind()
