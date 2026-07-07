@@ -65,9 +65,10 @@ export async function generateEntraQueueForDiff(
     addedAppIds: string[];
     removedAppIds: string[];
   },
-  opts?: { triggerImmediately?: boolean }
+  opts?: { triggerImmediately?: boolean; requestedBy?: string }
 ): Promise<number> {
   if (colabs.length === 0) return 0;
+
 
   const hasDiff =
     diff.addedGrupoIds.length + diff.removedGrupoIds.length +
@@ -104,10 +105,11 @@ export async function generateEntraQueueForDiff(
 
     const base = {
       target_identity: identity,
-      requested_by: "sistema",
+      requested_by: opts?.requestedBy ?? "sistema",
       colaborador_id: colab.id,
       status: "pending",
     };
+
 
     for (const gid of diff.addedGrupoIds) {
       const grp = grupoMap.get(gid);
