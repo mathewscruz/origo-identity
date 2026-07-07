@@ -851,12 +851,12 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     await sb.from("sync_jobs").update({
       status: "done", phase: "done", colab_percent: 100,
       colab_created: created, colab_updated: updated, colab_quarentena: leaverMatriculas.length,
-      message: `Concluído: bruto=${rawTotalRows}, canônico=${totalRows}, dedupe=${dedupe.removedRows} (grupos=${dedupe.duplicateGroups}), ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos (${silentCount} silenciosos), ${weakProtection.protectedRows} protegidos (identidade fraca), ${manualOverridePreserved.length} overrides manuais preservados (${overrideStatusCount} status, ${overrideLeaverSkip} não-removidos)`,
+      message: `Concluído: bruto=${rawTotalRows}, canônico=${totalRows}, dedupe=${dedupe.removedRows} (grupos=${dedupe.duplicateGroups}), ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos (${silentCount} silenciosos), ${weakProtection.protectedRows} protegidos (identidade fraca), ${manualOverridePreserved.length} overrides manuais preservados (${overrideStatusCount} status, ${overrideLeaverSkip} não-removidos), ${manualLinked.length} vinculados a colaboradores manuais`,
     }).eq("id", jobId);
 
     await sb.from("auditoria").insert({
       entidade: "importacao_csv", acao: "importar",
-      resumo: `CSV SharePoint: bruto=${rawTotalRows} → canônico=${totalRows} · ${created} novos, ${updated} atualizados, ${leaverMatriculas.length} removidos · ${weakProtection.protectedRows} protegidos · ${manualOverridePreserved.length} overrides manuais preservados`,
+      resumo: `CSV SharePoint: bruto=${rawTotalRows} → canônico=${totalRows} · ${created} novos, ${updated} atualizados, ${leaverMatriculas.length} removidos · ${weakProtection.protectedRows} protegidos · ${manualOverridePreserved.length} overrides preservados · ${manualLinked.length} vinculados a manuais`,
       detalhes: {
         filename, jobId,
         rawTotalRows, totalRows,
@@ -874,9 +874,18 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
           leaver_skipped: overrideLeaverSkip,
           samples: manualOverridePreserved.slice(0, 20),
         },
+        manual_link: {
+          total: manualLinked.length,
+          by_cpf: manualLinked.filter(m => m.via === "cpf").length,
+          by_email: manualLinked.filter(m => m.via === "email").length,
+          by_sam: manualLinked.filter(m => m.via === "sam").length,
+          by_matricula: manualLinked.filter(m => m.via === "matricula").length,
+          samples: manualLinked.slice(0, 20),
+        },
         created, updated, unchanged, removed: leaverMatriculas.length,
       },
     });
+
 
     return {
       success: true, jobId, file: filename,
