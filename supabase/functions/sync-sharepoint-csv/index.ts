@@ -437,8 +437,11 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
     function buildColabData(row: CsvRow) {
       const statusMapped = STATUS_MAP[(row.status || "ativo").toLowerCase()] || "ativo";
-      const email = row.mail || "";
-      const samAccountName = email.includes("@") ? email.split("@")[0] : (row.employID || "").trim();
+      const protectedRow = row["__weak_identity_protected"] === "true";
+      const email = protectedRow ? "" : (row.mail || "");
+      const samAccountName = protectedRow
+        ? null
+        : (email.includes("@") ? email.split("@")[0] : (row.employID || "").trim());
       return {
         nome: row.displayName, email: email || null, matricula: row.employID.trim(),
         cpf: row.Cadastro_Pessoa_Fisica || null,
