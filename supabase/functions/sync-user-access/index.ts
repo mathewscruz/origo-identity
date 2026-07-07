@@ -231,11 +231,13 @@ Deno.serve(async (req) => {
         console.warn(`No local group matches. First 5 Entra group names: ${userGroups.slice(0, 5).map(g => `${g.displayName} (${g.id})`).join(", ")}`);
       }
       for (const lg of localGroups) {
+        const src = userGroups.find(g => g.id === lg.entra_id);
         const payload = {
           displayName: colab.nome,
           mail: colab.email || "",
           groupId: lg.entra_id,
           groupName: lg.nome,
+          onPremisesSync: !!src?.onPremisesSyncEnabled,
         };
         const key = queueKey("assign_group", payload);
         if (existingKeys.has(key)) continue;
