@@ -774,15 +774,17 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     }
 
     // ── Finalize ──
+    const overrideStatusCount = manualOverridePreserved.filter(m => m.action === "status_preserved").length;
+    const overrideLeaverSkip = manualOverridePreserved.filter(m => m.action === "leaver_skipped").length;
     await sb.from("sync_jobs").update({
       status: "done", phase: "done", colab_percent: 100,
       colab_created: created, colab_updated: updated, colab_quarentena: leaverMatriculas.length,
-      message: `Concluído: bruto=${rawTotalRows}, canônico=${totalRows}, dedupe=${dedupe.removedRows} (grupos=${dedupe.duplicateGroups}), ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos (${silentCount} silenciosos), ${weakProtection.protectedRows} protegidos (identidade fraca)`,
+      message: `Concluído: bruto=${rawTotalRows}, canônico=${totalRows}, dedupe=${dedupe.removedRows} (grupos=${dedupe.duplicateGroups}), ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos (${silentCount} silenciosos), ${weakProtection.protectedRows} protegidos (identidade fraca), ${manualOverridePreserved.length} overrides manuais preservados (${overrideStatusCount} status, ${overrideLeaverSkip} não-removidos)`,
     }).eq("id", jobId);
 
     await sb.from("auditoria").insert({
       entidade: "importacao_csv", acao: "importar",
-      resumo: `CSV SharePoint: bruto=${rawTotalRows} → canônico=${totalRows} · ${created} novos, ${updated} atualizados, ${leaverMatriculas.length} removidos · ${weakProtection.protectedRows} protegidos`,
+      resumo: `CSV SharePoint: bruto=${rawTotalRows} → canônico=${totalRows} · ${created} novos, ${updated} atualizados, ${leaverMatriculas.length} removidos · ${weakProtection.protectedRows} protegidos · ${manualOverridePreserved.length} overrides manuais preservados`,
       detalhes: {
         filename, jobId,
         rawTotalRows, totalRows,
@@ -793,6 +795,12 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         weak_identity_protection: {
           protected_rows: weakProtection.protectedRows,
           samples: weakProtection.samples,
+        },
+        manual_override_preserved: {
+          total: manualOverridePreserved.length,
+          status_preserved: overrideStatusCount,
+          leaver_skipped: overrideLeaverSkip,
+          samples: manualOverridePreserved.slice(0, 20),
         },
         created, updated, unchanged, removed: leaverMatriculas.length,
       },
@@ -807,6 +815,12 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       weak_identity_protection: {
         protected_rows: weakProtection.protectedRows,
         samples: weakProtection.samples,
+      },
+      manual_override_preserved: {
+        total: manualOverridePreserved.length,
+        status_preserved: overrideStatusCount,
+        leaver_skipped: overrideLeaverSkip,
+        samples: manualOverridePreserved.slice(0, 20),
       },
       created, updated, unchanged, removed: leaverMatriculas.length, total: totalRows,
     };
