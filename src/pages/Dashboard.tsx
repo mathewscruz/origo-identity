@@ -76,7 +76,7 @@ function useKpiCounts() {
     queryKey: ["dashboard_kpis"],
     queryFn: async () => {
       const [colabs, terceiros, apps, perfis, solicit, filaPending, filaWaiting, alertas] = await Promise.all([
-        supabase.from("colaboradores").select("id", { count: "exact", head: true }).neq("status", "inativo"),
+        supabase.from("colaboradores").select("id", { count: "exact", head: true }).not("status", "in", "(inativo,desligado)"),
         supabase.from("terceiros").select("id", { count: "exact", head: true }).eq("ativo", true),
         supabase.from("aplicacoes").select("id", { count: "exact", head: true }),
         supabase.from("perfis_acesso").select("id", { count: "exact", head: true }).eq("ativo", true),
