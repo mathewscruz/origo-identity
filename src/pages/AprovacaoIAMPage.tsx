@@ -165,6 +165,49 @@ function DivergenceCell({ item }: { item: any }) {
     );
   }
 
+  // 1b) Sync status a partir do AD (agente reconciliador)
+  if (a === "sync_status_from_ad") {
+    const iam = String(p.iam_status ?? p.status_anterior ?? "?").toLowerCase();
+    const ad = String(p.ad_status ?? "?").toLowerCase();
+    const target = String(p.target_status ?? p.status_novo ?? "?").toLowerCase();
+    const tone = (v: string) => v === "ativo" ? "text-emerald-700" : v === "inativo" || v === "desligado" ? "text-red-700" : "text-muted-foreground";
+    const colabs: any[] = Array.isArray(p.colaboradores) ? p.colaboradores : [];
+    const c0 = colabs[0];
+    const extra = colabs.length > 1 ? ` +${colabs.length - 1} duplicado(s)` : "";
+    const dn: string = p.matched_ad?.[0]?.dn || "";
+    const ouMatch = dn.match(/OU=([^,]+)/i);
+    const ou = ouMatch ? ouMatch[1] : null;
+    const ouCritical = ou && /bloquead|disabled/i.test(ou);
+    return (
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="outline" className="text-xs bg-amber-100 text-amber-800 border-amber-200 w-fit">
+            <AlertTriangle className="h-3 w-3 mr-1" /> Status divergente
+          </Badge>
+          <span className="text-xs">
+            Base IAM: <strong className={tone(iam)}>{iam}</strong>
+            {" ≠ "}
+            AD: <strong className={tone(ad)}>{ad}</strong>
+            {" → aplicar: "}
+            <strong className={tone(target)}>{target}</strong>
+          </span>
+        </div>
+        {c0 && (
+          <span className="text-xs text-muted-foreground">
+            {c0.nome}{c0.matricula ? ` · mat. ${c0.matricula}` : ""}{c0.origem ? ` · ${String(c0.origem).toUpperCase()}` : ""}{extra}
+          </span>
+        )}
+        {ou && (
+          ouCritical ? (
+            <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-red-100 text-red-800 border-red-200 w-fit">OU: {ou}</Badge>
+          ) : (
+            <span className="text-[11px] text-muted-foreground">OU: {ou}</span>
+          )
+        )}
+      </div>
+    );
+  }
+
   // 2) Conta órfã
   if (a === "review_orphan_entra") {
     const created = p.createdDateTime ? new Date(p.createdDateTime).toLocaleDateString("pt-BR") : null;
