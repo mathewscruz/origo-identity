@@ -65,9 +65,10 @@ export async function generateEntraQueueForDiff(
     addedAppIds: string[];
     removedAppIds: string[];
   },
-  opts?: { triggerImmediately?: boolean }
+  opts?: { triggerImmediately?: boolean; requestedBy?: string }
 ): Promise<number> {
   if (colabs.length === 0) return 0;
+
 
   const hasDiff =
     diff.addedGrupoIds.length + diff.removedGrupoIds.length +
