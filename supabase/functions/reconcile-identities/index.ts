@@ -600,20 +600,21 @@ async function runReconciliation(sb: any, jobId: string) {
       }
       const missingLeavers = desligados.filter((c) => !existingLeavers.has(c.id));
 
-      if (missingLeavers.length > 0) {
-        // Índice do queue existente (por colaborador_id) para evitar duplicar itens abertos
-        const missingIds = missingLeavers.map((c) => c.id);
-        const openByColab = new Set<string>();
-        for (const batch of chunk(missingIds, 500)) {
-          const { data: qs } = await sb
-            .from("iam_queue")
-            .select("colaborador_id, action_type")
-            .in("colaborador_id", batch)
-            .in("action_type", ["disable", "disable_entra"])
-            .in("status", ["pending", "waiting_approval", "processing"]);
-          for (const q of qs || []) openByColab.add(`${q.colaborador_id}|${q.action_type}`);
-        }
+      // Índice do queue existente (por colaborador_id) para evitar duplicar itens abertos
+      // — cobre TODOS os desligados/inativos, não só os sem evento leaver.
+      const desligIdsAll = desligados.map((c) => c.id);
+      const openByColab = new Set<string>();
+      for (const batch of chunk(desligIdsAll, 500)) {
+        const { data: qs } = await sb
+          .from("iam_queue")
+          .select("colaborador_id, action_type")
+          .in("colaborador_id", batch)
+          .in("action_type", ["disable", "disable_entra"])
+          .in("status", ["pending", "waiting_approval", "processing"]);
+        for (const q of qs || []) openByColab.add(`${q.colaborador_id}|${q.action_type}`);
+      }
 
+      if (missingLeavers.length > 0) {
         const leaverEvents = missingLeavers.map((c) => ({
           tipo: "leaver",
           colaborador_id: c.id,
@@ -633,78 +634,71 @@ async function runReconciliation(sb: any, jobId: string) {
             stats.leavers_generated++;
           }
         }
-
-        await updateJob(sb, jobId, {
-          phase: "enfileirando_disable",
-          message: `Analisando ${missingLeavers.length} desligados contra Entra ID…`,
-          users_percent: 85,
-        });
-
-        // Cross-check cada desligado contra o índice do Entra ID
-        const disableEntries: any[] = [];
-        for (const c of missingLeavers) {
-          const entraMatch = resolveEntraMatch(c, entraIdx);
-
-          // Decisão para Entra ID
-          if (!entraMatch) {
-            stats.skipped_no_entra++;
-          } else if (!entraMatch.accountEnabled) {
-            stats.skipped_already_disabled++;
-          } else if (!openByColab.has(`${c.id}|disable_entra`)) {
-            disableEntries.push({
-              action_type: "disable_entra",
-              payload_json: { samAccountName: c.sam_account_name, displayName: c.nome, mail: c.email || "" },
-              target_identity: c.sam_account_name || entraMatch.upn || c.email,
-              colaborador_id: c.id, requested_by: "reconciliacao", status: "pending",
-            });
-            stats.disable_entra_enqueued++;
-          }
-
-          // Decisão para AD: só enfileira `disable` quando o Entra confirma que a
-          // conta é sincronizada on-prem (onPremisesSyncEnabled=true). Se o colab
-          // não tem match no Entra, NÃO presumimos que ele existe no AD — o
-          // sam_account_name aqui vem derivado do e-mail em sync-csv-colab e não
-          // é prova de existência de conta AD. Ambiente Órigo é híbrido AD Connect
-          // → Entra, então todo AD real aparece no Entra; exceções raras podem ser
-          // tratadas manualmente via "Desabilitar AD" no detalhe do colaborador.
-          // Só enfileira se: on-prem sync + conta ainda accountEnabled=true no
-          // Entra (AD Connect propaga o estado do AD para o Entra, então
-          // accountEnabled=false já indica AD desabilitado — não precisa novo disable).
-          const isOnPrem = entraMatch?.onPremisesSyncEnabled === true;
-          const adAlreadyDisabled = isOnPrem && entraMatch?.accountEnabled === false;
-          if (c.sam_account_name && isOnPrem && entraMatch?.accountEnabled === true && !openByColab.has(`${c.id}|disable`)) {
-            disableEntries.push({
-              action_type: "disable",
-              payload_json: {
-                samAccountName: c.sam_account_name, displayName: c.nome, mail: c.email || "",
-                status: "disabled", status_anterior: "ativo", status_novo: c.status,
-                changed_fields: ["status"], new_values: { status: "disabled" },
-              },
-              target_identity: c.sam_account_name,
-              colaborador_id: c.id, requested_by: "reconciliacao", status: "pending",
-            });
-            stats.disable_ad_enqueued++;
-          } else if (c.sam_account_name && adAlreadyDisabled) {
-            stats.skipped_ad_already_disabled++;
-          } else if (c.sam_account_name && !entraMatch) {
-            stats.skipped_ad_unknown++;
-          }
-        }
-
-        for (const batch of chunk(disableEntries, 200)) {
-          const { error: qerr } = await sb.from("iam_queue").insert(batch);
-          if (qerr) stats.errors.push(`insert iam_queue: ${qerr.message}`);
-          else stats.disable_enqueued += batch.length;
-        }
-
-        // 5a — Revogar acessos dos leavers (perfis + individuais entra_sync/manual)
-        await updateJob(sb, jobId, {
-          phase: "revogando_acessos",
-          message: `Revogando grupos/licenças/apps de ${missingLeavers.length} desligado(s)…`,
-          users_percent: 87,
-        });
-        await revokeLeaverAccess(sb, missingLeavers, stats, "reconciliacao");
       }
+
+      await updateJob(sb, jobId, {
+        phase: "enfileirando_disable",
+        message: `Analisando ${desligados.length} inativo(s)/desligado(s) contra Entra ID…`,
+        users_percent: 85,
+      });
+
+      // Cross-check TODOS os desligados/inativos contra o índice do Entra ID
+      const disableEntries: any[] = [];
+      for (const c of desligados) {
+        const entraMatch = resolveEntraMatch(c, entraIdx);
+
+        // Decisão para Entra ID
+        if (!entraMatch) {
+          stats.skipped_no_entra++;
+        } else if (!entraMatch.accountEnabled) {
+          stats.skipped_already_disabled++;
+        } else if (!openByColab.has(`${c.id}|disable_entra`)) {
+          disableEntries.push({
+            action_type: "disable_entra",
+            payload_json: { samAccountName: c.sam_account_name, displayName: c.nome, mail: c.email || "" },
+            target_identity: c.sam_account_name || entraMatch.upn || c.email,
+            colaborador_id: c.id, requested_by: "reconciliacao", status: "pending",
+          });
+          stats.disable_entra_enqueued++;
+        }
+
+        // Decisão para AD: só enfileira `disable` quando o Entra confirma que a
+        // conta é sincronizada on-prem (onPremisesSyncEnabled=true).
+        const isOnPrem = entraMatch?.onPremisesSyncEnabled === true;
+        const adAlreadyDisabled = isOnPrem && entraMatch?.accountEnabled === false;
+        if (c.sam_account_name && isOnPrem && entraMatch?.accountEnabled === true && !openByColab.has(`${c.id}|disable`)) {
+          disableEntries.push({
+            action_type: "disable",
+            payload_json: {
+              samAccountName: c.sam_account_name, displayName: c.nome, mail: c.email || "",
+              status: "disabled", status_anterior: "ativo", status_novo: c.status,
+              changed_fields: ["status"], new_values: { status: "disabled" },
+            },
+            target_identity: c.sam_account_name,
+            colaborador_id: c.id, requested_by: "reconciliacao", status: "pending",
+          });
+          stats.disable_ad_enqueued++;
+        } else if (c.sam_account_name && adAlreadyDisabled) {
+          stats.skipped_ad_already_disabled++;
+        } else if (c.sam_account_name && !entraMatch) {
+          stats.skipped_ad_unknown++;
+        }
+      }
+
+      for (const batch of chunk(disableEntries, 200)) {
+        const { error: qerr } = await sb.from("iam_queue").insert(batch);
+        if (qerr) stats.errors.push(`insert iam_queue: ${qerr.message}`);
+        else stats.disable_enqueued += batch.length;
+      }
+
+      // 5a — Revogar acessos de TODOS os desligados/inativos (perfis + individuais entra_sync/manual)
+      await updateJob(sb, jobId, {
+        phase: "revogando_acessos",
+        message: `Revogando grupos/licenças/apps de ${desligados.length} inativo(s)/desligado(s)…`,
+        users_percent: 87,
+      });
+      await revokeLeaverAccess(sb, desligados, stats, "reconciliacao");
+    }
     }
 
     // 5b/5c/5d — Cobertura completa: joiners faltantes, reativações e órfãos
