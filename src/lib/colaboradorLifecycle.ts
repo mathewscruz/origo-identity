@@ -37,8 +37,13 @@ export async function handleStatusChange(params: StatusChangeParams): Promise<{ 
   const sam = colab.sam_account_name || "";
   const identity = colab.email || sam || "";
 
-  // Check for active "manter_ativo" exception before deactivating
-  if (oldStatus === "ativo" && newStatus !== "ativo") {
+  const HARD_STATES = new Set(["inativo", "desligado"]);
+  const isHardTransition = HARD_STATES.has(newStatus) && !HARD_STATES.has(oldStatus);
+  const isSoftDeactivation = oldStatus === "ativo" && (newStatus === "ferias" || newStatus === "afastado");
+  const isDeactivation = isHardTransition || isSoftDeactivation;
+
+  // Check for active "manter_ativo" exception before hard deactivation (inclusive from ferias/afastado → inativo/desligado)
+  if (isHardTransition) {
     const today = new Date().toISOString().slice(0, 10);
     const { data: activeExcecoes } = await (supabase as any).from("excecoes")
       .select("id, justificativa, validade, solicitante")
