@@ -44,9 +44,9 @@ async function resolveEntraUser(token: string, email: string | null, sam: string
   return null;
 }
 
-interface EntraGroup { id: string; displayName: string; }
+interface EntraGroup { id: string; displayName: string; onPremisesSyncEnabled: boolean; }
 interface EntraLicense { skuId: string; }
-interface EntraAppRole { resourceId: string; resourceDisplayName: string; appRoleId: string; }
+interface EntraAppRole { assignmentId: string; resourceId: string; resourceDisplayName: string; appRoleId: string; principalId: string; }
 
 async function fetchUserGroups(token: string, userId: string): Promise<EntraGroup[]> {
   const headers = { Authorization: `Bearer ${token}` };
