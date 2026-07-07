@@ -60,13 +60,18 @@ const actionLabels: Record<string, string> = {
   disable_user_app: "Desabilitar em app externo",
   delete_user_app: "Excluir em app externo",
   review_orphan_entra: "Revisar conta órfã (Entra)",
+  sync_status_from_ad: "Sincronizar status ← AD",
 };
 
 function actionColor(action: string): string {
   if (action.startsWith("disable") || action.startsWith("remove") || action.startsWith("delete")) return "bg-red-100 text-red-800 border-red-200";
   if (action.startsWith("enable") || action.startsWith("create") || action.startsWith("assign")) return "bg-emerald-100 text-emerald-800 border-emerald-200";
+  if (action === "sync_status_from_ad") return "bg-amber-100 text-amber-800 border-amber-200";
   return "bg-blue-100 text-blue-800 border-blue-200";
 }
+
+const NOISY_KEYS = new Set(["rule", "scope", "changed_fields", "matched_ad", "colaboradores", "group_key"]);
+const NICE_KEYS = ["reason", "status_anterior", "status_novo", "target_status", "groupName", "licenseName", "skuPartNumber", "appName", "displayName", "mail", "dn"];
 
 function summarizePayload(p: any): string {
   if (!p || typeof p !== "object") return "—";
@@ -74,7 +79,9 @@ function summarizePayload(p: any): string {
   if (p.groupName) return p.groupName;
   if (p.licenseName || p.skuPartNumber) return p.licenseName || p.skuPartNumber;
   if (p.appName) return p.appName;
-  return Object.keys(p).slice(0, 3).join(", ");
+  const pairs = NICE_KEYS.filter((k) => p[k] !== undefined && p[k] !== null).map((k) => `${k}: ${p[k]}`);
+  if (pairs.length) return pairs.slice(0, 3).join(" · ");
+  return Object.keys(p).filter((k) => !NOISY_KEYS.has(k)).slice(0, 3).join(", ") || "—";
 }
 
 // ── Classificação de ações ─────────────────────────────────────────────
@@ -86,22 +93,29 @@ function isAdditive(action: string): boolean {
 }
 function actionScope(action: string): "AD" | "Entra" | "App externo" | "IAM" {
   if (action.endsWith("_user_app")) return "App externo";
-  if (action === "create" || action === "create_if_not_exists" || action === "update" || action === "disable" || action === "enable" || action === "delete") return "AD";
+  if (action === "create" || action === "create_if_not_exists" || action === "update" || action === "disable" || action === "enable" || action === "delete" || action === "sync_status_from_ad") return "AD";
   if (action.includes("entra") || action.startsWith("assign_") || action.startsWith("remove_")) return "Entra";
   return "IAM";
 }
 function isCritical(item: any): boolean {
   const a = item.action_type as string;
   const p = item.payload_json || {};
-  return isDestructive(a) || a === "review_orphan_entra" || p.reason === "status_divergence";
+  if (isDestructive(a) || a === "review_orphan_entra" || p.reason === "status_divergence") return true;
+  if (a === "sync_status_from_ad") return true;
+  return false;
 }
 function rowTone(item: any): string {
   const a = item.action_type as string;
   const p = item.payload_json || {};
   if (isDestructive(a)) return "bg-red-50/40 hover:bg-red-50/70 dark:bg-red-950/10";
   if (a === "review_orphan_entra" || p.reason === "status_divergence") return "bg-amber-50/40 hover:bg-amber-50/70 dark:bg-amber-950/10";
+  if (a === "sync_status_from_ad") {
+    const t = String(p.target_status || p.status_novo || "").toLowerCase();
+    if (t === "inativo" || t === "desligado") return "bg-amber-50/40 hover:bg-amber-50/70 dark:bg-amber-950/10";
+  }
   return "";
 }
+
 
 // Mini-badges de contexto (escopo + motivo/origem)
 function contextBadges(item: any): { label: string; tone: string }[] {
@@ -121,6 +135,7 @@ function contextBadges(item: any): { label: string; tone: string }[] {
   const reason = String(p.reason || "").toLowerCase();
   if (reason === "leaver" || req.includes("leaver")) out.push({ label: "Leaver", tone: "bg-red-100 text-red-800 border-red-200" });
   else if (reason === "pre_leaver" || reason === "pre-leaver" || req.includes("pre_leaver")) out.push({ label: "Pré-desligamento", tone: "bg-orange-100 text-orange-800 border-orange-200" });
+  else if (req === "origo_agent_ad_status_reconcile") out.push({ label: "Agente AD", tone: "bg-blue-100 text-blue-800 border-blue-200" });
   else if (req.includes("reconcile") || reason === "orphan_approved") out.push({ label: "Reconciliação", tone: "bg-blue-100 text-blue-800 border-blue-200" });
   else if (req.includes("jml")) out.push({ label: "JML", tone: "bg-emerald-100 text-emerald-800 border-emerald-200" });
   else if (req.includes("manual") || req.includes("user:")) out.push({ label: "Manual", tone: "bg-muted text-muted-foreground" });
@@ -146,6 +161,49 @@ function DivergenceCell({ item }: { item: any }) {
           <AlertTriangle className="h-3 w-3 mr-1" /> Status divergente
         </Badge>
         <span className="text-xs">Base: <strong>{base}</strong> · Entra: <strong>{entra}</strong> <span className={willDo.tone}>{willDo.text}</span></span>
+      </div>
+    );
+  }
+
+  // 1b) Sync status a partir do AD (agente reconciliador)
+  if (a === "sync_status_from_ad") {
+    const iam = String(p.iam_status ?? p.status_anterior ?? "?").toLowerCase();
+    const ad = String(p.ad_status ?? "?").toLowerCase();
+    const target = String(p.target_status ?? p.status_novo ?? "?").toLowerCase();
+    const tone = (v: string) => v === "ativo" ? "text-emerald-700" : v === "inativo" || v === "desligado" ? "text-red-700" : "text-muted-foreground";
+    const colabs: any[] = Array.isArray(p.colaboradores) ? p.colaboradores : [];
+    const c0 = colabs[0];
+    const extra = colabs.length > 1 ? ` +${colabs.length - 1} duplicado(s)` : "";
+    const dn: string = p.matched_ad?.[0]?.dn || "";
+    const ouMatch = dn.match(/OU=([^,]+)/i);
+    const ou = ouMatch ? ouMatch[1] : null;
+    const ouCritical = ou && /bloquead|disabled/i.test(ou);
+    return (
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="outline" className="text-xs bg-amber-100 text-amber-800 border-amber-200 w-fit">
+            <AlertTriangle className="h-3 w-3 mr-1" /> Status divergente
+          </Badge>
+          <span className="text-xs">
+            Base IAM: <strong className={tone(iam)}>{iam}</strong>
+            {" ≠ "}
+            AD: <strong className={tone(ad)}>{ad}</strong>
+            {" → aplicar: "}
+            <strong className={tone(target)}>{target}</strong>
+          </span>
+        </div>
+        {c0 && (
+          <span className="text-xs text-muted-foreground">
+            {c0.nome}{c0.matricula ? ` · mat. ${c0.matricula}` : ""}{c0.origem ? ` · ${String(c0.origem).toUpperCase()}` : ""}{extra}
+          </span>
+        )}
+        {ou && (
+          ouCritical ? (
+            <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-red-100 text-red-800 border-red-200 w-fit">OU: {ou}</Badge>
+          ) : (
+            <span className="text-[11px] text-muted-foreground">OU: {ou}</span>
+          )
+        )}
       </div>
     );
   }
