@@ -782,19 +782,33 @@ export default function AprovacaoIAMPage() {
                   </TableHeader>
                   <TableBody>
                     {filtered.map((it) => (
-                      <TableRow key={it.id} className="cursor-pointer" onClick={() => setDetailItem(it)}>
+                      <TableRow key={it.id} className={`cursor-pointer ${rowTone(it)}`} onClick={() => setDetailItem(it)}>
                         {tab === "waiting" && isAdmin && (
                           <TableCell onClick={(e) => e.stopPropagation()}>
                             <Checkbox checked={selected.has(it.id)} onCheckedChange={() => toggleOne(it.id)} />
                           </TableCell>
                         )}
                         <TableCell>
-                          <Badge variant="outline" className={`text-xs ${actionColor(it.action_type)}`}>
-                            {actionLabels[it.action_type] || it.action_type}
-                          </Badge>
+                          <div className="flex flex-wrap gap-1 items-center">
+                            <Badge variant="outline" className={`text-xs ${actionColor(it.action_type)}`}>
+                              {actionLabels[it.action_type] || it.action_type}
+                            </Badge>
+                            {contextBadges(it).map((b, i) => (
+                              <Badge key={i} variant="outline" className={`text-[10px] py-0 px-1.5 ${b.tone}`}>{b.label}</Badge>
+                            ))}
+                          </div>
                         </TableCell>
-                        <TableCell className="font-mono text-xs">{it.target_identity || "—"}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground max-w-xs truncate">{summarizePayload(it.payload_json)}</TableCell>
+                        <TableCell className="text-xs">
+                          <div className="font-mono">{it.target_identity || "—"}</div>
+                          {(it.payload_json?.displayName || it.payload_json?.mail) && (
+                            <div className="text-muted-foreground truncate max-w-[220px]">
+                              {it.payload_json?.displayName}{it.payload_json?.mail ? ` · ${it.payload_json.mail}` : ""}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="max-w-sm">
+                          <DivergenceCell item={it} />
+                        </TableCell>
                         <TableCell className="text-xs">{it.requested_by || "—"}</TableCell>
                         <TableCell className="text-xs">{new Date(it.created_at).toLocaleString("pt-BR")}</TableCell>
                         {tab === "history" && (
