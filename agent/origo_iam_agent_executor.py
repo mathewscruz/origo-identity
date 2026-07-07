@@ -293,6 +293,65 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
                 return {"status": "success", "result_message": "Removido do grupo (ou já não era membro)."}
             r.raise_for_status()
 
+        if action == "assign_app":
+            app_id = payload.get("appId")  # Application (client) ID do enterprise app
+            resource_id = payload.get("resourceId") or payload.get("servicePrincipalId")
+            role_id = payload.get("appRoleId") or "00000000-0000-0000-0000-000000000000"
+            if not (app_id or resource_id):
+                return {"status": "failed", "error_code": "invalid_payload",
+                        "result_message": "appId ou resourceId ausente"}
+            # Resolve servicePrincipal.id se veio só appId
+            if not resource_id:
+                sp = requests.get(f"{graph}/servicePrincipals",
+                                  params={"$filter": f"appId eq '{app_id}'", "$select": "id"},
+                                  headers=headers, timeout=30)
+                sp.raise_for_status()
+                vals = sp.json().get("value", [])
+                if not vals:
+                    return {"status": "failed", "error_code": "sp_not_found",
+                            "result_message": f"ServicePrincipal não encontrado para appId={app_id}"}
+                resource_id = vals[0]["id"]
+            r = requests.post(f"{graph}/users/{user_id}/appRoleAssignments", headers=headers,
+                              json={"principalId": user_id, "resourceId": resource_id, "appRoleId": role_id},
+                              timeout=30)
+            if r.status_code in (200, 201):
+                return {"status": "success",
+                        "result_message": f"App {payload.get('appName') or app_id} atribuído."}
+            if r.status_code == 400 and "already exists" in r.text.lower():
+                return {"status": "success", "result_message": "AppRoleAssignment já existia."}
+            r.raise_for_status()
+
+        if action == "remove_app":
+            app_id = payload.get("appId")
+            resource_id = payload.get("resourceId") or payload.get("servicePrincipalId")
+            assignment_id = payload.get("appRoleAssignmentId")
+            if not assignment_id:
+                # Localiza assignment do usuário para o SP alvo
+                if not resource_id and app_id:
+                    sp = requests.get(f"{graph}/servicePrincipals",
+                                      params={"$filter": f"appId eq '{app_id}'", "$select": "id"},
+                                      headers=headers, timeout=30)
+                    sp.raise_for_status()
+                    vals = sp.json().get("value", [])
+                    if vals:
+                        resource_id = vals[0]["id"]
+                if not resource_id:
+                    return {"status": "failed", "error_code": "invalid_payload",
+                            "result_message": "appId/resourceId ausente para remove_app"}
+                lst = requests.get(f"{graph}/users/{user_id}/appRoleAssignments",
+                                   headers=headers, timeout=30)
+                lst.raise_for_status()
+                match = next((a for a in lst.json().get("value", []) if a.get("resourceId") == resource_id), None)
+                if not match:
+                    return {"status": "success", "result_message": "Nenhum assignment ativo para este app."}
+                assignment_id = match["id"]
+            r = requests.delete(f"{graph}/users/{user_id}/appRoleAssignments/{assignment_id}",
+                                headers=headers, timeout=30)
+            if r.status_code in (200, 204, 404):
+                return {"status": "success",
+                        "result_message": f"App {payload.get('appName') or app_id} removido."}
+            r.raise_for_status()
+
     except requests.HTTPError as e:
         return {"status": "failed", "error_code": "graph_http_error",
                 "result_message": f"{e.response.status_code}: {e.response.text[:300]}"}
