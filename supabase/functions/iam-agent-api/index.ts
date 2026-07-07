@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { requireRole } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -27,12 +28,35 @@ function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
 
-function authorize(req: Request): boolean {
-  const expected = Deno.env.get("IAM_AGENT_TOKEN");
-  if (!expected) return false;
-  const auth = req.headers.get("Authorization");
-  if (!auth?.startsWith("Bearer ")) return false;
-  return auth.slice(7) === expected;
+/**
+ * Aceita duas formas de autenticação:
+ *  1. Bearer IAM_AGENT_TOKEN (agente/serviço) — comportamento legado preservado.
+ *  2. JWT Supabase de usuário autenticado com papel admin ou operador
+ *     (mesma lógica de requireRole usada nas demais Edge Functions protegidas).
+ */
+async function authorize(
+  req: Request
+): Promise<{ ok: true; method: "agent_token" | "user_jwt"; userId?: string } | { ok: false; response: Response }> {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return { ok: false, response: jsonResponse({ error: "Unauthorized" }, 401) };
+  }
+  const bearer = authHeader.slice(7).trim();
+
+  // 1) Match direto contra IAM_AGENT_TOKEN (constant-time-ish comparison)
+  const expected = Deno.env.get("IAM_AGENT_TOKEN") || "";
+  if (expected && bearer.length === expected.length) {
+    let diff = 0;
+    for (let i = 0; i < expected.length; i++) diff |= bearer.charCodeAt(i) ^ expected.charCodeAt(i);
+    if (diff === 0) return { ok: true, method: "agent_token" };
+  }
+
+  // 2) Fallback: JWT de usuário admin/operador
+  const roleCheck = await requireRole(req, ["admin", "operador"]);
+  if (roleCheck instanceof Response) {
+    return { ok: false, response: roleCheck };
+  }
+  return { ok: true, method: "user_jwt", userId: roleCheck.userId };
 }
 
 function calculateNextRetry(retryCount: number): string {
@@ -47,9 +71,9 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  if (!authorize(req)) {
-    return jsonResponse({ error: "Unauthorized" }, 401);
-  }
+  const authResult = await authorize(req);
+  if (!authResult.ok) return authResult.response;
+
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
