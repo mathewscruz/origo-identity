@@ -428,6 +428,12 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
         if status == 409 and "Directory_ConcurrencyViolation" in text:
             return {"status": "pending", "error_code": "graph_concurrency_violation",
                     "result_message": "Graph retornou Directory_ConcurrencyViolation; retry automático no próximo ciclo."}
+        if status == 400 and ("on-premises mastered" in text or "Directory Sync objects" in text):
+            return {"status": "failed", "error_code": "on_premises_managed",
+                    "result_message": "Grupo/objeto é sincronizado do AD local; alteração precisa ser feita na origem on-premises."}
+        if status == 403 and "Authorization_RequestDenied" in text:
+            return {"status": "failed", "error_code": "graph_insufficient_privileges",
+                    "result_message": "Graph negou a operação por privilégio insuficiente para este objeto/grupo. Verifique se é grupo privilegiado/role-assignable ou se exige permissão administrativa adicional."}
         return {"status": "failed", "error_code": "graph_http_error",
                 "result_message": f"{e.response.status_code}: {e.response.text[:300]}"}
     except Exception as e:  # noqa: BLE001

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { authedFetch } from "@/lib/authedFetch";
 import TablePagination, { usePagination } from "@/components/TablePagination";
 import { useParams, Link } from "react-router-dom";
@@ -64,6 +64,31 @@ export default function ColaboradorDetalhePage() {
   const { profile } = useAuth();
   const assignPerfil = useAssignPerfil();
   const revokePerfil = useRevokePerfil();
+  const lastBackgroundSyncColabId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!id || !pessoa || lastBackgroundSyncColabId.current === id) return;
+    lastBackgroundSyncColabId.current = id;
+
+    let cancelled = false;
+    void syncSingleUserAccess(id).then(async (res) => {
+      if (cancelled) return;
+      if (res.success) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["colab_individual_queue", id] }),
+          queryClient.invalidateQueries({ queryKey: ["iam_queue"] }),
+          queryClient.invalidateQueries({ queryKey: ["colaborador", id] }),
+        ]);
+        await queryClient.refetchQueries({ queryKey: ["colab_individual_queue", id] });
+      } else {
+        console.warn("[ColaboradorDetalhePage] background sync-user-access failed", res.message);
+      }
+    }).catch((err) => {
+      if (!cancelled) console.warn("[ColaboradorDetalhePage] background sync-user-access error", err);
+    });
+
+    return () => { cancelled = true; };
+  }, [id, pessoa, queryClient]);
 
 
   const [atribuirOpen, setAtribuirOpen] = useState(false);
@@ -272,8 +297,11 @@ export default function ColaboradorDetalhePage() {
       resumo: `${isImported ? "Remoção manual de acesso importado do Entra" : "Recurso individual"} "${resourceName}" para ${pessoa.nome}`,
       operador: profile?.email,
     });
-    triggerEntraProcessing();
-    queryClient.invalidateQueries({ queryKey: ["colab_individual_queue"] });
+    await triggerEntraProcessing(true);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["colab_individual_queue", id] }),
+      queryClient.invalidateQueries({ queryKey: ["iam_queue"] }),
+    ]);
   }
 
 

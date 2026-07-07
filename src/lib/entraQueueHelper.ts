@@ -252,7 +252,7 @@ export async function generateEntraQueueForDiff(
   }
 
   if (opts?.triggerImmediately !== false && queueEntries.length > 0) {
-    triggerEntraProcessing(true);
+    await triggerEntraProcessing(true);
   }
 
   return queueEntries.length;
@@ -406,7 +406,7 @@ export async function reprovisionCargoCollaborators(
   // Access is additive — only deactivation (leaver) removes Entra resources.
 
   if (totalQueued > 0) {
-    triggerEntraProcessing(true);
+    await triggerEntraProcessing(true);
   }
 
   return { queued: totalQueued, materialized, revoked };

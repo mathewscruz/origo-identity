@@ -796,7 +796,7 @@ export default function ColaboradoresPage() {
               setQuickAssignType(null);
               setQuickAssignColab(null);
               setQuickAssignValue("");
-              triggerEntraProcessing();
+              await triggerEntraProcessing(true);
             }}>Atribuir</Button>
           </DialogFooter>
         </DialogContent>
