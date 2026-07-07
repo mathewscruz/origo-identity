@@ -229,6 +229,7 @@ export default function AprovacaoIAMPage() {
   
   const [reconcileOpen, setReconcileOpen] = useState(false);
   const [page, setPage] = useState(0);
+  const [onlyCritical, setOnlyCritical] = useState(false);
 
   // Reset page when filters/tab change
   useEffect(() => { setPage(0); setSelected(new Set()); }, [tab, actionFilter, originFilter]);
