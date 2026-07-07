@@ -108,9 +108,9 @@ export async function handleStatusChange(params: StatusChangeParams): Promise<{ 
 
 
 
-  // ─── DEACTIVATION (ativo → anything else) ──────────────────────
-  if (oldStatus === "ativo" && newStatus !== "ativo") {
-    const isHardDisable = newStatus === "desligado" || newStatus === "inativo";
+  // ─── DEACTIVATION (any transition into inativo/desligado, or ativo → ferias/afastado) ─
+  if (isDeactivation) {
+    const isHardDisable = HARD_STATES.has(newStatus);
 
     // Reconcile with a prior preventive suspension (if any)
     const { data: colabRow } = await supabase
