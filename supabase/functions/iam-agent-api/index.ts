@@ -8,8 +8,20 @@ const corsHeaders = {
 
 const RETRYABLE_ERRORS = ["user_not_found", "user_not_synced", "not_found_in_entra", "replication_pending", "AD_AGENT_ERROR"];
 
-// Only AD local action types — Entra ID actions are processed by process-iam-queue
+// AD local action types — sempre expostos ao Órigo Agente (comportamento legado)
 const AD_LOCAL_ACTION_TYPES = ["create", "create_if_not_exists", "update", "disable", "delete"];
+
+// Modo agent_orchestrated: agente também executa Entra ID + apps externos
+const AGENT_ORCHESTRATED_ACTION_TYPES = [
+  ...AD_LOCAL_ACTION_TYPES,
+  "assign_group", "remove_group",
+  "assign_license", "remove_license",
+  "assign_app", "remove_app",
+  "disable_entra", "enable_entra",
+  "update_entra",
+  "create_user_app", "update_user_app",
+  "disable_user_app", "delete_user_app",
+];
 
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
