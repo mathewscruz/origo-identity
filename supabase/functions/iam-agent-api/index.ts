@@ -8,8 +8,20 @@ const corsHeaders = {
 
 const RETRYABLE_ERRORS = ["user_not_found", "user_not_synced", "not_found_in_entra", "replication_pending", "AD_AGENT_ERROR"];
 
-// Only AD local action types — Entra ID actions are processed by process-iam-queue
+// AD local action types — sempre expostos ao Órigo Agente (comportamento legado)
 const AD_LOCAL_ACTION_TYPES = ["create", "create_if_not_exists", "update", "disable", "delete"];
+
+// Modo agent_orchestrated: agente também executa Entra ID + apps externos
+const AGENT_ORCHESTRATED_ACTION_TYPES = [
+  ...AD_LOCAL_ACTION_TYPES,
+  "assign_group", "remove_group",
+  "assign_license", "remove_license",
+  "assign_app", "remove_app",
+  "disable_entra", "enable_entra",
+  "update_entra",
+  "create_user_app", "update_user_app",
+  "disable_user_app", "delete_user_app",
+];
 
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
@@ -60,17 +72,34 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: true, count: 0, data: [], mode: "simulacao" });
     }
 
+    // Read execution mode (agent_orchestrated → expõe também Entra/apps ao agente)
+    const { data: execModeParam } = await supabase
+      .from("parametros")
+      .select("valor")
+      .eq("chave", "iam_execution_mode")
+      .maybeSingle();
+    const executionMode = execModeParam?.valor === "agent_orchestrated" ? "agent_orchestrated" : "legacy";
+    const actionTypes = executionMode === "agent_orchestrated"
+      ? AGENT_ORCHESTRATED_ACTION_TYPES
+      : AD_LOCAL_ACTION_TYPES;
+
     const { data, error } = await supabase
       .from("iam_queue")
       .select("*")
       .eq("status", "pending")
-      .in("action_type", AD_LOCAL_ACTION_TYPES)
+      .in("action_type", actionTypes)
       .or("next_retry_at.is.null,next_retry_at.lte." + new Date().toISOString())
       .order("created_at", { ascending: true })
       .limit(10);
 
     if (error) return jsonResponse({ error: error.message }, 500);
-    return jsonResponse({ success: true, count: data.length, data });
+    return jsonResponse({
+      success: true,
+      count: data.length,
+      data,
+      execution_mode: executionMode,
+      action_types: actionTypes,
+    });
   }
 
   // POST /update
