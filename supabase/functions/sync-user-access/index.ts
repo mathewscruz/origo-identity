@@ -44,7 +44,7 @@ async function resolveEntraUser(token: string, email: string | null, sam: string
   return null;
 }
 
-interface EntraGroup { id: string; displayName: string; onPremisesSyncEnabled: boolean; }
+interface EntraGroup { id: string; displayName: string; onPremisesSyncEnabled: boolean; groupTypes?: string[]; membershipRule?: string | null; isAssignableToRole?: boolean | null; }
 interface EntraLicense { skuId: string; }
 interface EntraAppRole { assignmentId: string; resourceId: string; resourceDisplayName: string; appRoleId: string; principalId: string; }
 
@@ -56,7 +56,7 @@ async function fetchUserGroups(token: string, userId: string): Promise<EntraGrou
   // Import only direct memberOf groups. Transitive/nested groups appear in Entra
   // counts for effective access, but cannot be removed from the user directly;
   // they should be managed via the parent direct group instead.
-  let url: string | null = `https://graph.microsoft.com/v1.0/users/${userId}/memberOf/microsoft.graph.group?$select=id,displayName,onPremisesSyncEnabled&$top=999`;
+  let url: string | null = `https://graph.microsoft.com/v1.0/users/${userId}/memberOf/microsoft.graph.group?$select=id,displayName,onPremisesSyncEnabled,groupTypes,membershipRule,isAssignableToRole&$top=999`;
   while (url) {
     const currentUrl: string = url;
     const res: Response = await fetch(currentUrl, { headers });
@@ -68,7 +68,14 @@ async function fetchUserGroups(token: string, userId: string): Promise<EntraGrou
     for (const item of (data.value || [])) {
       if (!seen.has(item.id)) {
         seen.add(item.id);
-        groups.push({ id: item.id, displayName: item.displayName, onPremisesSyncEnabled: !!item.onPremisesSyncEnabled });
+        groups.push({
+          id: item.id,
+          displayName: item.displayName,
+          onPremisesSyncEnabled: !!item.onPremisesSyncEnabled,
+          groupTypes: item.groupTypes || [],
+          membershipRule: item.membershipRule || null,
+          isAssignableToRole: item.isAssignableToRole ?? null,
+        });
       }
     }
     url = data["@odata.nextLink"] || null;
@@ -178,10 +185,11 @@ Deno.serve(async (req) => {
     // If a resource exists in Entra now but its latest IAM row is a successful remove,
     // insert a fresh entra_sync assign row so the IAM screen reflects the current truth.
     const activeKeys = new Set<string>();
+    const currentKeys = new Set<string>();
+    const latestByKey = new Map<string, any>();
     {
       const PAGE = 1000;
       let from = 0;
-      const latestByKey = new Map<string, any>();
       while (true) {
         const { data: existing, error: exErr } = await sb
           .from("iam_queue")
@@ -223,7 +231,26 @@ Deno.serve(async (req) => {
         if (error) console.error("entra_grupos query error:", error.message);
         if (data) localGroups.push(...data);
       }
-      console.log(`Groups: ${userGroups.length} from Entra, ${localGroups.length} matched locally.`);
+      const matchedIds = new Set(localGroups.map((g: any) => g.entra_id));
+      const missingGroups = userGroups.filter(g => !matchedIds.has(g.id));
+      if (missingGroups.length > 0) {
+        const { data: insertedGroups, error: insErr } = await sb
+          .from("entra_grupos")
+          .upsert(
+            missingGroups.map(g => ({
+              entra_id: g.id,
+              nome: g.displayName || g.id,
+              descricao: "Importado automaticamente do Entra ID durante sync de usuário",
+              on_premises_sync: !!g.onPremisesSyncEnabled,
+              owner: "entra_sync",
+            })),
+            { onConflict: "entra_id" },
+          )
+          .select("id, entra_id, nome");
+        if (insErr) console.error("entra_grupos auto-upsert error:", insErr.message);
+        if (insertedGroups) localGroups.push(...insertedGroups);
+      }
+      console.log(`Groups: ${userGroups.length} from Entra, ${localGroups.length} matched/auto-cataloged locally.`);
       if (localGroups.length === 0 && userGroups.length > 0) {
         console.warn(`No local group matches. First 5 Entra group names: ${userGroups.slice(0, 5).map(g => `${g.displayName} (${g.id})`).join(", ")}`);
       }
@@ -235,8 +262,12 @@ Deno.serve(async (req) => {
           groupId: lg.entra_id,
           groupName: lg.nome,
           onPremisesSync: !!src?.onPremisesSyncEnabled,
+          dynamicMembership: !!src?.groupTypes?.includes("DynamicMembership"),
+          membershipRule: src?.membershipRule || null,
+          isAssignableToRole: src?.isAssignableToRole ?? null,
         };
         const key = queueKey("assign_group", payload);
+        currentKeys.add(key);
         if (activeKeys.has(key)) continue;
         queueEntries.push({
           action_type: "assign_group",
@@ -263,6 +294,7 @@ Deno.serve(async (req) => {
           licenseName: ll.nome,
         };
         const key = queueKey("assign_license", payload);
+        currentKeys.add(key);
         if (activeKeys.has(key)) continue;
         queueEntries.push({
           action_type: "assign_license",
@@ -293,6 +325,7 @@ Deno.serve(async (req) => {
           principalId: role?.principalId || entraUserId,
         };
         const key = queueKey("assign_app", payload);
+        currentKeys.add(key);
         if (activeKeys.has(key)) continue;
         queueEntries.push({
           action_type: "assign_app",
@@ -305,6 +338,32 @@ Deno.serve(async (req) => {
           payload_json: payload,
         });
       }
+    }
+
+    // Mark resources that were previously shown as active but are no longer present in Entra.
+    for (const [key, row] of latestByKey.entries()) {
+      if (!activeKeys.has(key) || currentKeys.has(key)) continue;
+      const actionType = row.action_type as string;
+      if (!actionType.startsWith("assign_")) continue;
+      const reverseAction = actionType === "assign_group"
+        ? "remove_group"
+        : actionType === "assign_license"
+          ? "remove_license"
+          : actionType === "assign_app"
+            ? "remove_app"
+            : null;
+      if (!reverseAction) continue;
+      const payload = typeof row.payload_json === "string" ? JSON.parse(row.payload_json) : row.payload_json;
+      queueEntries.push({
+        action_type: reverseAction,
+        target_identity: identity,
+        colaborador_id,
+        requested_by: "entra_sync",
+        status: "success",
+        processed_at: new Date().toISOString(),
+        result_message: "Correção de sync: recurso não está mais presente no Entra ID",
+        payload_json: { ...payload, syncCorrection: true, reason: "not_present_in_entra" },
+      });
     }
 
     // Insert only new entries

@@ -81,6 +81,23 @@ export default function IndividualAccessTabs({ individualQueue, getResourceName,
           const isManual = origem === "manual_individual";
           const payload = item.payload_json || {};
           const isOnPremGroup = item.action_type === "assign_group" && !!payload.onPremisesSync;
+          const isDynamicGroup = item.action_type === "assign_group" && !!payload.dynamicMembership;
+          const isRoleAssignableGroup = item.action_type === "assign_group" && !!payload.isAssignableToRole;
+          const isBlockedGroup = isOnPremGroup || isDynamicGroup || isRoleAssignableGroup;
+          const blockedLabel = isOnPremGroup
+            ? "Gerenciar no AD on-prem"
+            : isDynamicGroup
+              ? "Grupo dinâmico"
+              : isRoleAssignableGroup
+                ? "Grupo privilegiado"
+                : "";
+          const blockedTitle = isOnPremGroup
+            ? "Grupo sincronizado do AD on-premises. Trate diretamente no Active Directory."
+            : isDynamicGroup
+              ? `Grupo dinâmico do Entra. Ajuste a regra/atributos do grupo${payload.membershipRule ? `: ${payload.membershipRule}` : "."}`
+              : isRoleAssignableGroup
+                ? "Grupo role-assignable/privilegiado exige governança administrativa específica."
+                : "";
           return (
             <tr key={item.id} className="border-b last:border-0">
               <td className="p-4">
@@ -89,6 +106,12 @@ export default function IndividualAccessTabs({ individualQueue, getResourceName,
                   <span className="font-medium">{getResourceName(item)}</span>
                   {isOnPremGroup && (
                     <Badge variant="outline" className="ml-1 text-xs bg-warning/10 text-warning border-warning/30">On-prem</Badge>
+                  )}
+                  {isDynamicGroup && (
+                    <Badge variant="outline" className="ml-1 text-xs bg-blue-500/10 text-blue-700 border-blue-500/30">Dinâmico</Badge>
+                  )}
+                  {isRoleAssignableGroup && (
+                    <Badge variant="outline" className="ml-1 text-xs bg-destructive/10 text-destructive border-destructive/30">Privilegiado</Badge>
                   )}
                 </div>
               </td>
@@ -106,9 +129,9 @@ export default function IndividualAccessTabs({ individualQueue, getResourceName,
                 {new Date(item.created_at).toLocaleDateString("pt-BR")}
               </td>
               <td className="p-4">
-                {isOnPremGroup ? (
-                  <span className="text-xs text-muted-foreground italic" title="Grupo sincronizado do AD on-premises. Trate diretamente no Active Directory.">
-                    Gerenciar no AD on-prem
+                {isBlockedGroup ? (
+                  <span className="text-xs text-muted-foreground italic" title={blockedTitle}>
+                    {blockedLabel}
                   </span>
                 ) : (
                   <Button

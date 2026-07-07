@@ -269,11 +269,27 @@ export default function ColaboradorDetalhePage() {
     const payload = { ...(item.payload_json || {}) };
     const isImported = item.requested_by === "entra_sync";
 
-    // Bloquear remoção via Graph de grupos sincronizados on-prem
+    // Bloquear remoção via Graph de grupos sincronizados on-prem/dinâmicos/privilegiados
     if (item.action_type === "assign_group" && payload.onPremisesSync) {
       toast({
         title: "Grupo gerenciado pelo AD on-premises",
         description: "Este grupo é sincronizado do AD local. Remova a associação diretamente no Active Directory — o Graph não permite alteração.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (item.action_type === "assign_group" && payload.dynamicMembership) {
+      toast({
+        title: "Grupo dinâmico do Entra",
+        description: "Este grupo tem membresia dinâmica. Ajuste a regra/atributos do grupo, não a associação manual do usuário.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (item.action_type === "assign_group" && payload.isAssignableToRole) {
+      toast({
+        title: "Grupo privilegiado",
+        description: "Este grupo exige governança administrativa específica para alteração de membros.",
         variant: "destructive",
       });
       return;

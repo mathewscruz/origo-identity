@@ -220,6 +220,12 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
     if action == "remove_group" and payload.get("onPremisesSync"):
         return {"status": "failed", "error_code": "on_premises_managed",
                 "result_message": "Grupo on-premises não pode ser removido via Graph."}
+    if action == "remove_group" and payload.get("dynamicMembership"):
+        return {"status": "failed", "error_code": "dynamic_group_managed",
+                "result_message": "Grupo dinâmico do Entra não permite remoção manual de membro; ajuste a regra/atributos do grupo."}
+    if action == "remove_group" and payload.get("isAssignableToRole"):
+        return {"status": "failed", "error_code": "role_assignable_group",
+                "result_message": "Grupo role-assignable/privilegiado exige governança administrativa específica para alteração de membros."}
 
     email = payload.get("mail") or payload.get("email")
     sam = payload.get("samAccountName") or payload.get("sAMAccountName")
@@ -274,6 +280,47 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
                 return {"status": "failed", "error_code": "invalid_payload", "result_message": "skuId ausente"}
             r = requests.post(f"{graph}/users/{user_id}/assignLicense", headers=headers,
                               json={"addLicenses": [], "removeLicenses": [sku]}, timeout=30)
+            if r.ok:
+                return {"status": "success", "result_message": "Licença removida."}
+            if r.status_code == 400 and "inherited from a group membership" in r.text:
+                groups = []
+                url = f"{graph}/users/{user_id}/memberOf/microsoft.graph.group?$select=id,displayName,onPremisesSyncEnabled,groupTypes,membershipRule,assignedLicenses&$top=999"
+                while url:
+                    gr = requests.get(url, headers=headers, timeout=60)
+                    gr.raise_for_status()
+                    data = gr.json()
+                    groups.extend(data.get("value", []))
+                    url = data.get("@odata.nextLink")
+                assigners = [
+                    g for g in groups
+                    if any(str(l.get("skuId", "")).lower() == str(sku).lower() for l in (g.get("assignedLicenses") or []))
+                ]
+                if not assigners:
+                    return {"status": "failed", "error_code": "license_inherited_assigner_not_found",
+                            "result_message": "Licença herdada por grupo, mas nenhum grupo atribuidor direto foi encontrado."}
+                blocked = [g.get("displayName") or g.get("id") for g in assigners if g.get("onPremisesSyncEnabled") or "DynamicMembership" in (g.get("groupTypes") or [])]
+                removable = [g for g in assigners if not g.get("onPremisesSyncEnabled") and "DynamicMembership" not in (g.get("groupTypes") or [])]
+                if not removable:
+                    return {"status": "failed", "error_code": "license_inherited_from_unmanaged_group",
+                            "result_message": "Licença herdada apenas de grupos não gerenciáveis pelo Graph: " + ", ".join(blocked[:10])}
+                removed = []
+                errors = []
+                for g in removable:
+                    gid = g.get("id")
+                    dr = requests.delete(f"{graph}/groups/{gid}/members/{user_id}/$ref", headers=headers, timeout=30)
+                    if dr.status_code in (200, 204, 404):
+                        removed.append(g.get("displayName") or gid)
+                    else:
+                        errors.append(f"{g.get('displayName') or gid}: {dr.status_code} {dr.text[:180]}")
+                if errors and not removed:
+                    return {"status": "failed", "error_code": "license_group_removal_failed",
+                            "result_message": "; ".join(errors)[:500]}
+                msg = f"Licença herdada; usuário removido de {len(removed)} grupo(s) atribuidor(es): {', '.join(removed[:10])}."
+                if blocked:
+                    msg += f" Grupos bloqueados: {', '.join(blocked[:10])}."
+                if errors:
+                    msg += f" Falhas parciais: {'; '.join(errors)[:200]}"
+                return {"status": "success", "result_message": msg}
             r.raise_for_status()
             return {"status": "success", "result_message": "Licença removida."}
 
