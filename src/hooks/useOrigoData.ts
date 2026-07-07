@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 async function fetchAll(
@@ -25,7 +25,14 @@ async function fetchAll(
   return all;
 }
 
-const REFETCH_OPTS = { refetchOnWindowFocus: false, staleTime: 60_000, refetchInterval: false as const };
+const REFETCH_OPTS = {
+  refetchOnWindowFocus: false,
+  staleTime: 5 * 60_000,
+  gcTime: 30 * 60_000,
+  refetchInterval: false as const,
+  placeholderData: keepPreviousData,
+};
+
 
 export function useEmpresas() {
   return useQuery({ queryKey: ["empresas"], queryFn: () => fetchAll("empresas", "*", "nome"), ...REFETCH_OPTS });
