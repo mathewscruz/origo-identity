@@ -410,14 +410,19 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
     const leaverIds: string[] = [];
     const leaverMatriculas: string[] = [];
-    const leaverDetails: { id: string; sam: string | null; cargo_id: string | null }[] = [];
+    const leaverDetails: { id: string; sam: string | null; cargo_id: string | null; status: string; silentDisable: boolean }[] = [];
+    const INACTIVE_DB_STATUSES = new Set(["desligado", "inativo"]);
     for (const [mat, rec] of existingMap) {
       if (!csvMatriculas.has(mat)) {
+        const isDedupeRemoved = dedupe.removedMatriculas.has(mat);
+        const silentDisable = isDedupeRemoved && INACTIVE_DB_STATUSES.has((rec.status || "").toLowerCase());
         leaverIds.push(rec.id);
         leaverMatriculas.push(mat);
-        leaverDetails.push({ id: rec.id, sam: rec.sam_account_name, cargo_id: rec.cargo_id });
+        leaverDetails.push({ id: rec.id, sam: rec.sam_account_name, cargo_id: rec.cargo_id, status: rec.status, silentDisable });
       }
     }
+    const silentCount = leaverDetails.filter(l => l.silentDisable).length;
+    if (silentCount > 0) console.log(`[dedupe] ${silentCount} leaver(s) já inativos serão removidos sem enfileirar disable`);
 
     console.log(`Classification: ${toInsert.length} new, ${toUpdate.length} changed, ${unchanged} unchanged, ${leaverIds.length} leavers`);
 
