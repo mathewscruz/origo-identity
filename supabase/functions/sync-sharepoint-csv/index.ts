@@ -272,6 +272,75 @@ function dedupeRows(rows: CsvRow[]): {
   return { canonical, removedMatriculas, duplicateGroups, removedRows, samples };
 }
 
+// ── Weak identity protection ──
+// If a historical/inactive row shares mail / mail local-part / derived SAM
+// with an ACTIVE RH row of a DIFFERENT CPF, the active row owns the AD/Entra
+// identity. The historical row is imported without operational mail/SAM so it
+// cannot match on AD/Entra in future syncs.
+function normalizeCpf(v: string): string {
+  return (v || "").replace(/\D/g, "").trim();
+}
+function normalizeMail(v: string): string {
+  return (v || "").toLowerCase().trim();
+}
+function deriveSam(row: CsvRow): string {
+  const mail = normalizeMail(row.mail);
+  if (mail.includes("@")) return mail.split("@")[0];
+  return (row.employID || "").trim().toLowerCase();
+}
+function localPart(mail: string): string {
+  return mail.includes("@") ? mail.split("@")[0] : "";
+}
+function applyWeakIdentityProtection(rows: CsvRow[]): {
+  protectedRows: number;
+  samples: Array<{ matricula: string; cpf: string; mail: string; sam: string; conflictWith: string; via: string }>;
+} {
+  // Build ownership index from ACTIVE rows: identity → cpf
+  const mailOwner = new Map<string, string>();      // mail → cpf
+  const localOwner = new Map<string, string>();     // local-part → cpf
+  const samOwner = new Map<string, string>();       // sam → cpf
+  for (const r of rows) {
+    if (!isActiveStatus(r.status)) continue;
+    const cpf = normalizeCpf(r.Cadastro_Pessoa_Fisica);
+    if (!cpf) continue;
+    const mail = normalizeMail(r.mail);
+    if (mail) {
+      if (!mailOwner.has(mail)) mailOwner.set(mail, cpf);
+      const lp = localPart(mail);
+      if (lp && !localOwner.has(lp)) localOwner.set(lp, cpf);
+    }
+    const sam = deriveSam(r);
+    if (sam && !samOwner.has(sam)) samOwner.set(sam, cpf);
+  }
+
+  let protectedRows = 0;
+  const samples: Array<{ matricula: string; cpf: string; mail: string; sam: string; conflictWith: string; via: string }> = [];
+  for (const r of rows) {
+    if (isActiveStatus(r.status)) continue;
+    const cpf = normalizeCpf(r.Cadastro_Pessoa_Fisica);
+    const mail = normalizeMail(r.mail);
+    const lp = localPart(mail);
+    const sam = deriveSam(r);
+
+    let conflict: string | null = null;
+    let via = "";
+    if (mail && mailOwner.has(mail) && mailOwner.get(mail) !== cpf) { conflict = mailOwner.get(mail)!; via = "mail"; }
+    else if (lp && localOwner.has(lp) && localOwner.get(lp) !== cpf) { conflict = localOwner.get(lp)!; via = "local_part"; }
+    else if (sam && samOwner.has(sam) && samOwner.get(sam) !== cpf) { conflict = samOwner.get(sam)!; via = "sam"; }
+
+    if (conflict) {
+      if (samples.length < 20) {
+        samples.push({ matricula: (r.employID || "").trim(), cpf, mail, sam, conflictWith: conflict, via });
+      }
+      r["__weak_identity_protected"] = "true";
+      // Strip operational identity so it won't match AD/Entra
+      r["mail"] = "";
+      protectedRows++;
+    }
+  }
+  return { protectedRows, samples };
+}
+
 // ── Incremental sync processing logic ──
 async function processCsvData(sb: any, csvText: string, filename: string) {
   const { data: job, error: jobErr } = await sb.from("sync_jobs")
@@ -287,6 +356,10 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     const rows = dedupe.canonical;
     const totalRows = rows.length;
     console.log(`[dedupe] raw=${rawTotalRows} canonical=${totalRows} groups=${dedupe.duplicateGroups} removed=${dedupe.removedRows}`);
+    const weakProtection = applyWeakIdentityProtection(rows);
+    if (weakProtection.protectedRows > 0) {
+      console.log(`[weak-identity] protected_rows=${weakProtection.protectedRows} samples=${JSON.stringify(weakProtection.samples)}`);
+    }
     await sb.from("sync_jobs").update({
       message: `Parsed ${rawTotalRows} bruto → ${totalRows} canônico (${dedupe.removedRows} duplicados removidos). Comparando...`,
       phase: "comparing", colab_total: totalRows,
@@ -368,8 +441,11 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
     function buildColabData(row: CsvRow) {
       const statusMapped = STATUS_MAP[(row.status || "ativo").toLowerCase()] || "ativo";
-      const email = row.mail || "";
-      const samAccountName = email.includes("@") ? email.split("@")[0] : (row.employID || "").trim();
+      const protectedRow = row["__weak_identity_protected"] === "true";
+      const email = protectedRow ? "" : (row.mail || "");
+      const samAccountName = protectedRow
+        ? null
+        : (email.includes("@") ? email.split("@")[0] : (row.employID || "").trim());
       return {
         nome: row.displayName, email: email || null, matricula: row.employID.trim(),
         cpf: row.Cadastro_Pessoa_Fisica || null,
@@ -648,12 +724,12 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     await sb.from("sync_jobs").update({
       status: "done", phase: "done", colab_percent: 100,
       colab_created: created, colab_updated: updated, colab_quarentena: leaverMatriculas.length,
-      message: `Concluído: bruto=${rawTotalRows}, canônico=${totalRows}, dedupe=${dedupe.removedRows} (grupos=${dedupe.duplicateGroups}), ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos (${silentCount} silenciosos)`,
+      message: `Concluído: bruto=${rawTotalRows}, canônico=${totalRows}, dedupe=${dedupe.removedRows} (grupos=${dedupe.duplicateGroups}), ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos (${silentCount} silenciosos), ${weakProtection.protectedRows} protegidos (identidade fraca)`,
     }).eq("id", jobId);
 
     await sb.from("auditoria").insert({
       entidade: "importacao_csv", acao: "importar",
-      resumo: `CSV SharePoint: bruto=${rawTotalRows} → canônico=${totalRows} · ${created} novos, ${updated} atualizados, ${leaverMatriculas.length} removidos`,
+      resumo: `CSV SharePoint: bruto=${rawTotalRows} → canônico=${totalRows} · ${created} novos, ${updated} atualizados, ${leaverMatriculas.length} removidos · ${weakProtection.protectedRows} protegidos`,
       detalhes: {
         filename, jobId,
         rawTotalRows, totalRows,
@@ -661,6 +737,10 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         removed_rows: dedupe.removedRows,
         samples: dedupe.samples,
         silent_disable_count: silentCount,
+        weak_identity_protection: {
+          protected_rows: weakProtection.protectedRows,
+          samples: weakProtection.samples,
+        },
         created, updated, unchanged, removed: leaverMatriculas.length,
       },
     });
@@ -671,6 +751,10 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       duplicate_groups: dedupe.duplicateGroups,
       removed_rows: dedupe.removedRows,
       samples: dedupe.samples,
+      weak_identity_protection: {
+        protected_rows: weakProtection.protectedRows,
+        samples: weakProtection.samples,
+      },
       created, updated, unchanged, removed: leaverMatriculas.length, total: totalRows,
     };
   } catch (err) {
