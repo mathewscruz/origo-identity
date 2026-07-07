@@ -272,6 +272,75 @@ function dedupeRows(rows: CsvRow[]): {
   return { canonical, removedMatriculas, duplicateGroups, removedRows, samples };
 }
 
+// ── Weak identity protection ──
+// If a historical/inactive row shares mail / mail local-part / derived SAM
+// with an ACTIVE RH row of a DIFFERENT CPF, the active row owns the AD/Entra
+// identity. The historical row is imported without operational mail/SAM so it
+// cannot match on AD/Entra in future syncs.
+function normalizeCpf(v: string): string {
+  return (v || "").replace(/\D/g, "").trim();
+}
+function normalizeMail(v: string): string {
+  return (v || "").toLowerCase().trim();
+}
+function deriveSam(row: CsvRow): string {
+  const mail = normalizeMail(row.mail);
+  if (mail.includes("@")) return mail.split("@")[0];
+  return (row.employID || "").trim().toLowerCase();
+}
+function localPart(mail: string): string {
+  return mail.includes("@") ? mail.split("@")[0] : "";
+}
+function applyWeakIdentityProtection(rows: CsvRow[]): {
+  protectedRows: number;
+  samples: Array<{ matricula: string; cpf: string; mail: string; sam: string; conflictWith: string; via: string }>;
+} {
+  // Build ownership index from ACTIVE rows: identity → cpf
+  const mailOwner = new Map<string, string>();      // mail → cpf
+  const localOwner = new Map<string, string>();     // local-part → cpf
+  const samOwner = new Map<string, string>();       // sam → cpf
+  for (const r of rows) {
+    if (!isActiveStatus(r.status)) continue;
+    const cpf = normalizeCpf(r.Cadastro_Pessoa_Fisica);
+    if (!cpf) continue;
+    const mail = normalizeMail(r.mail);
+    if (mail) {
+      if (!mailOwner.has(mail)) mailOwner.set(mail, cpf);
+      const lp = localPart(mail);
+      if (lp && !localOwner.has(lp)) localOwner.set(lp, cpf);
+    }
+    const sam = deriveSam(r);
+    if (sam && !samOwner.has(sam)) samOwner.set(sam, cpf);
+  }
+
+  let protectedRows = 0;
+  const samples: Array<{ matricula: string; cpf: string; mail: string; sam: string; conflictWith: string; via: string }> = [];
+  for (const r of rows) {
+    if (isActiveStatus(r.status)) continue;
+    const cpf = normalizeCpf(r.Cadastro_Pessoa_Fisica);
+    const mail = normalizeMail(r.mail);
+    const lp = localPart(mail);
+    const sam = deriveSam(r);
+
+    let conflict: string | null = null;
+    let via = "";
+    if (mail && mailOwner.has(mail) && mailOwner.get(mail) !== cpf) { conflict = mailOwner.get(mail)!; via = "mail"; }
+    else if (lp && localOwner.has(lp) && localOwner.get(lp) !== cpf) { conflict = localOwner.get(lp)!; via = "local_part"; }
+    else if (sam && samOwner.has(sam) && samOwner.get(sam) !== cpf) { conflict = samOwner.get(sam)!; via = "sam"; }
+
+    if (conflict) {
+      if (samples.length < 20) {
+        samples.push({ matricula: (r.employID || "").trim(), cpf, mail, sam, conflictWith: conflict, via });
+      }
+      r["__weak_identity_protected"] = "true";
+      // Strip operational identity so it won't match AD/Entra
+      r["mail"] = "";
+      protectedRows++;
+    }
+  }
+  return { protectedRows, samples };
+}
+
 // ── Incremental sync processing logic ──
 async function processCsvData(sb: any, csvText: string, filename: string) {
   const { data: job, error: jobErr } = await sb.from("sync_jobs")
