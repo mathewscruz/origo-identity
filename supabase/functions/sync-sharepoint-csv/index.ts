@@ -724,12 +724,12 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     await sb.from("sync_jobs").update({
       status: "done", phase: "done", colab_percent: 100,
       colab_created: created, colab_updated: updated, colab_quarentena: leaverMatriculas.length,
-      message: `Concluído: bruto=${rawTotalRows}, canônico=${totalRows}, dedupe=${dedupe.removedRows} (grupos=${dedupe.duplicateGroups}), ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos (${silentCount} silenciosos)`,
+      message: `Concluído: bruto=${rawTotalRows}, canônico=${totalRows}, dedupe=${dedupe.removedRows} (grupos=${dedupe.duplicateGroups}), ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos (${silentCount} silenciosos), ${weakProtection.protectedRows} protegidos (identidade fraca)`,
     }).eq("id", jobId);
 
     await sb.from("auditoria").insert({
       entidade: "importacao_csv", acao: "importar",
-      resumo: `CSV SharePoint: bruto=${rawTotalRows} → canônico=${totalRows} · ${created} novos, ${updated} atualizados, ${leaverMatriculas.length} removidos`,
+      resumo: `CSV SharePoint: bruto=${rawTotalRows} → canônico=${totalRows} · ${created} novos, ${updated} atualizados, ${leaverMatriculas.length} removidos · ${weakProtection.protectedRows} protegidos`,
       detalhes: {
         filename, jobId,
         rawTotalRows, totalRows,
@@ -737,6 +737,10 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         removed_rows: dedupe.removedRows,
         samples: dedupe.samples,
         silent_disable_count: silentCount,
+        weak_identity_protection: {
+          protected_rows: weakProtection.protectedRows,
+          samples: weakProtection.samples,
+        },
         created, updated, unchanged, removed: leaverMatriculas.length,
       },
     });
@@ -747,6 +751,10 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       duplicate_groups: dedupe.duplicateGroups,
       removed_rows: dedupe.removedRows,
       samples: dedupe.samples,
+      weak_identity_protection: {
+        protected_rows: weakProtection.protectedRows,
+        samples: weakProtection.samples,
+      },
       created, updated, unchanged, removed: leaverMatriculas.length, total: totalRows,
     };
   } catch (err) {
