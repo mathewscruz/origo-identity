@@ -1,24 +1,61 @@
-Plano para corrigir usuários que não existem nem no AD nem no Entra ID:
 
-1. **Endurecer a reconciliação de desligados**
-   - Alterar `reconcile-identities` para não criar evento leaver nem itens `disable`/`disable_entra` quando o colaborador desligado não tiver correspondência confiável no Entra ID.
-   - Tratar esses casos como `phantom/ignorado`, com contador próprio no job/auditoria.
-   - Manter a regra atual: só sugerir desabilitar AD quando o Entra confirmar que a conta é sincronizada on-prem e ainda está habilitada.
+## Objetivo
 
-2. **Remover os registros fantasmas do sistema**
-   - Para colaboradores `desligado/inativo` de origem CSV sem match no Entra ID, apagar/arquivar a identidade do cadastro operacional.
-   - Como há relacionamentos com fila/eventos/perfis, a limpeza será consistente: cancelar ações abertas relacionadas, remover vínculos ativos e eliminar o colaborador quando seguro.
-   - Registrar a ação em auditoria para rastreabilidade.
+Na página **Aprovação IAM**, tornar visível na própria linha da tabela — sem abrir o drawer — *o que está divergente* e *o que a aprovação vai executar*, para que o admin decida em segundos.
 
-3. **Limpar a fila atual**
-   - Cancelar todos os itens abertos de `disable`/`disable_entra` criados pela reconciliação para usuários sem match confirmado.
-   - Incluir mensagem clara: “Usuário não encontrado no AD/Entra ID — removido/ignorado pela reconciliação”.
+Hoje a linha só mostra `action_type`, `target_identity`, `payload_json` resumido genérico (`rule, scope, ad_status`) e origem. Toda a informação útil (Base vs Entra, motivo, conta órfã, etc.) só aparece depois do clique.
 
-4. **Backfill dos casos já existentes**
-   - Rodar uma limpeza retroativa para localizar casos parecidos ao citado: desligados/inativos que não existem no Entra ID e estavam aparecendo na aprovação IAM.
-   - Remover esses colaboradores fantasmas e cancelar suas ações abertas.
+## Mudanças (todas em `src/pages/AprovacaoIAMPage.tsx`, camada de apresentação)
 
-5. **Validação**
-   - Conferir que a tela de aprovação IAM não mostra mais desabilitação para usuários inexistentes.
-   - Conferir que futuras reconciliações não recriam esses mesmos itens.
-   - Validar contagens no job/auditoria: ignorados/removidos, cancelados e desabilitações legítimas restantes.
+### 1. Nova coluna "Divergência / Motivo"
+Substituir a coluna atual **Detalhe** (que renderiza `summarizePayload` — pouco útil, mostra só chaves) por uma coluna **Divergência** que interpreta o `payload_json` e o `action_type` e produz um chip semântico + texto humano.
+
+Regras de renderização (função `renderDivergence(item)`):
+
+- **`payload_json.reason === "status_divergence"`** →
+  Chip âmbar `Status divergente` + texto: `Base: {colab_status} → Entra: {habilitado|desabilitado}`.
+  Se `action_type` começa com `enable_`: seta verde "→ Habilitar". Se `disable_`: seta vermelha "→ Desabilitar". Se `sync_status_from_ad`: cinza "→ Sincronizar status do AD".
+- **`action_type === "review_orphan_entra"`** →
+  Chip azul `Conta órfã no Entra` + `Sem match na base` + data de criação se existir.
+- **`action_type` in (`assign_group`,`remove_group`)** →
+  Chip + `{+|−} grupo: {groupName}`.
+- **`assign_license`/`remove_license`** → `{+|−} licença: {licenseName || skuPartNumber}`.
+- **`assign_app`/`remove_app`/`create_user_app`/`update_user_app`/`disable_user_app`/`delete_user_app`** → `App: {appName}` + verbo curto.
+- **`create`/`create_if_not_exists`** → `Criar {displayName || mail}` + destino (`AD` / `Entra`).
+- **`update`/`update_entra`** → lista compacta dos campos que mudam (chaves do payload diferentes de identificadores), ex.: `cargo, area, manager`.
+- **`disable`/`disable_entra`** → motivo se houver (`payload_json.reason`), ex.: `Leaver`, `Pré-desligamento`, `Reconciliação`.
+- Fallback: reutiliza `summarizePayload` atual.
+
+Cada chip usa a paleta semântica já existente (`bg-amber-100 text-amber-800…`, `bg-blue-100…`, verde/vermelho para add/remove). Nada de cor hardcoded fora dos tokens já usados no arquivo.
+
+### 2. Coluna "Alvo" enriquecida
+Além do `target_identity` (mono), mostrar em segunda linha o `payload_json.displayName` ou `mail` quando existir. Assim o admin vê `marianna.vidal` + `Marianna Vidal <marianna.vidal@origoenergia.com.br>`.
+
+### 3. Badges de contexto ao lado da ação
+Na célula **Ação**, ao lado do badge principal, adicionar mini-badges quando aplicável:
+- `AD` ou `Entra` ou `App externo` (derivado do `action_type`).
+- `Leaver`, `Pré-desligamento`, `Reconciliação`, `JML`, `Manual` (derivado de `requested_by` / `payload_json.reason`).
+
+### 4. Destaque de linhas que exigem atenção
+Aplicar leve tinta de fundo na linha conforme severidade:
+- Destrutivas (`disable*`, `remove_*`, `delete_*`): `bg-red-50/40 hover:bg-red-50/70`.
+- Órfãs / status_divergence: `bg-amber-50/40`.
+- Criação/atribuição: sem tinta (padrão).
+
+### 5. Filtro rápido "Somente divergências / destrutivas"
+Adicionar um `Toggle`/`Button` na barra de filtros: **"Só ações críticas"** — filtra client-side por `action_type` destrutivo OU `payload_json.reason === "status_divergence"` OU `review_orphan_entra`. Reusa o estado já paginado (sem nova query).
+
+### 6. Agrupamento visual por alvo (opcional, leve)
+Quando várias linhas consecutivas têm o mesmo `target_identity`, adicionar um separador sutil com contador `{n} ações para {target}`. Feito puramente no render, sem mudar a query. Se ficar visualmente pesado na revisão, removemos.
+
+## Fora de escopo
+- Nenhuma mudança em Edge Functions, migrations, RLS, mutations de aprovar/recusar.
+- Nenhuma mudança de comportamento no drawer de detalhe (fica como fallback rico).
+- Nenhuma mudança na fila / execução.
+
+## Arquivos tocados
+- `src/pages/AprovacaoIAMPage.tsx` (única alteração — helpers `renderDivergence`, `contextBadges`, `rowTone` + ajuste do `<TableHeader>`/`<TableRow>` + toggle "Só ações críticas").
+
+## Validação
+- `npm run build` deve passar.
+- Verificação visual via Playwright na rota `/aprovacao-iam` autenticado (screenshots antes/depois) confirmando: chip de divergência visível, cor de linha para destrutivas, toggle funcional.
