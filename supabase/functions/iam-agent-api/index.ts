@@ -18,6 +18,7 @@ const AGENT_ORCHESTRATED_ACTION_TYPES = [
   "assign_group", "remove_group",
   "assign_license", "remove_license",
   "assign_app", "remove_app",
+  "assign_sharepoint", "remove_sharepoint",
   "disable_entra", "enable_entra",
   "update_entra",
   "create_user_app", "update_user_app",

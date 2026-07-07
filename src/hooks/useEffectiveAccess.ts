@@ -6,7 +6,7 @@ export interface EffectiveAccess extends ProfileResources {
   perfilIds: string[];
   /** Individual (non-profile) assignments still living in iam_queue with status success. */
   individuals: {
-    action_type: "assign_group" | "assign_license" | "assign_app";
+    action_type: "assign_group" | "assign_license" | "assign_app" | "assign_sharepoint";
     payload_json: any;
     target_identity: string;
   }[];
@@ -39,7 +39,7 @@ export function useEffectiveAccess(identityId: string | null | undefined) {
         .eq("colaborador_id", identityId)
         .eq("requested_by", "manual_individual")
         .eq("status", "success")
-        .in("action_type", ["assign_group", "assign_license", "assign_app"]);
+        .in("action_type", ["assign_group", "assign_license", "assign_app", "assign_sharepoint"]);
 
       return {
         ...profileBundle,

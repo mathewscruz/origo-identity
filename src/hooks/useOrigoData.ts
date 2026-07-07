@@ -297,7 +297,7 @@ export function useColabIndividualQueue(colaboradorId: string | undefined) {
         .select("*")
         .eq("colaborador_id", colaboradorId!)
         .in("requested_by", ["manual_individual", "entra_sync"])
-        .in("action_type", ["assign_group", "assign_license", "assign_app", "remove_group", "remove_license", "remove_app"])
+        .in("action_type", ["assign_group", "assign_license", "assign_app", "assign_sharepoint", "remove_group", "remove_license", "remove_app", "remove_sharepoint"])
         .order("created_at", { ascending: true });
       if (error) throw error;
       if (!data) return [];
@@ -307,6 +307,7 @@ export function useColabIndividualQueue(colaboradorId: string | undefined) {
         const at = row.action_type as string;
         if (at.includes("group")) return `group:${p?.groupId || ""}`;
         if (at.includes("license")) return `license:${p?.skuId || ""}`;
+        if (p?.resourceType === "sharepoint" || at.includes("sharepoint")) return `sharepoint:${p?.siteId || ""}:${p?.driveItemId || ""}:${p?.permission || ""}`;
         if (at.includes("app")) return `app:${p?.appId || ""}:${p?.appRoleId || ""}`;
         return `${at}:${row.id}`;
       };

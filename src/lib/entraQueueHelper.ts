@@ -14,6 +14,7 @@ interface PerfilResources {
   grupoIds: string[];
   licencaIds: string[];
   appIds: string[];
+  sharepointItems: { siteId: string; pastaId?: string | null; permissao: string }[];
 }
 
 /**
@@ -21,15 +22,21 @@ interface PerfilResources {
  * (avoids nested joins that fail without FK).
  */
 export async function getPerfilResourceIds(perfilId: string): Promise<PerfilResources> {
-  const [gRes, lRes, aRes] = await Promise.all([
+  const [gRes, lRes, aRes, spRes] = await Promise.all([
     (supabase as any).from("perfil_grupos").select("grupo_id").eq("perfil_id", perfilId),
     (supabase as any).from("perfil_licencas").select("licenca_id").eq("perfil_id", perfilId),
     (supabase as any).from("perfil_aplicacoes").select("aplicacao_id").eq("perfil_id", perfilId),
+    (supabase as any).from("perfil_sharepoint").select("site_id, pasta_nivel1_id, pasta_nivel2_id, permissao").eq("perfil_id", perfilId),
   ]);
   return {
     grupoIds: (gRes.data ?? []).map((r: any) => r.grupo_id),
     licencaIds: (lRes.data ?? []).map((r: any) => r.licenca_id),
     appIds: (aRes.data ?? []).map((r: any) => r.aplicacao_id),
+    sharepointItems: (spRes.data ?? []).map((r: any) => ({
+      siteId: r.site_id,
+      pastaId: r.pasta_nivel2_id || r.pasta_nivel1_id || null,
+      permissao: r.permissao || "leitura",
+    })),
   };
 }
 
@@ -40,13 +47,15 @@ export async function getMergedResourcesForPerfis(perfilIds: string[]): Promise<
   const allG = new Set<string>();
   const allL = new Set<string>();
   const allA = new Set<string>();
+  const allSP = new Map<string, { siteId: string; pastaId?: string | null; permissao: string }>();
   for (const pid of perfilIds) {
     const r = await getPerfilResourceIds(pid);
     r.grupoIds.forEach(id => allG.add(id));
     r.licencaIds.forEach(id => allL.add(id));
     r.appIds.forEach(id => allA.add(id));
+    r.sharepointItems.forEach(sp => allSP.set(`${sp.siteId}:${sp.pastaId || ""}:${sp.permissao}`, sp));
   }
-  return { grupoIds: [...allG], licencaIds: [...allL], appIds: [...allA] };
+  return { grupoIds: [...allG], licencaIds: [...allL], appIds: [...allA], sharepointItems: [...allSP.values()] };
 }
 
 // ─── Core: generate iam_queue entries from a diff ─────────────────
@@ -64,24 +73,32 @@ export async function generateEntraQueueForDiff(
     removedLicencaIds: string[];
     addedAppIds: string[];
     removedAppIds: string[];
+    addedSharepointItems?: { siteId: string; pastaId?: string | null; permissao: string }[];
+    removedSharepointItems?: { siteId: string; pastaId?: string | null; permissao: string }[];
   },
   opts?: { triggerImmediately?: boolean; requestedBy?: string }
 ): Promise<number> {
   if (colabs.length === 0) return 0;
 
 
+  const addedSharepointItems = diff.addedSharepointItems ?? [];
+  const removedSharepointItems = diff.removedSharepointItems ?? [];
+
   const hasDiff =
     diff.addedGrupoIds.length + diff.removedGrupoIds.length +
     diff.addedLicencaIds.length + diff.removedLicencaIds.length +
-    diff.addedAppIds.length + diff.removedAppIds.length;
+    diff.addedAppIds.length + diff.removedAppIds.length +
+    addedSharepointItems.length + removedSharepointItems.length;
   if (hasDiff === 0) return 0;
 
   // Fetch metadata for referenced items (separate queries, no joins)
   const allGrupoIds = [...new Set([...diff.addedGrupoIds, ...diff.removedGrupoIds])];
   const allLicencaIds = [...new Set([...diff.addedLicencaIds, ...diff.removedLicencaIds])];
   const allAppIds = [...new Set([...diff.addedAppIds, ...diff.removedAppIds])];
+  const allSharepointSiteIds = [...new Set([...addedSharepointItems, ...removedSharepointItems].map(sp => sp.siteId))];
+  const allSharepointPastaIds = [...new Set([...addedSharepointItems, ...removedSharepointItems].map(sp => sp.pastaId).filter(Boolean) as string[])];
 
-  const [gruposRes, licencasRes, appsRes] = await Promise.all([
+  const [gruposRes, licencasRes, appsRes, spSitesRes, spPastasRes] = await Promise.all([
     allGrupoIds.length > 0
       ? (supabase as any).from("entra_grupos").select("id, entra_id, nome, on_premises_sync").in("id", allGrupoIds)
       : { data: [] },
@@ -91,11 +108,19 @@ export async function generateEntraQueueForDiff(
     allAppIds.length > 0
       ? (supabase as any).from("aplicacoes").select("id, entra_id, nome, default_app_role_id").in("id", allAppIds)
       : { data: [] },
+    allSharepointSiteIds.length > 0
+      ? (supabase as any).from("sharepoint_sites").select("id, site_id, nome, url").in("id", allSharepointSiteIds)
+      : { data: [] },
+    allSharepointPastaIds.length > 0
+      ? (supabase as any).from("sharepoint_pastas").select("id, drive_item_id, nome, caminho").in("id", allSharepointPastaIds)
+      : { data: [] },
   ]);
 
   const grupoMap = new Map<string, any>((gruposRes.data ?? []).map((g: any) => [g.id, g]));
   const licencaMap = new Map<string, any>((licencasRes.data ?? []).map((l: any) => [l.id, l]));
   const appMap = new Map<string, any>((appsRes.data ?? []).map((a: any) => [a.id, a]));
+  const spSiteMap = new Map<string, any>((spSitesRes.data ?? []).map((s: any) => [s.id, s]));
+  const spPastaMap = new Map<string, any>((spPastasRes.data ?? []).map((p: any) => [p.id, p]));
 
   const queueEntries: any[] = [];
 
@@ -173,6 +198,50 @@ export async function generateEntraQueueForDiff(
         ...base,
         action_type: "remove_app",
         payload_json: { displayName: colab.nome, mail: colab.email || "", appId: app.entra_id, appName: app.nome },
+      });
+    }
+
+    for (const sp of addedSharepointItems) {
+      const site = spSiteMap.get(sp.siteId);
+      if (!site?.site_id) continue;
+      const pasta = sp.pastaId ? spPastaMap.get(sp.pastaId) : null;
+      queueEntries.push({
+        ...base,
+        action_type: "assign_app",
+        payload_json: {
+          resourceType: "sharepoint",
+          displayName: colab.nome,
+          mail: colab.email || "",
+          siteId: site.site_id,
+          siteName: site.nome,
+          siteUrl: site.url || null,
+          driveItemId: pasta?.drive_item_id || null,
+          folderName: pasta?.nome || null,
+          folderPath: pasta?.caminho || null,
+          permission: sp.permissao || "leitura",
+        },
+      });
+    }
+
+    for (const sp of removedSharepointItems) {
+      const site = spSiteMap.get(sp.siteId);
+      if (!site?.site_id) continue;
+      const pasta = sp.pastaId ? spPastaMap.get(sp.pastaId) : null;
+      queueEntries.push({
+        ...base,
+        action_type: "remove_app",
+        payload_json: {
+          resourceType: "sharepoint",
+          displayName: colab.nome,
+          mail: colab.email || "",
+          siteId: site.site_id,
+          siteName: site.nome,
+          siteUrl: site.url || null,
+          driveItemId: pasta?.drive_item_id || null,
+          folderName: pasta?.nome || null,
+          folderPath: pasta?.caminho || null,
+          permission: sp.permissao || "leitura",
+        },
       });
     }
   }
@@ -264,6 +333,8 @@ export async function queueFullProfileActions(
         removedLicencaIds: [] as string[],
         addedAppIds: resources.appIds,
         removedAppIds: [] as string[],
+        addedSharepointItems: resources.sharepointItems,
+        removedSharepointItems: [],
       }
     : {
         addedGrupoIds: [] as string[],
@@ -272,6 +343,8 @@ export async function queueFullProfileActions(
         removedLicencaIds: resources.licencaIds,
         addedAppIds: [] as string[],
         removedAppIds: resources.appIds,
+        addedSharepointItems: [],
+        removedSharepointItems: resources.sharepointItems,
       };
 
   return generateEntraQueueForDiff(colabs, diff, opts);

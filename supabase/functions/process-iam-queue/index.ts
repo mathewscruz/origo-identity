@@ -11,6 +11,7 @@ const ENTRA_ACTION_TYPES = [
   "assign_group", "remove_group",
   "assign_license", "remove_license",
   "assign_app", "remove_app",
+  "assign_sharepoint", "remove_sharepoint",
   "disable_entra", "enable_entra",
   "update_entra",
 ];
@@ -878,7 +879,7 @@ Deno.serve(async (req) => {
       const { count: immediateManualRemovalCount, error: immediateCountErr } = await supabase
         .from("iam_queue")
         .select("id", { count: "exact", head: true })
-        .in("action_type", ["remove_group", "remove_license", "remove_app"])
+        .in("action_type", ["remove_group", "remove_license", "remove_app", "remove_sharepoint"])
         .eq("status", "pending")
         .eq("requested_by", "manual_individual");
       if (immediateCountErr) return jsonResponse({ error: immediateCountErr.message }, 500);
@@ -1538,7 +1539,7 @@ Deno.serve(async (req) => {
 
         if (executionMode === "agent_orchestrated") {
           query = query
-            .in("action_type", ["remove_group", "remove_license", "remove_app"])
+            .in("action_type", ["remove_group", "remove_license", "remove_app", "remove_sharepoint"])
             .eq("requested_by", "manual_individual");
         }
 

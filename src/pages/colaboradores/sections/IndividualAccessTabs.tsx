@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Shield, Award, AppWindow, XCircle } from "lucide-react";
+import { Shield, Award, AppWindow, XCircle, FolderOpen } from "lucide-react";
 import TablePagination, { usePagination } from "@/components/TablePagination";
 import EmptyState from "@/components/EmptyState";
 
@@ -11,6 +11,7 @@ const ACTION_ICONS: Record<string, typeof Shield> = {
   assign_group: Shield,
   assign_license: Award,
   assign_app: AppWindow,
+  assign_sharepoint: FolderOpen,
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -48,16 +49,19 @@ export default function IndividualAccessTabs({ individualQueue, getResourceName,
   const [pageLic, setPageLic] = useState(1);
   const [pageGrp, setPageGrp] = useState(1);
   const [pageApp, setPageApp] = useState(1);
+  const [pageSp, setPageSp] = useState(1);
   const PAGE_SIZE = 25;
 
   const items = individualQueue ?? [];
   const licenses = useMemo(() => items.filter((i: any) => i.action_type === "assign_license"), [items]);
   const groups = useMemo(() => items.filter((i: any) => i.action_type === "assign_group"), [items]);
-  const apps = useMemo(() => items.filter((i: any) => i.action_type === "assign_app"), [items]);
+  const apps = useMemo(() => items.filter((i: any) => i.action_type === "assign_app" && i.payload_json?.resourceType !== "sharepoint"), [items]);
+  const sharepoint = useMemo(() => items.filter((i: any) => i.action_type === "assign_sharepoint" || (i.action_type === "assign_app" && i.payload_json?.resourceType === "sharepoint")), [items]);
 
   const licPage = usePagination(licenses, pageLic, PAGE_SIZE);
   const grpPage = usePagination(groups, pageGrp, PAGE_SIZE);
   const appPage = usePagination(apps, pageApp, PAGE_SIZE);
+  const spPage = usePagination(sharepoint, pageSp, PAGE_SIZE);
 
   const renderTable = (data: any[]) => (
     <table className="w-full text-sm">
@@ -141,6 +145,7 @@ export default function IndividualAccessTabs({ individualQueue, getResourceName,
                 <TabsTrigger value="licencas">Licenças ({licenses.length})</TabsTrigger>
                 <TabsTrigger value="grupos">Grupos ({groups.length})</TabsTrigger>
                 <TabsTrigger value="apps">Aplicações ({apps.length})</TabsTrigger>
+                <TabsTrigger value="sharepoint">SharePoint ({sharepoint.length})</TabsTrigger>
               </TabsList>
             </div>
             <TabsContent value="licencas" className="mt-0">
@@ -159,6 +164,12 @@ export default function IndividualAccessTabs({ individualQueue, getResourceName,
               {renderTable(appPage.paginatedItems)}
               <div className="px-4">
                 <TablePagination totalItems={apps.length} pageSize={PAGE_SIZE} currentPage={appPage.safePage} onPageChange={setPageApp} />
+              </div>
+            </TabsContent>
+            <TabsContent value="sharepoint" className="mt-0">
+              {renderTable(spPage.paginatedItems)}
+              <div className="px-4">
+                <TablePagination totalItems={sharepoint.length} pageSize={PAGE_SIZE} currentPage={spPage.safePage} onPageChange={setPageSp} />
               </div>
             </TabsContent>
           </Tabs>

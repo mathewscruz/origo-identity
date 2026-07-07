@@ -10,9 +10,11 @@ Suportado nesta versão:
   - disable_entra, enable_entra, update_entra
   - assign_license, remove_license
   - assign_group, remove_group
+  - assign_app, remove_app
+  - assign_sharepoint, remove_sharepoint
 
 Bloqueado explicitamente:
-  - assign_app / remove_app / *_user_app  → aguardando handler dedicado
+  - *_user_app  → aguardando handler dedicado
   - enable_entra sem prova de fluxo aprovado (joiner/rehire)
   - remove_group em grupo marcado como on_premises_sync=true (Graph)
 
@@ -32,6 +34,7 @@ import json
 import os
 import sys
 import time
+from urllib.parse import quote
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -51,6 +54,8 @@ SUPPORTED_ACTIONS = {
     "remove_group",
     "assign_app",
     "remove_app",
+    "assign_sharepoint",
+    "remove_sharepoint",
     # AD (via ponte externa configurável — AD_BRIDGE_URL)
     "create",
     "update",
@@ -293,7 +298,7 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
                 return {"status": "success", "result_message": "Removido do grupo (ou já não era membro)."}
             r.raise_for_status()
 
-        if action == "assign_app":
+        if action == "assign_app" and payload.get("resourceType") != "sharepoint":
             app_id = payload.get("appId")  # Application (client) ID do enterprise app
             resource_id = payload.get("resourceId") or payload.get("servicePrincipalId")
             role_id = payload.get("appRoleId") or "00000000-0000-0000-0000-000000000000"
@@ -321,7 +326,7 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
                 return {"status": "success", "result_message": "AppRoleAssignment já existia."}
             r.raise_for_status()
 
-        if action == "remove_app":
+        if action == "remove_app" and payload.get("resourceType") != "sharepoint":
             app_id = payload.get("appId")
             resource_id = payload.get("resourceId") or payload.get("servicePrincipalId")
             assignment_id = payload.get("appRoleAssignmentId")
@@ -351,6 +356,71 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
                 return {"status": "success",
                         "result_message": f"App {payload.get('appName') or app_id} removido."}
             r.raise_for_status()
+
+        if action in {"assign_sharepoint", "remove_sharepoint"} or (action in {"assign_app", "remove_app"} and payload.get("resourceType") == "sharepoint"):
+            site_id = payload.get("siteId")
+            drive_item_id = payload.get("driveItemId")
+            recipient = email or payload.get("mail") or payload.get("email")
+            if not site_id:
+                return {"status": "failed", "error_code": "invalid_payload", "result_message": "siteId ausente para SharePoint"}
+            if not recipient:
+                return {"status": "failed", "error_code": "invalid_payload", "result_message": "e-mail do usuário ausente para SharePoint"}
+
+            base_target = f"{graph}/sites/{site_id}/drive"
+            if drive_item_id:
+                item_path = f"items/{quote(str(drive_item_id), safe='')}"
+            else:
+                item_path = "root"
+            item_url = f"{base_target}/{item_path}"
+            label = payload.get("folderPath") or payload.get("folderName") or payload.get("siteName") or site_id
+
+            if action in {"assign_sharepoint", "assign_app"}:
+                permission = str(payload.get("permission") or "leitura").lower()
+                roles = ["write"] if permission in {"edicao", "edição", "write", "editar"} else ["read"]
+                r = requests.post(
+                    f"{item_url}/invite",
+                    headers=headers,
+                    json={
+                        "recipients": [{"email": recipient}],
+                        "message": "Acesso concedido pelo Órigo IAM.",
+                        "requireSignIn": True,
+                        "sendInvitation": False,
+                        "roles": roles,
+                    },
+                    timeout=60,
+                )
+                if r.status_code in (200, 201):
+                    return {"status": "success", "result_message": f"SharePoint {label} liberado para {recipient} ({'/'.join(roles)})."}
+                r.raise_for_status()
+
+            perms = requests.get(f"{item_url}/permissions", headers=headers, timeout=60)
+            perms.raise_for_status()
+            matches = []
+            for perm in perms.json().get("value", []):
+                candidates = []
+                for key in ("grantedToV2", "grantedTo"):
+                    user = (perm.get(key) or {}).get("user") or {}
+                    candidates.extend([user.get("email"), user.get("userPrincipalName")])
+                for entry in perm.get("grantedToIdentitiesV2") or perm.get("grantedToIdentities") or []:
+                    user = (entry.get("user") or {})
+                    candidates.extend([user.get("email"), user.get("userPrincipalName")])
+                invitation = perm.get("invitation") or {}
+                candidates.append(invitation.get("email"))
+                if any(str(c or "").lower() == str(recipient).lower() for c in candidates):
+                    matches.append(perm)
+            if not matches:
+                return {"status": "success", "result_message": f"Nenhuma permissão direta SharePoint encontrada para {recipient} em {label}."}
+            removed = 0
+            for perm in matches:
+                perm_id = perm.get("id")
+                if not perm_id:
+                    continue
+                dr = requests.delete(f"{item_url}/permissions/{quote(str(perm_id), safe='')}", headers=headers, timeout=60)
+                if dr.status_code in (200, 204, 404) or dr.ok:
+                    removed += 1
+                else:
+                    dr.raise_for_status()
+            return {"status": "success", "result_message": f"SharePoint {label}: {removed} permissão(ões) direta(s) removida(s) para {recipient}."}
 
     except requests.HTTPError as e:
         return {"status": "failed", "error_code": "graph_http_error",

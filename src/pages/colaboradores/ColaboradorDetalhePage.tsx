@@ -6,8 +6,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Pencil, XCircle, Plus, KeyRound, ChevronDown, Shield, Award, AppWindow, RefreshCw, ShieldAlert, ShieldCheck } from "lucide-react";
-import { useColaborador, usePerfilAtribuicoes, useEventosJML, usePerfisAcesso, useEntraGrupos, useEntraLicencas, useAplicacoes, useColabIndividualQueue } from "@/hooks/useOrigoData";
+import { ArrowLeft, Pencil, XCircle, Plus, KeyRound, ChevronDown, Shield, Award, AppWindow, RefreshCw, ShieldAlert, ShieldCheck, FolderOpen } from "lucide-react";
+import { useColaborador, usePerfilAtribuicoes, useEventosJML, usePerfisAcesso, useEntraGrupos, useEntraLicencas, useAplicacoes, useColabIndividualQueue, useSharepointSites, useAllSharepointPastas } from "@/hooks/useOrigoData";
 import { queueFullProfileActions, generateEntraQueueForDiff } from "@/lib/entraQueueHelper";
 import { handleStatusChange, syncSingleUserAccess } from "@/lib/colaboradorLifecycle";
 import { suspendColaboradorPreventivo, revertSuspensaoPreventiva } from "@/lib/preLeaver";
@@ -56,6 +56,8 @@ export default function ColaboradorDetalhePage() {
   const { data: entraGrupos } = useEntraGrupos();
   const { data: entraLicencas } = useEntraLicencas();
   const { data: aplicacoes } = useAplicacoes();
+  const { data: sharepointSites } = useSharepointSites();
+  const { data: sharepointPastas } = useAllSharepointPastas();
   const { data: individualQueue } = useColabIndividualQueue(id);
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -75,9 +77,13 @@ export default function ColaboradorDetalhePage() {
   const [grupoDialogOpen, setGrupoDialogOpen] = useState(false);
   const [licencaDialogOpen, setLicencaDialogOpen] = useState(false);
   const [appDialogOpen, setAppDialogOpen] = useState(false);
+  const [sharepointDialogOpen, setSharepointDialogOpen] = useState(false);
   const [selectedGrupoId, setSelectedGrupoId] = useState("");
   const [selectedLicencaId, setSelectedLicencaId] = useState("");
   const [selectedAppId, setSelectedAppId] = useState("");
+  const [selectedSharepointSiteId, setSelectedSharepointSiteId] = useState("");
+  const [selectedSharepointPastaId, setSelectedSharepointPastaId] = useState("__root__");
+  const [selectedSharepointPermission, setSelectedSharepointPermission] = useState("leitura");
   const [savingIndividual, setSavingIndividual] = useState(false);
 
   // Pre-Leaver (suspensão preventiva)
@@ -193,11 +199,44 @@ export default function ColaboradorDetalhePage() {
     }
   }
 
+  async function handleAssignIndividualSharepoint() {
+    if (!selectedSharepointSiteId || !id) return;
+    setSavingIndividual(true);
+    try {
+      const pastaId = selectedSharepointPastaId === "__root__" ? null : selectedSharepointPastaId;
+      await generateEntraQueueForDiff(
+        [getColabIdentity()],
+        {
+          addedGrupoIds: [], removedGrupoIds: [],
+          addedLicencaIds: [], removedLicencaIds: [],
+          addedAppIds: [], removedAppIds: [],
+          addedSharepointItems: [{ siteId: selectedSharepointSiteId, pastaId, permissao: selectedSharepointPermission }],
+          removedSharepointItems: [],
+        },
+        { requestedBy: "manual_individual" },
+      );
+      const site = (sharepointSites ?? []).find((s: any) => s.id === selectedSharepointSiteId);
+      const pasta = pastaId ? (sharepointPastas ?? []).find((p: any) => p.id === pastaId) : null;
+      toast({ title: "SharePoint atribuído", description: `${site?.nome || "Site"}${pasta?.nome ? ` / ${pasta.nome}` : ""}` });
+      await logAuditoria({ acao: "atribuir_sharepoint_individual", entidade: "iam_queue", entidade_id: id!, resumo: `SharePoint "${site?.nome}" atribuído individualmente a ${pessoa.nome}`, operador: profile?.email });
+      queryClient.invalidateQueries({ queryKey: ["colab_individual_queue"] });
+      setSharepointDialogOpen(false);
+      setSelectedSharepointSiteId("");
+      setSelectedSharepointPastaId("__root__");
+      setSelectedSharepointPermission("leitura");
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setSavingIndividual(false);
+    }
+  }
+
   async function handleRevogarIndividual(item: any) {
     const reverseMap: Record<string, string> = {
       assign_group: "remove_group",
       assign_license: "remove_license",
       assign_app: "remove_app",
+      assign_sharepoint: "remove_sharepoint",
     };
     const reverseAction = reverseMap[item.action_type];
     if (!reverseAction) return;
@@ -225,7 +264,7 @@ export default function ColaboradorDetalhePage() {
     });
     if (error) { toast({ title: "Erro ao revogar", description: error.message, variant: "destructive" }); return; }
     toast({ title: isImported ? "Remoção enviada (importado do Entra ID)" : "Revogação enviada para processamento" });
-    const resourceName = payload.groupName || payload.licenseName || payload.appName || "";
+    const resourceName = payload.groupName || payload.licenseName || payload.appName || payload.siteName || "";
     await logAuditoria({
       acao: isImported ? "remover_acesso_importado_entra" : "revogar_individual",
       entidade: "iam_queue",
@@ -312,7 +351,7 @@ export default function ColaboradorDetalhePage() {
 
   const getResourceName = (item: any) => {
     const p = item.payload_json || {};
-    return p.groupName || p.licenseName || p.appName || "—";
+    return p.groupName || p.licenseName || p.appName || p.siteName || "—";
   };
 
   return (
@@ -488,6 +527,9 @@ export default function ColaboradorDetalhePage() {
                 <DropdownMenuItem onClick={() => setAppDialogOpen(true)}>
                   <AppWindow className="mr-2 h-4 w-4" /> Aplicação (individual)
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSharepointDialogOpen(true)}>
+                  <FolderOpen className="mr-2 h-4 w-4" /> SharePoint (individual)
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -602,6 +644,52 @@ export default function ColaboradorDetalhePage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setAppDialogOpen(false)}>Cancelar</Button>
             <Button onClick={handleAssignIndividualApp} disabled={savingIndividual || !selectedAppId}>{savingIndividual ? "Salvando..." : "Atribuir"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Adicionar SharePoint */}
+      <Dialog open={sharepointDialogOpen} onOpenChange={setSharepointDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Adicionar SharePoint (Individual)</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Site SharePoint</Label>
+              <Select value={selectedSharepointSiteId} onValueChange={(v) => { setSelectedSharepointSiteId(v); setSelectedSharepointPastaId("__root__"); }}>
+                <SelectTrigger><SelectValue placeholder="Selecione um site" /></SelectTrigger>
+                <SelectContent>
+                  {(sharepointSites ?? []).map((s: any) => (
+                    <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Pasta / escopo</Label>
+              <Select value={selectedSharepointPastaId} onValueChange={setSelectedSharepointPastaId} disabled={!selectedSharepointSiteId}>
+                <SelectTrigger><SelectValue placeholder="Site inteiro / raiz" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__root__">Site inteiro / raiz do drive</SelectItem>
+                  {(sharepointPastas ?? []).filter((p: any) => p.site_db_id === selectedSharepointSiteId && p.drive_item_id).map((p: any) => (
+                    <SelectItem key={p.id} value={p.id}>{p.caminho || p.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Permissão</Label>
+              <Select value={selectedSharepointPermission} onValueChange={setSelectedSharepointPermission}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="leitura">Leitura</SelectItem>
+                  <SelectItem value="edicao">Edição</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSharepointDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleAssignIndividualSharepoint} disabled={savingIndividual || !selectedSharepointSiteId}>{savingIndividual ? "Salvando..." : "Atribuir"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
