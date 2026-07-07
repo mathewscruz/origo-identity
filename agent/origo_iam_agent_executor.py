@@ -423,6 +423,11 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
             return {"status": "success", "result_message": f"SharePoint {label}: {removed} permissão(ões) direta(s) removida(s) para {recipient}."}
 
     except requests.HTTPError as e:
+        status = getattr(e.response, "status_code", None)
+        text = getattr(e.response, "text", "") or ""
+        if status == 409 and "Directory_ConcurrencyViolation" in text:
+            return {"status": "pending", "error_code": "graph_concurrency_violation",
+                    "result_message": "Graph retornou Directory_ConcurrencyViolation; retry automático no próximo ciclo."}
         return {"status": "failed", "error_code": "graph_http_error",
                 "result_message": f"{e.response.status_code}: {e.response.text[:300]}"}
     except Exception as e:  # noqa: BLE001
