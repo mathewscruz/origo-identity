@@ -1385,8 +1385,56 @@ Deno.serve(async (req) => {
     }
 
 
+    // ─── Modo agent_orchestrated: delega execução crítica ao Órigo Agente ───
+    // Lê parametros.iam_execution_mode. Se estiver 'agent_orchestrated' e não estivermos
+    // em modo de reconciliação, NÃO executamos Graph/apps aqui — o executor externo é
+    // responsável por consumir a fila via iam-agent-api /pending e /update.
+    {
+      const { data: execModeParam } = await supabase
+        .from("parametros")
+        .select("valor")
+        .eq("chave", "iam_execution_mode")
+        .maybeSingle();
+
+      if (execModeParam?.valor === "agent_orchestrated" && !reconcileMode) {
+        const { count: delegatedCount } = await supabase
+          .from("iam_queue")
+          .select("id", { count: "exact", head: true })
+          .in("action_type", AGENT_ORCHESTRATED_ACTION_TYPES)
+          .eq("status", "pending");
+
+        const delegated = delegatedCount || 0;
+        const message = "Execução crítica delegada ao Órigo Agente; Lovable mantém fila/frontend/auditoria.";
+
+        try {
+          await supabase.from("auditoria").insert({
+            entidade: "iam_queue",
+            acao: "processamento_delegado_agente",
+            resumo: `process-iam-queue não executou ações críticas: modo agent_orchestrated ativo (${delegated} pendente(s) delegado(s) ao Órigo Agente).`,
+            detalhes: {
+              mode: "agent_orchestrated",
+              delegated,
+              action_types: AGENT_ORCHESTRATED_ACTION_TYPES,
+              force: forceMode,
+            },
+          });
+        } catch (e) {
+          console.warn("[agent_orchestrated] audit insert falhou:", e);
+        }
+
+        return new Response(JSON.stringify({
+          success: true,
+          processed: 0,
+          delegated,
+          mode: "agent_orchestrated",
+          message,
+        }), { status: 202, headers: corsHeaders });
+      }
+    }
+
     const allResults: { id: string; action: string; status: string; message: string }[] = [];
     let totalProcessed = 0;
+
 
     // ─── PART 1: Process Entra ID actions ───
     if (TENANT_ID && CLIENT_ID && CLIENT_SECRET) {
