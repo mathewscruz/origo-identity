@@ -722,10 +722,12 @@ Deno.serve(async (req) => {
     console.log(`Site resolved: ${siteId}`);
 
     console.log("Listing files in RH_COLAB...");
-    const filesRes = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/RH_COLAB:/children?$orderby=lastModifiedDateTime desc&$top=50`, { headers: graphHeaders });
+    const filesRes = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/RH_COLAB:/children?$orderby=lastModifiedDateTime desc&$top=200`, { headers: graphHeaders });
     if (!filesRes.ok) throw new Error(`Folder listing failed: ${filesRes.status}`);
     const filesData = await filesRes.json();
-    const csvFiles = (filesData.value || []).filter((f: any) => f.name?.toLowerCase().startsWith("base_colab_") && f.name?.toLowerCase().endsWith(".csv"));
+    const csvFiles = (filesData.value || [])
+      .filter((f: any) => f.name?.toLowerCase().startsWith("base_colab_") && f.name?.toLowerCase().endsWith(".csv"))
+      .sort((a: any, b: any) => new Date(b.lastModifiedDateTime).getTime() - new Date(a.lastModifiedDateTime).getTime());
 
     if (csvFiles.length === 0) {
       return new Response(JSON.stringify({ error: "No CSV files found with prefix base_colab_" }), {
