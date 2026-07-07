@@ -32,6 +32,7 @@ const statusColors: Record<string, string> = {
 const tipoExcecaoLabels: Record<string, { label: string; class: string }> = {
   acesso: { label: "Concessão de Acesso", class: "bg-primary/15 text-primary border-primary/30" },
   manter_ativo: { label: "Manter Ativo", class: "bg-warning/15 text-warning border-warning/30" },
+  status_manual: { label: "Override Manual de Status", class: "bg-warning/15 text-warning border-warning/30" },
 };
 
 type TabKey = "pendentes" | "aprovadas" | "rejeitadas" | "expiradas" | "todas";
