@@ -108,6 +108,8 @@ async function fetchUserAppRoles(token: string, userId: string): Promise<EntraAp
     const data = await res.json();
     for (const item of (data.value || [])) {
       roles.push({
+        assignmentId: item.id,
+        principalId: item.principalId,
         resourceId: item.resourceId,
         resourceDisplayName: item.resourceDisplayName || "",
         appRoleId: item.appRoleId || "00000000-0000-0000-0000-000000000000",
