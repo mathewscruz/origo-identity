@@ -25,13 +25,8 @@ const EXTERNAL_APP_ACTION_TYPES = [
  * Lovable/Supabase apenas mantém fila, aprovação, catálogo e auditoria.
  */
 const AGENT_ORCHESTRATED_ACTION_TYPES = [
-  "assign_group", "remove_group",
-  "assign_license", "remove_license",
-  "assign_app", "remove_app",
-  "disable_entra", "enable_entra",
-  "update_entra",
-  "create_user_app", "update_user_app",
-  "disable_user_app", "delete_user_app",
+  ...ENTRA_ACTION_TYPES,
+  ...EXTERNAL_APP_ACTION_TYPES,
 ];
 
 function jsonResponse(data: unknown, status = 200) {
@@ -208,6 +203,24 @@ async function executeAction(
     return humanizeGraphError(code, message, res.status, context);
   };
 
+  const findGroupsAssigningLicense = async (skuId: string): Promise<Array<{ id: string; displayName?: string; onPremisesSyncEnabled?: boolean }>> => {
+    const groups: Array<{ id: string; displayName?: string; onPremisesSyncEnabled?: boolean }> = [];
+    let url = `${graphBase}/users/${userId}/memberOf/microsoft.graph.group?$select=id,displayName,onPremisesSyncEnabled,assignedLicenses&$top=999`;
+    while (url) {
+      const res = await fetch(url, { headers });
+      if (!res.ok) break;
+      const data = await res.json();
+      for (const g of data.value || []) {
+        const assigned = Array.isArray(g.assignedLicenses) ? g.assignedLicenses : [];
+        if (assigned.some((l: any) => String(l?.skuId || "").toLowerCase() === String(skuId).toLowerCase())) {
+          groups.push({ id: g.id, displayName: g.displayName, onPremisesSyncEnabled: g.onPremisesSyncEnabled === true });
+        }
+      }
+      url = data["@odata.nextLink"] || "";
+    }
+    return groups;
+  };
+
   switch (actionType) {
     case "assign_group": {
       const groupId = payload.groupId;
@@ -269,6 +282,27 @@ async function executeAction(
         body: JSON.stringify({ addLicenses: [], removeLicenses: [skuId] }),
       });
       if (res.ok) return { success: true, message: `Licença removida` };
+      const errText = await res.clone().text().catch(() => "");
+      if (res.status === 400 && errText.includes("inherited from a group membership")) {
+        const groups = await findGroupsAssigningLicense(skuId);
+        if (groups.length === 0) {
+          return { success: false, message: `Licença ${payload.licenseName || skuId} é herdada por grupo, mas o grupo atribuidor não foi identificado automaticamente no Entra ID.` };
+        }
+        const onPrem = groups.filter((g) => g.onPremisesSyncEnabled);
+        if (onPrem.length > 0) {
+          return { success: false, message: `Licença ${payload.licenseName || skuId} é herdada de grupo(s) sincronizado(s) do AD local/on-premises: ${onPrem.map((g) => g.displayName || g.id).join(", ")}. Remova a associação na origem local.` };
+        }
+        const removed: string[] = [];
+        for (const group of groups) {
+          const del = await fetch(`${graphBase}/groups/${group.id}/members/${userId}/$ref`, { method: "DELETE", headers });
+          if (del.status === 204 || del.status === 404 || del.ok) {
+            removed.push(group.displayName || group.id);
+          } else {
+            return { success: false, message: await buildErr(del, `remover grupo atribuidor da licença ${group.displayName || group.id}`) };
+          }
+        }
+        return { success: true, message: `Licença ${payload.licenseName || skuId} era herdada; removido de ${removed.length} grupo(s) atribuidor(es): ${removed.join(", ")}` };
+      }
       return { success: false, message: await buildErr(res, "remover licença") };
     }
 
@@ -821,6 +855,59 @@ Deno.serve(async (req) => {
 
     if (modoParam?.valor === "simulacao" && !reconcileMode) {
       return jsonResponse({ success: true, processed: 0, mode: "simulacao", message: "Modo simulação ativo" });
+    }
+
+    const { data: executionModeParam } = await supabase
+      .from("parametros")
+      .select("valor")
+      .eq("chave", "iam_execution_mode")
+      .maybeSingle();
+    const executionMode = String(executionModeParam?.valor || "lovable_cloud");
+
+    if (executionMode === "agent_orchestrated" && !reconcileMode) {
+      const { count: delegatedCount, error: countErr } = await supabase
+        .from("iam_queue")
+        .select("id", { count: "exact", head: true })
+        .in("action_type", AGENT_ORCHESTRATED_ACTION_TYPES)
+        .eq("status", "pending");
+      if (countErr) return jsonResponse({ error: countErr.message }, 500);
+
+      // Exceção de UX: remoções manuais de acessos do usuário devem ocorrer
+      // imediatamente após o clique do operador. Elas são limitadas a remove_* e
+      // continuam auditadas na fila; demais ações críticas seguem delegadas ao agente.
+      const { count: immediateManualRemovalCount, error: immediateCountErr } = await supabase
+        .from("iam_queue")
+        .select("id", { count: "exact", head: true })
+        .in("action_type", ["remove_group", "remove_license", "remove_app"])
+        .eq("status", "pending")
+        .eq("requested_by", "manual_individual");
+      if (immediateCountErr) return jsonResponse({ error: immediateCountErr.message }, 500);
+
+      if ((delegatedCount || 0) > (immediateManualRemovalCount || 0)) {
+        await supabase.from("auditoria").insert({
+          entidade: "iam_queue",
+          acao: "processamento_delegado_agente",
+          resumo: `process-iam-queue não executou ações críticas: modo agent_orchestrated ativo (${delegatedCount || 0} item(ns) para o Órigo Agente).`,
+          detalhes: { executionMode, delegatedCount: delegatedCount || 0, immediateManualRemovalCount: immediateManualRemovalCount || 0, forceMode },
+        });
+        return jsonResponse({
+          success: true,
+          processed: 0,
+          delegated: delegatedCount || 0,
+          immediate_manual_removals: immediateManualRemovalCount || 0,
+          mode: executionMode,
+          message: "Execução crítica delegada ao Órigo Agente; Lovable mantém fila/frontend/auditoria.",
+        }, 202);
+      }
+
+      if ((immediateManualRemovalCount || 0) > 0) {
+        await supabase.from("auditoria").insert({
+          entidade: "iam_queue",
+          acao: "processamento_imediato_remocao_manual_entra",
+          resumo: `Processando imediatamente ${immediateManualRemovalCount || 0} remoção(ões) manuais de itens importados do Entra.`,
+          detalhes: { executionMode, immediateManualRemovalCount: immediateManualRemovalCount || 0, forceMode },
+        });
+      }
     }
 
     // ─── RECONCILE MODE: scan queued create_if_not_exists against Entra ───
@@ -1448,6 +1535,12 @@ Deno.serve(async (req) => {
           .select("*")
           .in("action_type", ENTRA_ACTION_TYPES)
           .eq("status", "pending");
+
+        if (executionMode === "agent_orchestrated") {
+          query = query
+            .in("action_type", ["remove_group", "remove_license", "remove_app"])
+            .eq("requested_by", "manual_individual");
+        }
 
         if (!forceMode) {
           query = query.or("next_retry_at.is.null,next_retry_at.lte." + new Date().toISOString());
