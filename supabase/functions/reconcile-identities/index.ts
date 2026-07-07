@@ -699,7 +699,6 @@ async function runReconciliation(sb: any, jobId: string) {
       });
       await revokeLeaverAccess(sb, desligados, stats, "reconciliacao");
     }
-    }
 
     // 5b/5c/5d — Cobertura completa: joiners faltantes, reativações e órfãos
     await updateJob(sb, jobId, {
