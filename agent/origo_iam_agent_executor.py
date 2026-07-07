@@ -44,6 +44,11 @@ except ImportError:
     print("Instale: python -m pip install requests", file=sys.stderr)
     raise
 
+try:
+    from ldap3 import Server, Connection, NTLM, SUBTREE, MODIFY_REPLACE
+except ImportError:  # pragma: no cover
+    Server = Connection = NTLM = SUBTREE = MODIFY_REPLACE = None
+
 SUPPORTED_ACTIONS = {
     "disable_entra",
     "enable_entra",
@@ -161,6 +166,107 @@ def has_approval(item: Dict[str, Any]) -> bool:
 AD_ACTIONS = {"create", "update", "disable", "reset_password"}
 
 
+def _ldap_filter_value(value: str) -> str:
+    return str(value).replace("\\", r"\5c").replace("*", r"\2a").replace("(", r"\28").replace(")", r"\29").replace("\x00", r"\00")
+
+
+def _ad_safe_cn(value: str) -> str:
+    return str(value or "").replace("\\", " ").replace(",", " ").replace("+", " ").replace('"', " ").replace("<", " ").replace(">", " ").replace(";", " ").strip()[:64] or "Novo Usuario"
+
+
+def _ad_ldap_connect():
+    if Server is None or Connection is None:
+        raise RuntimeError("ldap3 não instalado")
+    user = os.environ.get("ORIGO_AD_LDAP_USER") or os.environ.get("AD_LDAP_USER") or "EBESSOLAR\\svc_origo_iam_agent"
+    password = os.environ.get("ORIGO_AD_LDAP_PASSWORD") or os.environ.get("AD_LDAP_PASSWORD")
+    if not password:
+        raise RuntimeError("ORIGO_AD_LDAP_PASSWORD/AD_LDAP_PASSWORD ausente")
+    host = os.environ.get("AD_LDAP_HOST", "127.0.0.1")
+    port = int(os.environ.get("AD_LDAP_PORT", "10389"))
+    base_dn = os.environ.get("AD_BASE_DN") or os.environ.get("ORIGO_AD_LDAP_BASE_DN") or "DC=ebessolar,DC=local"
+    server = Server(host, port=port, connect_timeout=10)
+    conn = Connection(server, user=user, password=password, authentication=NTLM, auto_bind=True)
+    return conn, base_dn
+
+
+def _ad_find_user(conn, base_dn: str, sam: str) -> Optional[str]:
+    conn.search(base_dn, f"(&(objectCategory=person)(objectClass=user)(sAMAccountName={_ldap_filter_value(sam)}))", SUBTREE, attributes=["distinguishedName", "userAccountControl"])
+    if len(conn.entries) == 1:
+        return str(conn.entries[0].entry_dn)
+    if len(conn.entries) > 1:
+        raise RuntimeError(f"sAMAccountName ambíguo no AD: {sam}")
+    return None
+
+
+def call_ad_ldap(action: str, payload: Dict[str, Any], execute: bool, target_identity: Optional[str] = None) -> Dict[str, Any]:
+    if action not in {"create", "create_if_not_exists", "disable"}:
+        return {"status": "failed", "error_code": "unsupported_ad_action", "result_message": f"AD LDAP só suporta create/create_if_not_exists/disable; recebido {action}."}
+    sam = payload.get("samAccountName") or payload.get("sAMAccountName") or target_identity
+    if not sam:
+        return {"status": "failed", "error_code": "invalid_payload", "result_message": "samAccountName/target_identity ausente para ação AD."}
+    try:
+        conn, base_dn = _ad_ldap_connect()
+    except Exception as e:
+        return {"status": "failed", "error_code": "ad_ldap_not_configured", "result_message": f"Conexão LDAP AD indisponível: {str(e)[:220]}"}
+    try:
+        existing_dn = _ad_find_user(conn, base_dn, str(sam))
+        if action == "disable":
+            if not existing_dn:
+                return {"status": "cancelled", "error_code": "ad_user_not_found", "result_message": f"Usuário AD não encontrado para desabilitar: {sam}; no-op seguro."}
+            conn.search(existing_dn, "(objectClass=*)", attributes=["userAccountControl"])
+            current = int(conn.entries[0].userAccountControl.value or 512)
+            disabled = current | 2
+            if current == disabled:
+                return {"status": "success", "result_message": "Conta AD já estava desabilitada."}
+            if not execute:
+                return {"status": "pending", "error_code": "dry_run", "result_message": f"[dry-run] AD disable {sam}: userAccountControl {current}->{disabled}"}
+            ok = conn.modify(existing_dn, {"userAccountControl": [(MODIFY_REPLACE, [disabled])]})
+            if not ok:
+                return {"status": "failed", "error_code": "ad_disable_failed", "result_message": f"Falha ao desabilitar AD: {conn.result}"[:300]}
+            conn.search(existing_dn, "(objectClass=*)", attributes=["userAccountControl"])
+            after = int(conn.entries[0].userAccountControl.value or 0)
+            if not (after & 2):
+                return {"status": "failed", "error_code": "ad_disable_postcheck_failed", "result_message": "Pós-checagem AD: conta não ficou desabilitada."}
+            return {"status": "success", "result_message": "Conta AD desabilitada e validada via LDAP."}
+
+        if existing_dn:
+            return {"status": "success", "result_message": f"Usuário AD já existe: {sam}."}
+        target_ou = payload.get("targetOu") or payload.get("target_ou") or os.environ.get("AD_DEFAULT_USER_OU") or f"CN=Users,{base_dn}"
+        display = payload.get("displayName") or payload.get("nome") or str(sam)
+        parts = str(display).split()
+        given = payload.get("givenName") or (parts[0] if parts else str(sam))
+        sn = payload.get("surname") or payload.get("sn") or (" ".join(parts[1:]) if len(parts) > 1 else str(sam))
+        upn = payload.get("userPrincipalName") or f"{sam}@ebessolar.local"
+        cn = _ad_safe_cn(display)
+        dn = f"CN={cn},{target_ou}"
+        attrs = {
+            "objectClass": ["top", "person", "organizationalPerson", "user"],
+            "cn": cn,
+            "sAMAccountName": str(sam),
+            "userPrincipalName": str(upn),
+            "displayName": str(display),
+            "givenName": str(given),
+            "sn": str(sn),
+            "userAccountControl": 514,
+        }
+        for src, dest in [("mail", "mail"), ("email", "mail"), ("employeeID", "employeeID"), ("matricula", "employeeID"), ("department", "department"), ("area", "department"), ("title", "title"), ("cargo", "title"), ("company", "company")]:
+            if payload.get(src) and dest not in attrs:
+                attrs[dest] = str(payload[src])
+        if not execute:
+            return {"status": "pending", "error_code": "dry_run", "result_message": f"[dry-run] criaria usuário AD desabilitado {sam} em {target_ou}"}
+        ok = conn.add(dn, attributes=attrs)
+        if not ok:
+            return {"status": "failed", "error_code": "ad_create_failed", "result_message": f"Falha ao criar usuário AD: {conn.result}"[:300]}
+        if not _ad_find_user(conn, base_dn, str(sam)):
+            return {"status": "failed", "error_code": "ad_create_postcheck_failed", "result_message": "Pós-checagem AD: usuário criado não encontrado."}
+        return {"status": "success", "result_message": "Usuário AD criado desabilitado e validado via LDAP."}
+    finally:
+        try:
+            conn.unbind()
+        except Exception:
+            pass
+
+
 def call_ad_bridge(action: str, payload: Dict[str, Any], execute: bool) -> Dict[str, Any]:
     """Encaminha ações AD (create/update/disable/reset_password) para uma ponte
     HTTP externa configurável via env (AD_BRIDGE_URL / AD_BRIDGE_TOKEN).
@@ -169,6 +275,8 @@ def call_ad_bridge(action: str, payload: Dict[str, Any], execute: bool) -> Dict[
     comando ActiveDirectory correspondente. Se AD_BRIDGE_URL não estiver
     configurado, a ação é reportada como não suportada localmente.
     """
+    if os.environ.get("ORIGO_AD_LDAP_PASSWORD") or os.environ.get("AD_LDAP_PASSWORD"):
+        return call_ad_ldap(action, payload, execute, payload.get("samAccountName") or payload.get("sAMAccountName"))
     url = os.environ.get("AD_BRIDGE_URL", "").strip()
     if not url:
         return {"status": "failed", "error_code": "ad_bridge_missing",
