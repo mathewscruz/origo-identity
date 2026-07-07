@@ -20,6 +20,20 @@ const EXTERNAL_APP_ACTION_TYPES = [
   "disable_user_app", "delete_user_app",
 ];
 
+/**
+ * Ações críticas cuja execução, no modo `agent_orchestrated`, é delegada ao Órigo Agente.
+ * Lovable/Supabase apenas mantém fila, aprovação, catálogo e auditoria.
+ */
+const AGENT_ORCHESTRATED_ACTION_TYPES = [
+  "assign_group", "remove_group",
+  "assign_license", "remove_license",
+  "assign_app", "remove_app",
+  "disable_entra", "enable_entra",
+  "update_entra",
+  "create_user_app", "update_user_app",
+  "disable_user_app", "delete_user_app",
+];
+
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
