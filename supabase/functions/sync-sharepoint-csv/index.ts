@@ -566,8 +566,10 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
             built.status = manualHit.status;
           }
           manualLinked.push({ colab_id: manualHit.id, matricula: mat, via, previous_status: manualHit.status });
-          // origem já vem "csv" via buildColabData → migra ownership para o RH
-          toUpdate.push({ id: manualHit.id, data: built, oldCargoId: manualHit.cargo_id, oldStatus: manualHit.status, oldSam: manualHit.sam_account_name });
+          // origem já vem "csv" via buildColabData → migra ownership para o RH.
+          // oldCargoId=null força provisionamento COMPLETO de grupos/licenças/apps
+          // (que foi propositalmente adiado na criação manual até o Entra ID replicar).
+          toUpdate.push({ id: manualHit.id, data: built, oldCargoId: null, oldStatus: manualHit.status, oldSam: manualHit.sam_account_name });
           // Registrar no existingMap para evitar tratamento como leaver e futura duplicação
           existingMap.set(mat, { id: manualHit.id, fingerprint: "", cargo_id: manualHit.cargo_id, sam_account_name: manualHit.sam_account_name, status: manualHit.status });
         } else {
