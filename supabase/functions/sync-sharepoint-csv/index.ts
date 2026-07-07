@@ -462,8 +462,8 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     if (leaverIds.length > 0) {
       await sb.from("sync_jobs").update({ phase: "removing", message: `Removendo ${leaverIds.length} ausentes...`, colab_percent: 75 }).eq("id", jobId);
 
-      // Generate iam_queue disable entries for leavers
-      const leaverIamEntries = leaverDetails.filter(l => l.sam).map(l => ({
+      // Generate iam_queue disable entries for leavers (skip dedupe-removed already-inactive)
+      const leaverIamEntries = leaverDetails.filter(l => l.sam && !l.silentDisable).map(l => ({
         action_type: "disable",
         payload_json: {
           samAccountName: l.sam, displayName: "", mail: "",
@@ -477,13 +477,14 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         for (const batch of chunk(leaverIamEntries, 200)) await sb.from("iam_queue").insert(batch);
       }
 
-      // Revoke access profiles for leavers
+      // Revoke access profiles for leavers (skip dedupe-removed already-inactive)
       for (const l of leaverDetails) {
+        if (l.silentDisable) continue;
         if (l.cargo_id && l.sam) await provisionCargoAcessosServer(sb, l.id, null, l.cargo_id, l.sam, "", "");
       }
 
-      // Disable Entra ID accounts for leavers
-      const leaverEntraEntries = leaverDetails.filter(l => l.sam).map(l => ({
+      // Disable Entra ID accounts for leavers (skip dedupe-removed already-inactive)
+      const leaverEntraEntries = leaverDetails.filter(l => l.sam && !l.silentDisable).map(l => ({
         action_type: "disable_entra",
         payload_json: { samAccountName: l.sam, displayName: "", mail: "" },
         target_identity: l.sam, colaborador_id: l.id,
