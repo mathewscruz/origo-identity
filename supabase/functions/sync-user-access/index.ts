@@ -292,6 +292,8 @@ Deno.serve(async (req) => {
           appId: la.entra_id,
           appName: la.nome,
           appRoleId: role?.appRoleId || "00000000-0000-0000-0000-000000000000",
+          assignmentId: role?.assignmentId || null,
+          principalId: role?.principalId || entraUserId,
         };
         const key = queueKey("assign_app", payload);
         if (existingKeys.has(key)) continue;
