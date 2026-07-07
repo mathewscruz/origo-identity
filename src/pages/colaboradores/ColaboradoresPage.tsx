@@ -228,9 +228,12 @@ export default function ColaboradoresPage() {
       const becameInactive = statusChanged && editingStatus === "ativo" && form.status !== "ativo";
       const becameActive = statusChanged && editingStatus !== "ativo" && form.status === "ativo";
 
-      // 1. Provision cargo access profiles (only for cargo changes, new users, or non-status changes)
-      if ((cargoChanged || !editingId) && !becameInactive) {
-        const result = await provisionCargoAcessos(colaboradorId, form.cargo_id || null, editingId ? (editingCargoId || null) : null);
+      // 1. Provision cargo access profiles.
+      //    For NEW manual users, grupos/licenças/apps are deferred until the AD account
+      //    replicates to Entra ID (see audit 'aguardar_replicacao_entra' abaixo).
+      //    Somente rodamos provisionamento aqui para mudanças de cargo em usuários já existentes.
+      if (editingId && cargoChanged && !becameInactive) {
+        const result = await provisionCargoAcessos(colaboradorId, form.cargo_id || null, editingCargoId || null);
         if (result.skippedDirectory) {
           toast({ title: "⚠️ Provisionamento de diretório ignorado", description: "O campo 'Nome de login AD' está vazio. Grupos e licenças não serão atribuídos no Entra ID.", variant: "destructive" });
         }
