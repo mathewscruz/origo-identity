@@ -72,17 +72,34 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: true, count: 0, data: [], mode: "simulacao" });
     }
 
+    // Read execution mode (agent_orchestrated → expõe também Entra/apps ao agente)
+    const { data: execModeParam } = await supabase
+      .from("parametros")
+      .select("valor")
+      .eq("chave", "iam_execution_mode")
+      .maybeSingle();
+    const executionMode = execModeParam?.valor === "agent_orchestrated" ? "agent_orchestrated" : "legacy";
+    const actionTypes = executionMode === "agent_orchestrated"
+      ? AGENT_ORCHESTRATED_ACTION_TYPES
+      : AD_LOCAL_ACTION_TYPES;
+
     const { data, error } = await supabase
       .from("iam_queue")
       .select("*")
       .eq("status", "pending")
-      .in("action_type", AD_LOCAL_ACTION_TYPES)
+      .in("action_type", actionTypes)
       .or("next_retry_at.is.null,next_retry_at.lte." + new Date().toISOString())
       .order("created_at", { ascending: true })
       .limit(10);
 
     if (error) return jsonResponse({ error: error.message }, 500);
-    return jsonResponse({ success: true, count: data.length, data });
+    return jsonResponse({
+      success: true,
+      count: data.length,
+      data,
+      execution_mode: executionMode,
+      action_types: actionTypes,
+    });
   }
 
   // POST /update
