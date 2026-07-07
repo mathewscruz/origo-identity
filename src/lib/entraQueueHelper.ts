@@ -105,10 +105,11 @@ export async function generateEntraQueueForDiff(
 
     const base = {
       target_identity: identity,
-      requested_by: "sistema",
+      requested_by: opts?.requestedBy ?? "sistema",
       colaborador_id: colab.id,
       status: "pending",
     };
+
 
     for (const gid of diff.addedGrupoIds) {
       const grp = grupoMap.get(gid);
