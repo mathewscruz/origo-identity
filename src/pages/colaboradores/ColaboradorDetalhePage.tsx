@@ -134,14 +134,8 @@ export default function ColaboradorDetalhePage() {
       await generateEntraQueueForDiff(
         [getColabIdentity()],
         { addedGrupoIds: [selectedGrupoId], removedGrupoIds: [], addedLicencaIds: [], removedLicencaIds: [], addedAppIds: [], removedAppIds: [] },
+        { requestedBy: "manual_individual" },
       );
-      // Mark as manual_individual
-      const { data: latest } = await (supabase as any).from("iam_queue")
-        .select("id").eq("colaborador_id", id).eq("action_type", "assign_group").eq("requested_by", "sistema")
-        .order("created_at", { ascending: false }).limit(1);
-      if (latest?.[0]) {
-        await (supabase as any).from("iam_queue").update({ requested_by: "manual_individual" }).eq("id", latest[0].id);
-      }
       const grupo = (entraGrupos ?? []).find((g: any) => g.id === selectedGrupoId);
       toast({ title: "Grupo atribuído", description: grupo?.nome });
       await logAuditoria({ acao: "atribuir_grupo_individual", entidade: "iam_queue", entidade_id: id!, resumo: `Grupo "${grupo?.nome}" atribuído individualmente a ${pessoa.nome}`, operador: profile?.email });
@@ -162,13 +156,8 @@ export default function ColaboradorDetalhePage() {
       await generateEntraQueueForDiff(
         [getColabIdentity()],
         { addedGrupoIds: [], removedGrupoIds: [], addedLicencaIds: [selectedLicencaId], removedLicencaIds: [], addedAppIds: [], removedAppIds: [] },
+        { requestedBy: "manual_individual" },
       );
-      const { data: latest } = await (supabase as any).from("iam_queue")
-        .select("id").eq("colaborador_id", id).eq("action_type", "assign_license").eq("requested_by", "sistema")
-        .order("created_at", { ascending: false }).limit(1);
-      if (latest?.[0]) {
-        await (supabase as any).from("iam_queue").update({ requested_by: "manual_individual" }).eq("id", latest[0].id);
-      }
       const lic = (entraLicencas ?? []).find((l: any) => l.id === selectedLicencaId);
       toast({ title: "Licença atribuída", description: lic?.nome });
       await logAuditoria({ acao: "atribuir_licenca_individual", entidade: "iam_queue", entidade_id: id!, resumo: `Licença "${lic?.nome}" atribuída individualmente a ${pessoa.nome}`, operador: profile?.email });
@@ -189,13 +178,8 @@ export default function ColaboradorDetalhePage() {
       await generateEntraQueueForDiff(
         [getColabIdentity()],
         { addedGrupoIds: [], removedGrupoIds: [], addedLicencaIds: [], removedLicencaIds: [], addedAppIds: [selectedAppId], removedAppIds: [] },
+        { requestedBy: "manual_individual" },
       );
-      const { data: latest } = await (supabase as any).from("iam_queue")
-        .select("id").eq("colaborador_id", id).eq("action_type", "assign_app").eq("requested_by", "sistema")
-        .order("created_at", { ascending: false }).limit(1);
-      if (latest?.[0]) {
-        await (supabase as any).from("iam_queue").update({ requested_by: "manual_individual" }).eq("id", latest[0].id);
-      }
       const app = (aplicacoes ?? []).find((a: any) => a.id === selectedAppId);
       toast({ title: "Aplicação atribuída", description: app?.nome });
       await logAuditoria({ acao: "atribuir_app_individual", entidade: "iam_queue", entidade_id: id!, resumo: `App "${app?.nome}" atribuída individualmente a ${pessoa.nome}`, operador: profile?.email });
@@ -210,6 +194,10 @@ export default function ColaboradorDetalhePage() {
   }
 
   async function handleRevogarIndividual(item: any) {
+    if (item.requested_by !== "manual_individual") {
+      toast({ title: "Item gerenciado automaticamente", description: "Somente atribuições manuais complementares podem ser revogadas por aqui.", variant: "destructive" });
+      return;
+    }
     const reverseMap: Record<string, string> = {
       assign_group: "remove_group",
       assign_license: "remove_license",
@@ -234,6 +222,7 @@ export default function ColaboradorDetalhePage() {
     triggerEntraProcessing();
     queryClient.invalidateQueries({ queryKey: ["colab_individual_queue"] });
   }
+
 
   async function handleConfirmPreLeaver() {
     if (!pessoa) return;
