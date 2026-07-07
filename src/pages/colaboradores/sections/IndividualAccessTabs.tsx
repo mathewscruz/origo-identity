@@ -64,6 +64,7 @@ export default function IndividualAccessTabs({ individualQueue, getResourceName,
       <thead>
         <tr className="border-b text-left text-muted-foreground">
           <th className="p-4 font-medium">Recurso</th>
+          <th className="p-4 font-medium">Origem</th>
           <th className="p-4 font-medium">Status</th>
           <th className="p-4 font-medium">Data</th>
           <th className="p-4 font-medium">Ação</th>
@@ -72,6 +73,8 @@ export default function IndividualAccessTabs({ individualQueue, getResourceName,
       <tbody>
         {data.map((item: any) => {
           const Icon = ACTION_ICONS[item.action_type] || Shield;
+          const origem = item.requested_by || "entra_sync";
+          const isManual = origem === "manual_individual";
           return (
             <tr key={item.id} className="border-b last:border-0">
               <td className="p-4">
@@ -79,6 +82,11 @@ export default function IndividualAccessTabs({ individualQueue, getResourceName,
                   <Icon className="h-4 w-4 text-muted-foreground" />
                   <span className="font-medium">{getResourceName(item)}</span>
                 </div>
+              </td>
+              <td className="p-4">
+                <Badge variant="outline" className={ORIGIN_COLORS[origem] || ""}>
+                  {ORIGIN_LABELS[origem] || origem}
+                </Badge>
               </td>
               <td className="p-4">
                 <Badge variant="outline" className={STATUS_COLORS[item.status] || ""}>
@@ -89,19 +97,26 @@ export default function IndividualAccessTabs({ individualQueue, getResourceName,
                 {new Date(item.created_at).toLocaleDateString("pt-BR")}
               </td>
               <td className="p-4">
-                <Button variant="ghost" size="sm" className="h-7 text-destructive hover:text-destructive" onClick={() => onRevoke(item)}>
-                  <XCircle className="mr-1 h-3 w-3" /> Revogar
-                </Button>
+                {isManual ? (
+                  <Button variant="ghost" size="sm" className="h-7 text-destructive hover:text-destructive" onClick={() => onRevoke(item)}>
+                    <XCircle className="mr-1 h-3 w-3" /> Revogar
+                  </Button>
+                ) : (
+                  <span className="text-xs text-muted-foreground italic" title="Gerenciado automaticamente pelo sync do Entra ID / perfil">
+                    Gerenciado automaticamente
+                  </span>
+                )}
               </td>
             </tr>
           );
         })}
         {data.length === 0 && (
-          <tr><td colSpan={4}><EmptyState message="Nenhum registro." /></td></tr>
+          <tr><td colSpan={5}><EmptyState message="Nenhum registro." /></td></tr>
         )}
       </tbody>
     </table>
   );
+
 
   return (
     <div>
