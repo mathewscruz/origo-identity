@@ -49,11 +49,17 @@ SUPPORTED_ACTIONS = {
     "remove_license",
     "assign_group",
     "remove_group",
-}
-
-BLOCKED_ACTIONS = {
     "assign_app",
     "remove_app",
+    # AD (via ponte externa configurável — AD_BRIDGE_URL)
+    "create",
+    "update",
+    "disable",
+    "reset_password",
+}
+
+# Ações ainda não suportadas nativamente por este executor.
+BLOCKED_ACTIONS = {
     "create_user_app",
     "update_user_app",
     "disable_user_app",
@@ -147,6 +153,45 @@ def has_approval(item: Dict[str, Any]) -> bool:
     return bool(payload.get("approved_by") or payload.get("evento_jml_id"))
 
 
+AD_ACTIONS = {"create", "update", "disable", "reset_password"}
+
+
+def call_ad_bridge(action: str, payload: Dict[str, Any], execute: bool) -> Dict[str, Any]:
+    """Encaminha ações AD (create/update/disable/reset_password) para uma ponte
+    HTTP externa configurável via env (AD_BRIDGE_URL / AD_BRIDGE_TOKEN).
+
+    A ponte pode ser um endpoint PowerShell/HTTP responsável por executar o
+    comando ActiveDirectory correspondente. Se AD_BRIDGE_URL não estiver
+    configurado, a ação é reportada como não suportada localmente.
+    """
+    url = os.environ.get("AD_BRIDGE_URL", "").strip()
+    if not url:
+        return {"status": "failed", "error_code": "ad_bridge_missing",
+                "result_message": f"AD action {action} requer AD_BRIDGE_URL configurado."}
+    if not execute:
+        return {"status": "pending", "error_code": "dry_run",
+                "result_message": f"[dry-run] AD {action} → {payload.get('samAccountName')}"}
+    token = os.environ.get("AD_BRIDGE_TOKEN", "")
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        r = requests.post(url.rstrip("/") + f"/{action}", headers=headers,
+                          json=payload, timeout=60)
+        if r.status_code >= 400:
+            return {"status": "failed", "error_code": "ad_bridge_http",
+                    "result_message": f"{r.status_code}: {r.text[:300]}"}
+        try:
+            data = r.json()
+        except ValueError:
+            data = {"message": r.text[:200]}
+        return {"status": "success",
+                "result_message": data.get("message") or f"AD {action} executado."}
+    except Exception as e:  # noqa: BLE001
+        return {"status": "failed", "error_code": "ad_bridge_exception",
+                "result_message": str(e)[:300]}
+
+
 def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[str, Any]:
     action = item["action_type"]
     payload = item.get("payload_json") or {}
@@ -158,6 +203,10 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
     if action not in SUPPORTED_ACTIONS:
         return {"status": "failed", "error_code": "unsupported_action",
                 "result_message": f"Ação {action} não suportada por este executor."}
+
+    # AD: delega para a ponte externa.
+    if action in AD_ACTIONS:
+        return call_ad_bridge(action, payload, execute)
 
     if action == "enable_entra" and not has_approval(item):
         return {"status": "failed", "error_code": "missing_approval",
@@ -177,6 +226,7 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
     if not execute:
         return {"status": "pending", "result_message": f"[dry-run] {action} → {user_id}",
                 "error_code": "dry_run"}
+
 
     headers = {"Authorization": f"Bearer {graph_token}", "Content-Type": "application/json"}
     graph = "https://graph.microsoft.com/v1.0"
@@ -241,6 +291,65 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
             r = requests.delete(f"{graph}/groups/{gid}/members/{user_id}/$ref", headers=headers, timeout=30)
             if r.status_code in (200, 204, 404):
                 return {"status": "success", "result_message": "Removido do grupo (ou já não era membro)."}
+            r.raise_for_status()
+
+        if action == "assign_app":
+            app_id = payload.get("appId")  # Application (client) ID do enterprise app
+            resource_id = payload.get("resourceId") or payload.get("servicePrincipalId")
+            role_id = payload.get("appRoleId") or "00000000-0000-0000-0000-000000000000"
+            if not (app_id or resource_id):
+                return {"status": "failed", "error_code": "invalid_payload",
+                        "result_message": "appId ou resourceId ausente"}
+            # Resolve servicePrincipal.id se veio só appId
+            if not resource_id:
+                sp = requests.get(f"{graph}/servicePrincipals",
+                                  params={"$filter": f"appId eq '{app_id}'", "$select": "id"},
+                                  headers=headers, timeout=30)
+                sp.raise_for_status()
+                vals = sp.json().get("value", [])
+                if not vals:
+                    return {"status": "failed", "error_code": "sp_not_found",
+                            "result_message": f"ServicePrincipal não encontrado para appId={app_id}"}
+                resource_id = vals[0]["id"]
+            r = requests.post(f"{graph}/users/{user_id}/appRoleAssignments", headers=headers,
+                              json={"principalId": user_id, "resourceId": resource_id, "appRoleId": role_id},
+                              timeout=30)
+            if r.status_code in (200, 201):
+                return {"status": "success",
+                        "result_message": f"App {payload.get('appName') or app_id} atribuído."}
+            if r.status_code == 400 and "already exists" in r.text.lower():
+                return {"status": "success", "result_message": "AppRoleAssignment já existia."}
+            r.raise_for_status()
+
+        if action == "remove_app":
+            app_id = payload.get("appId")
+            resource_id = payload.get("resourceId") or payload.get("servicePrincipalId")
+            assignment_id = payload.get("appRoleAssignmentId")
+            if not assignment_id:
+                # Localiza assignment do usuário para o SP alvo
+                if not resource_id and app_id:
+                    sp = requests.get(f"{graph}/servicePrincipals",
+                                      params={"$filter": f"appId eq '{app_id}'", "$select": "id"},
+                                      headers=headers, timeout=30)
+                    sp.raise_for_status()
+                    vals = sp.json().get("value", [])
+                    if vals:
+                        resource_id = vals[0]["id"]
+                if not resource_id:
+                    return {"status": "failed", "error_code": "invalid_payload",
+                            "result_message": "appId/resourceId ausente para remove_app"}
+                lst = requests.get(f"{graph}/users/{user_id}/appRoleAssignments",
+                                   headers=headers, timeout=30)
+                lst.raise_for_status()
+                match = next((a for a in lst.json().get("value", []) if a.get("resourceId") == resource_id), None)
+                if not match:
+                    return {"status": "success", "result_message": "Nenhum assignment ativo para este app."}
+                assignment_id = match["id"]
+            r = requests.delete(f"{graph}/users/{user_id}/appRoleAssignments/{assignment_id}",
+                                headers=headers, timeout=30)
+            if r.status_code in (200, 204, 404):
+                return {"status": "success",
+                        "result_message": f"App {payload.get('appName') or app_id} removido."}
             r.raise_for_status()
 
     except requests.HTTPError as e:
