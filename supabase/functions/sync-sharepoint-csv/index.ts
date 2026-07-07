@@ -379,6 +379,42 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     }
     console.log(`Existing CSV colaboradores: ${existingMap.size}`);
 
+    // ── Load MANUAL-origin colaboradores to enable RH↔manual linkage by CPF/email/SAM/matrícula ──
+    // When a manual "Novo Colaborador" (criado direto no AD) aparece no CSV do RH,
+    // vinculamos ao registro existente ao invés de duplicar. Após o vínculo, marcamos
+    // como origem="csv" e disparamos o provisionamento de grupos/licenças/apps do cargo.
+    type ManualIdx = { id: string; cargo_id: string | null; sam_account_name: string | null; status: string; nome: string; email: string | null };
+    const manualByCpf = new Map<string, ManualIdx>();
+    const manualByMail = new Map<string, ManualIdx>();
+    const manualBySam = new Map<string, ManualIdx>();
+    const manualByMatricula = new Map<string, ManualIdx>();
+    {
+      let mfrom = 0;
+      while (true) {
+        const { data } = await sb.from("colaboradores")
+          .select("id, nome, email, sam_account_name, cargo_id, status, cpf, matricula")
+          .eq("origem", "manual")
+          .range(mfrom, mfrom + 999);
+        if (!data || data.length === 0) break;
+        for (const c of data as any[]) {
+          const idx: ManualIdx = { id: c.id, cargo_id: c.cargo_id, sam_account_name: c.sam_account_name, status: c.status, nome: c.nome, email: c.email };
+          const cpf = (c.cpf || "").replace(/\D/g, "");
+          const mail = (c.email || "").trim().toLowerCase();
+          const sam = (c.sam_account_name || "").trim().toLowerCase();
+          const mat = (c.matricula || "").trim();
+          if (cpf) manualByCpf.set(cpf, idx);
+          if (mail) manualByMail.set(mail, idx);
+          if (sam) manualBySam.set(sam, idx);
+          if (mat) manualByMatricula.set(mat, idx);
+        }
+        if (data.length < 1000) break;
+        mfrom += 1000;
+      }
+    }
+    console.log(`[manual-link] indexed manual colabs: cpf=${manualByCpf.size} mail=${manualByMail.size} sam=${manualBySam.size} matricula=${manualByMatricula.size}`);
+    const manualLinked: { colab_id: string; matricula: string; via: "cpf" | "email" | "sam" | "matricula"; previous_status: string }[] = [];
+
+
     // ── Load active manual overrides (manter_ativo | status_manual) ──
     // These are approved exceptions with validade >= today (or null validade).
     // While active, RH/SharePoint sync MUST NOT overwrite the current IAM status
