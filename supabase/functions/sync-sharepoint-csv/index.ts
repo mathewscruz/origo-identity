@@ -379,6 +379,36 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     }
     console.log(`Existing CSV colaboradores: ${existingMap.size}`);
 
+    // ── Load active manual overrides (manter_ativo | status_manual) ──
+    // These are approved exceptions with validade >= today (or null validade).
+    // While active, RH/SharePoint sync MUST NOT overwrite the current IAM status
+    // and MUST NOT remove the collaborator if absent from the CSV.
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const overrideColabIds = new Set<string>();
+    const overrideByColabId = new Map<string, { tipo_excecao: string; validade: string | null; id: string }>();
+    {
+      let ofrom = 0;
+      while (true) {
+        const { data: excs } = await sb.from("excecoes")
+          .select("id, colaborador_id, tipo_excecao, validade, status")
+          .in("tipo_excecao", ["manter_ativo", "status_manual"])
+          .eq("status", "aprovada")
+          .range(ofrom, ofrom + 999);
+        if (!excs || excs.length === 0) break;
+        for (const e of excs) {
+          if (!e.colaborador_id) continue;
+          if (e.validade && e.validade < todayIso) continue; // expired
+          overrideColabIds.add(e.colaborador_id);
+          overrideByColabId.set(e.colaborador_id, { tipo_excecao: e.tipo_excecao, validade: e.validade, id: e.id });
+        }
+        if (excs.length < 1000) break;
+        ofrom += 1000;
+      }
+    }
+    console.log(`[manual-override] active_overrides=${overrideColabIds.size}`);
+    const manualOverridePreserved: { colab_id: string; matricula: string; tipo_excecao: string; kept_status: string; csv_status?: string; action: "status_preserved" | "leaver_skipped" }[] = [];
+
+
     // ── Resolve lookup entities ──
     await sb.from("sync_jobs").update({ phase: "lookups", message: "Resolvendo entidades...", colab_percent: 10 }).eq("id", jobId);
 
