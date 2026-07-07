@@ -326,7 +326,7 @@ export default function AprovacaoIAMPage() {
   });
 
   // Sem filtro client-side extra — a busca já é server-side.
-  const filtered = items;
+  const filtered = onlyCritical ? items.filter(isCritical) : items;
 
   // Realtime — invalidate current page on any change
   useEffect(() => {
