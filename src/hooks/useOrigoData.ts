@@ -285,7 +285,6 @@ export function useColabIndividualQueue(colaboradorId: string | undefined) {
     queryKey: ["colab_individual_queue", colaboradorId],
     enabled: !!colaboradorId,
     queryFn: async () => {
-      // Fetch all assign_* and remove_* entries to compute current state
       const { data, error } = await (supabase as any)
         .from("iam_queue")
         .select("*")
@@ -296,24 +295,41 @@ export function useColabIndividualQueue(colaboradorId: string | undefined) {
       if (error) throw error;
       if (!data) return [];
 
-      // Build current state: for each resource key, keep only the latest action
-      const stateMap = new Map<string, any>();
-      for (const row of data) {
-        const p = row.payload_json;
-        let key: string;
+      const keyOf = (row: any) => {
+        const p = row.payload_json || {};
         const at = row.action_type as string;
-        if (at.includes("group")) key = `group:${p?.groupId || ""}`;
-        else if (at.includes("license")) key = `license:${p?.skuId || ""}`;
-        else if (at.includes("app")) key = `app:${p?.appId || ""}:${p?.appRoleId || ""}`;
-        else key = `${at}:${row.id}`;
-        stateMap.set(key, row);
+        if (at.includes("group")) return `group:${p?.groupId || ""}`;
+        if (at.includes("license")) return `license:${p?.skuId || ""}`;
+        if (at.includes("app")) return `app:${p?.appId || ""}:${p?.appRoleId || ""}`;
+        return `${at}:${row.id}`;
+      };
+
+      // Latest state per key (any origin) — tells us if resource is still assigned.
+      const latestState = new Map<string, any>();
+      // Latest manual assign per key — preferred display row when active.
+      const latestManualAssign = new Map<string, any>();
+
+      for (const row of data) {
+        const key = keyOf(row);
+        latestState.set(key, row);
+        if (row.requested_by === "manual_individual" && row.action_type.startsWith("assign_")) {
+          latestManualAssign.set(key, row);
+        }
+        if (row.action_type.startsWith("remove_")) {
+          // A remove supersedes prior manual assign for that key
+          latestManualAssign.delete(key);
+        }
       }
 
-      // Return only active assignments (assign_* that are the latest for their key)
-      return Array.from(stateMap.values()).filter(
-        (r) => r.action_type.startsWith("assign_")
-      );
+      const out: any[] = [];
+      for (const [key, current] of latestState) {
+        if (!current.action_type.startsWith("assign_")) continue;
+        // Preserve manual origin visibility even if a later sync row exists.
+        out.push(latestManualAssign.get(key) ?? current);
+      }
+      return out;
     },
     ...REFETCH_OPTS,
   });
 }
+
