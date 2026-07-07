@@ -44,9 +44,9 @@ async function resolveEntraUser(token: string, email: string | null, sam: string
   return null;
 }
 
-interface EntraGroup { id: string; displayName: string; }
+interface EntraGroup { id: string; displayName: string; onPremisesSyncEnabled: boolean; }
 interface EntraLicense { skuId: string; }
-interface EntraAppRole { resourceId: string; resourceDisplayName: string; appRoleId: string; }
+interface EntraAppRole { assignmentId: string; resourceId: string; resourceDisplayName: string; appRoleId: string; principalId: string; }
 
 async function fetchUserGroups(token: string, userId: string): Promise<EntraGroup[]> {
   const headers = { Authorization: `Bearer ${token}` };
@@ -54,13 +54,13 @@ async function fetchUserGroups(token: string, userId: string): Promise<EntraGrou
   const seen = new Set<string>();
 
   // Use memberOf with OData type cast (no $filter with isof which causes 400)
-  let url: string | null = `https://graph.microsoft.com/v1.0/users/${userId}/transitiveMemberOf/microsoft.graph.group?$select=id,displayName&$top=999`;
+  let url: string | null = `https://graph.microsoft.com/v1.0/users/${userId}/transitiveMemberOf/microsoft.graph.group?$select=id,displayName,onPremisesSyncEnabled&$top=999`;
   while (url) {
     const res = await fetch(url, { headers });
     if (!res.ok) {
       console.warn(`transitiveMemberOf/microsoft.graph.group failed (${res.status}), trying memberOf`);
       // Fallback to simple memberOf
-      let fallbackUrl: string | null = `https://graph.microsoft.com/v1.0/users/${userId}/memberOf/microsoft.graph.group?$select=id,displayName&$top=999`;
+      let fallbackUrl: string | null = `https://graph.microsoft.com/v1.0/users/${userId}/memberOf/microsoft.graph.group?$select=id,displayName,onPremisesSyncEnabled&$top=999`;
       while (fallbackUrl) {
         const fbRes = await fetch(fallbackUrl, { headers });
         if (!fbRes.ok) {
@@ -71,7 +71,7 @@ async function fetchUserGroups(token: string, userId: string): Promise<EntraGrou
         for (const item of (fbData.value || [])) {
           if (!seen.has(item.id)) {
             seen.add(item.id);
-            groups.push({ id: item.id, displayName: item.displayName });
+            groups.push({ id: item.id, displayName: item.displayName, onPremisesSyncEnabled: !!item.onPremisesSyncEnabled });
           }
         }
         fallbackUrl = fbData["@odata.nextLink"] || null;
@@ -82,7 +82,7 @@ async function fetchUserGroups(token: string, userId: string): Promise<EntraGrou
     for (const item of (data.value || [])) {
       if (!seen.has(item.id)) {
         seen.add(item.id);
-        groups.push({ id: item.id, displayName: item.displayName });
+        groups.push({ id: item.id, displayName: item.displayName, onPremisesSyncEnabled: !!item.onPremisesSyncEnabled });
       }
     }
     url = data["@odata.nextLink"] || null;
@@ -108,6 +108,8 @@ async function fetchUserAppRoles(token: string, userId: string): Promise<EntraAp
     const data = await res.json();
     for (const item of (data.value || [])) {
       roles.push({
+        assignmentId: item.id,
+        principalId: item.principalId,
         resourceId: item.resourceId,
         resourceDisplayName: item.resourceDisplayName || "",
         appRoleId: item.appRoleId || "00000000-0000-0000-0000-000000000000",
@@ -229,11 +231,13 @@ Deno.serve(async (req) => {
         console.warn(`No local group matches. First 5 Entra group names: ${userGroups.slice(0, 5).map(g => `${g.displayName} (${g.id})`).join(", ")}`);
       }
       for (const lg of localGroups) {
+        const src = userGroups.find(g => g.id === lg.entra_id);
         const payload = {
           displayName: colab.nome,
           mail: colab.email || "",
           groupId: lg.entra_id,
           groupName: lg.nome,
+          onPremisesSync: !!src?.onPremisesSyncEnabled,
         };
         const key = queueKey("assign_group", payload);
         if (existingKeys.has(key)) continue;
@@ -288,6 +292,8 @@ Deno.serve(async (req) => {
           appId: la.entra_id,
           appName: la.nome,
           appRoleId: role?.appRoleId || "00000000-0000-0000-0000-000000000000",
+          assignmentId: role?.assignmentId || null,
+          principalId: role?.principalId || entraUserId,
         };
         const key = queueKey("assign_app", payload);
         if (existingKeys.has(key)) continue;

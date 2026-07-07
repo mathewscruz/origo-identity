@@ -194,10 +194,6 @@ export default function ColaboradorDetalhePage() {
   }
 
   async function handleRevogarIndividual(item: any) {
-    if (item.requested_by !== "manual_individual") {
-      toast({ title: "Item gerenciado automaticamente", description: "Somente atribuições manuais complementares podem ser revogadas por aqui.", variant: "destructive" });
-      return;
-    }
     const reverseMap: Record<string, string> = {
       assign_group: "remove_group",
       assign_license: "remove_license",
@@ -206,7 +202,19 @@ export default function ColaboradorDetalhePage() {
     const reverseAction = reverseMap[item.action_type];
     if (!reverseAction) return;
 
-    const payload = { ...item.payload_json };
+    const payload = { ...(item.payload_json || {}) };
+    const isImported = item.requested_by === "entra_sync";
+
+    // Bloquear remoção via Graph de grupos sincronizados on-prem
+    if (item.action_type === "assign_group" && payload.onPremisesSync) {
+      toast({
+        title: "Grupo gerenciado pelo AD on-premises",
+        description: "Este grupo é sincronizado do AD local. Remova a associação diretamente no Active Directory — o Graph não permite alteração.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const { error } = await supabase.from("iam_queue" as any).insert({
       action_type: reverseAction,
       payload_json: payload,
@@ -216,9 +224,15 @@ export default function ColaboradorDetalhePage() {
       status: "pending",
     });
     if (error) { toast({ title: "Erro ao revogar", description: error.message, variant: "destructive" }); return; }
-    toast({ title: "Revogação enviada para processamento" });
+    toast({ title: isImported ? "Remoção enviada (importado do Entra ID)" : "Revogação enviada para processamento" });
     const resourceName = payload.groupName || payload.licenseName || payload.appName || "";
-    await logAuditoria({ acao: "revogar_individual", entidade: "iam_queue", entidade_id: id!, resumo: `Recurso individual "${resourceName}" revogado de ${pessoa.nome}`, operador: profile?.email });
+    await logAuditoria({
+      acao: isImported ? "remover_acesso_importado_entra" : "revogar_individual",
+      entidade: "iam_queue",
+      entidade_id: id!,
+      resumo: `${isImported ? "Remoção manual de acesso importado do Entra" : "Recurso individual"} "${resourceName}" para ${pessoa.nome}`,
+      operador: profile?.email,
+    });
     triggerEntraProcessing();
     queryClient.invalidateQueries({ queryKey: ["colab_individual_queue"] });
   }

@@ -75,12 +75,17 @@ export default function IndividualAccessTabs({ individualQueue, getResourceName,
           const Icon = ACTION_ICONS[item.action_type] || Shield;
           const origem = item.requested_by || "entra_sync";
           const isManual = origem === "manual_individual";
+          const payload = item.payload_json || {};
+          const isOnPremGroup = item.action_type === "assign_group" && !!payload.onPremisesSync;
           return (
             <tr key={item.id} className="border-b last:border-0">
               <td className="p-4">
                 <div className="flex items-center gap-2">
                   <Icon className="h-4 w-4 text-muted-foreground" />
                   <span className="font-medium">{getResourceName(item)}</span>
+                  {isOnPremGroup && (
+                    <Badge variant="outline" className="ml-1 text-xs bg-warning/10 text-warning border-warning/30">On-prem</Badge>
+                  )}
                 </div>
               </td>
               <td className="p-4">
@@ -97,14 +102,21 @@ export default function IndividualAccessTabs({ individualQueue, getResourceName,
                 {new Date(item.created_at).toLocaleDateString("pt-BR")}
               </td>
               <td className="p-4">
-                {isManual ? (
-                  <Button variant="ghost" size="sm" className="h-7 text-destructive hover:text-destructive" onClick={() => onRevoke(item)}>
-                    <XCircle className="mr-1 h-3 w-3" /> Revogar
-                  </Button>
-                ) : (
-                  <span className="text-xs text-muted-foreground italic" title="Gerenciado automaticamente pelo sync do Entra ID / perfil">
-                    Gerenciado automaticamente
+                {isOnPremGroup ? (
+                  <span className="text-xs text-muted-foreground italic" title="Grupo sincronizado do AD on-premises. Trate diretamente no Active Directory.">
+                    Gerenciar no AD on-prem
                   </span>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-destructive hover:text-destructive"
+                    onClick={() => onRevoke(item)}
+                    title={isManual ? "Revogar atribuição manual" : "Remover acesso importado do Entra ID"}
+                  >
+                    <XCircle className="mr-1 h-3 w-3" />
+                    {isManual ? "Revogar" : "Remover do Entra"}
+                  </Button>
                 )}
               </td>
             </tr>
