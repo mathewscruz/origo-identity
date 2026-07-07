@@ -379,6 +379,42 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     }
     console.log(`Existing CSV colaboradores: ${existingMap.size}`);
 
+    // ── Load MANUAL-origin colaboradores to enable RH↔manual linkage by CPF/email/SAM/matrícula ──
+    // When a manual "Novo Colaborador" (criado direto no AD) aparece no CSV do RH,
+    // vinculamos ao registro existente ao invés de duplicar. Após o vínculo, marcamos
+    // como origem="csv" e disparamos o provisionamento de grupos/licenças/apps do cargo.
+    type ManualIdx = { id: string; cargo_id: string | null; sam_account_name: string | null; status: string; nome: string; email: string | null };
+    const manualByCpf = new Map<string, ManualIdx>();
+    const manualByMail = new Map<string, ManualIdx>();
+    const manualBySam = new Map<string, ManualIdx>();
+    const manualByMatricula = new Map<string, ManualIdx>();
+    {
+      let mfrom = 0;
+      while (true) {
+        const { data } = await sb.from("colaboradores")
+          .select("id, nome, email, sam_account_name, cargo_id, status, cpf, matricula")
+          .eq("origem", "manual")
+          .range(mfrom, mfrom + 999);
+        if (!data || data.length === 0) break;
+        for (const c of data as any[]) {
+          const idx: ManualIdx = { id: c.id, cargo_id: c.cargo_id, sam_account_name: c.sam_account_name, status: c.status, nome: c.nome, email: c.email };
+          const cpf = (c.cpf || "").replace(/\D/g, "");
+          const mail = (c.email || "").trim().toLowerCase();
+          const sam = (c.sam_account_name || "").trim().toLowerCase();
+          const mat = (c.matricula || "").trim();
+          if (cpf) manualByCpf.set(cpf, idx);
+          if (mail) manualByMail.set(mail, idx);
+          if (sam) manualBySam.set(sam, idx);
+          if (mat) manualByMatricula.set(mat, idx);
+        }
+        if (data.length < 1000) break;
+        mfrom += 1000;
+      }
+    }
+    console.log(`[manual-link] indexed manual colabs: cpf=${manualByCpf.size} mail=${manualByMail.size} sam=${manualBySam.size} matricula=${manualByMatricula.size}`);
+    const manualLinked: { colab_id: string; matricula: string; via: "cpf" | "email" | "sam" | "matricula"; previous_status: string }[] = [];
+
+
     // ── Load active manual overrides (manter_ativo | status_manual) ──
     // These are approved exceptions with validade >= today (or null validade).
     // While active, RH/SharePoint sync MUST NOT overwrite the current IAM status
@@ -506,7 +542,39 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       const existing = existingMap.get(mat);
 
       if (!existing) {
-        toInsert.push(buildColabData(row));
+        // Antes de inserir, tentar VINCULAR a um colaborador manual pré-existente
+        // (Novo Colaborador criado direto no AD). Ordem: CPF → e-mail → SAM → matrícula.
+        const rowCpf = (row.Cadastro_Pessoa_Fisica || "").replace(/\D/g, "");
+        const rowMail = (row.mail || "").trim().toLowerCase();
+        const rowSam = rowMail.includes("@") ? rowMail.split("@")[0] : mat.toLowerCase();
+        let via: "cpf" | "email" | "sam" | "matricula" | null = null;
+        let manualHit: ManualIdx | undefined;
+        if (rowCpf && manualByCpf.has(rowCpf)) { manualHit = manualByCpf.get(rowCpf); via = "cpf"; }
+        else if (rowMail && manualByMail.has(rowMail)) { manualHit = manualByMail.get(rowMail); via = "email"; }
+        else if (rowSam && manualBySam.has(rowSam)) { manualHit = manualBySam.get(rowSam); via = "sam"; }
+        else if (mat && manualByMatricula.has(mat)) { manualHit = manualByMatricula.get(mat); via = "matricula"; }
+
+        if (manualHit && via) {
+          const built = buildColabData(row);
+          // Preservar override manual de status, se ativo
+          if (overrideColabIds.has(manualHit.id) && built.status !== manualHit.status) {
+            const ov = overrideByColabId.get(manualHit.id)!;
+            manualOverridePreserved.push({
+              colab_id: manualHit.id, matricula: mat, tipo_excecao: ov.tipo_excecao,
+              kept_status: manualHit.status, csv_status: built.status, action: "status_preserved",
+            });
+            built.status = manualHit.status;
+          }
+          manualLinked.push({ colab_id: manualHit.id, matricula: mat, via, previous_status: manualHit.status });
+          // origem já vem "csv" via buildColabData → migra ownership para o RH.
+          // oldCargoId=null força provisionamento COMPLETO de grupos/licenças/apps
+          // (que foi propositalmente adiado na criação manual até o Entra ID replicar).
+          toUpdate.push({ id: manualHit.id, data: built, oldCargoId: null, oldStatus: manualHit.status, oldSam: manualHit.sam_account_name });
+          // Registrar no existingMap para evitar tratamento como leaver e futura duplicação
+          existingMap.set(mat, { id: manualHit.id, fingerprint: "", cargo_id: manualHit.cargo_id, sam_account_name: manualHit.sam_account_name, status: manualHit.status });
+        } else {
+          toInsert.push(buildColabData(row));
+        }
       } else if (existing.fingerprint !== fp) {
         const built = buildColabData(row);
         // Manual override protection: preserve the current IAM status; RH/SharePoint cannot overwrite it.
@@ -523,6 +591,10 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         unchanged++;
       }
     }
+    if (manualLinked.length > 0) {
+      console.log(`[manual-link] linked=${manualLinked.length} (via cpf=${manualLinked.filter(m => m.via === "cpf").length}, email=${manualLinked.filter(m => m.via === "email").length}, sam=${manualLinked.filter(m => m.via === "sam").length}, matricula=${manualLinked.filter(m => m.via === "matricula").length})`);
+    }
+
 
     const leaverIds: string[] = [];
     const leaverMatriculas: string[] = [];
@@ -779,12 +851,12 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     await sb.from("sync_jobs").update({
       status: "done", phase: "done", colab_percent: 100,
       colab_created: created, colab_updated: updated, colab_quarentena: leaverMatriculas.length,
-      message: `Concluído: bruto=${rawTotalRows}, canônico=${totalRows}, dedupe=${dedupe.removedRows} (grupos=${dedupe.duplicateGroups}), ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos (${silentCount} silenciosos), ${weakProtection.protectedRows} protegidos (identidade fraca), ${manualOverridePreserved.length} overrides manuais preservados (${overrideStatusCount} status, ${overrideLeaverSkip} não-removidos)`,
+      message: `Concluído: bruto=${rawTotalRows}, canônico=${totalRows}, dedupe=${dedupe.removedRows} (grupos=${dedupe.duplicateGroups}), ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos (${silentCount} silenciosos), ${weakProtection.protectedRows} protegidos (identidade fraca), ${manualOverridePreserved.length} overrides manuais preservados (${overrideStatusCount} status, ${overrideLeaverSkip} não-removidos), ${manualLinked.length} vinculados a colaboradores manuais`,
     }).eq("id", jobId);
 
     await sb.from("auditoria").insert({
       entidade: "importacao_csv", acao: "importar",
-      resumo: `CSV SharePoint: bruto=${rawTotalRows} → canônico=${totalRows} · ${created} novos, ${updated} atualizados, ${leaverMatriculas.length} removidos · ${weakProtection.protectedRows} protegidos · ${manualOverridePreserved.length} overrides manuais preservados`,
+      resumo: `CSV SharePoint: bruto=${rawTotalRows} → canônico=${totalRows} · ${created} novos, ${updated} atualizados, ${leaverMatriculas.length} removidos · ${weakProtection.protectedRows} protegidos · ${manualOverridePreserved.length} overrides preservados · ${manualLinked.length} vinculados a manuais`,
       detalhes: {
         filename, jobId,
         rawTotalRows, totalRows,
@@ -802,9 +874,18 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
           leaver_skipped: overrideLeaverSkip,
           samples: manualOverridePreserved.slice(0, 20),
         },
+        manual_link: {
+          total: manualLinked.length,
+          by_cpf: manualLinked.filter(m => m.via === "cpf").length,
+          by_email: manualLinked.filter(m => m.via === "email").length,
+          by_sam: manualLinked.filter(m => m.via === "sam").length,
+          by_matricula: manualLinked.filter(m => m.via === "matricula").length,
+          samples: manualLinked.slice(0, 20),
+        },
         created, updated, unchanged, removed: leaverMatriculas.length,
       },
     });
+
 
     return {
       success: true, jobId, file: filename,
@@ -821,6 +902,14 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         status_preserved: overrideStatusCount,
         leaver_skipped: overrideLeaverSkip,
         samples: manualOverridePreserved.slice(0, 20),
+      },
+      manual_link: {
+        total: manualLinked.length,
+        by_cpf: manualLinked.filter(m => m.via === "cpf").length,
+        by_email: manualLinked.filter(m => m.via === "email").length,
+        by_sam: manualLinked.filter(m => m.via === "sam").length,
+        by_matricula: manualLinked.filter(m => m.via === "matricula").length,
+        samples: manualLinked.slice(0, 20),
       },
       created, updated, unchanged, removed: leaverMatriculas.length, total: totalRows,
     };

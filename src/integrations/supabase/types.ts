@@ -948,6 +948,51 @@ export type Database = {
           },
         ]
       }
+      iam_change_backups: {
+        Row: {
+          actor: string | null
+          correlation_id: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          new_data: Json | null
+          old_data: Json | null
+          operation: string
+          reason: string | null
+          record_id: string | null
+          source: string
+          table_name: string
+        }
+        Insert: {
+          actor?: string | null
+          correlation_id?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          new_data?: Json | null
+          old_data?: Json | null
+          operation: string
+          reason?: string | null
+          record_id?: string | null
+          source?: string
+          table_name: string
+        }
+        Update: {
+          actor?: string | null
+          correlation_id?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          new_data?: Json | null
+          old_data?: Json | null
+          operation?: string
+          reason?: string | null
+          record_id?: string | null
+          source?: string
+          table_name?: string
+        }
+        Relationships: []
+      }
       iam_queue: {
         Row: {
           action_type: string
@@ -2298,6 +2343,7 @@ export type Database = {
         Args: { colab_updates?: Json; queue_updates?: Json }
         Returns: Json
       }
+      cleanup_expired_iam_change_backups: { Args: never; Returns: number }
       get_revisao_by_token: { Args: { p_token: string }; Returns: Json }
       get_revisao_itens_by_token: { Args: { p_token: string }; Returns: Json }
       has_any_app_role: { Args: { _user_id: string }; Returns: boolean }
@@ -2308,6 +2354,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      iam_backup_actor: { Args: never; Returns: string }
       iam_queue_distinct_actions_origins: {
         Args: { status_filter: string[] }
         Returns: {

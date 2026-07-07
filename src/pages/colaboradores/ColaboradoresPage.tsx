@@ -228,9 +228,12 @@ export default function ColaboradoresPage() {
       const becameInactive = statusChanged && editingStatus === "ativo" && form.status !== "ativo";
       const becameActive = statusChanged && editingStatus !== "ativo" && form.status === "ativo";
 
-      // 1. Provision cargo access profiles (only for cargo changes, new users, or non-status changes)
-      if ((cargoChanged || !editingId) && !becameInactive) {
-        const result = await provisionCargoAcessos(colaboradorId, form.cargo_id || null, editingId ? (editingCargoId || null) : null);
+      // 1. Provision cargo access profiles.
+      //    For NEW manual users, grupos/licenças/apps are deferred until the AD account
+      //    replicates to Entra ID (see audit 'aguardar_replicacao_entra' abaixo).
+      //    Somente rodamos provisionamento aqui para mudanças de cargo em usuários já existentes.
+      if (editingId && cargoChanged && !becameInactive) {
+        const result = await provisionCargoAcessos(colaboradorId, form.cargo_id || null, editingCargoId || null);
         if (result.skippedDirectory) {
           toast({ title: "⚠️ Provisionamento de diretório ignorado", description: "O campo 'Nome de login AD' está vazio. Grupos e licenças não serão atribuídos no Entra ID.", variant: "destructive" });
         }
@@ -271,7 +274,11 @@ export default function ColaboradoresPage() {
         }
       }
 
-      // 3. Queue create request for new collaborators
+      // 3. Queue create request for new collaborators — AD FIRST ONLY.
+      //    We do NOT provision grupos/licenças/apps agora nem importamos acessos do Entra ID:
+      //    o usuário precisa ser criado no AD e replicar para o Entra ID primeiro.
+      //    Quando ele aparecer no próximo CSV do SharePoint, o sync-sharepoint-csv linka
+      //    pelo CPF/e-mail/SAM/matrícula (sem duplicar) e dispara a atribuição dos acessos.
       if (!editingId && form.status === "ativo") {
         const nameParts = form.nome.trim().split(" ");
         const givenName = nameParts[0] || "";
@@ -295,32 +302,34 @@ export default function ColaboradoresPage() {
             ouPath: "",
             password: "Origo@2026er",
             changePasswordAtLogon: true,
+            target_directory: "ad_only",
+            defer_entra_provisioning: true,
           },
           requested_by: profile?.email || "sistema",
           colaborador_id: colaboradorId,
           target_identity: sam || null,
         });
-        toast({ title: "Solicitação enviada para processamento" });
+        toast({ title: "Solicitação enviada: usuário será criado no AD e aguardará replicação para o Entra ID" });
 
-        // Sync current Entra ID access as individual records
-        if (form.email.trim() || form.sam_account_name.trim()) {
-          try {
-            const syncUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-user-access`;
-            authedFetch(syncUrl, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ colaborador_id: colaboradorId }),
-            }).then(r => r.json()).then(res => {
-              if (res.queued > 0) {
-                console.log(`[sync-user-access] Imported ${res.queued} access records from Entra ID`);
-              }
-            }).catch(e => console.warn("[sync-user-access]", e));
-            toast({ title: "Importando acessos atuais do Entra ID..." });
-          } catch (e) { console.warn("[sync-user-access]", e); }
-        }
+        // Auditoria — aguardando replicação AD → Entra ID
+        await logAuditoria({
+          acao: "aguardar_replicacao_entra",
+          entidade: "colaboradores",
+          entidade_id: colaboradorId,
+          resumo: `Novo colaborador ${form.nome.trim()} criado no AD; grupos/licenças/apps ficam pendentes até replicação para o Entra ID e vínculo pelo RH/SharePoint`,
+          operador: profile?.email || "sistema",
+          detalhes: {
+            samAccountName: sam || null,
+            email: form.email.trim() || null,
+            cargo: getNameById(cargos, form.cargo_id),
+            area: getNameById(areas, form.area_id),
+            empresa: getNameById(empresas, form.empresa_id),
+            deferred: ["grupos", "licencas", "apps"],
+            link_strategy: ["cpf", "email", "sam_account_name", "matricula"],
+          },
+        });
       }
+
 
       // 4. Queue update for edits (cargo/area change)
       if (editingId && (cargoChanged || areaChanged) && !becameInactive && !becameActive) {
