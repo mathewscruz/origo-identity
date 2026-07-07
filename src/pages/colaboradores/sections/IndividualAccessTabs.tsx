@@ -27,6 +27,17 @@ const STATUS_LABELS: Record<string, string> = {
   failed: "Falhou",
 };
 
+const ORIGIN_LABELS: Record<string, string> = {
+  manual_individual: "Manual complementar",
+  entra_sync: "Importado do Entra ID",
+};
+
+const ORIGIN_COLORS: Record<string, string> = {
+  manual_individual: "bg-primary/10 text-primary border-primary/30",
+  entra_sync: "bg-muted text-muted-foreground border-muted-foreground/20",
+};
+
+
 interface Props {
   individualQueue: any[] | undefined;
   getResourceName: (item: any) => string;
