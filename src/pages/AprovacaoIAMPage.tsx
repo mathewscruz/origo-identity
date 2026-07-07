@@ -77,6 +77,139 @@ function summarizePayload(p: any): string {
   return Object.keys(p).slice(0, 3).join(", ");
 }
 
+// ── Classificação de ações ─────────────────────────────────────────────
+function isDestructive(action: string): boolean {
+  return action.startsWith("disable") || action.startsWith("remove") || action.startsWith("delete");
+}
+function isAdditive(action: string): boolean {
+  return action.startsWith("create") || action.startsWith("assign") || action.startsWith("enable");
+}
+function actionScope(action: string): "AD" | "Entra" | "App externo" | "IAM" {
+  if (action.endsWith("_user_app")) return "App externo";
+  if (action === "create" || action === "create_if_not_exists" || action === "update" || action === "disable" || action === "enable" || action === "delete") return "AD";
+  if (action.includes("entra") || action.startsWith("assign_") || action.startsWith("remove_")) return "Entra";
+  return "IAM";
+}
+function isCritical(item: any): boolean {
+  const a = item.action_type as string;
+  const p = item.payload_json || {};
+  return isDestructive(a) || a === "review_orphan_entra" || p.reason === "status_divergence";
+}
+function rowTone(item: any): string {
+  const a = item.action_type as string;
+  const p = item.payload_json || {};
+  if (isDestructive(a)) return "bg-red-50/40 hover:bg-red-50/70 dark:bg-red-950/10";
+  if (a === "review_orphan_entra" || p.reason === "status_divergence") return "bg-amber-50/40 hover:bg-amber-50/70 dark:bg-amber-950/10";
+  return "";
+}
+
+// Mini-badges de contexto (escopo + motivo/origem)
+function contextBadges(item: any): { label: string; tone: string }[] {
+  const p = item.payload_json || {};
+  const a = item.action_type as string;
+  const req = (item.requested_by || "").toLowerCase();
+  const out: { label: string; tone: string }[] = [];
+
+  const scope = actionScope(a);
+  const scopeTone =
+    scope === "AD" ? "bg-slate-100 text-slate-700 border-slate-200"
+    : scope === "Entra" ? "bg-indigo-100 text-indigo-800 border-indigo-200"
+    : scope === "App externo" ? "bg-violet-100 text-violet-800 border-violet-200"
+    : "bg-muted text-muted-foreground";
+  out.push({ label: scope, tone: scopeTone });
+
+  const reason = String(p.reason || "").toLowerCase();
+  if (reason === "leaver" || req.includes("leaver")) out.push({ label: "Leaver", tone: "bg-red-100 text-red-800 border-red-200" });
+  else if (reason === "pre_leaver" || reason === "pre-leaver" || req.includes("pre_leaver")) out.push({ label: "Pré-desligamento", tone: "bg-orange-100 text-orange-800 border-orange-200" });
+  else if (req.includes("reconcile") || reason === "orphan_approved") out.push({ label: "Reconciliação", tone: "bg-blue-100 text-blue-800 border-blue-200" });
+  else if (req.includes("jml")) out.push({ label: "JML", tone: "bg-emerald-100 text-emerald-800 border-emerald-200" });
+  else if (req.includes("manual") || req.includes("user:")) out.push({ label: "Manual", tone: "bg-muted text-muted-foreground" });
+  return out;
+}
+
+// Renderiza o "por quê" da ação — para decisão sem clicar
+function DivergenceCell({ item }: { item: any }) {
+  const p = item.payload_json || {};
+  const a = item.action_type as string;
+
+  // 1) Divergência de status base ↔ Entra
+  if (p.reason === "status_divergence") {
+    const entra = p.entra_account_enabled === false ? "desabilitado" : "habilitado";
+    const base = String(p.colab_status ?? "?");
+    const willDo = a.startsWith("enable") ? { text: "→ Habilitar", tone: "text-emerald-700" }
+      : a.startsWith("disable") ? { text: "→ Desabilitar", tone: "text-red-700" }
+      : a === "sync_status_from_ad" ? { text: "→ Sincronizar status do AD", tone: "text-muted-foreground" }
+      : { text: `→ ${actionLabels[a] || a}`, tone: "text-muted-foreground" };
+    return (
+      <div className="flex flex-col gap-0.5">
+        <Badge variant="outline" className="text-xs bg-amber-100 text-amber-800 border-amber-200 w-fit">
+          <AlertTriangle className="h-3 w-3 mr-1" /> Status divergente
+        </Badge>
+        <span className="text-xs">Base: <strong>{base}</strong> · Entra: <strong>{entra}</strong> <span className={willDo.tone}>{willDo.text}</span></span>
+      </div>
+    );
+  }
+
+  // 2) Conta órfã
+  if (a === "review_orphan_entra") {
+    const created = p.createdDateTime ? new Date(p.createdDateTime).toLocaleDateString("pt-BR") : null;
+    return (
+      <div className="flex flex-col gap-0.5">
+        <Badge variant="outline" className="text-xs bg-blue-100 text-blue-800 border-blue-200 w-fit">Conta órfã no Entra</Badge>
+        <span className="text-xs text-muted-foreground">Sem match na base{created ? ` · criada em ${created}` : ""}</span>
+      </div>
+    );
+  }
+
+  // 3) Grupos
+  if (a === "assign_group" || a === "remove_group") {
+    const sign = a === "assign_group" ? "+" : "−";
+    const tone = a === "assign_group" ? "text-emerald-700" : "text-red-700";
+    return <span className="text-xs"><span className={`font-semibold ${tone}`}>{sign}</span> grupo: <strong>{p.groupName || p.groupId || "—"}</strong></span>;
+  }
+
+  // 4) Licenças
+  if (a === "assign_license" || a === "remove_license") {
+    const sign = a === "assign_license" ? "+" : "−";
+    const tone = a === "assign_license" ? "text-emerald-700" : "text-red-700";
+    return <span className="text-xs"><span className={`font-semibold ${tone}`}>{sign}</span> licença: <strong>{p.licenseName || p.skuPartNumber || "—"}</strong></span>;
+  }
+
+  // 5) Apps
+  if (a === "assign_app" || a === "remove_app" || a.endsWith("_user_app")) {
+    const verb = a === "assign_app" ? "Atribuir" : a === "remove_app" ? "Remover" : a.startsWith("create") ? "Criar em" : a.startsWith("update") ? "Atualizar em" : a.startsWith("disable") ? "Desabilitar em" : "Excluir em";
+    return <span className="text-xs">{verb} <strong>{p.appName || p.appId || "app externo"}</strong></span>;
+  }
+
+  // 6) Criação
+  if (a === "create" || a === "create_if_not_exists") {
+    const who = p.displayName || p.mail || item.target_identity || "—";
+    return <span className="text-xs">Criar <strong>{who}</strong></span>;
+  }
+
+  // 7) Update — listar campos alterados
+  if (a === "update" || a === "update_entra") {
+    const ignore = new Set(["userPrincipalName", "mail", "samAccountName", "id", "entra_id", "displayName"]);
+    const fields = Object.keys(p).filter((k) => !ignore.has(k) && p[k] !== null && p[k] !== undefined);
+    return <span className="text-xs">Alterar: <strong>{fields.slice(0, 4).join(", ") || "—"}</strong>{fields.length > 4 ? ` +${fields.length - 4}` : ""}</span>;
+  }
+
+  // 8) Disable — mostrar motivo
+  if (a === "disable" || a === "disable_entra") {
+    const reason = p.reason ? String(p.reason).replace(/_/g, " ") : null;
+    return (
+      <div className="flex flex-col gap-0.5">
+        <Badge variant="outline" className="text-xs bg-red-100 text-red-800 border-red-200 w-fit">
+          <AlertTriangle className="h-3 w-3 mr-1" /> Desabilitar
+        </Badge>
+        {reason && <span className="text-xs text-muted-foreground">Motivo: {reason}</span>}
+      </div>
+    );
+  }
+
+  return <span className="text-xs text-muted-foreground">{summarizePayload(p)}</span>;
+}
+
 const PAGE_SIZE = 50;
 
 export default function AprovacaoIAMPage() {
@@ -96,6 +229,7 @@ export default function AprovacaoIAMPage() {
   
   const [reconcileOpen, setReconcileOpen] = useState(false);
   const [page, setPage] = useState(0);
+  const [onlyCritical, setOnlyCritical] = useState(false);
 
   // Reset page when filters/tab change
   useEffect(() => { setPage(0); setSelected(new Set()); }, [tab, actionFilter, originFilter]);
@@ -192,7 +326,7 @@ export default function AprovacaoIAMPage() {
   });
 
   // Sem filtro client-side extra — a busca já é server-side.
-  const filtered = items;
+  const filtered = onlyCritical ? items.filter(isCritical) : items;
 
   // Realtime — invalidate current page on any change
   useEffect(() => {
@@ -591,6 +725,15 @@ export default function AprovacaoIAMPage() {
                   {(filterOptions?.origins || []).map((o: string) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
                 </SelectContent>
               </Select>
+              <Button
+                variant={onlyCritical ? "default" : "outline"}
+                size="sm"
+                onClick={() => setOnlyCritical((v) => !v)}
+                className="h-9"
+                title="Filtrar por ações destrutivas, divergências de status e contas órfãs"
+              >
+                <AlertTriangle className="h-4 w-4 mr-1" /> Só ações críticas
+              </Button>
               <Button variant="outline" size="sm" onClick={() => refetch()} className="h-9">
                 <RefreshCw className="h-4 w-4" />
               </Button>
@@ -630,7 +773,7 @@ export default function AprovacaoIAMPage() {
                       )}
                       <TableHead>Ação</TableHead>
                       <TableHead>Alvo</TableHead>
-                      <TableHead>Detalhe</TableHead>
+                      <TableHead>Divergência / Motivo</TableHead>
                       <TableHead>Origem</TableHead>
                       <TableHead>Criado em</TableHead>
                       {tab === "history" && <TableHead>Status</TableHead>}
@@ -639,19 +782,33 @@ export default function AprovacaoIAMPage() {
                   </TableHeader>
                   <TableBody>
                     {filtered.map((it) => (
-                      <TableRow key={it.id} className="cursor-pointer" onClick={() => setDetailItem(it)}>
+                      <TableRow key={it.id} className={`cursor-pointer ${rowTone(it)}`} onClick={() => setDetailItem(it)}>
                         {tab === "waiting" && isAdmin && (
                           <TableCell onClick={(e) => e.stopPropagation()}>
                             <Checkbox checked={selected.has(it.id)} onCheckedChange={() => toggleOne(it.id)} />
                           </TableCell>
                         )}
                         <TableCell>
-                          <Badge variant="outline" className={`text-xs ${actionColor(it.action_type)}`}>
-                            {actionLabels[it.action_type] || it.action_type}
-                          </Badge>
+                          <div className="flex flex-wrap gap-1 items-center">
+                            <Badge variant="outline" className={`text-xs ${actionColor(it.action_type)}`}>
+                              {actionLabels[it.action_type] || it.action_type}
+                            </Badge>
+                            {contextBadges(it).map((b, i) => (
+                              <Badge key={i} variant="outline" className={`text-[10px] py-0 px-1.5 ${b.tone}`}>{b.label}</Badge>
+                            ))}
+                          </div>
                         </TableCell>
-                        <TableCell className="font-mono text-xs">{it.target_identity || "—"}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground max-w-xs truncate">{summarizePayload(it.payload_json)}</TableCell>
+                        <TableCell className="text-xs">
+                          <div className="font-mono">{it.target_identity || "—"}</div>
+                          {(it.payload_json?.displayName || it.payload_json?.mail) && (
+                            <div className="text-muted-foreground truncate max-w-[220px]">
+                              {it.payload_json?.displayName}{it.payload_json?.mail ? ` · ${it.payload_json.mail}` : ""}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="max-w-sm">
+                          <DivergenceCell item={it} />
+                        </TableCell>
                         <TableCell className="text-xs">{it.requested_by || "—"}</TableCell>
                         <TableCell className="text-xs">{new Date(it.created_at).toLocaleString("pt-BR")}</TableCell>
                         {tab === "history" && (
