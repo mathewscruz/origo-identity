@@ -54,13 +54,13 @@ async function fetchUserGroups(token: string, userId: string): Promise<EntraGrou
   const seen = new Set<string>();
 
   // Use memberOf with OData type cast (no $filter with isof which causes 400)
-  let url: string | null = `https://graph.microsoft.com/v1.0/users/${userId}/transitiveMemberOf/microsoft.graph.group?$select=id,displayName&$top=999`;
+  let url: string | null = `https://graph.microsoft.com/v1.0/users/${userId}/transitiveMemberOf/microsoft.graph.group?$select=id,displayName,onPremisesSyncEnabled&$top=999`;
   while (url) {
     const res = await fetch(url, { headers });
     if (!res.ok) {
       console.warn(`transitiveMemberOf/microsoft.graph.group failed (${res.status}), trying memberOf`);
       // Fallback to simple memberOf
-      let fallbackUrl: string | null = `https://graph.microsoft.com/v1.0/users/${userId}/memberOf/microsoft.graph.group?$select=id,displayName&$top=999`;
+      let fallbackUrl: string | null = `https://graph.microsoft.com/v1.0/users/${userId}/memberOf/microsoft.graph.group?$select=id,displayName,onPremisesSyncEnabled&$top=999`;
       while (fallbackUrl) {
         const fbRes = await fetch(fallbackUrl, { headers });
         if (!fbRes.ok) {
@@ -71,7 +71,7 @@ async function fetchUserGroups(token: string, userId: string): Promise<EntraGrou
         for (const item of (fbData.value || [])) {
           if (!seen.has(item.id)) {
             seen.add(item.id);
-            groups.push({ id: item.id, displayName: item.displayName });
+            groups.push({ id: item.id, displayName: item.displayName, onPremisesSyncEnabled: !!item.onPremisesSyncEnabled });
           }
         }
         fallbackUrl = fbData["@odata.nextLink"] || null;
@@ -82,7 +82,7 @@ async function fetchUserGroups(token: string, userId: string): Promise<EntraGrou
     for (const item of (data.value || [])) {
       if (!seen.has(item.id)) {
         seen.add(item.id);
-        groups.push({ id: item.id, displayName: item.displayName });
+        groups.push({ id: item.id, displayName: item.displayName, onPremisesSyncEnabled: !!item.onPremisesSyncEnabled });
       }
     }
     url = data["@odata.nextLink"] || null;
