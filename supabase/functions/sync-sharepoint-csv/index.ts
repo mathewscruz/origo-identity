@@ -508,7 +508,17 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       if (!existing) {
         toInsert.push(buildColabData(row));
       } else if (existing.fingerprint !== fp) {
-        toUpdate.push({ id: existing.id, data: buildColabData(row), oldCargoId: existing.cargo_id, oldStatus: existing.status, oldSam: existing.sam_account_name });
+        const built = buildColabData(row);
+        // Manual override protection: preserve the current IAM status; RH/SharePoint cannot overwrite it.
+        if (overrideColabIds.has(existing.id) && built.status !== existing.status) {
+          const ov = overrideByColabId.get(existing.id)!;
+          manualOverridePreserved.push({
+            colab_id: existing.id, matricula: mat, tipo_excecao: ov.tipo_excecao,
+            kept_status: existing.status, csv_status: built.status, action: "status_preserved",
+          });
+          built.status = existing.status;
+        }
+        toUpdate.push({ id: existing.id, data: built, oldCargoId: existing.cargo_id, oldStatus: existing.status, oldSam: existing.sam_account_name });
       } else {
         unchanged++;
       }
@@ -520,6 +530,15 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     const INACTIVE_DB_STATUSES = new Set(["desligado", "inativo"]);
     for (const [mat, rec] of existingMap) {
       if (!csvMatriculas.has(mat)) {
+        // Manual override protection: do NOT remove a collaborator that has an active manual override.
+        if (overrideColabIds.has(rec.id)) {
+          const ov = overrideByColabId.get(rec.id)!;
+          manualOverridePreserved.push({
+            colab_id: rec.id, matricula: mat, tipo_excecao: ov.tipo_excecao,
+            kept_status: rec.status, action: "leaver_skipped",
+          });
+          continue;
+        }
         const isDedupeRemoved = dedupe.removedMatriculas.has(mat);
         const silentDisable = isDedupeRemoved && INACTIVE_DB_STATUSES.has((rec.status || "").toLowerCase());
         leaverIds.push(rec.id);
@@ -527,6 +546,10 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         leaverDetails.push({ id: rec.id, sam: rec.sam_account_name, cargo_id: rec.cargo_id, status: rec.status, silentDisable });
       }
     }
+    if (manualOverridePreserved.length > 0) {
+      console.log(`[manual-override] preserved=${manualOverridePreserved.length} (status=${manualOverridePreserved.filter(m => m.action === "status_preserved").length}, leaver_skip=${manualOverridePreserved.filter(m => m.action === "leaver_skipped").length})`);
+    }
+
     const silentCount = leaverDetails.filter(l => l.silentDisable).length;
     if (silentCount > 0) console.log(`[dedupe] ${silentCount} leaver(s) já inativos serão removidos sem enfileirar disable`);
 
