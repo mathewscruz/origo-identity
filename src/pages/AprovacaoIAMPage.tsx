@@ -135,6 +135,7 @@ function contextBadges(item: any): { label: string; tone: string }[] {
   const reason = String(p.reason || "").toLowerCase();
   if (reason === "leaver" || req.includes("leaver")) out.push({ label: "Leaver", tone: "bg-red-100 text-red-800 border-red-200" });
   else if (reason === "pre_leaver" || reason === "pre-leaver" || req.includes("pre_leaver")) out.push({ label: "Pré-desligamento", tone: "bg-orange-100 text-orange-800 border-orange-200" });
+  else if (req === "origo_agent_ad_status_reconcile") out.push({ label: "Agente AD", tone: "bg-blue-100 text-blue-800 border-blue-200" });
   else if (req.includes("reconcile") || reason === "orphan_approved") out.push({ label: "Reconciliação", tone: "bg-blue-100 text-blue-800 border-blue-200" });
   else if (req.includes("jml")) out.push({ label: "JML", tone: "bg-emerald-100 text-emerald-800 border-emerald-200" });
   else if (req.includes("manual") || req.includes("user:")) out.push({ label: "Manual", tone: "bg-muted text-muted-foreground" });
