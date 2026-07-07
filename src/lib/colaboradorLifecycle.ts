@@ -70,6 +70,39 @@ export async function handleStatusChange(params: StatusChangeParams): Promise<{ 
     operador: operadorEmail,
   });
 
+  // ─── MANUAL OVERRIDE: register approved exception so RH/SharePoint sync won't revert this change ──
+  // newStatus === "ativo" → "manter_ativo" (bypass automatic deactivation)
+  // any other manual status → "status_manual" (Override Manual de Status)
+  try {
+    const tipoExcecao = newStatus === "ativo" ? "manter_ativo" : "status_manual";
+    const validade = new Date();
+    validade.setFullYear(validade.getFullYear() + 1);
+    const validadeStr = validade.toISOString().slice(0, 10);
+
+    // Expire prior active status_manual overrides for this colab (keep history)
+    await (supabase as any).from("excecoes")
+      .update({ status: "expirada", data_decisao: new Date().toISOString() })
+      .eq("colaborador_id", colab.id)
+      .eq("tipo_excecao", "status_manual")
+      .eq("status", "aprovada");
+
+    await (supabase as any).from("excecoes").insert({
+      solicitante: operadorNome || operadorEmail || "sistema",
+      colaborador_nome: colab.nome,
+      colaborador_id: colab.id,
+      tipo_excecao: tipoExcecao,
+      justificativa: `Override manual de status: ${oldStatus} → ${newStatus}. RH/SharePoint não deve sobrescrever até ${validadeStr}.`,
+      status: "aprovada",
+      aprovador: operadorNome || operadorEmail || "sistema",
+      data_decisao: new Date().toISOString(),
+      validade: validadeStr,
+    });
+  } catch (excErr) {
+    console.error("[handleStatusChange] Falha ao registrar exceção de override manual:", excErr);
+  }
+
+
+
   // ─── DEACTIVATION (ativo → anything else) ──────────────────────
   if (oldStatus === "ativo" && newStatus !== "ativo") {
     const isHardDisable = newStatus === "desligado" || newStatus === "inativo";

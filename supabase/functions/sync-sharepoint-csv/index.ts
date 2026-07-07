@@ -379,6 +379,36 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     }
     console.log(`Existing CSV colaboradores: ${existingMap.size}`);
 
+    // ── Load active manual overrides (manter_ativo | status_manual) ──
+    // These are approved exceptions with validade >= today (or null validade).
+    // While active, RH/SharePoint sync MUST NOT overwrite the current IAM status
+    // and MUST NOT remove the collaborator if absent from the CSV.
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const overrideColabIds = new Set<string>();
+    const overrideByColabId = new Map<string, { tipo_excecao: string; validade: string | null; id: string }>();
+    {
+      let ofrom = 0;
+      while (true) {
+        const { data: excs } = await sb.from("excecoes")
+          .select("id, colaborador_id, tipo_excecao, validade, status")
+          .in("tipo_excecao", ["manter_ativo", "status_manual"])
+          .eq("status", "aprovada")
+          .range(ofrom, ofrom + 999);
+        if (!excs || excs.length === 0) break;
+        for (const e of excs) {
+          if (!e.colaborador_id) continue;
+          if (e.validade && e.validade < todayIso) continue; // expired
+          overrideColabIds.add(e.colaborador_id);
+          overrideByColabId.set(e.colaborador_id, { tipo_excecao: e.tipo_excecao, validade: e.validade, id: e.id });
+        }
+        if (excs.length < 1000) break;
+        ofrom += 1000;
+      }
+    }
+    console.log(`[manual-override] active_overrides=${overrideColabIds.size}`);
+    const manualOverridePreserved: { colab_id: string; matricula: string; tipo_excecao: string; kept_status: string; csv_status?: string; action: "status_preserved" | "leaver_skipped" }[] = [];
+
+
     // ── Resolve lookup entities ──
     await sb.from("sync_jobs").update({ phase: "lookups", message: "Resolvendo entidades...", colab_percent: 10 }).eq("id", jobId);
 
@@ -478,7 +508,17 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       if (!existing) {
         toInsert.push(buildColabData(row));
       } else if (existing.fingerprint !== fp) {
-        toUpdate.push({ id: existing.id, data: buildColabData(row), oldCargoId: existing.cargo_id, oldStatus: existing.status, oldSam: existing.sam_account_name });
+        const built = buildColabData(row);
+        // Manual override protection: preserve the current IAM status; RH/SharePoint cannot overwrite it.
+        if (overrideColabIds.has(existing.id) && built.status !== existing.status) {
+          const ov = overrideByColabId.get(existing.id)!;
+          manualOverridePreserved.push({
+            colab_id: existing.id, matricula: mat, tipo_excecao: ov.tipo_excecao,
+            kept_status: existing.status, csv_status: built.status, action: "status_preserved",
+          });
+          built.status = existing.status;
+        }
+        toUpdate.push({ id: existing.id, data: built, oldCargoId: existing.cargo_id, oldStatus: existing.status, oldSam: existing.sam_account_name });
       } else {
         unchanged++;
       }
@@ -490,6 +530,15 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     const INACTIVE_DB_STATUSES = new Set(["desligado", "inativo"]);
     for (const [mat, rec] of existingMap) {
       if (!csvMatriculas.has(mat)) {
+        // Manual override protection: do NOT remove a collaborator that has an active manual override.
+        if (overrideColabIds.has(rec.id)) {
+          const ov = overrideByColabId.get(rec.id)!;
+          manualOverridePreserved.push({
+            colab_id: rec.id, matricula: mat, tipo_excecao: ov.tipo_excecao,
+            kept_status: rec.status, action: "leaver_skipped",
+          });
+          continue;
+        }
         const isDedupeRemoved = dedupe.removedMatriculas.has(mat);
         const silentDisable = isDedupeRemoved && INACTIVE_DB_STATUSES.has((rec.status || "").toLowerCase());
         leaverIds.push(rec.id);
@@ -497,6 +546,10 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         leaverDetails.push({ id: rec.id, sam: rec.sam_account_name, cargo_id: rec.cargo_id, status: rec.status, silentDisable });
       }
     }
+    if (manualOverridePreserved.length > 0) {
+      console.log(`[manual-override] preserved=${manualOverridePreserved.length} (status=${manualOverridePreserved.filter(m => m.action === "status_preserved").length}, leaver_skip=${manualOverridePreserved.filter(m => m.action === "leaver_skipped").length})`);
+    }
+
     const silentCount = leaverDetails.filter(l => l.silentDisable).length;
     if (silentCount > 0) console.log(`[dedupe] ${silentCount} leaver(s) já inativos serão removidos sem enfileirar disable`);
 
@@ -721,15 +774,17 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     }
 
     // ── Finalize ──
+    const overrideStatusCount = manualOverridePreserved.filter(m => m.action === "status_preserved").length;
+    const overrideLeaverSkip = manualOverridePreserved.filter(m => m.action === "leaver_skipped").length;
     await sb.from("sync_jobs").update({
       status: "done", phase: "done", colab_percent: 100,
       colab_created: created, colab_updated: updated, colab_quarentena: leaverMatriculas.length,
-      message: `Concluído: bruto=${rawTotalRows}, canônico=${totalRows}, dedupe=${dedupe.removedRows} (grupos=${dedupe.duplicateGroups}), ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos (${silentCount} silenciosos), ${weakProtection.protectedRows} protegidos (identidade fraca)`,
+      message: `Concluído: bruto=${rawTotalRows}, canônico=${totalRows}, dedupe=${dedupe.removedRows} (grupos=${dedupe.duplicateGroups}), ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos (${silentCount} silenciosos), ${weakProtection.protectedRows} protegidos (identidade fraca), ${manualOverridePreserved.length} overrides manuais preservados (${overrideStatusCount} status, ${overrideLeaverSkip} não-removidos)`,
     }).eq("id", jobId);
 
     await sb.from("auditoria").insert({
       entidade: "importacao_csv", acao: "importar",
-      resumo: `CSV SharePoint: bruto=${rawTotalRows} → canônico=${totalRows} · ${created} novos, ${updated} atualizados, ${leaverMatriculas.length} removidos · ${weakProtection.protectedRows} protegidos`,
+      resumo: `CSV SharePoint: bruto=${rawTotalRows} → canônico=${totalRows} · ${created} novos, ${updated} atualizados, ${leaverMatriculas.length} removidos · ${weakProtection.protectedRows} protegidos · ${manualOverridePreserved.length} overrides manuais preservados`,
       detalhes: {
         filename, jobId,
         rawTotalRows, totalRows,
@@ -740,6 +795,12 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         weak_identity_protection: {
           protected_rows: weakProtection.protectedRows,
           samples: weakProtection.samples,
+        },
+        manual_override_preserved: {
+          total: manualOverridePreserved.length,
+          status_preserved: overrideStatusCount,
+          leaver_skipped: overrideLeaverSkip,
+          samples: manualOverridePreserved.slice(0, 20),
         },
         created, updated, unchanged, removed: leaverMatriculas.length,
       },
@@ -754,6 +815,12 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
       weak_identity_protection: {
         protected_rows: weakProtection.protectedRows,
         samples: weakProtection.samples,
+      },
+      manual_override_preserved: {
+        total: manualOverridePreserved.length,
+        status_preserved: overrideStatusCount,
+        leaver_skipped: overrideLeaverSkip,
+        samples: manualOverridePreserved.slice(0, 20),
       },
       created, updated, unchanged, removed: leaverMatriculas.length, total: totalRows,
     };
