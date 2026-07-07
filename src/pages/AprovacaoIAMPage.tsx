@@ -725,6 +725,15 @@ export default function AprovacaoIAMPage() {
                   {(filterOptions?.origins || []).map((o: string) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
                 </SelectContent>
               </Select>
+              <Button
+                variant={onlyCritical ? "default" : "outline"}
+                size="sm"
+                onClick={() => setOnlyCritical((v) => !v)}
+                className="h-9"
+                title="Filtrar por ações destrutivas, divergências de status e contas órfãs"
+              >
+                <AlertTriangle className="h-4 w-4 mr-1" /> Só ações críticas
+              </Button>
               <Button variant="outline" size="sm" onClick={() => refetch()} className="h-9">
                 <RefreshCw className="h-4 w-4" />
               </Button>
