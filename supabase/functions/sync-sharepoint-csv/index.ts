@@ -903,6 +903,14 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         leaver_skipped: overrideLeaverSkip,
         samples: manualOverridePreserved.slice(0, 20),
       },
+      manual_link: {
+        total: manualLinked.length,
+        by_cpf: manualLinked.filter(m => m.via === "cpf").length,
+        by_email: manualLinked.filter(m => m.via === "email").length,
+        by_sam: manualLinked.filter(m => m.via === "sam").length,
+        by_matricula: manualLinked.filter(m => m.via === "matricula").length,
+        samples: manualLinked.slice(0, 20),
+      },
       created, updated, unchanged, removed: leaverMatriculas.length, total: totalRows,
     };
   } catch (err) {
