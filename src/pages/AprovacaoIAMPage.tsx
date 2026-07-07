@@ -773,7 +773,7 @@ export default function AprovacaoIAMPage() {
                       )}
                       <TableHead>Ação</TableHead>
                       <TableHead>Alvo</TableHead>
-                      <TableHead>Detalhe</TableHead>
+                      <TableHead>Divergência / Motivo</TableHead>
                       <TableHead>Origem</TableHead>
                       <TableHead>Criado em</TableHead>
                       {tab === "history" && <TableHead>Status</TableHead>}
