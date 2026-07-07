@@ -53,32 +53,18 @@ async function fetchUserGroups(token: string, userId: string): Promise<EntraGrou
   const groups: EntraGroup[] = [];
   const seen = new Set<string>();
 
-  // Use memberOf with OData type cast (no $filter with isof which causes 400)
-  let url: string | null = `https://graph.microsoft.com/v1.0/users/${userId}/transitiveMemberOf/microsoft.graph.group?$select=id,displayName,onPremisesSyncEnabled&$top=999`;
+  // Import only direct memberOf groups. Transitive/nested groups appear in Entra
+  // counts for effective access, but cannot be removed from the user directly;
+  // they should be managed via the parent direct group instead.
+  let url: string | null = `https://graph.microsoft.com/v1.0/users/${userId}/memberOf/microsoft.graph.group?$select=id,displayName,onPremisesSyncEnabled&$top=999`;
   while (url) {
-    const res = await fetch(url, { headers });
+    const currentUrl: string = url;
+    const res: Response = await fetch(currentUrl, { headers });
     if (!res.ok) {
-      console.warn(`transitiveMemberOf/microsoft.graph.group failed (${res.status}), trying memberOf`);
-      // Fallback to simple memberOf
-      let fallbackUrl: string | null = `https://graph.microsoft.com/v1.0/users/${userId}/memberOf/microsoft.graph.group?$select=id,displayName,onPremisesSyncEnabled&$top=999`;
-      while (fallbackUrl) {
-        const fbRes = await fetch(fallbackUrl, { headers });
-        if (!fbRes.ok) {
-          console.error(`memberOf also failed (${fbRes.status})`);
-          break;
-        }
-        const fbData = await fbRes.json();
-        for (const item of (fbData.value || [])) {
-          if (!seen.has(item.id)) {
-            seen.add(item.id);
-            groups.push({ id: item.id, displayName: item.displayName, onPremisesSyncEnabled: !!item.onPremisesSyncEnabled });
-          }
-        }
-        fallbackUrl = fbData["@odata.nextLink"] || null;
-      }
-      return groups;
+      console.error(`memberOf/microsoft.graph.group failed (${res.status})`);
+      break;
     }
-    const data = await res.json();
+    const data: any = await res.json();
     for (const item of (data.value || [])) {
       if (!seen.has(item.id)) {
         seen.add(item.id);
@@ -103,9 +89,10 @@ async function fetchUserAppRoles(token: string, userId: string): Promise<EntraAp
   const roles: EntraAppRole[] = [];
   let url: string | null = `https://graph.microsoft.com/v1.0/users/${userId}/appRoleAssignments?$top=999`;
   while (url) {
-    const res = await fetch(url, { headers });
+    const currentUrl: string = url;
+    const res: Response = await fetch(currentUrl, { headers });
     if (!res.ok) break;
-    const data = await res.json();
+    const data: any = await res.json();
     for (const item of (data.value || [])) {
       roles.push({
         assignmentId: item.id,
@@ -122,9 +109,9 @@ async function fetchUserAppRoles(token: string, userId: string): Promise<EntraAp
 
 /** Build a unique key for a queue entry to deduplicate */
 function queueKey(actionType: string, payload: any): string {
-  if (actionType === "assign_group") return `assign_group:${payload.groupId}`;
-  if (actionType === "assign_license") return `assign_license:${payload.skuId}`;
-  if (actionType === "assign_app") return `assign_app:${payload.appId}:${payload.appRoleId || ""}`;
+  if (actionType === "assign_group" || actionType === "remove_group") return `group:${payload.groupId}`;
+  if (actionType === "assign_license" || actionType === "remove_license") return `license:${payload.skuId}`;
+  if (actionType === "assign_app" || actionType === "remove_app") return `app:${payload.appId}:${payload.appRoleId || ""}`;
   return `${actionType}:${JSON.stringify(payload)}`;
 }
 
@@ -187,30 +174,40 @@ Deno.serve(async (req) => {
 
     console.log(`Entra access for ${colab.nome}: ${userGroups.length} groups, ${userLicenses.length} licenses, ${userAppRoles.length} app roles`);
 
-    // ---- Fetch existing imported queue entries for this collaborator to deduplicate ----
-    const existingKeys = new Set<string>();
+    // ---- Fetch latest effective queue state for this collaborator to deduplicate ----
+    // If a resource exists in Entra now but its latest IAM row is a successful remove,
+    // insert a fresh entra_sync assign row so the IAM screen reflects the current truth.
+    const activeKeys = new Set<string>();
     {
       const PAGE = 1000;
       let from = 0;
+      const latestByKey = new Map<string, any>();
       while (true) {
         const { data: existing, error: exErr } = await sb
           .from("iam_queue")
-          .select("action_type, payload_json")
+          .select("action_type, payload_json, status, created_at")
           .eq("colaborador_id", colaborador_id)
-          .eq("requested_by", "entra_sync")
-          .in("action_type", ["assign_group", "assign_license", "assign_app"])
+          .in("requested_by", ["entra_sync", "manual_individual"])
+          .in("action_type", ["assign_group", "remove_group", "assign_license", "remove_license", "assign_app", "remove_app"])
+          .order("created_at", { ascending: true })
           .range(from, from + PAGE - 1);
         if (exErr) { console.error("existing queue query error:", exErr.message); break; }
         if (!existing || existing.length === 0) break;
         for (const row of existing) {
           const p = typeof row.payload_json === "string" ? JSON.parse(row.payload_json) : row.payload_json;
-          existingKeys.add(queueKey(row.action_type, p));
+          const key = queueKey(row.action_type, p);
+          latestByKey.set(key, row);
         }
         if (existing.length < PAGE) break;
         from += PAGE;
       }
+      for (const [key, row] of latestByKey.entries()) {
+        if (row.action_type.startsWith("assign_") && row.status === "success") activeKeys.add(key);
+        // Failed remove attempts do not remove an active Entra assignment; a later
+        // sync will re-import it if Graph still shows it assigned.
+      }
     }
-    console.log(`Existing imported keys for dedup: ${existingKeys.size}`);
+    console.log(`Active imported/manual keys for dedup: ${activeKeys.size}`);
 
     const identity = colab.email || colab.sam_account_name || "";
     const queueEntries: any[] = [];
@@ -240,7 +237,7 @@ Deno.serve(async (req) => {
           onPremisesSync: !!src?.onPremisesSyncEnabled,
         };
         const key = queueKey("assign_group", payload);
-        if (existingKeys.has(key)) continue;
+        if (activeKeys.has(key)) continue;
         queueEntries.push({
           action_type: "assign_group",
           target_identity: identity,
@@ -266,7 +263,7 @@ Deno.serve(async (req) => {
           licenseName: ll.nome,
         };
         const key = queueKey("assign_license", payload);
-        if (existingKeys.has(key)) continue;
+        if (activeKeys.has(key)) continue;
         queueEntries.push({
           action_type: "assign_license",
           target_identity: identity,
@@ -296,7 +293,7 @@ Deno.serve(async (req) => {
           principalId: role?.principalId || entraUserId,
         };
         const key = queueKey("assign_app", payload);
-        if (existingKeys.has(key)) continue;
+        if (activeKeys.has(key)) continue;
         queueEntries.push({
           action_type: "assign_app",
           target_identity: identity,
@@ -330,7 +327,7 @@ Deno.serve(async (req) => {
       licenses: userLicenses.length,
       apps: userAppRoles.length,
       queued: inserted,
-      skipped_existing: existingKeys.size,
+      skipped_existing: activeKeys.size,
     };
 
     console.log(`sync-user-access complete: ${JSON.stringify(result)}`);

@@ -319,11 +319,16 @@ export function useColabIndividualQueue(colaboradorId: string | undefined) {
 
       for (const row of data) {
         const key = keyOf(row);
+        // Remoção só altera o estado efetivo quando foi executada com sucesso.
+        // Tentativas failed/processing/pending não devem esconder um acesso que ainda existe.
+        if (row.action_type.startsWith("remove_") && row.status !== "success") {
+          continue;
+        }
         latestState.set(key, row);
-        if (row.requested_by === "manual_individual" && row.action_type.startsWith("assign_")) {
+        if (row.requested_by === "manual_individual" && row.action_type.startsWith("assign_") && row.status === "success") {
           latestManualAssign.set(key, row);
         }
-        if (row.action_type.startsWith("remove_")) {
+        if (row.action_type.startsWith("remove_") && row.status === "success") {
           // A remove supersedes prior manual assign for that key
           latestManualAssign.delete(key);
         }
