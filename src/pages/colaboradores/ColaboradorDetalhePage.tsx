@@ -383,8 +383,12 @@ export default function ColaboradorDetalhePage() {
             if (res.success) {
               const msg = res.message || `Grupos: ${res.groups}, Licenças: ${res.licenses}, Apps: ${res.apps} — ${res.queued} importados`;
               toast({ title: "Sincronização concluída", description: msg });
-              queryClient.invalidateQueries({ queryKey: ["iam_queue"] });
-              queryClient.invalidateQueries({ queryKey: ["colaborador", id] });
+              await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ["colab_individual_queue", id] }),
+                queryClient.invalidateQueries({ queryKey: ["iam_queue"] }),
+                queryClient.invalidateQueries({ queryKey: ["colaborador", id] }),
+              ]);
+              await queryClient.refetchQueries({ queryKey: ["colab_individual_queue", id] });
             } else {
               toast({ title: "Erro na sincronização", description: res.message, variant: "destructive" });
             }
