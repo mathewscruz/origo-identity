@@ -342,9 +342,10 @@ function applyWeakIdentityProtection(rows: CsvRow[]): {
 }
 
 // ── Incremental sync processing logic ──
-async function processCsvData(sb: any, csvText: string, filename: string) {
+async function processCsvData(sb: any, csvText: string, filename: string, opts: { restoreOnly?: boolean } = {}) {
+  const restoreOnly = !!opts.restoreOnly;
   const { data: job, error: jobErr } = await sb.from("sync_jobs")
-    .insert({ status: "running", tipo: "csv_colab", message: "Iniciando importação CSV (SharePoint)...", phase: "parsing", filename })
+    .insert({ status: "running", tipo: "csv_colab", message: restoreOnly ? "Iniciando restauração cadastral CSV (SharePoint)..." : "Iniciando importação CSV (SharePoint)...", phase: "parsing", filename })
     .select().single();
   if (jobErr) throw jobErr;
   const jobId = job.id;
@@ -663,43 +664,48 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     if (leaverIds.length > 0) {
       await sb.from("sync_jobs").update({ phase: "removing", message: `Removendo ${leaverIds.length} ausentes...`, colab_percent: 75 }).eq("id", jobId);
 
-      // Generate iam_queue disable entries for leavers (skip dedupe-removed already-inactive)
-      const leaverIamEntries = leaverDetails.filter(l => l.sam && !l.silentDisable).map(l => ({
-        action_type: "disable",
-        payload_json: {
-          samAccountName: l.sam, displayName: "", mail: "",
-          status: "disabled", status_anterior: "ativo", status_novo: "desligado",
-          changed_fields: ["status"], new_values: { status: "disabled" },
-        },
-        target_identity: l.sam, colaborador_id: l.id,
-        requested_by: "importacao_sharepoint", status: "pending",
-      }));
-      if (leaverIamEntries.length > 0) {
-        for (const batch of chunk(leaverIamEntries, 200)) await sb.from("iam_queue").insert(batch);
+      if (!restoreOnly) {
+        // Generate iam_queue disable entries for leavers (skip dedupe-removed already-inactive)
+        const leaverIamEntries = leaverDetails.filter(l => l.sam && !l.silentDisable).map(l => ({
+          action_type: "disable",
+          payload_json: {
+            samAccountName: l.sam, displayName: "", mail: "",
+            status: "disabled", status_anterior: "ativo", status_novo: "desligado",
+            changed_fields: ["status"], new_values: { status: "disabled" },
+          },
+          target_identity: l.sam, colaborador_id: l.id,
+          requested_by: "importacao_sharepoint", status: "pending",
+        }));
+        if (leaverIamEntries.length > 0) {
+          for (const batch of chunk(leaverIamEntries, 200)) await sb.from("iam_queue").insert(batch);
+        }
+
+        // Revoke access profiles for leavers (skip dedupe-removed already-inactive)
+        for (const l of leaverDetails) {
+          if (l.silentDisable) continue;
+          if (l.cargo_id && l.sam) await provisionCargoAcessosServer(sb, l.id, null, l.cargo_id, l.sam, "", "");
+        }
+
+        // Disable Entra ID accounts for leavers (skip dedupe-removed already-inactive)
+        const leaverEntraEntries = leaverDetails.filter(l => l.sam && !l.silentDisable).map(l => ({
+          action_type: "disable_entra",
+          payload_json: { samAccountName: l.sam, displayName: "", mail: "" },
+          target_identity: l.sam, colaborador_id: l.id,
+          requested_by: "importacao_sharepoint", status: "pending",
+        }));
+        if (leaverEntraEntries.length > 0) {
+          for (const batch of chunk(leaverEntraEntries, 200)) await sb.from("iam_queue").insert(batch);
+        }
       }
 
-      // Revoke access profiles for leavers (skip dedupe-removed already-inactive)
-      for (const l of leaverDetails) {
-        if (l.silentDisable) continue;
-        if (l.cargo_id && l.sam) await provisionCargoAcessosServer(sb, l.id, null, l.cargo_id, l.sam, "", "");
-      }
-
-      // Disable Entra ID accounts for leavers (skip dedupe-removed already-inactive)
-      const leaverEntraEntries = leaverDetails.filter(l => l.sam && !l.silentDisable).map(l => ({
-        action_type: "disable_entra",
-        payload_json: { samAccountName: l.sam, displayName: "", mail: "" },
-        target_identity: l.sam, colaborador_id: l.id,
-        requested_by: "importacao_sharepoint", status: "pending",
-      }));
-      if (leaverEntraEntries.length > 0) {
-        for (const batch of chunk(leaverEntraEntries, 200)) await sb.from("iam_queue").insert(batch);
-      }
-
+      // Preserve IAM history: never delete colaboradores just because they are absent from the CSV.
+      // Mark them as desligado and keep entra_id, audit trail, exceptions and historical access data.
       for (const batch of chunk(leaverIds, 200)) {
-        await sb.from("perfil_atribuicoes").delete().in("colaborador_id", batch);
-        await sb.from("excecoes").delete().in("colaborador_id", batch);
-        await sb.from("revisao_itens").delete().in("colaborador_id", batch);
-        await sb.from("colaboradores").delete().in("id", batch);
+        await sb.from("colaboradores").update({
+          status: "desligado",
+          ultima_importacao_id: jobId,
+          updated_at: new Date().toISOString(),
+        }).in("id", batch);
       }
     }
 
@@ -717,8 +723,9 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     }
 
     // ── Register JML events + iam_queue ──
-    await sb.from("sync_jobs").update({ phase: "events", message: "Registrando eventos JML...", colab_percent: 85 }).eq("id", jobId);
+    await sb.from("sync_jobs").update({ phase: "events", message: restoreOnly ? "Restauração cadastral: pulando JML/fila IAM..." : "Registrando eventos JML...", colab_percent: 85 }).eq("id", jobId);
 
+    if (!restoreOnly) {
     if (leaverMatriculas.length > 0) {
       const leaverEvents = leaverMatriculas.map(mat => ({
         tipo: "leaver", colaborador_nome: mat, status: "pendente", origem: "importacao_csv", dados_antes: { matricula: mat },
@@ -836,8 +843,9 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         }
       }
     }
+    }
 
-    if (leaverMatriculas.length > 0) {
+    if (!restoreOnly && leaverMatriculas.length > 0) {
       await sb.from("alertas").insert({
         tipo: "remocao_csv", titulo: `${leaverMatriculas.length} colaborador(es) removido(s)`,
         mensagem: `Importação CSV removeu ${leaverMatriculas.length} colaborador(es) ausentes do arquivo.`,
@@ -940,6 +948,9 @@ Deno.serve(async (req) => {
   }
 
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
+  let body: any = {};
+  try { body = await req.json(); } catch (_) { body = {}; }
+  const restoreOnly = body?.restoreOnly === true || body?.mode === "restore_only";
 
   try {
     console.log("Authenticating with Azure AD...");
@@ -992,7 +1003,7 @@ Deno.serve(async (req) => {
     console.log(`Downloaded ${csvBytes.length} bytes`);
 
     const csvText = new TextDecoder("utf-8").decode(csvBytes);
-    const result = await processCsvData(sb, csvText, latestFile.name);
+    const result = await processCsvData(sb, csvText, latestFile.name, { restoreOnly });
 
     return new Response(JSON.stringify(result), {
       status: 200,
