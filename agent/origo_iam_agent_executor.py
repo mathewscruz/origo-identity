@@ -49,11 +49,17 @@ SUPPORTED_ACTIONS = {
     "remove_license",
     "assign_group",
     "remove_group",
-}
-
-BLOCKED_ACTIONS = {
     "assign_app",
     "remove_app",
+    # AD (via ponte externa configurável — AD_BRIDGE_URL)
+    "create",
+    "update",
+    "disable",
+    "reset_password",
+}
+
+# Ações ainda não suportadas nativamente por este executor.
+BLOCKED_ACTIONS = {
     "create_user_app",
     "update_user_app",
     "disable_user_app",
