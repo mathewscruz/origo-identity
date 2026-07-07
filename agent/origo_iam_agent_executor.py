@@ -153,6 +153,45 @@ def has_approval(item: Dict[str, Any]) -> bool:
     return bool(payload.get("approved_by") or payload.get("evento_jml_id"))
 
 
+AD_ACTIONS = {"create", "update", "disable", "reset_password"}
+
+
+def call_ad_bridge(action: str, payload: Dict[str, Any], execute: bool) -> Dict[str, Any]:
+    """Encaminha ações AD (create/update/disable/reset_password) para uma ponte
+    HTTP externa configurável via env (AD_BRIDGE_URL / AD_BRIDGE_TOKEN).
+
+    A ponte pode ser um endpoint PowerShell/HTTP responsável por executar o
+    comando ActiveDirectory correspondente. Se AD_BRIDGE_URL não estiver
+    configurado, a ação é reportada como não suportada localmente.
+    """
+    url = os.environ.get("AD_BRIDGE_URL", "").strip()
+    if not url:
+        return {"status": "failed", "error_code": "ad_bridge_missing",
+                "result_message": f"AD action {action} requer AD_BRIDGE_URL configurado."}
+    if not execute:
+        return {"status": "pending", "error_code": "dry_run",
+                "result_message": f"[dry-run] AD {action} → {payload.get('samAccountName')}"}
+    token = os.environ.get("AD_BRIDGE_TOKEN", "")
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        r = requests.post(url.rstrip("/") + f"/{action}", headers=headers,
+                          json=payload, timeout=60)
+        if r.status_code >= 400:
+            return {"status": "failed", "error_code": "ad_bridge_http",
+                    "result_message": f"{r.status_code}: {r.text[:300]}"}
+        try:
+            data = r.json()
+        except ValueError:
+            data = {"message": r.text[:200]}
+        return {"status": "success",
+                "result_message": data.get("message") or f"AD {action} executado."}
+    except Exception as e:  # noqa: BLE001
+        return {"status": "failed", "error_code": "ad_bridge_exception",
+                "result_message": str(e)[:300]}
+
+
 def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[str, Any]:
     action = item["action_type"]
     payload = item.get("payload_json") or {}
@@ -164,6 +203,10 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
     if action not in SUPPORTED_ACTIONS:
         return {"status": "failed", "error_code": "unsupported_action",
                 "result_message": f"Ação {action} não suportada por este executor."}
+
+    # AD: delega para a ponte externa.
+    if action in AD_ACTIONS:
+        return call_ad_bridge(action, payload, execute)
 
     if action == "enable_entra" and not has_approval(item):
         return {"status": "failed", "error_code": "missing_approval",
@@ -183,6 +226,7 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
     if not execute:
         return {"status": "pending", "result_message": f"[dry-run] {action} → {user_id}",
                 "error_code": "dry_run"}
+
 
     headers = {"Authorization": f"Bearer {graph_token}", "Content-Type": "application/json"}
     graph = "https://graph.microsoft.com/v1.0"
