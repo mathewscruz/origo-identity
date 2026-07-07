@@ -356,6 +356,10 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     const rows = dedupe.canonical;
     const totalRows = rows.length;
     console.log(`[dedupe] raw=${rawTotalRows} canonical=${totalRows} groups=${dedupe.duplicateGroups} removed=${dedupe.removedRows}`);
+    const weakProtection = applyWeakIdentityProtection(rows);
+    if (weakProtection.protectedRows > 0) {
+      console.log(`[weak-identity] protected_rows=${weakProtection.protectedRows} samples=${JSON.stringify(weakProtection.samples)}`);
+    }
     await sb.from("sync_jobs").update({
       message: `Parsed ${rawTotalRows} bruto → ${totalRows} canônico (${dedupe.removedRows} duplicados removidos). Comparando...`,
       phase: "comparing", colab_total: totalRows,
