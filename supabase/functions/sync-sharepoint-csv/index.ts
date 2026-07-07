@@ -207,6 +207,71 @@ async function queueProfileAccess(sb: any, samAccountName: string, displayName: 
   }
 }
 
+// ── Canonical dedupe (CPF → email → sam → matricula) ──
+const ACTIVE_STATUS_SET = new Set([
+  "ativo", "ferias", "afastado",
+  "afast aux doenca", "afast aux maternidade",
+  "atestado medico", "licenca maternidade",
+]);
+function normStatus(s: string): string {
+  return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+}
+function isActiveStatus(s: string): boolean {
+  return ACTIVE_STATUS_SET.has(normStatus(s));
+}
+function dedupeKey(row: CsvRow): string {
+  const cpf = (row.Cadastro_Pessoa_Fisica || "").replace(/\D/g, "").trim();
+  if (cpf) return `cpf:${cpf}`;
+  const mail = (row.mail || "").toLowerCase().trim();
+  if (mail) return `mail:${mail}`;
+  const sam = mail.includes("@") ? mail.split("@")[0] : "";
+  if (sam) return `sam:${sam}`;
+  return `mat:${(row.employID || "").trim()}`;
+}
+function pickCanonical(a: CsvRow, b: CsvRow): CsvRow {
+  const aA = isActiveStatus(a.status), bA = isActiveStatus(b.status);
+  if (aA !== bA) return aA ? a : b;
+  const aAdm = parseDate(a.Data_Admissao) || "", bAdm = parseDate(b.Data_Admissao) || "";
+  if (aAdm !== bAdm) return aAdm > bAdm ? a : b;
+  const aR = parseDate(a.Data_Rescisao) || "", bR = parseDate(b.Data_Rescisao) || "";
+  if (aR !== bR) return aR > bR ? a : b;
+  return a;
+}
+function dedupeRows(rows: CsvRow[]): {
+  canonical: CsvRow[];
+  removedMatriculas: Set<string>;
+  duplicateGroups: number;
+  removedRows: number;
+  samples: Array<{ key: string; kept: string; removed: string[] }>;
+} {
+  const groups = new Map<string, CsvRow[]>();
+  for (const r of rows) {
+    const k = dedupeKey(r);
+    const arr = groups.get(k) || [];
+    arr.push(r); groups.set(k, arr);
+  }
+  const canonical: CsvRow[] = [];
+  const removedMatriculas = new Set<string>();
+  const samples: Array<{ key: string; kept: string; removed: string[] }> = [];
+  let duplicateGroups = 0, removedRows = 0;
+  for (const [k, arr] of groups) {
+    if (arr.length === 1) { canonical.push(arr[0]); continue; }
+    duplicateGroups++;
+    let keep = arr[0];
+    for (let i = 1; i < arr.length; i++) keep = pickCanonical(keep, arr[i]);
+    const removedMats: string[] = [];
+    for (const r of arr) {
+      if (r === keep) continue;
+      const m = (r.employID || "").trim();
+      if (m) removedMatriculas.add(m);
+      removedMats.push(m); removedRows++;
+    }
+    canonical.push(keep);
+    if (samples.length < 20) samples.push({ key: k, kept: (keep.employID || "").trim(), removed: removedMats });
+  }
+  return { canonical, removedMatriculas, duplicateGroups, removedRows, samples };
+}
+
 // ── Incremental sync processing logic ──
 async function processCsvData(sb: any, csvText: string, filename: string) {
   const { data: job, error: jobErr } = await sb.from("sync_jobs")
@@ -216,9 +281,16 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
   const jobId = job.id;
 
   try {
-    const rows = parseCsv(csvText);
+    const rawRows = parseCsv(csvText);
+    const rawTotalRows = rawRows.length;
+    const dedupe = dedupeRows(rawRows);
+    const rows = dedupe.canonical;
     const totalRows = rows.length;
-    await sb.from("sync_jobs").update({ message: `Parsed ${totalRows} registros. Comparando...`, phase: "comparing", colab_total: totalRows }).eq("id", jobId);
+    console.log(`[dedupe] raw=${rawTotalRows} canonical=${totalRows} groups=${dedupe.duplicateGroups} removed=${dedupe.removedRows}`);
+    await sb.from("sync_jobs").update({
+      message: `Parsed ${rawTotalRows} bruto → ${totalRows} canônico (${dedupe.removedRows} duplicados removidos). Comparando...`,
+      phase: "comparing", colab_total: totalRows,
+    }).eq("id", jobId);
 
     // ── Load existing CSV-origin records ──
     const existingMap = new Map<string, { id: string; fingerprint: string; cargo_id: string | null; sam_account_name: string | null; status: string }>();
@@ -338,14 +410,19 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
 
     const leaverIds: string[] = [];
     const leaverMatriculas: string[] = [];
-    const leaverDetails: { id: string; sam: string | null; cargo_id: string | null }[] = [];
+    const leaverDetails: { id: string; sam: string | null; cargo_id: string | null; status: string; silentDisable: boolean }[] = [];
+    const INACTIVE_DB_STATUSES = new Set(["desligado", "inativo"]);
     for (const [mat, rec] of existingMap) {
       if (!csvMatriculas.has(mat)) {
+        const isDedupeRemoved = dedupe.removedMatriculas.has(mat);
+        const silentDisable = isDedupeRemoved && INACTIVE_DB_STATUSES.has((rec.status || "").toLowerCase());
         leaverIds.push(rec.id);
         leaverMatriculas.push(mat);
-        leaverDetails.push({ id: rec.id, sam: rec.sam_account_name, cargo_id: rec.cargo_id });
+        leaverDetails.push({ id: rec.id, sam: rec.sam_account_name, cargo_id: rec.cargo_id, status: rec.status, silentDisable });
       }
     }
+    const silentCount = leaverDetails.filter(l => l.silentDisable).length;
+    if (silentCount > 0) console.log(`[dedupe] ${silentCount} leaver(s) já inativos serão removidos sem enfileirar disable`);
 
     console.log(`Classification: ${toInsert.length} new, ${toUpdate.length} changed, ${unchanged} unchanged, ${leaverIds.length} leavers`);
 
@@ -385,8 +462,8 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     if (leaverIds.length > 0) {
       await sb.from("sync_jobs").update({ phase: "removing", message: `Removendo ${leaverIds.length} ausentes...`, colab_percent: 75 }).eq("id", jobId);
 
-      // Generate iam_queue disable entries for leavers
-      const leaverIamEntries = leaverDetails.filter(l => l.sam).map(l => ({
+      // Generate iam_queue disable entries for leavers (skip dedupe-removed already-inactive)
+      const leaverIamEntries = leaverDetails.filter(l => l.sam && !l.silentDisable).map(l => ({
         action_type: "disable",
         payload_json: {
           samAccountName: l.sam, displayName: "", mail: "",
@@ -400,13 +477,14 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
         for (const batch of chunk(leaverIamEntries, 200)) await sb.from("iam_queue").insert(batch);
       }
 
-      // Revoke access profiles for leavers
+      // Revoke access profiles for leavers (skip dedupe-removed already-inactive)
       for (const l of leaverDetails) {
+        if (l.silentDisable) continue;
         if (l.cargo_id && l.sam) await provisionCargoAcessosServer(sb, l.id, null, l.cargo_id, l.sam, "", "");
       }
 
-      // Disable Entra ID accounts for leavers
-      const leaverEntraEntries = leaverDetails.filter(l => l.sam).map(l => ({
+      // Disable Entra ID accounts for leavers (skip dedupe-removed already-inactive)
+      const leaverEntraEntries = leaverDetails.filter(l => l.sam && !l.silentDisable).map(l => ({
         action_type: "disable_entra",
         payload_json: { samAccountName: l.sam, displayName: "", mail: "" },
         target_identity: l.sam, colaborador_id: l.id,
@@ -570,16 +648,31 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
     await sb.from("sync_jobs").update({
       status: "done", phase: "done", colab_percent: 100,
       colab_created: created, colab_updated: updated, colab_quarentena: leaverMatriculas.length,
-      message: `Concluído: ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos`,
+      message: `Concluído: bruto=${rawTotalRows}, canônico=${totalRows}, dedupe=${dedupe.removedRows} (grupos=${dedupe.duplicateGroups}), ${created} novos, ${updated} atualizados, ${unchanged} inalterados, ${leaverMatriculas.length} removidos (${silentCount} silenciosos)`,
     }).eq("id", jobId);
 
     await sb.from("auditoria").insert({
       entidade: "importacao_csv", acao: "importar",
-      resumo: `CSV SharePoint: ${totalRows} linhas → ${created} novos, ${updated} atualizados, ${leaverMatriculas.length} removidos`,
-      detalhes: { filename, totalRows, created, updated, unchanged, removed: leaverMatriculas.length, jobId },
+      resumo: `CSV SharePoint: bruto=${rawTotalRows} → canônico=${totalRows} · ${created} novos, ${updated} atualizados, ${leaverMatriculas.length} removidos`,
+      detalhes: {
+        filename, jobId,
+        rawTotalRows, totalRows,
+        duplicate_groups: dedupe.duplicateGroups,
+        removed_rows: dedupe.removedRows,
+        samples: dedupe.samples,
+        silent_disable_count: silentCount,
+        created, updated, unchanged, removed: leaverMatriculas.length,
+      },
     });
 
-    return { success: true, jobId, file: filename, created, updated, unchanged, removed: leaverMatriculas.length, total: totalRows };
+    return {
+      success: true, jobId, file: filename,
+      rawTotalRows, totalRows,
+      duplicate_groups: dedupe.duplicateGroups,
+      removed_rows: dedupe.removedRows,
+      samples: dedupe.samples,
+      created, updated, unchanged, removed: leaverMatriculas.length, total: totalRows,
+    };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro desconhecido";
     console.error("Processing error:", msg);
@@ -629,10 +722,12 @@ Deno.serve(async (req) => {
     console.log(`Site resolved: ${siteId}`);
 
     console.log("Listing files in RH_COLAB...");
-    const filesRes = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/RH_COLAB:/children?$orderby=lastModifiedDateTime desc&$top=50`, { headers: graphHeaders });
+    const filesRes = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/RH_COLAB:/children?$orderby=lastModifiedDateTime desc&$top=200`, { headers: graphHeaders });
     if (!filesRes.ok) throw new Error(`Folder listing failed: ${filesRes.status}`);
     const filesData = await filesRes.json();
-    const csvFiles = (filesData.value || []).filter((f: any) => f.name?.toLowerCase().startsWith("base_colab_") && f.name?.toLowerCase().endsWith(".csv"));
+    const csvFiles = (filesData.value || [])
+      .filter((f: any) => f.name?.toLowerCase().startsWith("base_colab_") && f.name?.toLowerCase().endsWith(".csv"))
+      .sort((a: any, b: any) => new Date(b.lastModifiedDateTime).getTime() - new Date(a.lastModifiedDateTime).getTime());
 
     if (csvFiles.length === 0) {
       return new Response(JSON.stringify({ error: "No CSV files found with prefix base_colab_" }), {
