@@ -207,6 +207,71 @@ async function queueProfileAccess(sb: any, samAccountName: string, displayName: 
   }
 }
 
+// ── Canonical dedupe (CPF → email → sam → matricula) ──
+const ACTIVE_STATUS_SET = new Set([
+  "ativo", "ferias", "afastado",
+  "afast aux doenca", "afast aux maternidade",
+  "atestado medico", "licenca maternidade",
+]);
+function normStatus(s: string): string {
+  return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+}
+function isActiveStatus(s: string): boolean {
+  return ACTIVE_STATUS_SET.has(normStatus(s));
+}
+function dedupeKey(row: CsvRow): string {
+  const cpf = (row.Cadastro_Pessoa_Fisica || "").replace(/\D/g, "").trim();
+  if (cpf) return `cpf:${cpf}`;
+  const mail = (row.mail || "").toLowerCase().trim();
+  if (mail) return `mail:${mail}`;
+  const sam = mail.includes("@") ? mail.split("@")[0] : "";
+  if (sam) return `sam:${sam}`;
+  return `mat:${(row.employID || "").trim()}`;
+}
+function pickCanonical(a: CsvRow, b: CsvRow): CsvRow {
+  const aA = isActiveStatus(a.status), bA = isActiveStatus(b.status);
+  if (aA !== bA) return aA ? a : b;
+  const aAdm = parseDate(a.Data_Admissao) || "", bAdm = parseDate(b.Data_Admissao) || "";
+  if (aAdm !== bAdm) return aAdm > bAdm ? a : b;
+  const aR = parseDate(a.Data_Rescisao) || "", bR = parseDate(b.Data_Rescisao) || "";
+  if (aR !== bR) return aR > bR ? a : b;
+  return a;
+}
+function dedupeRows(rows: CsvRow[]): {
+  canonical: CsvRow[];
+  removedMatriculas: Set<string>;
+  duplicateGroups: number;
+  removedRows: number;
+  samples: Array<{ key: string; kept: string; removed: string[] }>;
+} {
+  const groups = new Map<string, CsvRow[]>();
+  for (const r of rows) {
+    const k = dedupeKey(r);
+    const arr = groups.get(k) || [];
+    arr.push(r); groups.set(k, arr);
+  }
+  const canonical: CsvRow[] = [];
+  const removedMatriculas = new Set<string>();
+  const samples: Array<{ key: string; kept: string; removed: string[] }> = [];
+  let duplicateGroups = 0, removedRows = 0;
+  for (const [k, arr] of groups) {
+    if (arr.length === 1) { canonical.push(arr[0]); continue; }
+    duplicateGroups++;
+    let keep = arr[0];
+    for (let i = 1; i < arr.length; i++) keep = pickCanonical(keep, arr[i]);
+    const removedMats: string[] = [];
+    for (const r of arr) {
+      if (r === keep) continue;
+      const m = (r.employID || "").trim();
+      if (m) removedMatriculas.add(m);
+      removedMats.push(m); removedRows++;
+    }
+    canonical.push(keep);
+    if (samples.length < 20) samples.push({ key: k, kept: (keep.employID || "").trim(), removed: removedMats });
+  }
+  return { canonical, removedMatriculas, duplicateGroups, removedRows, samples };
+}
+
 // ── Incremental sync processing logic ──
 async function processCsvData(sb: any, csvText: string, filename: string) {
   const { data: job, error: jobErr } = await sb.from("sync_jobs")
@@ -216,9 +281,16 @@ async function processCsvData(sb: any, csvText: string, filename: string) {
   const jobId = job.id;
 
   try {
-    const rows = parseCsv(csvText);
+    const rawRows = parseCsv(csvText);
+    const rawTotalRows = rawRows.length;
+    const dedupe = dedupeRows(rawRows);
+    const rows = dedupe.canonical;
     const totalRows = rows.length;
-    await sb.from("sync_jobs").update({ message: `Parsed ${totalRows} registros. Comparando...`, phase: "comparing", colab_total: totalRows }).eq("id", jobId);
+    console.log(`[dedupe] raw=${rawTotalRows} canonical=${totalRows} groups=${dedupe.duplicateGroups} removed=${dedupe.removedRows}`);
+    await sb.from("sync_jobs").update({
+      message: `Parsed ${rawTotalRows} bruto → ${totalRows} canônico (${dedupe.removedRows} duplicados removidos). Comparando...`,
+      phase: "comparing", colab_total: totalRows,
+    }).eq("id", jobId);
 
     // ── Load existing CSV-origin records ──
     const existingMap = new Map<string, { id: string; fingerprint: string; cargo_id: string | null; sam_account_name: string | null; status: string }>();
