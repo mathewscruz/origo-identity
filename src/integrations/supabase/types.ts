@@ -248,6 +248,96 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_colaboradores_restore_20260707: {
+        Row: {
+          area_id: string | null
+          cargo_id: string | null
+          cpf: string | null
+          created_at: string | null
+          data_admissao: string | null
+          data_desligamento: string | null
+          desligado_manual: boolean | null
+          desligado_manual_em: string | null
+          desligado_manual_por: string | null
+          email: string | null
+          empresa_id: string | null
+          entra_id: string | null
+          gestor_id: string | null
+          id: string | null
+          import_hash: string | null
+          localidade_id: string | null
+          matricula: string | null
+          nome: string | null
+          origem: string | null
+          sam_account_name: string | null
+          status: Database["public"]["Enums"]["status_colaborador"] | null
+          suspenso_em: string | null
+          suspenso_motivo: string | null
+          suspenso_por: string | null
+          suspenso_preventivo: boolean | null
+          ultima_importacao_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          area_id?: string | null
+          cargo_id?: string | null
+          cpf?: string | null
+          created_at?: string | null
+          data_admissao?: string | null
+          data_desligamento?: string | null
+          desligado_manual?: boolean | null
+          desligado_manual_em?: string | null
+          desligado_manual_por?: string | null
+          email?: string | null
+          empresa_id?: string | null
+          entra_id?: string | null
+          gestor_id?: string | null
+          id?: string | null
+          import_hash?: string | null
+          localidade_id?: string | null
+          matricula?: string | null
+          nome?: string | null
+          origem?: string | null
+          sam_account_name?: string | null
+          status?: Database["public"]["Enums"]["status_colaborador"] | null
+          suspenso_em?: string | null
+          suspenso_motivo?: string | null
+          suspenso_por?: string | null
+          suspenso_preventivo?: boolean | null
+          ultima_importacao_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          area_id?: string | null
+          cargo_id?: string | null
+          cpf?: string | null
+          created_at?: string | null
+          data_admissao?: string | null
+          data_desligamento?: string | null
+          desligado_manual?: boolean | null
+          desligado_manual_em?: string | null
+          desligado_manual_por?: string | null
+          email?: string | null
+          empresa_id?: string | null
+          entra_id?: string | null
+          gestor_id?: string | null
+          id?: string | null
+          import_hash?: string | null
+          localidade_id?: string | null
+          matricula?: string | null
+          nome?: string | null
+          origem?: string | null
+          sam_account_name?: string | null
+          status?: Database["public"]["Enums"]["status_colaborador"] | null
+          suspenso_em?: string | null
+          suspenso_motivo?: string | null
+          suspenso_por?: string | null
+          suspenso_preventivo?: boolean | null
+          ultima_importacao_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       cargo_perfis: {
         Row: {
           cargo_id: string
@@ -1056,6 +1146,27 @@ export type Database = {
           retry_count?: number
           status?: string
           target_identity?: string | null
+        }
+        Relationships: []
+      }
+      iam_restore_guardrails: {
+        Row: {
+          active: boolean
+          id: boolean
+          reason: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          id?: boolean
+          reason?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          id?: boolean
+          reason?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
