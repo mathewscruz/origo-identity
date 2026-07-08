@@ -366,9 +366,9 @@ export default function Dashboard() {
 
   const { data: kpis } = useKpiCounts();
   const { data: provData } = useProvisioningData(provPeriod);
-  const { data: accessByApp } = useAccessByApp();
-  const { data: solicitStatus } = useSolicitacoesByStatus(solicitPeriod);
-  const { data: revisoes } = useRevisoesAtivas();
+  const { data: colabsStatus } = useColabsByStatus();
+  const { data: jmlTipo } = useEventosJmlByTipo(solicitPeriod);
+  const { data: queueStatus } = useQueueByStatus();
   const { data: activity } = useRecentActivity();
 
   const kpiCards = [
