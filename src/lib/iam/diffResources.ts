@@ -19,7 +19,7 @@ export interface ResourceDiff {
  */
 export function diffResources(current: ProfileResources, next: ProfileResources): ResourceDiff {
   const appKey = (a: ProfileResources["apps"][number]) => `${a.aplicacao_id}:${a.app_role_id ?? ""}`;
-  const spKey = (s: ProfileResources["sharepoint"][number]) => `${s.site_id}:${s.pasta_id ?? ""}:${s.permissao}`;
+  const spKey = (s: ProfileResources["sharepoint"][number]) => `${s.site_id}:${s.pasta_nivel1_id ?? ""}:${s.pasta_nivel2_id ?? ""}:${s.permissao}`;
 
   const curApp = new Set(current.apps.map(appKey));
   const nextApp = new Set(next.apps.map(appKey));

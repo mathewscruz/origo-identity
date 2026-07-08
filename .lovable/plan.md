@@ -1,61 +1,34 @@
-
 ## Diagnóstico
 
-Todas as 49 linhas na tela são `sync_status_from_ad` vindas do `origo_agent_ad_status_reconcile`. Meu `DivergenceCell` atual não trata esse `action_type`, então cai no fallback e volta a mostrar `rule, scope, ad_status` — exatamente o que o usuário reclamou.
+Verifiquei o backend:
 
-O payload real desses itens tem informação riquíssima que precisa aparecer:
+| Widget atual | Dados hoje | Problema |
+|---|---|---|
+| Provisionamento (área) | 2.878 eventos em 90d | Gráfico conta eventos **por bucket** (dia/semana). Dias sem provisionamento aparecem como 0 → parece "resetar". Não é uma linha do tempo, é um histograma. |
+| Acessos por Aplicação (donut) | apenas **3** `perfil_atribuicoes` ativas | Sempre vazio/inútil. |
+| Solicitações (donut) | **0** `solicitacoes_acesso` | Sempre vazio. |
+| Revisões em Andamento | **0** revisões ativas | Sempre vazio. |
 
-- `iam_status` (base IAM): `ativo` / `inativo`
-- `ad_status`: `ativo` / `inativo` (derivado do UAC do AD)
-- `status_anterior` → `status_novo` (o que será gravado)
-- `target_status` (status final)
-- `matched_ad[].dn` — mostra a OU (`OU=Bloqueados`… é um sinal muito forte)
-- `colaboradores[]` — nome real, matrícula, origem, status atual na base
-- `changed_fields` — o que muda
+Dados ricos disponíveis que não estão sendo mostrados: 3.408 eventos JML em 90d, 3.791 colaboradores com distribuição clara de status, 16 alertas não lidos, fila com estados variados.
 
-## Mudança (única, em `src/pages/AprovacaoIAMPage.tsx`)
+## Mudanças propostas
 
-### 1. Handler dedicado para `sync_status_from_ad` no `DivergenceCell`
+### 1. Provisionamento vira linha do tempo cumulativa
+- Mesmo eixo/períodos (Dia/Semana/Mês/Ano), mas soma acumulada de Concessões e Revogações ao longo do tempo — a linha **só cresce**, dando a sensação real de timeline.
+- Mantém as 3 séries (Concessão / Revogação / Outros) empilhadas.
+- Aumenta janela default de "semana" e recalcula os buckets em ordem cronológica correta (hoje sempre à direita).
 
-Renderizar, sem clicar:
+### 2. "Acessos por Aplicação" → **Colaboradores por Status** (donut)
+Usa dados reais de `colaboradores.status`: Ativo (591), Desligado (3.164), Férias (23), Afastado (12), Inativo (1). Cores semânticas Órigo. Clique leva para `/colaboradores` já filtrado.
 
-```
-[Status divergente]  Base IAM: ativo  ≠  AD: inativo   →  aplicar: inativo
-Colaborador: Valeria Maria Pereira (mat. 3939, CSV)
-OU: Bloqueados
-```
+### 3. "Solicitações" → **Eventos JML por Tipo** (donut, com seletor de período)
+Usa `eventos_jml` agrupado por `tipo` (Joiner / Mover / Leaver) no período selecionado. Já temos 3.408 eventos em 90d. Clique leva para `/eventos-jml`.
 
-- Chip âmbar `Status divergente` (ícone AlertTriangle).
-- Linha "Base IAM: **X** ≠ AD: **Y** → aplicar: **Z**" com cores: verde para `ativo`, vermelho para `inativo`.
-- Segunda linha com nome real + matrícula + origem (`CSV`/`entra`) — vem de `payload.colaboradores[0]`.
-- Terceira linha extrai a OU do `matched_ad[0].dn` (regex `OU=([^,]+)`) e destaca:
-  - Se OU contém `Bloqueados`/`Disabled` → chip vermelho `OU: Bloqueados`.
-  - Caso contrário → texto discreto `OU: {nome}`.
-- Se houver múltiplos colaboradores no grupo (duplicados por CPF), mostrar `+N duplicados` como chip cinza — sinaliza caso que merece análise humana.
+### 4. "Revisões de Acesso em Andamento" → **Fila de Provisionamento por Status** (barras)
+Barras horizontais com contagem por status da `iam_queue` (Aguardando aprovação, Pendente, Processando, Falhou, Concluído nos últimos 7d). Cada barra é um link para `/fila-provisionamento?status=…`. Dá visão operacional imediata do que precisa de ação.
 
-### 2. Escopo/contexto correto no badge de contexto
+## Arquivos afetados
 
-Hoje `contextBadges` classifica `sync_status_from_ad` como escopo `IAM`. Ajustar `actionScope` para retornar `AD` nesse caso (a ação sincroniza a base *a partir* do AD). E adicionar um badge `Agente AD` quando `requested_by === "origo_agent_ad_status_reconcile"` (mais legível que "Reconciliação" genérica).
+- `src/pages/Dashboard.tsx` — único arquivo. Reescrevo os hooks `useProvisioningData`, substituo `useAccessByApp` / `useSolicitacoesByStatus` / `useRevisoesAtivas` pelos três novos hooks, e ajusto o JSX das linhas 2 e 3 do grid.
 
-### 3. Rótulo do `action_type` em português
-
-Adicionar em `actionLabels`:
-- `sync_status_from_ad: "Sincronizar status ← AD"`
-
-Assim o chip principal também comunica a direção.
-
-### 4. Tinta de linha para `sync_status_from_ad` que desativa
-
-Em `rowTone`, quando `payload.target_status === "inativo"` ou `"desligado"`, aplicar a tinta âmbar (é destrutivo do ponto de vista do usuário — vai desativar acesso). Ativações ficam sem tinta.
-
-### 5. Fallback genérico melhorado
-
-Quando nada bate, em vez de listar chaves cruas (`rule, scope, ad_status`), renderizar os campos mais informativos do payload em pares `chave: valor` (whitelist: `reason`, `status_anterior`, `status_novo`, `target_status`, `groupName`, `licenseName`, `appName`, `displayName`, `mail`, `dn`), pulando os ruidosos (`rule`, `scope`, `changed_fields`, `matched_ad`, `colaboradores`).
-
-## Fora de escopo
-- Nada de backend, migration, edge function, mutation.
-- Nenhuma mudança no drawer de detalhe.
-
-## Validação
-- `tsgo --noEmit` limpo.
-- Playwright em `/aprovacao-iam` com sessão injetada: screenshot da tabela mostrando "Base IAM: ativo ≠ AD: inativo → aplicar: inativo", nome real do colaborador e chip `OU: Bloqueados` visíveis sem hover/clique.
+Sem migrações, sem edge functions, sem mudanças de schema.

@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
   Users, AlertTriangle, ShieldCheck, RefreshCw, AppWindow, FileCheck,
-  ArrowUpRight, Clock, CheckCircle2, XCircle, Loader2,
+  ArrowUpRight, Clock, CheckCircle2, XCircle, Loader2, UserCheck, UserX,
+  Plane, HeartPulse, UserMinus, ListChecks,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -114,108 +115,124 @@ function useProvisioningData(period: Period) {
         .gte("created_at", since.toISOString())
         .not("status", "eq", "cancelled");
       const rows = data ?? [];
-      const buckets: Record<string, { assign: number; remove: number; other: number }> = {};
-      for (let i = 0; i < cfg.buckets; i++) buckets[cfg.labelFn(i)] = { assign: 0, remove: 0, other: 0 };
+      // Ordered chronological buckets (oldest → newest)
+      const labels: string[] = [];
+      for (let i = 0; i < cfg.buckets; i++) labels.push(cfg.labelFn(i));
+      const perBucket = labels.map(() => ({ assign: 0, remove: 0, other: 0 }));
       const now = Date.now();
-      rows.forEach(r => {
+      rows.forEach((r) => {
         const age = now - new Date(r.created_at).getTime();
         const idx = cfg.bucketFn(age);
-        const key = cfg.labelFn(cfg.reverse - 1 - idx);
-        if (!buckets[key]) return;
+        const chronoIdx = cfg.reverse - 1 - idx;
+        if (chronoIdx < 0 || chronoIdx >= perBucket.length) return;
         const at = r.action_type || "";
-        if (at.startsWith("assign")) buckets[key].assign++;
-        else if (at.startsWith("remove") || at.startsWith("disable")) buckets[key].remove++;
-        else buckets[key].other++;
+        if (at.startsWith("assign")) perBucket[chronoIdx].assign++;
+        else if (at.startsWith("remove") || at.startsWith("disable")) perBucket[chronoIdx].remove++;
+        else perBucket[chronoIdx].other++;
       });
-      return Object.entries(buckets).map(([semana, v]) => ({
-        semana, Concessão: v.assign, Revogação: v.remove, Outros: v.other,
-      }));
-    },
-  });
-}
-
-function useAccessByApp() {
-  return useQuery({
-    queryKey: ["dashboard_access_by_app"],
-    queryFn: async () => {
-      const { data: atribuicoes } = await supabase
-        .from("perfil_atribuicoes")
-        .select("perfil_id")
-        .eq("ativo", true)
-        .is("data_revogacao", null);
-      if (!atribuicoes?.length) return [];
-      const perfilIds = [...new Set(atribuicoes.map(a => a.perfil_id))];
-      // Fetch em lotes de 500 para evitar limites de URL
-      const perfilApps: { aplicacao_id: string; perfil_id: string }[] = [];
-      for (let i = 0; i < perfilIds.length; i += 500) {
-        const batch = perfilIds.slice(i, i + 500);
-        const { data } = await supabase
-          .from("perfil_aplicacoes")
-          .select("aplicacao_id, perfil_id")
-          .in("perfil_id", batch);
-        if (data) perfilApps.push(...data);
-      }
-      if (!perfilApps.length) return [];
-      const appCount: Record<string, number> = {};
-      const perfilCountMap: Record<string, number> = {};
-      atribuicoes.forEach(a => { perfilCountMap[a.perfil_id] = (perfilCountMap[a.perfil_id] || 0) + 1; });
-      perfilApps.forEach(pa => {
-        appCount[pa.aplicacao_id] = (appCount[pa.aplicacao_id] || 0) + (perfilCountMap[pa.perfil_id] || 1);
+      // Cumulative running totals — timeline that only grows
+      let cA = 0, cR = 0, cO = 0;
+      return labels.map((semana, i) => {
+        cA += perBucket[i].assign;
+        cR += perBucket[i].remove;
+        cO += perBucket[i].other;
+        return { semana, Concessão: cA, Revogação: cR, Outros: cO };
       });
-      const appIds = Object.keys(appCount);
-      const appNames: Record<string, string> = {};
-      for (let i = 0; i < appIds.length; i += 500) {
-        const batch = appIds.slice(i, i + 500);
-        const { data: apps } = await supabase.from("aplicacoes").select("id, nome").in("id", batch);
-        (apps ?? []).forEach(a => { appNames[a.id] = a.nome; });
-      }
-      const sorted = Object.entries(appCount)
-        .map(([id, value]) => ({ name: appNames[id] || "Desconhecido", value }))
-        .sort((a, b) => b.value - a.value);
-      if (sorted.length <= 5) return sorted;
-      const top5 = sorted.slice(0, 5);
-      const others = sorted.slice(5).reduce((sum, i) => sum + i.value, 0);
-      return [...top5, { name: "Outros", value: others }];
-    },
-  });
-}
-
-function useSolicitacoesByStatus(period: Period) {
-  const cfg = getPeriodConfig(period);
-  return useQuery({
-    queryKey: ["dashboard_solicit_status", period],
-    queryFn: async () => {
-      const since = new Date();
-      since.setDate(since.getDate() - cfg.daysBack);
-      const { data } = await supabase
-        .from("solicitacoes_acesso")
-        .select("status")
-        .gte("created_at", since.toISOString());
-      const counts: Record<string, number> = {};
-      (data ?? []).forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
-      return Object.entries(counts)
-        .map(([status, value]) => ({
-          name: STATUS_MAP[status]?.label || status,
-          value,
-          color: STATUS_MAP[status]?.color || "hsl(215, 16%, 47%)",
-        }))
-        .filter(d => d.value > 0);
     },
     staleTime: 15000,
   });
 }
 
-function useRevisoesAtivas() {
+const COLAB_STATUS_META: Record<string, { label: string; color: string }> = {
+  ativo:     { label: "Ativo",     color: "hsl(142, 71%, 45%)" },
+  ferias:    { label: "Férias",    color: "hsl(199, 89%, 48%)" },
+  afastado:  { label: "Afastado",  color: "hsl(38, 92%, 50%)" },
+  inativo:   { label: "Inativo",   color: "hsl(215, 16%, 47%)" },
+  desligado: { label: "Desligado", color: "hsl(0, 84%, 60%)" },
+};
+
+function useColabsByStatus() {
   return useQuery({
-    queryKey: ["dashboard_revisoes"],
+    queryKey: ["dashboard_colabs_status"],
     queryFn: async () => {
+      const statuses = Object.keys(COLAB_STATUS_META);
+      const results = await Promise.all(
+        statuses.map((s) =>
+          supabase.from("colaboradores").select("id", { count: "exact", head: true }).eq("status", s as any),
+        ),
+      );
+      return statuses
+        .map((s, i) => ({
+          name: COLAB_STATUS_META[s].label,
+          value: results[i].count ?? 0,
+          color: COLAB_STATUS_META[s].color,
+        }))
+        .filter((d) => d.value > 0);
+    },
+    staleTime: 30000,
+  });
+}
+
+const JML_TIPO_META: Record<string, { label: string; color: string }> = {
+  joiner: { label: "Joiner", color: "hsl(142, 71%, 45%)" },
+  mover:  { label: "Mover",  color: "hsl(199, 89%, 48%)" },
+  leaver: { label: "Leaver", color: "hsl(0, 84%, 60%)" },
+};
+
+function useEventosJmlByTipo(period: Period) {
+  const cfg = getPeriodConfig(period);
+  return useQuery({
+    queryKey: ["dashboard_jml_tipo", period],
+    queryFn: async () => {
+      const since = new Date();
+      since.setDate(since.getDate() - cfg.daysBack);
       const { data } = await supabase
-        .from("revisoes")
-        .select("id, nome, total_itens, itens_revisados, status")
-        .eq("status", "em_andamento")
-        .order("created_at", { ascending: false })
-        .limit(4);
-      return data ?? [];
+        .from("eventos_jml")
+        .select("tipo")
+        .gte("created_at", since.toISOString());
+      const counts: Record<string, number> = {};
+      (data ?? []).forEach((r: any) => { counts[r.tipo] = (counts[r.tipo] || 0) + 1; });
+      return Object.entries(counts)
+        .map(([tipo, value]) => ({
+          name: JML_TIPO_META[tipo]?.label || tipo,
+          value,
+          color: JML_TIPO_META[tipo]?.color || "hsl(215, 16%, 47%)",
+        }))
+        .filter((d) => d.value > 0);
+    },
+    staleTime: 15000,
+  });
+}
+
+const QUEUE_STATUS_META: Record<string, { label: string; color: string; href: string }> = {
+  waiting_approval: { label: "Aguardando aprovação", color: "hsl(199, 89%, 48%)", href: "/fila-provisionamento?status=waiting_approval" },
+  pending:          { label: "Pendente execução",    color: "hsl(38, 92%, 50%)",  href: "/fila-provisionamento?status=pending" },
+  processing:       { label: "Processando",          color: "hsl(262, 52%, 47%)", href: "/fila-provisionamento?status=processing" },
+  failed:           { label: "Falhou",               color: "hsl(0, 84%, 60%)",   href: "/fila-provisionamento?status=failed" },
+  success:          { label: "Concluído (7d)",       color: "hsl(142, 71%, 45%)", href: "/fila-provisionamento?status=success" },
+};
+
+function useQueueByStatus() {
+  return useQuery({
+    queryKey: ["dashboard_queue_status"],
+    queryFn: async () => {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      const statuses = Object.keys(QUEUE_STATUS_META);
+      const results = await Promise.all(
+        statuses.map((s) => {
+          let q = supabase.from("iam_queue").select("id", { count: "exact", head: true }).eq("status", s);
+          if (s === "success") q = q.gte("created_at", sevenDaysAgo.toISOString());
+          return q;
+        }),
+      );
+      return statuses.map((s, i) => ({
+        status: s,
+        label: QUEUE_STATUS_META[s].label,
+        value: results[i].count ?? 0,
+        color: QUEUE_STATUS_META[s].color,
+        href: QUEUE_STATUS_META[s].href,
+      }));
     },
     staleTime: 15000,
   });
@@ -349,9 +366,9 @@ export default function Dashboard() {
 
   const { data: kpis } = useKpiCounts();
   const { data: provData } = useProvisioningData(provPeriod);
-  const { data: accessByApp } = useAccessByApp();
-  const { data: solicitStatus } = useSolicitacoesByStatus(solicitPeriod);
-  const { data: revisoes } = useRevisoesAtivas();
+  const { data: colabsStatus } = useColabsByStatus();
+  const { data: jmlTipo } = useEventosJmlByTipo(solicitPeriod);
+  const { data: queueStatus } = useQueueByStatus();
   const { data: activity } = useRecentActivity();
 
   const kpiCards = [
@@ -437,32 +454,37 @@ export default function Dashboard() {
 
         <Card className="lg:col-span-3">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Acessos por Aplicação</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Colaboradores por Status</CardTitle>
+              <Link to="/colaboradores" className="text-xs text-primary hover:underline flex items-center gap-1">
+                Ver todos <ArrowUpRight className="h-3 w-3" />
+              </Link>
+            </div>
           </CardHeader>
           <CardContent>
-            {(accessByApp ?? []).length > 0 ? (
+            {(colabsStatus ?? []).length > 0 ? (
               <ResponsiveContainer width="100%" height={280}>
                 <PieChart>
-                  <Pie data={accessByApp} cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={3} dataKey="value" nameKey="name">
-                    {(accessByApp ?? []).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  <Pie data={colabsStatus} cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={3} dataKey="value" nameKey="name">
+                    {(colabsStatus ?? []).map((entry, i) => <Cell key={i} fill={entry.color} />)}
                   </Pie>
-                  <Tooltip formatter={(v: number, name: string) => [`${v} atribuições`, name]} contentStyle={{ borderRadius: 8, border: "1px solid hsl(214, 32%, 91%)", fontSize: 12 }} />
+                  <Tooltip formatter={(v: number, name: string) => [`${v} colaboradores`, name]} contentStyle={{ borderRadius: 8, border: "1px solid hsl(214, 32%, 91%)", fontSize: 12 }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-[280px] items-center justify-center"><EmptyState message="Nenhuma atribuição encontrada" /></div>
+              <div className="flex h-[280px] items-center justify-center"><EmptyState message="Nenhum colaborador cadastrado" /></div>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Row 3: Solicitações donut + Revisões */}
+      {/* Row 3: Eventos JML donut + Fila por status */}
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-2 animate-content-in stagger-4">
         <Card data-tour="chart-requests">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Solicitações</CardTitle>
+              <CardTitle className="text-base">Eventos JML por Tipo</CardTitle>
               <div className="flex gap-1">
                 {(["dia", "semana", "mes", "ano"] as Period[]).map(p => (
                   <Button key={p} size="sm" variant={solicitPeriod === p ? "default" : "ghost"} className="h-7 px-2.5 text-xs" onClick={() => setSolicitPeriod(p)}>
@@ -473,18 +495,18 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            {(solicitStatus ?? []).length > 0 ? (
+            {(jmlTipo ?? []).length > 0 ? (
               <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
-                  <Pie data={solicitStatus} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value" nameKey="name">
-                    {(solicitStatus ?? []).map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                  <Pie data={jmlTipo} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value" nameKey="name">
+                    {(jmlTipo ?? []).map((entry, i) => <Cell key={i} fill={entry.color} />)}
                   </Pie>
-                  <Tooltip formatter={(v: number, name: string) => [`${v}`, name]} contentStyle={{ borderRadius: 8, border: "1px solid hsl(214, 32%, 91%)", fontSize: 12 }} />
+                  <Tooltip formatter={(v: number, name: string) => [`${v} eventos`, name]} contentStyle={{ borderRadius: 8, border: "1px solid hsl(214, 32%, 91%)", fontSize: 12 }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-[240px] items-center justify-center"><EmptyState message="Nenhuma solicitação no período" /></div>
+              <div className="flex h-[240px] items-center justify-center"><EmptyState message="Nenhum evento JML no período" /></div>
             )}
           </CardContent>
         </Card>
@@ -492,37 +514,43 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Revisões de Acesso em Andamento</CardTitle>
-              <Link to="/revisoes" className="text-xs text-primary hover:underline flex items-center gap-1">
-                Ver todas <ArrowUpRight className="h-3 w-3" />
+              <CardTitle className="text-base">Fila de Provisionamento por Status</CardTitle>
+              <Link to="/fila-provisionamento" className="text-xs text-primary hover:underline flex items-center gap-1">
+                Ver fila <ArrowUpRight className="h-3 w-3" />
               </Link>
             </div>
           </CardHeader>
           <CardContent>
-            {(revisoes ?? []).length > 0 ? (
-              <div className="space-y-4">
-                {(revisoes ?? []).map((rev) => {
-                  const pct = rev.total_itens > 0 ? Math.round((rev.itens_revisados / rev.total_itens) * 100) : 0;
-                  return (
-                    <Link key={rev.id} to={`/revisoes/${rev.id}`} className="block group">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-sm font-medium truncate max-w-[70%] group-hover:text-primary transition-colors">{rev.nome}</span>
-                        <span className="text-xs text-muted-foreground">{rev.itens_revisados}/{rev.total_itens} itens</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <Progress value={pct} className="flex-1 h-2" />
-                        <span className="text-xs font-semibold text-muted-foreground w-10 text-right">{pct}%</span>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="flex h-[200px] items-center justify-center"><EmptyState message="Nenhuma revisão em andamento" /></div>
-            )}
+            {(() => {
+              const rows = queueStatus ?? [];
+              const max = Math.max(1, ...rows.map((r) => r.value));
+              const hasAny = rows.some((r) => r.value > 0);
+              if (!hasAny) {
+                return <div className="flex h-[200px] items-center justify-center"><EmptyState message="Fila vazia" /></div>;
+              }
+              return (
+                <div className="space-y-4">
+                  {rows.map((r) => {
+                    const pct = Math.round((r.value / max) * 100);
+                    return (
+                      <Link key={r.status} to={r.href} className="block group">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-sm font-medium group-hover:text-primary transition-colors">{r.label}</span>
+                          <span className="text-xs font-semibold text-muted-foreground">{r.value}</span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: r.color }} />
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </CardContent>
         </Card>
       </div>
+
 
       {/* Row 4: Activity timeline */}
       <Card data-tour="timeline" className="animate-content-in stagger-5">
