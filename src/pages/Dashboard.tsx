@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
   Users, AlertTriangle, ShieldCheck, RefreshCw, AppWindow, FileCheck,
-  ArrowUpRight, Clock, CheckCircle2, XCircle, Loader2,
+  ArrowUpRight, Clock, CheckCircle2, XCircle, Loader2, UserCheck, UserX,
+  Plane, HeartPulse, UserMinus, ListChecks,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
