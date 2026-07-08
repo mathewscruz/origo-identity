@@ -115,108 +115,124 @@ function useProvisioningData(period: Period) {
         .gte("created_at", since.toISOString())
         .not("status", "eq", "cancelled");
       const rows = data ?? [];
-      const buckets: Record<string, { assign: number; remove: number; other: number }> = {};
-      for (let i = 0; i < cfg.buckets; i++) buckets[cfg.labelFn(i)] = { assign: 0, remove: 0, other: 0 };
+      // Ordered chronological buckets (oldest → newest)
+      const labels: string[] = [];
+      for (let i = 0; i < cfg.buckets; i++) labels.push(cfg.labelFn(i));
+      const perBucket = labels.map(() => ({ assign: 0, remove: 0, other: 0 }));
       const now = Date.now();
-      rows.forEach(r => {
+      rows.forEach((r) => {
         const age = now - new Date(r.created_at).getTime();
         const idx = cfg.bucketFn(age);
-        const key = cfg.labelFn(cfg.reverse - 1 - idx);
-        if (!buckets[key]) return;
+        const chronoIdx = cfg.reverse - 1 - idx;
+        if (chronoIdx < 0 || chronoIdx >= perBucket.length) return;
         const at = r.action_type || "";
-        if (at.startsWith("assign")) buckets[key].assign++;
-        else if (at.startsWith("remove") || at.startsWith("disable")) buckets[key].remove++;
-        else buckets[key].other++;
+        if (at.startsWith("assign")) perBucket[chronoIdx].assign++;
+        else if (at.startsWith("remove") || at.startsWith("disable")) perBucket[chronoIdx].remove++;
+        else perBucket[chronoIdx].other++;
       });
-      return Object.entries(buckets).map(([semana, v]) => ({
-        semana, Concessão: v.assign, Revogação: v.remove, Outros: v.other,
-      }));
-    },
-  });
-}
-
-function useAccessByApp() {
-  return useQuery({
-    queryKey: ["dashboard_access_by_app"],
-    queryFn: async () => {
-      const { data: atribuicoes } = await supabase
-        .from("perfil_atribuicoes")
-        .select("perfil_id")
-        .eq("ativo", true)
-        .is("data_revogacao", null);
-      if (!atribuicoes?.length) return [];
-      const perfilIds = [...new Set(atribuicoes.map(a => a.perfil_id))];
-      // Fetch em lotes de 500 para evitar limites de URL
-      const perfilApps: { aplicacao_id: string; perfil_id: string }[] = [];
-      for (let i = 0; i < perfilIds.length; i += 500) {
-        const batch = perfilIds.slice(i, i + 500);
-        const { data } = await supabase
-          .from("perfil_aplicacoes")
-          .select("aplicacao_id, perfil_id")
-          .in("perfil_id", batch);
-        if (data) perfilApps.push(...data);
-      }
-      if (!perfilApps.length) return [];
-      const appCount: Record<string, number> = {};
-      const perfilCountMap: Record<string, number> = {};
-      atribuicoes.forEach(a => { perfilCountMap[a.perfil_id] = (perfilCountMap[a.perfil_id] || 0) + 1; });
-      perfilApps.forEach(pa => {
-        appCount[pa.aplicacao_id] = (appCount[pa.aplicacao_id] || 0) + (perfilCountMap[pa.perfil_id] || 1);
+      // Cumulative running totals — timeline that only grows
+      let cA = 0, cR = 0, cO = 0;
+      return labels.map((semana, i) => {
+        cA += perBucket[i].assign;
+        cR += perBucket[i].remove;
+        cO += perBucket[i].other;
+        return { semana, Concessão: cA, Revogação: cR, Outros: cO };
       });
-      const appIds = Object.keys(appCount);
-      const appNames: Record<string, string> = {};
-      for (let i = 0; i < appIds.length; i += 500) {
-        const batch = appIds.slice(i, i + 500);
-        const { data: apps } = await supabase.from("aplicacoes").select("id, nome").in("id", batch);
-        (apps ?? []).forEach(a => { appNames[a.id] = a.nome; });
-      }
-      const sorted = Object.entries(appCount)
-        .map(([id, value]) => ({ name: appNames[id] || "Desconhecido", value }))
-        .sort((a, b) => b.value - a.value);
-      if (sorted.length <= 5) return sorted;
-      const top5 = sorted.slice(0, 5);
-      const others = sorted.slice(5).reduce((sum, i) => sum + i.value, 0);
-      return [...top5, { name: "Outros", value: others }];
-    },
-  });
-}
-
-function useSolicitacoesByStatus(period: Period) {
-  const cfg = getPeriodConfig(period);
-  return useQuery({
-    queryKey: ["dashboard_solicit_status", period],
-    queryFn: async () => {
-      const since = new Date();
-      since.setDate(since.getDate() - cfg.daysBack);
-      const { data } = await supabase
-        .from("solicitacoes_acesso")
-        .select("status")
-        .gte("created_at", since.toISOString());
-      const counts: Record<string, number> = {};
-      (data ?? []).forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
-      return Object.entries(counts)
-        .map(([status, value]) => ({
-          name: STATUS_MAP[status]?.label || status,
-          value,
-          color: STATUS_MAP[status]?.color || "hsl(215, 16%, 47%)",
-        }))
-        .filter(d => d.value > 0);
     },
     staleTime: 15000,
   });
 }
 
-function useRevisoesAtivas() {
+const COLAB_STATUS_META: Record<string, { label: string; color: string }> = {
+  ativo:     { label: "Ativo",     color: "hsl(142, 71%, 45%)" },
+  ferias:    { label: "Férias",    color: "hsl(199, 89%, 48%)" },
+  afastado:  { label: "Afastado",  color: "hsl(38, 92%, 50%)" },
+  inativo:   { label: "Inativo",   color: "hsl(215, 16%, 47%)" },
+  desligado: { label: "Desligado", color: "hsl(0, 84%, 60%)" },
+};
+
+function useColabsByStatus() {
   return useQuery({
-    queryKey: ["dashboard_revisoes"],
+    queryKey: ["dashboard_colabs_status"],
     queryFn: async () => {
+      const statuses = Object.keys(COLAB_STATUS_META);
+      const results = await Promise.all(
+        statuses.map((s) =>
+          supabase.from("colaboradores").select("id", { count: "exact", head: true }).eq("status", s),
+        ),
+      );
+      return statuses
+        .map((s, i) => ({
+          name: COLAB_STATUS_META[s].label,
+          value: results[i].count ?? 0,
+          color: COLAB_STATUS_META[s].color,
+        }))
+        .filter((d) => d.value > 0);
+    },
+    staleTime: 30000,
+  });
+}
+
+const JML_TIPO_META: Record<string, { label: string; color: string }> = {
+  joiner: { label: "Joiner", color: "hsl(142, 71%, 45%)" },
+  mover:  { label: "Mover",  color: "hsl(199, 89%, 48%)" },
+  leaver: { label: "Leaver", color: "hsl(0, 84%, 60%)" },
+};
+
+function useEventosJmlByTipo(period: Period) {
+  const cfg = getPeriodConfig(period);
+  return useQuery({
+    queryKey: ["dashboard_jml_tipo", period],
+    queryFn: async () => {
+      const since = new Date();
+      since.setDate(since.getDate() - cfg.daysBack);
       const { data } = await supabase
-        .from("revisoes")
-        .select("id, nome, total_itens, itens_revisados, status")
-        .eq("status", "em_andamento")
-        .order("created_at", { ascending: false })
-        .limit(4);
-      return data ?? [];
+        .from("eventos_jml")
+        .select("tipo")
+        .gte("created_at", since.toISOString());
+      const counts: Record<string, number> = {};
+      (data ?? []).forEach((r: any) => { counts[r.tipo] = (counts[r.tipo] || 0) + 1; });
+      return Object.entries(counts)
+        .map(([tipo, value]) => ({
+          name: JML_TIPO_META[tipo]?.label || tipo,
+          value,
+          color: JML_TIPO_META[tipo]?.color || "hsl(215, 16%, 47%)",
+        }))
+        .filter((d) => d.value > 0);
+    },
+    staleTime: 15000,
+  });
+}
+
+const QUEUE_STATUS_META: Record<string, { label: string; color: string; href: string }> = {
+  waiting_approval: { label: "Aguardando aprovação", color: "hsl(199, 89%, 48%)", href: "/fila-provisionamento?status=waiting_approval" },
+  pending:          { label: "Pendente execução",    color: "hsl(38, 92%, 50%)",  href: "/fila-provisionamento?status=pending" },
+  processing:       { label: "Processando",          color: "hsl(262, 52%, 47%)", href: "/fila-provisionamento?status=processing" },
+  failed:           { label: "Falhou",               color: "hsl(0, 84%, 60%)",   href: "/fila-provisionamento?status=failed" },
+  success:          { label: "Concluído (7d)",       color: "hsl(142, 71%, 45%)", href: "/fila-provisionamento?status=success" },
+};
+
+function useQueueByStatus() {
+  return useQuery({
+    queryKey: ["dashboard_queue_status"],
+    queryFn: async () => {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      const statuses = Object.keys(QUEUE_STATUS_META);
+      const results = await Promise.all(
+        statuses.map((s) => {
+          let q = supabase.from("iam_queue").select("id", { count: "exact", head: true }).eq("status", s);
+          if (s === "success") q = q.gte("created_at", sevenDaysAgo.toISOString());
+          return q;
+        }),
+      );
+      return statuses.map((s, i) => ({
+        status: s,
+        label: QUEUE_STATUS_META[s].label,
+        value: results[i].count ?? 0,
+        color: QUEUE_STATUS_META[s].color,
+        href: QUEUE_STATUS_META[s].href,
+      }));
     },
     staleTime: 15000,
   });
