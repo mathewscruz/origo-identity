@@ -63,6 +63,7 @@ SUPPORTED_ACTIONS = {
     "remove_sharepoint",
     # AD (via ponte externa configurável — AD_BRIDGE_URL)
     "create",
+    "create_if_not_exists",
     "update",
     "disable",
     "reset_password",
@@ -163,7 +164,7 @@ def has_approval(item: Dict[str, Any]) -> bool:
     return bool(payload.get("approved_by") or payload.get("evento_jml_id"))
 
 
-AD_ACTIONS = {"create", "update", "disable", "reset_password"}
+AD_ACTIONS = {"create", "create_if_not_exists", "update", "disable", "reset_password"}
 
 
 def _ldap_filter_value(value: str) -> str:
