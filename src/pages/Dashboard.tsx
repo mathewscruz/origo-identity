@@ -158,7 +158,7 @@ function useColabsByStatus() {
       const statuses = Object.keys(COLAB_STATUS_META);
       const results = await Promise.all(
         statuses.map((s) =>
-          supabase.from("colaboradores").select("id", { count: "exact", head: true }).eq("status", s),
+          supabase.from("colaboradores").select("id", { count: "exact", head: true }).eq("status", s as any),
         ),
       );
       return statuses
