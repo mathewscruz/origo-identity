@@ -454,32 +454,37 @@ export default function Dashboard() {
 
         <Card className="lg:col-span-3">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Acessos por Aplicação</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Colaboradores por Status</CardTitle>
+              <Link to="/colaboradores" className="text-xs text-primary hover:underline flex items-center gap-1">
+                Ver todos <ArrowUpRight className="h-3 w-3" />
+              </Link>
+            </div>
           </CardHeader>
           <CardContent>
-            {(accessByApp ?? []).length > 0 ? (
+            {(colabsStatus ?? []).length > 0 ? (
               <ResponsiveContainer width="100%" height={280}>
                 <PieChart>
-                  <Pie data={accessByApp} cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={3} dataKey="value" nameKey="name">
-                    {(accessByApp ?? []).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  <Pie data={colabsStatus} cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={3} dataKey="value" nameKey="name">
+                    {(colabsStatus ?? []).map((entry, i) => <Cell key={i} fill={entry.color} />)}
                   </Pie>
-                  <Tooltip formatter={(v: number, name: string) => [`${v} atribuições`, name]} contentStyle={{ borderRadius: 8, border: "1px solid hsl(214, 32%, 91%)", fontSize: 12 }} />
+                  <Tooltip formatter={(v: number, name: string) => [`${v} colaboradores`, name]} contentStyle={{ borderRadius: 8, border: "1px solid hsl(214, 32%, 91%)", fontSize: 12 }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-[280px] items-center justify-center"><EmptyState message="Nenhuma atribuição encontrada" /></div>
+              <div className="flex h-[280px] items-center justify-center"><EmptyState message="Nenhum colaborador cadastrado" /></div>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Row 3: Solicitações donut + Revisões */}
+      {/* Row 3: Eventos JML donut + Fila por status */}
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-2 animate-content-in stagger-4">
         <Card data-tour="chart-requests">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Solicitações</CardTitle>
+              <CardTitle className="text-base">Eventos JML por Tipo</CardTitle>
               <div className="flex gap-1">
                 {(["dia", "semana", "mes", "ano"] as Period[]).map(p => (
                   <Button key={p} size="sm" variant={solicitPeriod === p ? "default" : "ghost"} className="h-7 px-2.5 text-xs" onClick={() => setSolicitPeriod(p)}>
@@ -490,18 +495,18 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            {(solicitStatus ?? []).length > 0 ? (
+            {(jmlTipo ?? []).length > 0 ? (
               <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
-                  <Pie data={solicitStatus} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value" nameKey="name">
-                    {(solicitStatus ?? []).map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                  <Pie data={jmlTipo} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value" nameKey="name">
+                    {(jmlTipo ?? []).map((entry, i) => <Cell key={i} fill={entry.color} />)}
                   </Pie>
-                  <Tooltip formatter={(v: number, name: string) => [`${v}`, name]} contentStyle={{ borderRadius: 8, border: "1px solid hsl(214, 32%, 91%)", fontSize: 12 }} />
+                  <Tooltip formatter={(v: number, name: string) => [`${v} eventos`, name]} contentStyle={{ borderRadius: 8, border: "1px solid hsl(214, 32%, 91%)", fontSize: 12 }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-[240px] items-center justify-center"><EmptyState message="Nenhuma solicitação no período" /></div>
+              <div className="flex h-[240px] items-center justify-center"><EmptyState message="Nenhum evento JML no período" /></div>
             )}
           </CardContent>
         </Card>
@@ -509,37 +514,43 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Revisões de Acesso em Andamento</CardTitle>
-              <Link to="/revisoes" className="text-xs text-primary hover:underline flex items-center gap-1">
-                Ver todas <ArrowUpRight className="h-3 w-3" />
+              <CardTitle className="text-base">Fila de Provisionamento por Status</CardTitle>
+              <Link to="/fila-provisionamento" className="text-xs text-primary hover:underline flex items-center gap-1">
+                Ver fila <ArrowUpRight className="h-3 w-3" />
               </Link>
             </div>
           </CardHeader>
           <CardContent>
-            {(revisoes ?? []).length > 0 ? (
-              <div className="space-y-4">
-                {(revisoes ?? []).map((rev) => {
-                  const pct = rev.total_itens > 0 ? Math.round((rev.itens_revisados / rev.total_itens) * 100) : 0;
-                  return (
-                    <Link key={rev.id} to={`/revisoes/${rev.id}`} className="block group">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-sm font-medium truncate max-w-[70%] group-hover:text-primary transition-colors">{rev.nome}</span>
-                        <span className="text-xs text-muted-foreground">{rev.itens_revisados}/{rev.total_itens} itens</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <Progress value={pct} className="flex-1 h-2" />
-                        <span className="text-xs font-semibold text-muted-foreground w-10 text-right">{pct}%</span>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="flex h-[200px] items-center justify-center"><EmptyState message="Nenhuma revisão em andamento" /></div>
-            )}
+            {(() => {
+              const rows = queueStatus ?? [];
+              const max = Math.max(1, ...rows.map((r) => r.value));
+              const hasAny = rows.some((r) => r.value > 0);
+              if (!hasAny) {
+                return <div className="flex h-[200px] items-center justify-center"><EmptyState message="Fila vazia" /></div>;
+              }
+              return (
+                <div className="space-y-4">
+                  {rows.map((r) => {
+                    const pct = Math.round((r.value / max) * 100);
+                    return (
+                      <Link key={r.status} to={r.href} className="block group">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-sm font-medium group-hover:text-primary transition-colors">{r.label}</span>
+                          <span className="text-xs font-semibold text-muted-foreground">{r.value}</span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: r.color }} />
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </CardContent>
         </Card>
       </div>
+
 
       {/* Row 4: Activity timeline */}
       <Card data-tour="timeline" className="animate-content-in stagger-5">
