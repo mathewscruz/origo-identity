@@ -52,6 +52,8 @@ import { useAssignPerfil, useRevokePerfil } from "@/hooks/mutations/usePerfilAss
 export default function ColaboradorDetalhePage() {
   const { id } = useParams();
   const { data: pessoa, isLoading } = useColaborador(id);
+  const resolveResourceName = useResourceNameResolver();
+
   const { data: atribuicoes } = usePerfilAtribuicoes(undefined, id);
   const { data: allEventos } = useEventosJML();
   const { data: perfisDisponiveis } = usePerfisAcesso();
