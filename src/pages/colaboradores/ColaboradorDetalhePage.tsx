@@ -393,10 +393,8 @@ export default function ColaboradorDetalhePage() {
     return apps.map((pa: any) => pa.aplicacoes?.nome).filter(Boolean);
   };
 
-  const getResourceName = (item: any) => {
-    const p = item.payload_json || {};
-    return p.groupName || p.licenseName || p.appName || p.siteName || "—";
-  };
+  const getResourceName = (item: any) => resolveResourceName(item);
+
 
   return (
     <div className="space-y-6">
