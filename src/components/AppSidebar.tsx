@@ -10,6 +10,7 @@ import {
   SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarFooter, SidebarSeparator, useSidebar,
 } from "@/components/ui/sidebar";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAvatarUrl } from "@/lib/avatarUrl";
 import { Button } from "@/components/ui/button";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import logoImg from "@/assets/logo.png";
@@ -50,6 +51,7 @@ export function AppSidebar() {
   const collapsed = state === "collapsed";
   const location = useLocation();
   const { profile, role, signOut } = useAuth();
+  const avatarSrc = useAvatarUrl(profile?.avatar_url);
   const [logoutOpen, setLogoutOpen] = useState(false);
 
   const isActive = (url: string) => { if (url === "/") return location.pathname === "/"; return location.pathname.startsWith(url); };
@@ -95,7 +97,7 @@ export function AppSidebar() {
             <div className="space-y-1">
               <div className="flex items-center gap-2 rounded-lg bg-sidebar-accent/50 p-1.5">
                 <div className="flex h-7 w-7 items-center justify-center rounded-full bg-sidebar-primary text-[10px] font-semibold text-sidebar-primary-foreground overflow-hidden shrink-0">
-                  {profile?.avatar_url ? <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" /> : initials}
+                  {avatarSrc ? <img src={avatarSrc} alt="" className="h-full w-full object-cover" /> : initials}
                 </div>
                 <div className="flex flex-col text-[11px] flex-1 min-w-0">
                   <span className="font-medium text-sidebar-accent-foreground truncate">{profile?.nome || "Usuário"}</span>

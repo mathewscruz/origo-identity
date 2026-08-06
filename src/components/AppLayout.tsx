@@ -14,6 +14,7 @@ import {
 import { Link } from "react-router-dom";
 import { NotificacoesBell } from "@/components/NotificacoesBell";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAvatarUrl } from "@/lib/avatarUrl";
 import ForcePasswordChangeDialog from "@/components/ForcePasswordChangeDialog";
 
 const routeLabels: Record<string, string> = {
@@ -99,6 +100,7 @@ function AppBreadcrumb() {
 
 export default function AppLayout() {
   const { profile, mustChangePassword, refreshProfile } = useAuth();
+  const avatarSrc = useAvatarUrl(profile?.avatar_url);
   const initials = profile?.nome ? profile.nome.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase() : "??";
 
   return (
@@ -113,7 +115,7 @@ export default function AppLayout() {
             <div className="ml-auto flex items-center gap-2">
               <NotificacoesBell />
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground overflow-hidden">
-                {profile?.avatar_url ? <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" /> : initials}
+                {avatarSrc ? <img src={avatarSrc} alt="" className="h-full w-full object-cover" /> : initials}
               </div>
             </div>
           </header>

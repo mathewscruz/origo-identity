@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
+import { useAvatarUrl } from "@/lib/avatarUrl";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -52,6 +53,7 @@ export default function UsuariosPage() {
 
   const isAdmin = myRole === "admin";
 
+  const avatarSrc = useAvatarUrl(myProfile?.avatar_url);
   const initials = myProfile?.nome ? myProfile.nome.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase() : "??";
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -74,10 +76,8 @@ export default function UsuariosPage() {
       const { error: uploadError } = await supabase.storage.from("avatars").upload(filePath, file, { upsert: true });
       if (uploadError) throw uploadError;
 
-      const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath);
-      const avatarUrl = `${urlData.publicUrl}?t=${Date.now()}`;
-
-      const { error: updateError } = await supabase.from("profiles").update({ avatar_url: avatarUrl }).eq("id", user.id);
+      // Bucket privado: guardamos apenas o caminho; a exibição usa URL assinada.
+      const { error: updateError } = await supabase.from("profiles").update({ avatar_url: filePath }).eq("id", user.id);
       if (updateError) throw updateError;
 
       await refreshProfile();
@@ -185,8 +185,8 @@ export default function UsuariosPage() {
           <div className="flex items-center gap-6">
             <div className="relative group">
               <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary text-lg font-semibold text-primary-foreground overflow-hidden border-2 border-border">
-                {myProfile?.avatar_url ? (
-                  <img src={myProfile.avatar_url} alt="" className="h-full w-full object-cover" />
+                {avatarSrc ? (
+                  <img src={avatarSrc} alt="" className="h-full w-full object-cover" />
                 ) : (
                   <span className="text-xl">{initials}</span>
                 )}

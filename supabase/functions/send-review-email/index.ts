@@ -9,7 +9,7 @@ const corsHeaders = {
 };
 
 const APP_URL = "https://origo-identity.lovable.app";
-const LOGO_URL = "https://jobopjhhxgcfanlhzlkc.supabase.co/storage/v1/object/public/avatars/email%2Flogo-origo.png";
+const LOGO_URL = "https://iam.origoenergia.com.br/email/logo-origo.png";
 const BRAND_COLOR = "#16968D";
 const BRAND_DARK = "#0d8276";
 
