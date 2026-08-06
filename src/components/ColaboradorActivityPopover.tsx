@@ -68,18 +68,11 @@ const actionLabels: Record<string, string> = {
   delete: "Exclusão",
 };
 
-function getResourceName(item: QueueItem): string {
-  const p = item.payload_json;
-  if (!p) return "";
-  if (p.groupName) return p.groupName;
-  if (p.licenseName) return p.licenseName;
-  if (p.appName) return p.appName;
-  return "";
-}
-
 export default function ColaboradorActivityPopover({ colaboradorId, colaboradorNome }: Props) {
+  const getResourceName = useResourceNameResolver();
   const [eventos, setEventos] = useState<EventoJML[]>([]);
   const [atribuicoes, setAtribuicoes] = useState<Atribuicao[]>([]);
+
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
