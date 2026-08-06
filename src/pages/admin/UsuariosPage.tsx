@@ -74,10 +74,8 @@ export default function UsuariosPage() {
       const { error: uploadError } = await supabase.storage.from("avatars").upload(filePath, file, { upsert: true });
       if (uploadError) throw uploadError;
 
-      const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath);
-      const avatarUrl = `${urlData.publicUrl}?t=${Date.now()}`;
-
-      const { error: updateError } = await supabase.from("profiles").update({ avatar_url: avatarUrl }).eq("id", user.id);
+      // Bucket privado: guardamos apenas o caminho; a exibição usa URL assinada.
+      const { error: updateError } = await supabase.from("profiles").update({ avatar_url: filePath }).eq("id", user.id);
       if (updateError) throw updateError;
 
       await refreshProfile();
