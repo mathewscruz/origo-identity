@@ -24,6 +24,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import EmptyState from "@/components/EmptyState";
 import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { authedFetch } from "@/lib/authedFetch";
+import { useResourceNameResolver } from "@/lib/resourceNames";
 
 interface IamQueueItem {
   id: string;
@@ -144,8 +145,10 @@ function contextBadges(item: any): { label: string; tone: string }[] {
 
 // Renderiza o "por quê" da ação — para decisão sem clicar
 function DivergenceCell({ item }: { item: any }) {
+  const resolveName = useResourceNameResolver();
   const p = item.payload_json || {};
   const a = item.action_type as string;
+  const resourceName = resolveName(item, "—");
 
   // 1) Divergência de status base ↔ Entra
   if (p.reason === "status_divergence") {
@@ -223,20 +226,20 @@ function DivergenceCell({ item }: { item: any }) {
   if (a === "assign_group" || a === "remove_group") {
     const sign = a === "assign_group" ? "+" : "−";
     const tone = a === "assign_group" ? "text-emerald-700" : "text-red-700";
-    return <span className="text-xs"><span className={`font-semibold ${tone}`}>{sign}</span> grupo: <strong>{p.groupName || p.groupId || "—"}</strong></span>;
+    return <span className="text-xs"><span className={`font-semibold ${tone}`}>{sign}</span> grupo: <strong>{resourceName}</strong></span>;
   }
 
   // 4) Licenças
   if (a === "assign_license" || a === "remove_license") {
     const sign = a === "assign_license" ? "+" : "−";
     const tone = a === "assign_license" ? "text-emerald-700" : "text-red-700";
-    return <span className="text-xs"><span className={`font-semibold ${tone}`}>{sign}</span> licença: <strong>{p.licenseName || p.skuPartNumber || "—"}</strong></span>;
+    return <span className="text-xs"><span className={`font-semibold ${tone}`}>{sign}</span> licença: <strong>{resourceName}</strong></span>;
   }
 
   // 5) Apps
   if (a === "assign_app" || a === "remove_app" || a.endsWith("_user_app")) {
     const verb = a === "assign_app" ? "Atribuir" : a === "remove_app" ? "Remover" : a.startsWith("create") ? "Criar em" : a.startsWith("update") ? "Atualizar em" : a.startsWith("disable") ? "Desabilitar em" : "Excluir em";
-    return <span className="text-xs">{verb} <strong>{p.appName || p.appId || "app externo"}</strong></span>;
+    return <span className="text-xs">{verb} <strong>{resourceName !== "—" ? resourceName : "app externo"}</strong></span>;
   }
 
   // 6) Criação
