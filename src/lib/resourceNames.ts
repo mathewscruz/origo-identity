@@ -37,13 +37,11 @@ const EMPTY_CATALOGS: ResourceCatalogs = {
   sites: new Map(),
 };
 
-/** Lightweight id → name catalogs, cached across the app. */
-export function useResourceCatalogs() {
-  return useQuery({
-    queryKey: ["resource_name_catalogs"],
-    staleTime: 10 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
-    queryFn: async (): Promise<ResourceCatalogs> => {
+/** Fetches the id → name catalogs (usable outside React components). */
+export async function fetchResourceCatalogs(): Promise<ResourceCatalogs> {
+  {
+    {
+
       const [lic, grp, app, site] = await Promise.all([
         supabase.from("entra_licencas").select("sku_id, nome, friendly_name"),
         supabase.from("entra_grupos").select("id, entra_id, nome"),
