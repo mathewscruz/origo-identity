@@ -248,6 +248,54 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_cargo_perfis_20260708: {
+        Row: {
+          backup_created_at: string | null
+          cargo_id: string | null
+          created_at: string | null
+          id: string | null
+          perfil_id: string | null
+        }
+        Insert: {
+          backup_created_at?: string | null
+          cargo_id?: string | null
+          created_at?: string | null
+          id?: string | null
+          perfil_id?: string | null
+        }
+        Update: {
+          backup_created_at?: string | null
+          cargo_id?: string | null
+          created_at?: string | null
+          id?: string | null
+          perfil_id?: string | null
+        }
+        Relationships: []
+      }
+      backup_cargo_perfis_regex_fix_20260708: {
+        Row: {
+          backup_created_at: string | null
+          cargo_id: string | null
+          created_at: string | null
+          id: string | null
+          perfil_id: string | null
+        }
+        Insert: {
+          backup_created_at?: string | null
+          cargo_id?: string | null
+          created_at?: string | null
+          id?: string | null
+          perfil_id?: string | null
+        }
+        Update: {
+          backup_created_at?: string | null
+          cargo_id?: string | null
+          created_at?: string | null
+          id?: string | null
+          perfil_id?: string | null
+        }
+        Relationships: []
+      }
       backup_colaboradores_restore_20260707: {
         Row: {
           area_id: string | null
@@ -335,6 +383,69 @@ export type Database = {
           suspenso_preventivo?: boolean | null
           ultima_importacao_id?: string | null
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      backup_perfil_atribuicoes_20260708: {
+        Row: {
+          ativo: boolean | null
+          backup_created_at: string | null
+          colaborador_id: string | null
+          created_at: string | null
+          data_concessao: string | null
+          data_revogacao: string | null
+          excecao_id: string | null
+          id: string | null
+          origem: string | null
+          perfil_id: string | null
+          terceiro_id: string | null
+        }
+        Insert: {
+          ativo?: boolean | null
+          backup_created_at?: string | null
+          colaborador_id?: string | null
+          created_at?: string | null
+          data_concessao?: string | null
+          data_revogacao?: string | null
+          excecao_id?: string | null
+          id?: string | null
+          origem?: string | null
+          perfil_id?: string | null
+          terceiro_id?: string | null
+        }
+        Update: {
+          ativo?: boolean | null
+          backup_created_at?: string | null
+          colaborador_id?: string | null
+          created_at?: string | null
+          data_concessao?: string | null
+          data_revogacao?: string | null
+          excecao_id?: string | null
+          id?: string | null
+          origem?: string | null
+          perfil_id?: string | null
+          terceiro_id?: string | null
+        }
+        Relationships: []
+      }
+      backup_perfil_licencas_20260708: {
+        Row: {
+          backup_created_at: string | null
+          id: string | null
+          licenca_id: string | null
+          perfil_id: string | null
+        }
+        Insert: {
+          backup_created_at?: string | null
+          id?: string | null
+          licenca_id?: string | null
+          perfil_id?: string | null
+        }
+        Update: {
+          backup_created_at?: string | null
+          id?: string | null
+          licenca_id?: string | null
+          perfil_id?: string | null
         }
         Relationships: []
       }
