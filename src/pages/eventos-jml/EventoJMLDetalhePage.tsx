@@ -64,13 +64,11 @@ function actionTypeLabel(at: string): string {
   return map[at] || at;
 }
 
-function targetFromPayload(at: string, p: any): string {
+function targetFromPayload(at: string, p: any, catalogs: any): string {
   if (!p) return "—";
-  if (at.includes("group")) return p.groupName || p.groupId || "—";
-  if (at.includes("license")) return p.licenseName || p.skuId || "—";
-  if (at.includes("app")) return p.appName || p.appId || "—";
-  return "—";
+  return resolveResourceLabel({ action_type: at, payload_json: p }, catalogs, "—");
 }
+
 
 export default function EventoJMLDetalhePage() {
   const { id } = useParams();
