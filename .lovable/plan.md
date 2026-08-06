@@ -1,34 +1,47 @@
-## Diagnóstico
+# Exibir nome do recurso em vez do código (UUID)
 
-Verifiquei o backend:
+## Problema confirmado
 
-| Widget atual | Dados hoje | Problema |
-|---|---|---|
-| Provisionamento (área) | 2.878 eventos em 90d | Gráfico conta eventos **por bucket** (dia/semana). Dias sem provisionamento aparecem como 0 → parece "resetar". Não é uma linha do tempo, é um histograma. |
-| Acessos por Aplicação (donut) | apenas **3** `perfil_atribuicoes` ativas | Sempre vazio/inútil. |
-| Solicitações (donut) | **0** `solicitacoes_acesso` | Sempre vazio. |
-| Revisões em Andamento | **0** revisões ativas | Sempre vazio. |
+Nos itens de "Remoção de Licença" da atividade recente, o payload da fila tem o nome preenchido com o próprio identificador:
 
-Dados ricos disponíveis que não estão sendo mostrados: 3.408 eventos JML em 90d, 3.791 colaboradores com distribuição clara de status, 16 alertas não lidos, fila com estados variados.
+```text
+licenseName: f30db892-07e9-47e9-837c-80727f46fd3d
+skuId:       f30db892-07e9-47e9-837c-80727f46fd3d
+```
 
-## Mudanças propostas
+Consultando o catálogo, esse SKU tem nome real cadastrado (`FLOW_FREE` / "Microsoft Power Automate Free"); o mesmo vale para os outros três da tela (Power BI Free, Dynamics 365 Sales Professional Trial, Microsoft Teams). Ou seja, o catálogo está correto — o que ficou ruim é o texto gravado no payload desses itens, e a UI apenas repete o payload sem tentar resolver o nome.
 
-### 1. Provisionamento vira linha do tempo cumulativa
-- Mesmo eixo/períodos (Dia/Semana/Mês/Ano), mas soma acumulada de Concessões e Revogações ao longo do tempo — a linha **só cresce**, dando a sensação real de timeline.
-- Mantém as 3 séries (Concessão / Revogação / Outros) empilhadas.
-- Aumenta janela default de "semana" e recalcula os buckets em ordem cronológica correta (hoje sempre à direita).
+## O que fazer
 
-### 2. "Acessos por Aplicação" → **Colaboradores por Status** (donut)
-Usa dados reais de `colaboradores.status`: Ativo (591), Desligado (3.164), Férias (23), Afastado (12), Inativo (1). Cores semânticas Órigo. Clique leva para `/colaboradores` já filtrado.
+### 1. Resolver o nome na exibição (correção principal)
 
-### 3. "Solicitações" → **Eventos JML por Tipo** (donut, com seletor de período)
-Usa `eventos_jml` agrupado por `tipo` (Joiner / Mover / Leaver) no período selecionado. Já temos 3.408 eventos em 90d. Clique leva para `/eventos-jml`.
+Criar um resolvedor único de nome de recurso no frontend que, dado um item da fila:
 
-### 4. "Revisões de Acesso em Andamento" → **Fila de Provisionamento por Status** (barras)
-Barras horizontais com contagem por status da `iam_queue` (Aguardando aprovação, Pendente, Processando, Falhou, Concluído nos últimos 7d). Cada barra é um link para `/fila-provisionamento?status=…`. Dá visão operacional imediata do que precisa de ação.
+- usa `licenseName` / `groupName` / `appName` / `siteName` quando o valor é um nome de verdade;
+- ignora o valor quando ele é apenas um UUID (ou igual ao próprio id do recurso) e busca o nome no catálogo local por `skuId` (licenças), `groupId` (grupos) e `appId` (aplicações);
+- para licenças, prefere o nome amigável ("Microsoft Power Automate Free") e cai para o código do SKU quando não houver;
+- só mostra o UUID como último recurso, e nesse caso abreviado e com o nome técnico indicado.
 
-## Arquivos afetados
+Aplicar esse resolvedor nas telas que hoje imprimem o payload cru:
 
-- `src/pages/Dashboard.tsx` — único arquivo. Reescrevo os hooks `useProvisioningData`, substituo `useAccessByApp` / `useSolicitacoesByStatus` / `useRevisoesAtivas` pelos três novos hooks, e ajusto o JSX das linhas 2 e 3 do grid.
+- Dashboard — atividade recente (tela do print)
+- Aprovação IAM — coluna de divergência/detalhe
+- Detalhe do colaborador — Acessos Individuais
+- Detalhe do evento JML
+- Popover de atividade do colaborador
+- Detalhe do item da fila de provisionamento
 
-Sem migrações, sem edge functions, sem mudanças de schema.
+### 2. Corrigir a origem para novos itens
+
+Nos pontos que geram itens de licença/grupo/app, gravar sempre o nome do catálogo e nunca o id como nome. Onde o recurso não existir no catálogo local, gravar o nome como vazio (em vez do id), para a UI resolver depois quando o catálogo sincronizar.
+
+### 3. Normalizar os itens já existentes
+
+Atualizar os itens da fila cujo nome gravado é igual ao id, substituindo pelo nome do catálogo (licenças, grupos e aplicações). Itens sem correspondência no catálogo ficam com nome vazio e passam a ser resolvidos/rotulados pela UI.
+
+## Detalhes técnicos
+
+- Novo módulo `src/lib/resourceNames.ts` com `isUuid()` e `resolveResourceLabel(item, catalogs)`; catálogos vindos dos hooks já existentes de licenças/grupos/aplicações (`useOrigoData`), com cache do React Query — sem consulta extra por linha.
+- Ajuste dos produtores: `reconcile-identities`, `sync-user-access`, `sync-csv-colab`, `sync-sharepoint-csv`, `expire-access-exceptions`, `save-external-review`, `entraQueueHelper.ts`.
+- Backfill via migration idempotente em `iam_queue.payload_json` usando join por `skuId`/`groupId`/`appId`.
+- Nenhum item da fila será aprovado, executado ou cancelado.
