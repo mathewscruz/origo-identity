@@ -39,8 +39,7 @@ const EMPTY_CATALOGS: ResourceCatalogs = {
 
 /** Fetches the id → name catalogs (usable outside React components). */
 export async function fetchResourceCatalogs(): Promise<ResourceCatalogs> {
-  {
-    {
+
 
       const [lic, grp, app, site] = await Promise.all([
         supabase.from("entra_licencas").select("sku_id, nome, friendly_name"),
