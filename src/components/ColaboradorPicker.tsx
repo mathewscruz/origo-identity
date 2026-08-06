@@ -28,14 +28,17 @@ export default function ColaboradorPicker({ value, onChange, placeholder = "Busc
   const { data: colaboradores } = useColaboradores();
   const [open, setOpen] = useState(false);
 
-  const options: ColaboradorOption[] = useMemo(() => {
+  const all: ColaboradorOption[] = useMemo(() => {
     const list = (colaboradores ?? []) as any[];
-    return list
-      .filter((c) => (onlyActive ? c.ativo : true))
-      .map((c) => ({ id: c.id, nome: c.nome, email: c.email ?? null }));
-  }, [colaboradores, onlyActive]);
+    return list.map((c) => ({ id: c.id, nome: c.nome, email: c.email ?? null, status: c.status })) as any[];
+  }, [colaboradores]);
 
-  const selected = options.find((o) => o.id === value) ?? null;
+  const options: ColaboradorOption[] = useMemo(() => {
+    return all.filter((c: any) => (onlyActive ? !["inativo", "desligado"].includes(String(c.status ?? "").toLowerCase()) : true));
+  }, [all, onlyActive]);
+
+  // Fallback to the full list so an already-selected (possibly inactive) colaborador still renders
+  const selected = options.find((o) => o.id === value) ?? all.find((o) => o.id === value) ?? null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
