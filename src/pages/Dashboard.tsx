@@ -18,6 +18,7 @@ import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchResourceCatalogs, resolveResourceLabel, type ResourceCatalogs } from "@/lib/resourceNames";
 
 /* ── palette ── */
 const COLORS = [
@@ -255,13 +256,15 @@ const ACTION_LABELS: Record<string, string> = {
 function buildQueueLabel(
   q: { action_type: string; target_identity: string | null; payload_json: any },
   resolvedName?: string,
+  catalogs?: ResourceCatalogs,
 ): string {
   const p = q.payload_json || {};
   const name = resolvedName || p.displayName || q.target_identity || "";
   const at = q.action_type || "";
-  if (at.includes("group") && p.groupName) return `${name} → ${p.groupName}`;
-  if (at.includes("app") && p.appName) return `${name} → ${p.appName}`;
-  if (at.includes("license") && p.licenseName) return `${name} → ${p.licenseName}`;
+  if (at.includes("group") || at.includes("app") || at.includes("license") || at.includes("sharepoint")) {
+    const resource = resolveResourceLabel(q, catalogs, "");
+    if (resource) return `${name} → ${resource}`;
+  }
   return name || ACTION_LABELS[at] || at;
 }
 
@@ -269,7 +272,7 @@ function useRecentActivity() {
   return useQuery({
     queryKey: ["dashboard_activity"],
     queryFn: async () => {
-      const [queueRes, solicitRes] = await Promise.all([
+      const [queueRes, solicitRes, catalogs] = await Promise.all([
         (supabase as any).from("iam_queue")
           .select("id, action_type, target_identity, status, created_at, payload_json, colaborador_id")
           .not("status", "eq", "cancelled")
@@ -279,6 +282,7 @@ function useRecentActivity() {
           .select("id, status, created_at, justificativa")
           .order("created_at", { ascending: false })
           .limit(5),
+        fetchResourceCatalogs(),
       ]);
 
       const colaboradorIds: string[] = Array.from(
@@ -308,7 +312,7 @@ function useRecentActivity() {
       const items: ActivityItem[] = [];
       (queueRes.data ?? []).forEach((q: any) => items.push({
         id: q.id, type: "queue",
-        label: buildQueueLabel(q, q.colaborador_id ? colaboradorNames.get(q.colaborador_id) : undefined),
+        label: buildQueueLabel(q, q.colaborador_id ? colaboradorNames.get(q.colaborador_id) : undefined, catalogs),
         sublabel: ACTION_LABELS[q.action_type] || q.action_type,
         status: q.status, date: q.created_at,
         link: `/fila-provisionamento/${q.id}`,
