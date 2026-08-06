@@ -75,10 +75,19 @@ export async function fetchResourceCatalogs(): Promise<ResourceCatalogs> {
         if (s.id) sites.set(String(s.id).toLowerCase(), s.nome);
       });
 
-      return { licencas, grupos, apps, sites };
-    },
+  return { licencas, grupos, apps, sites };
+}
+
+/** Lightweight id → name catalogs, cached across the app. */
+export function useResourceCatalogs() {
+  return useQuery({
+    queryKey: ["resource_name_catalogs"],
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    queryFn: fetchResourceCatalogs,
   });
 }
+
 
 function lookup(map: Map<string, string>, id: unknown): string | null {
   if (typeof id !== "string" || !id.trim()) return null;
