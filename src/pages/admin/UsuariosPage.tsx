@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
+import { useAvatarUrl } from "@/lib/avatarUrl";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -52,6 +53,7 @@ export default function UsuariosPage() {
 
   const isAdmin = myRole === "admin";
 
+  const avatarSrc = useAvatarUrl(myProfile?.avatar_url);
   const initials = myProfile?.nome ? myProfile.nome.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase() : "??";
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -183,8 +185,8 @@ export default function UsuariosPage() {
           <div className="flex items-center gap-6">
             <div className="relative group">
               <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary text-lg font-semibold text-primary-foreground overflow-hidden border-2 border-border">
-                {myProfile?.avatar_url ? (
-                  <img src={myProfile.avatar_url} alt="" className="h-full w-full object-cover" />
+                {avatarSrc ? (
+                  <img src={avatarSrc} alt="" className="h-full w-full object-cover" />
                 ) : (
                   <span className="text-xl">{initials}</span>
                 )}
