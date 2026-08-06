@@ -8,6 +8,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Link } from "react-router-dom";
+import { useResourceNameResolver } from "@/lib/resourceNames";
+
 
 interface Props {
   colaboradorId: string;
@@ -66,18 +68,11 @@ const actionLabels: Record<string, string> = {
   delete: "Exclusão",
 };
 
-function getResourceName(item: QueueItem): string {
-  const p = item.payload_json;
-  if (!p) return "";
-  if (p.groupName) return p.groupName;
-  if (p.licenseName) return p.licenseName;
-  if (p.appName) return p.appName;
-  return "";
-}
-
 export default function ColaboradorActivityPopover({ colaboradorId, colaboradorNome }: Props) {
+  const getResourceName = useResourceNameResolver();
   const [eventos, setEventos] = useState<EventoJML[]>([]);
   const [atribuicoes, setAtribuicoes] = useState<Atribuicao[]>([]);
+
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -178,7 +173,7 @@ export default function ColaboradorActivityPopover({ colaboradorId, colaboradorN
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Ações Entra ID / AD</p>
             {queueItems.map((item) => {
               const sCfg = queueStatusConfig[item.status] || { label: item.status, class: "" };
-              const resourceName = getResourceName(item);
+              const resourceName = getResourceName(item, "");
               const label = actionLabels[item.action_type] || item.action_type;
               return (
                 <Link key={item.id} to={`/fila-provisionamento/${item.id}`} className="flex items-start gap-2 text-sm hover:bg-muted/50 rounded p-1.5 -m-1">

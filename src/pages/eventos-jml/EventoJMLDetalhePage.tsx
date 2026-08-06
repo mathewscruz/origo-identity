@@ -11,6 +11,7 @@ import { useUpdateJmlStatus } from "@/hooks/mutations/useJmlEvent";
 import { useReprocessQueueItem, useReprocessQueueForIdentity } from "@/hooks/mutations/useQueueActions";
 import { Skeleton } from "@/components/ui/skeleton";
 import EmptyState from "@/components/EmptyState";
+import { resolveResourceLabel, useResourceCatalogs } from "@/lib/resourceNames";
 
 const tipoLabel: Record<string, string> = {
   joiner: "Joiner",
@@ -64,17 +65,16 @@ function actionTypeLabel(at: string): string {
   return map[at] || at;
 }
 
-function targetFromPayload(at: string, p: any): string {
+function targetFromPayload(at: string, p: any, catalogs: any): string {
   if (!p) return "—";
-  if (at.includes("group")) return p.groupName || p.groupId || "—";
-  if (at.includes("license")) return p.licenseName || p.skuId || "—";
-  if (at.includes("app")) return p.appName || p.appId || "—";
-  return "—";
+  return resolveResourceLabel({ action_type: at, payload_json: p }, catalogs, "—");
 }
+
 
 export default function EventoJMLDetalhePage() {
   const { id } = useParams();
   const { data: evento, isLoading } = useEventoJML(id);
+  const { data: resourceCatalogs } = useResourceCatalogs();
   const { data: acoes } = useEventoJMLAcoes(id);
   const { data: aprovacoes } = useEventoJMLAprovacoes(id);
   const { data: queueRows } = useEventoQueue(id, evento?.colaborador_id ?? undefined, evento?.created_at);
@@ -240,7 +240,7 @@ export default function EventoJMLDetalhePage() {
                           return (
                             <tr key={r.id} className="border-b last:border-0 hover:bg-muted/50">
                               <td className="p-3 font-medium">{actionTypeLabel(r.action_type)}</td>
-                              <td className="p-3 text-muted-foreground">{targetFromPayload(r.action_type, r.payload_json)}</td>
+                              <td className="p-3 text-muted-foreground">{targetFromPayload(r.action_type, r.payload_json, resourceCatalogs)}</td>
                               <td className="p-3"><Badge variant="outline" className={queueStatusColors[r.status] || ""}>{queueStatusLabel[r.status] || r.status}</Badge></td>
                               <td className="p-3 text-xs text-muted-foreground max-w-xs truncate" title={r.result_message || r.error_code || ""}>
                                 {r.result_message || r.error_code || (r.processed_at ? new Date(r.processed_at).toLocaleTimeString("pt-BR") : "—")}

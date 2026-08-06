@@ -26,6 +26,8 @@ import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { logAuditoria, logAlerta } from "@/lib/auditLogger";
 import EmptyState from "@/components/EmptyState";
 import { formatAreaName } from "@/lib/formatters";
+import { useResourceNameResolver } from "@/lib/resourceNames";
+
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
@@ -50,6 +52,8 @@ import { useAssignPerfil, useRevokePerfil } from "@/hooks/mutations/usePerfilAss
 export default function ColaboradorDetalhePage() {
   const { id } = useParams();
   const { data: pessoa, isLoading } = useColaborador(id);
+  const resolveResourceName = useResourceNameResolver();
+
   const { data: atribuicoes } = usePerfilAtribuicoes(undefined, id);
   const { data: allEventos } = useEventosJML();
   const { data: perfisDisponiveis } = usePerfisAcesso();
@@ -393,10 +397,8 @@ export default function ColaboradorDetalhePage() {
     return apps.map((pa: any) => pa.aplicacoes?.nome).filter(Boolean);
   };
 
-  const getResourceName = (item: any) => {
-    const p = item.payload_json || {};
-    return p.groupName || p.licenseName || p.appName || p.siteName || "—";
-  };
+  const getResourceName = (item: any) => resolveResourceName(item);
+
 
   return (
     <div className="space-y-6">
