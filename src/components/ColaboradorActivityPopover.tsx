@@ -173,7 +173,7 @@ export default function ColaboradorActivityPopover({ colaboradorId, colaboradorN
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Ações Entra ID / AD</p>
             {queueItems.map((item) => {
               const sCfg = queueStatusConfig[item.status] || { label: item.status, class: "" };
-              const resourceName = getResourceName(item);
+              const resourceName = getResourceName(item, "");
               const label = actionLabels[item.action_type] || item.action_type;
               return (
                 <Link key={item.id} to={`/fila-provisionamento/${item.id}`} className="flex items-start gap-2 text-sm hover:bg-muted/50 rounded p-1.5 -m-1">
