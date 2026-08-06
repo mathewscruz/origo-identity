@@ -51,6 +51,7 @@ export function AppSidebar() {
   const collapsed = state === "collapsed";
   const location = useLocation();
   const { profile, role, signOut } = useAuth();
+  const avatarSrc = useAvatarUrl(profile?.avatar_url);
   const [logoutOpen, setLogoutOpen] = useState(false);
 
   const isActive = (url: string) => { if (url === "/") return location.pathname === "/"; return location.pathname.startsWith(url); };
