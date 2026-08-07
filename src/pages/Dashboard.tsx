@@ -44,30 +44,79 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
 type Period = "dia" | "semana" | "mes" | "ano";
 const PERIOD_LABELS: Record<Period, string> = { dia: "Dia", semana: "Semana", mes: "Mês", ano: "Ano" };
 
-function getPeriodConfig(period: Period) {
-  const now = new Date();
+const SP_TZ = "America/Sao_Paulo";
+
+/** Componentes de data (ano/mês/dia) no fuso de São Paulo. */
+function spParts(d: Date) {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: SP_TZ, year: "numeric", month: "2-digit", day: "2-digit",
+  });
+  const [y, m, day] = fmt.format(d).split("-").map(Number);
+  return { y, m, d: day };
+}
+/** Data "civil" (UTC-noon) equivalente ao dia em São Paulo — segura para aritmética. */
+function spCivil(d: Date) {
+  const { y, m, d: day } = spParts(d);
+  return new Date(Date.UTC(y, m - 1, day, 12, 0, 0));
+}
+const dayKey = (c: Date) => c.toISOString().slice(0, 10);
+const monthKey = (c: Date) => c.toISOString().slice(0, 7);
+const yearKey = (c: Date) => String(c.getUTCFullYear());
+/** Segunda-feira da semana da data civil. */
+function weekStart(c: Date) {
+  const w = new Date(c);
+  w.setUTCDate(w.getUTCDate() - ((w.getUTCDay() + 6) % 7));
+  return w;
+}
+function isoWeekNumber(c: Date) {
+  const t = new Date(c);
+  t.setUTCDate(t.getUTCDate() + 4 - ((t.getUTCDay() + 6) % 7 + 1));
+  const start = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  return Math.ceil(((t.getTime() - start.getTime()) / 86400000 + 1) / 7);
+}
+
+type PeriodConfig = {
+  daysBack: number;
+  buckets: { key: string; label: string }[];
+  keyFn: (d: Date) => string;
+};
+
+function getPeriodConfig(period: Period): PeriodConfig {
+  const today = spCivil(new Date());
   switch (period) {
-    case "dia": return { daysBack: 14, buckets: 14, labelFn: (i: number) => {
-      const d = new Date(now); d.setDate(d.getDate() - (13 - i));
-      return `${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1).toString().padStart(2, "0")}`;
-    }, bucketFn: (age: number) => Math.min(13, Math.floor(age / 86400000)), reverse: 14 };
-    case "semana": {
-      const getWeekNumber = (d: Date) => {
-        const start = new Date(d.getFullYear(), 0, 1);
-        const diff = d.getTime() - start.getTime() + ((start.getDay() + 6) % 7) * 86400000;
-        return Math.ceil(diff / (7 * 86400000));
-      };
-      return { daysBack: 56, buckets: 8, labelFn: (i: number) => {
-        const d = new Date(now); d.setDate(d.getDate() - (7 - i) * 7);
-        return `Sem ${getWeekNumber(d)}`;
-      }, bucketFn: (age: number) => Math.min(7, Math.floor(age / (7 * 86400000))), reverse: 8 };
+    case "dia": {
+      const buckets = Array.from({ length: 14 }, (_, i) => {
+        const c = new Date(today);
+        c.setUTCDate(c.getUTCDate() - (13 - i));
+        return {
+          key: dayKey(c),
+          label: `${String(c.getUTCDate()).padStart(2, "0")}/${String(c.getUTCMonth() + 1).padStart(2, "0")}`,
+        };
+      });
+      return { daysBack: 14, buckets, keyFn: (d) => dayKey(spCivil(d)) };
     }
-    case "mes": return { daysBack: 365, buckets: 12, labelFn: (i: number) => {
-      const d = new Date(now); d.setMonth(d.getMonth() - (11 - i));
-      const m = d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "");
-      return `${m}/${d.getFullYear().toString().slice(2)}`;
-    }, bucketFn: (age: number) => Math.min(11, Math.floor(age / (30 * 86400000))), reverse: 12 };
-    case "ano": return { daysBack: 1460, buckets: 4, labelFn: (i: number) => `${now.getFullYear() - 3 + i}`, bucketFn: (age: number) => Math.min(3, Math.floor(age / (365 * 86400000))), reverse: 4 };
+    case "semana": {
+      const thisWeek = weekStart(today);
+      const buckets = Array.from({ length: 8 }, (_, i) => {
+        const c = new Date(thisWeek);
+        c.setUTCDate(c.getUTCDate() - (7 - i) * 7);
+        return { key: dayKey(c), label: `Sem ${isoWeekNumber(c)}` };
+      });
+      return { daysBack: 60, buckets, keyFn: (d) => dayKey(weekStart(spCivil(d))) };
+    }
+    case "mes": {
+      const buckets = Array.from({ length: 12 }, (_, i) => {
+        const c = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - (11 - i), 1, 12));
+        const m = c.toLocaleDateString("pt-BR", { month: "short", timeZone: "UTC" }).replace(".", "");
+        return { key: monthKey(c), label: `${m}/${String(c.getUTCFullYear()).slice(2)}` };
+      });
+      return { daysBack: 366, buckets, keyFn: (d) => monthKey(spCivil(d)) };
+    }
+    case "ano": {
+      const y0 = today.getUTCFullYear() - 3;
+      const buckets = Array.from({ length: 4 }, (_, i) => ({ key: String(y0 + i), label: String(y0 + i) }));
+      return { daysBack: 1461, buckets, keyFn: (d) => yearKey(spCivil(d)) };
+    }
   }
 }
 
@@ -75,6 +124,7 @@ function getPeriodConfig(period: Period) {
 
 function useKpiCounts() {
   return useQuery({
+
     queryKey: ["dashboard_kpis"],
     queryFn: async () => {
       const [colabs, terceiros, apps, perfis, solicit, filaPending, filaWaiting, alertas] = await Promise.all([
