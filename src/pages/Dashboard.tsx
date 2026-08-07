@@ -158,38 +158,43 @@ function useProvisioningData(period: Period) {
   return useQuery({
     queryKey: ["dashboard_prov", period],
     queryFn: async () => {
-      const since = new Date();
-      since.setDate(since.getDate() - cfg.daysBack);
-      const { data } = await supabase
-        .from("iam_queue")
-        .select("action_type, created_at")
-        .gte("created_at", since.toISOString())
-        .not("status", "eq", "cancelled");
-      const rows = data ?? [];
-      // Ordered chronological buckets (oldest → newest)
-      const labels: string[] = [];
-      for (let i = 0; i < cfg.buckets; i++) labels.push(cfg.labelFn(i));
-      const perBucket = labels.map(() => ({ assign: 0, remove: 0, other: 0 }));
-      const now = Date.now();
+      const since = spCivil(new Date());
+      since.setUTCDate(since.getUTCDate() - cfg.daysBack);
+      since.setUTCHours(0, 0, 0, 0);
+
+      // Busca paginada (o padrão retorna no máximo 1000 linhas)
+      const rows: { action_type: string | null; created_at: string }[] = [];
+      const PAGE = 1000;
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from("iam_queue")
+          .select("action_type, created_at")
+          .gte("created_at", since.toISOString())
+          .not("status", "eq", "cancelled")
+          .order("created_at", { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (error) break;
+        rows.push(...((data ?? []) as any[]));
+        if (!data || data.length < PAGE) break;
+      }
+
+      const byKey = new Map(cfg.buckets.map((b) => [b.key, { assign: 0, remove: 0, other: 0 }]));
       rows.forEach((r) => {
-        const age = now - new Date(r.created_at).getTime();
-        const idx = cfg.bucketFn(age);
-        const chronoIdx = cfg.reverse - 1 - idx;
-        if (chronoIdx < 0 || chronoIdx >= perBucket.length) return;
+        const bucket = byKey.get(cfg.keyFn(new Date(r.created_at)));
+        if (!bucket) return;
         const at = r.action_type || "";
-        if (at.startsWith("assign")) perBucket[chronoIdx].assign++;
-        else if (at.startsWith("remove") || at.startsWith("disable")) perBucket[chronoIdx].remove++;
-        else perBucket[chronoIdx].other++;
+        if (at.startsWith("assign")) bucket.assign++;
+        else if (at.startsWith("remove") || at.startsWith("disable")) bucket.remove++;
+        else bucket.other++;
       });
-      // Cumulative running totals — timeline that only grows
-      let cA = 0, cR = 0, cO = 0;
-      return labels.map((semana, i) => {
-        cA += perBucket[i].assign;
-        cR += perBucket[i].remove;
-        cO += perBucket[i].other;
-        return { semana, Concessão: cA, Revogação: cR, Outros: cO };
+
+      // Valores por período (não acumulados)
+      return cfg.buckets.map((b) => {
+        const v = byKey.get(b.key)!;
+        return { semana: b.label, "Concessão": v.assign, "Revogação": v.remove, Outros: v.other };
       });
     },
+
     staleTime: 15000,
   });
 }
