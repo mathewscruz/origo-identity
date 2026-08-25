@@ -262,7 +262,6 @@ function useEventosJmlByTipo(period: Period) {
         .gte("created_at", since.toISOString());
       const counts: Record<string, number> = {};
       (data ?? []).forEach((r: any) => { counts[r.tipo] = (counts[r.tipo] || 0) + 1; });
-      return Object.entries(counts)
       return Object.entries(JML_TIPO_META)
         .map(([tipo, meta]) => ({
           name: meta.label,
@@ -416,6 +415,47 @@ function CustomTooltip({ active, payload, label }: any) {
   );
 }
 
+type CategoryDatum = { name: string; value: number; color: string };
+
+function CategoryBars({ rows, unit }: { rows: CategoryDatum[]; unit: string }) {
+  const total = rows.reduce((sum, row) => sum + row.value, 0);
+  const max = Math.max(1, ...rows.map((row) => row.value));
+
+  return (
+    <div className="flex h-full min-h-[240px] flex-col justify-center gap-4">
+      <div className="flex items-baseline justify-between border-b pb-3">
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Total</span>
+        <span className="text-2xl font-semibold tracking-tight">{total}</span>
+      </div>
+      <div className="space-y-3">
+        {rows.map((row) => {
+          const pct = total > 0 ? Math.round((row.value / total) * 100) : 0;
+          const width = row.value > 0 ? Math.max(3, Math.round((row.value / max) * 100)) : 0;
+          return (
+            <div key={row.name} className="space-y-1.5">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: row.color }} />
+                  <span className="truncate font-medium">{row.name}</span>
+                </div>
+                <div className="shrink-0 text-xs text-muted-foreground">
+                  <span className="font-semibold text-foreground">{row.value}</span> {unit} · {pct}%
+                </div>
+              </div>
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full transition-all duration-300"
+                  style={{ width: `${width}%`, backgroundColor: row.color }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ── status icon ── */
 function StatusIcon({ status }: { status: string }) {
   switch (status) {
@@ -443,6 +483,7 @@ export default function Dashboard() {
   const { data: jmlTipo } = useEventosJmlByTipo(solicitPeriod);
   const { data: queueStatus } = useQueueByStatus();
   const { data: activity } = useRecentActivity();
+  const provXAxisInterval = provPeriod === "dia" ? 0 : provPeriod === "semana" ? 4 : provPeriod === "mes" ? 9 : 30;
 
   const kpiCards = [
     { title: "Pessoas Ativas", value: kpis?.pessoasAtivas ?? 0, sub: `${kpis?.terceirosAtivos ?? 0} terceiros`, icon: Users, href: "/colaboradores", color: "text-primary" },
@@ -481,12 +522,15 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Row 2: Area chart + App donut */}
+      {/* Row 2: Provisioning + collaborator status */}
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-7 animate-content-in stagger-3">
         <Card data-tour="chart-provisioning" className="lg:col-span-4">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Provisionamento</CardTitle>
+              <div>
+                <CardTitle className="text-base">Provisionamento diário</CardTitle>
+                <p className="text-xs text-muted-foreground">Processamentos por dia, sem acumulado</p>
+              </div>
               <div className="flex gap-1">
                 {(["dia", "semana", "mes", "ano"] as Period[]).map(p => (
                   <Button key={p} size="sm" variant={provPeriod === p ? "default" : "ghost"} className="h-7 px-2.5 text-xs" onClick={() => setProvPeriod(p)}>
@@ -498,29 +542,15 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={provData ?? []}>
-                <defs>
-                  <linearGradient id="gradConcessao" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(142, 71%, 45%)" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="hsl(142, 71%, 45%)" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="gradRevogacao" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(0, 84%, 60%)" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="hsl(0, 84%, 60%)" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="gradOutros" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(199, 89%, 48%)" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="hsl(199, 89%, 48%)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
+              <BarChart data={provData ?? []} barCategoryGap={provPeriod === "dia" ? "24%" : "12%"}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="semana" className="text-xs" tick={{ fill: "hsl(215, 16%, 47%)", fontSize: 11 }} />
+                <XAxis dataKey="dia" interval={provXAxisInterval} className="text-xs" tick={{ fill: "hsl(215, 16%, 47%)", fontSize: 11 }} />
                 <YAxis className="text-xs" tick={{ fill: "hsl(215, 16%, 47%)", fontSize: 11 }} />
                 <Tooltip content={<CustomTooltip />} />
-                <Area type="monotone" dataKey="Concessão" stroke="hsl(142, 71%, 45%)" fill="url(#gradConcessao)" strokeWidth={2} />
-                <Area type="monotone" dataKey="Revogação" stroke="hsl(0, 84%, 60%)" fill="url(#gradRevogacao)" strokeWidth={2} />
-                <Area type="monotone" dataKey="Outros" stroke="hsl(199, 89%, 48%)" fill="url(#gradOutros)" strokeWidth={2} />
-              </AreaChart>
+                <Bar dataKey="Concessão" stackId="processamentos" fill="hsl(142, 71%, 45%)" radius={[0, 0, 3, 3]} />
+                <Bar dataKey="Revogação" stackId="processamentos" fill="hsl(0, 84%, 60%)" />
+                <Bar dataKey="Outros" stackId="processamentos" fill="hsl(199, 89%, 48%)" radius={[3, 3, 0, 0]} />
+              </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
@@ -535,24 +565,12 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            {(colabsStatus ?? []).length > 0 ? (
-              <ResponsiveContainer width="100%" height={280}>
-                <PieChart>
-                  <Pie data={colabsStatus} cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={3} dataKey="value" nameKey="name">
-                    {(colabsStatus ?? []).map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                  </Pie>
-                  <Tooltip formatter={(v: number, name: string) => [`${v} colaboradores`, name]} contentStyle={{ borderRadius: 8, border: "1px solid hsl(214, 32%, 91%)", fontSize: 12 }} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex h-[280px] items-center justify-center"><EmptyState message="Nenhum colaborador cadastrado" /></div>
-            )}
+            <CategoryBars rows={colabsStatus ?? []} unit="colab." />
           </CardContent>
         </Card>
       </div>
 
-      {/* Row 3: Eventos JML donut + Fila por status */}
+      {/* Row 3: Eventos JML + Fila por status */}
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-2 animate-content-in stagger-4">
         <Card data-tour="chart-requests">
           <CardHeader className="pb-2">
@@ -568,19 +586,7 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            {(jmlTipo ?? []).length > 0 ? (
-              <ResponsiveContainer width="100%" height={240}>
-                <PieChart>
-                  <Pie data={jmlTipo} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value" nameKey="name">
-                    {(jmlTipo ?? []).map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                  </Pie>
-                  <Tooltip formatter={(v: number, name: string) => [`${v} eventos`, name]} contentStyle={{ borderRadius: 8, border: "1px solid hsl(214, 32%, 91%)", fontSize: 12 }} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex h-[240px] items-center justify-center"><EmptyState message="Nenhum evento JML no período" /></div>
-            )}
+            <CategoryBars rows={jmlTipo ?? []} unit="eventos" />
           </CardContent>
         </Card>
 
