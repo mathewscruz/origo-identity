@@ -40,3 +40,22 @@ export async function requireRole(
 
   return new Response(JSON.stringify({ error: "Acesso negado" }), { status: 403, headers: corsHeaders });
 }
+
+/**
+ * Same as requireRole, but also accepts calls made with the service-role key
+ * (internal/cron invocations). Returns null on success or a Response to forward.
+ */
+export async function requireRoleOrService(
+  req: Request,
+  allowedRoles: AppRole[] = ["admin", "operador"]
+): Promise<{ userId: string | null; client: ReturnType<typeof createClient> } | Response> {
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (serviceKey && authHeader === `Bearer ${serviceKey}`) {
+    return {
+      userId: null,
+      client: createClient(Deno.env.get("SUPABASE_URL")!, serviceKey),
+    };
+  }
+  return await requireRole(req, allowedRoles);
+}
