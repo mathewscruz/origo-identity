@@ -256,12 +256,29 @@ function useEventosJmlByTipo(period: Period) {
     queryFn: async () => {
       const since = new Date();
       since.setDate(since.getDate() - cfg.daysBack);
-      const { data } = await supabase
-        .from("eventos_jml")
-        .select("tipo")
-        .gte("created_at", since.toISOString());
+      const rows: any[] = [];
+      const pageSize = 1000;
+      for (let from = 0; ; from += pageSize) {
+        const { data } = await supabase
+          .from("eventos_jml")
+          .select("tipo, colaborador_id, colaborador_nome")
+          .gte("created_at", since.toISOString())
+          .range(from, from + pageSize - 1);
+        if (!data?.length) break;
+        rows.push(...data);
+        if (data.length < pageSize) break;
+      }
       const counts: Record<string, number> = {};
-      (data ?? []).forEach((r: any) => { counts[r.tipo] = (counts[r.tipo] || 0) + 1; });
+      // Leaver = saída efetiva do colaborador: conta apenas 1 evento por pessoa
+      const leaverSeen = new Set<string>();
+      rows.forEach((r: any) => {
+        if (r.tipo === "leaver") {
+          const key = r.colaborador_id ?? r.colaborador_nome ?? Math.random().toString();
+          if (leaverSeen.has(key)) return;
+          leaverSeen.add(key);
+        }
+        counts[r.tipo] = (counts[r.tipo] || 0) + 1;
+      });
       return Object.entries(JML_TIPO_META)
         .map(([tipo, meta]) => ({
           name: meta.label,
