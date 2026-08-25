@@ -2562,6 +2562,38 @@ export type Database = {
       }
     }
     Views: {
+      licencas_catalogo: {
+        Row: {
+          aplicacao_id: string | null
+          id: string | null
+          nome: string | null
+          owner: string | null
+          tipo: string | null
+        }
+        Insert: {
+          aplicacao_id?: string | null
+          id?: string | null
+          nome?: string | null
+          owner?: string | null
+          tipo?: string | null
+        }
+        Update: {
+          aplicacao_id?: string | null
+          id?: string | null
+          nome?: string | null
+          owner?: string | null
+          tipo?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "licencas_aplicacao_id_fkey"
+            columns: ["aplicacao_id"]
+            isOneToOne: false
+            referencedRelation: "aplicacoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       licencas_externas_uso: {
         Row: {
           em_uso_calc: number | null
