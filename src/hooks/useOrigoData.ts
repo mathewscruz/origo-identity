@@ -26,8 +26,10 @@ async function fetchAll(
 }
 
 const REFETCH_OPTS = {
-  refetchOnWindowFocus: false,
-  staleTime: 5 * 60_000,
+  // Realtime (useRealtimeSync) invalida o cache quando os dados mudam no banco.
+  // O refetch ao focar a janela é a rede de segurança para eventos perdidos.
+  refetchOnWindowFocus: true,
+  staleTime: 60_000,
   gcTime: 30 * 60_000,
   refetchInterval: false as const,
   placeholderData: keepPreviousData,

@@ -16,6 +16,7 @@ import { NotificacoesBell } from "@/components/NotificacoesBell";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAvatarUrl } from "@/lib/avatarUrl";
 import ForcePasswordChangeDialog from "@/components/ForcePasswordChangeDialog";
+import { useRealtimeSync } from "@/hooks/useRealtimeSync";
 
 const routeLabels: Record<string, string> = {
   "/": "Dashboard",
@@ -101,6 +102,7 @@ function AppBreadcrumb() {
 export default function AppLayout() {
   const { profile, mustChangePassword, refreshProfile } = useAuth();
   const avatarSrc = useAvatarUrl(profile?.avatar_url);
+  useRealtimeSync();
   const initials = profile?.nome ? profile.nome.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase() : "??";
 
   return (
