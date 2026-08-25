@@ -1199,11 +1199,16 @@ export type Database = {
           action_type: string
           approved_at: string | null
           approved_by: string | null
+          claim_attempts: number
+          claim_owner: string | null
+          claim_token: string | null
+          claimed_at: string | null
           colaborador_id: string | null
           correlation_id: string
           created_at: string
           error_code: string | null
           id: string
+          lease_expires_at: string | null
           max_retries: number
           next_retry_at: string | null
           payload_json: Json
@@ -1220,11 +1225,16 @@ export type Database = {
           action_type: string
           approved_at?: string | null
           approved_by?: string | null
+          claim_attempts?: number
+          claim_owner?: string | null
+          claim_token?: string | null
+          claimed_at?: string | null
           colaborador_id?: string | null
           correlation_id?: string
           created_at?: string
           error_code?: string | null
           id?: string
+          lease_expires_at?: string | null
           max_retries?: number
           next_retry_at?: string | null
           payload_json: Json
@@ -1241,11 +1251,16 @@ export type Database = {
           action_type?: string
           approved_at?: string | null
           approved_by?: string | null
+          claim_attempts?: number
+          claim_owner?: string | null
+          claim_token?: string | null
+          claimed_at?: string | null
           colaborador_id?: string | null
           correlation_id?: string
           created_at?: string
           error_code?: string | null
           id?: string
+          lease_expires_at?: string | null
           max_retries?: number
           next_retry_at?: string | null
           payload_json?: Json
@@ -2565,7 +2580,89 @@ export type Database = {
         Args: { colab_updates?: Json; queue_updates?: Json }
         Returns: Json
       }
+      claim_iam_queue_items: {
+        Args: {
+          p_action_types?: string[]
+          p_lease_seconds?: number
+          p_limit?: number
+          p_owner: string
+        }
+        Returns: {
+          action_type: string
+          approved_at: string | null
+          approved_by: string | null
+          claim_attempts: number
+          claim_owner: string | null
+          claim_token: string | null
+          claimed_at: string | null
+          colaborador_id: string | null
+          correlation_id: string
+          created_at: string
+          error_code: string | null
+          id: string
+          lease_expires_at: string | null
+          max_retries: number
+          next_retry_at: string | null
+          payload_json: Json
+          processed_at: string | null
+          processed_by: string | null
+          rejection_reason: string | null
+          requested_by: string | null
+          result_message: string | null
+          retry_count: number
+          status: string
+          target_identity: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "iam_queue"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       cleanup_expired_iam_change_backups: { Args: never; Returns: number }
+      complete_iam_queue_item: {
+        Args: {
+          p_claim_token: string
+          p_error_code?: string
+          p_id: string
+          p_processed_by?: string
+          p_result_message?: string
+          p_status: string
+        }
+        Returns: {
+          action_type: string
+          approved_at: string | null
+          approved_by: string | null
+          claim_attempts: number
+          claim_owner: string | null
+          claim_token: string | null
+          claimed_at: string | null
+          colaborador_id: string | null
+          correlation_id: string
+          created_at: string
+          error_code: string | null
+          id: string
+          lease_expires_at: string | null
+          max_retries: number
+          next_retry_at: string | null
+          payload_json: Json
+          processed_at: string | null
+          processed_by: string | null
+          rejection_reason: string | null
+          requested_by: string | null
+          result_message: string | null
+          retry_count: number
+          status: string
+          target_identity: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "iam_queue"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       get_revisao_by_token: { Args: { p_token: string }; Returns: Json }
       get_revisao_itens_by_token: { Args: { p_token: string }; Returns: Json }
       has_any_app_role: { Args: { _user_id: string }; Returns: boolean }
