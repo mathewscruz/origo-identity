@@ -115,13 +115,14 @@ export default function PortalSolicitacoesPage() {
         .order("created_at", { ascending: false }),
       supabase.from("aplicacoes").select("id, nome, entra_id, default_app_role_id, owner").order("nome"),
       supabase.from("entra_grupos").select("id, nome, entra_id, owner").order("nome"),
-      supabase.from("licencas").select("id, nome, owner, aplicacao_id, sku_id").order("nome"),
+      (supabase as any).rpc("licencas_catalogo"),
       supabase.from("solicitacao_itens").select("*").order("created_at"),
     ]);
     setSolicitacoes(solRes.data ?? []);
     setAplicacoes(appRes.data ?? []);
     setGrupos(grpRes.data ?? []);
-    setLicencas(licRes.data ?? []);
+    setLicencas([...((licRes.data as any[]) ?? [])].sort((a, b) => (a.nome ?? "").localeCompare(b.nome ?? "")));
+
     setSolicitacaoItens(itensRes.data ?? []);
     setLoading(false);
 
