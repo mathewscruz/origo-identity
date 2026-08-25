@@ -581,7 +581,7 @@ export default function Dashboard() {
         <Card className="lg:col-span-3">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Colaboradores por Status</CardTitle>
+              <CardTitle className="text-base">Pessoas por Status</CardTitle>
               <Link to="/colaboradores" className="text-xs text-primary hover:underline flex items-center gap-1">
                 Ver todos <ArrowUpRight className="h-3 w-3" />
               </Link>
