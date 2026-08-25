@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { sendEmail } from "../_shared/sendgrid.ts";
+import { requireRoleOrService } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,9 +21,13 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const auth = await requireRoleOrService(req, ["admin", "operador"]);
+  if (auth instanceof Response) return auth;
+
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
+
 
   const results = {
     revisoes_criadas: 0,
