@@ -9,8 +9,7 @@ import {
   Plane, HeartPulse, UserMinus, ListChecks,
 } from "lucide-react";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { Link } from "react-router-dom";
 import EmptyState from "@/components/EmptyState";
@@ -19,16 +18,6 @@ import { tourSteps } from "@/lib/tourSteps";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchResourceCatalogs, resolveResourceLabel, type ResourceCatalogs } from "@/lib/resourceNames";
-
-/* ── palette ── */
-const COLORS = [
-  "hsl(176, 74%, 34%)",  // primary teal
-  "hsl(199, 89%, 48%)",  // info blue
-  "hsl(142, 71%, 45%)",  // success green
-  "hsl(38, 92%, 50%)",   // warning amber
-  "hsl(0, 84%, 60%)",    // destructive red
-  "hsl(262, 52%, 47%)",  // purple
-];
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   pendente:     { label: "Pendente",     color: "hsl(38, 92%, 50%)" },
@@ -80,6 +69,32 @@ type PeriodConfig = {
   buckets: { key: string; label: string }[];
   keyFn: (d: Date) => string;
 };
+
+type ProvisioningPeriodConfig = {
+  daysBack: number;
+  buckets: { key: string; label: string }[];
+  keyFn: (d: Date) => string;
+};
+
+function getProvisioningPeriodConfig(period: Period): ProvisioningPeriodConfig {
+  const today = spCivil(new Date());
+  const daysByPeriod: Record<Period, number> = {
+    dia: 14,
+    semana: 30,
+    mes: 90,
+    ano: 365,
+  };
+  const daysBack = daysByPeriod[period];
+  const buckets = Array.from({ length: daysBack }, (_, i) => {
+    const c = new Date(today);
+    c.setUTCDate(c.getUTCDate() - (daysBack - 1 - i));
+    return {
+      key: dayKey(c),
+      label: `${String(c.getUTCDate()).padStart(2, "0")}/${String(c.getUTCMonth() + 1).padStart(2, "0")}`,
+    };
+  });
+  return { daysBack, buckets, keyFn: (d) => dayKey(spCivil(d)) };
+}
 
 function getPeriodConfig(period: Period): PeriodConfig {
   const today = spCivil(new Date());
@@ -154,7 +169,7 @@ function useKpiCounts() {
 }
 
 function useProvisioningData(period: Period) {
-  const cfg = getPeriodConfig(period);
+  const cfg = getProvisioningPeriodConfig(period);
   return useQuery({
     queryKey: ["dashboard_prov", period],
     queryFn: async () => {
@@ -190,8 +205,8 @@ function useProvisioningData(period: Period) {
 
       // Valores por período (não acumulados)
       return cfg.buckets.map((b) => {
-        const v = byKey.get(b.key)!;
-        return { semana: b.label, "Concessão": v.assign, "Revogação": v.remove, Outros: v.other };
+        const v = byKey.get(b.key) ?? { assign: 0, remove: 0, other: 0 };
+        return { dia: b.label, "Concessão": v.assign, "Revogação": v.remove, Outros: v.other };
       });
     },
 
@@ -222,8 +237,7 @@ function useColabsByStatus() {
           name: COLAB_STATUS_META[s].label,
           value: results[i].count ?? 0,
           color: COLAB_STATUS_META[s].color,
-        }))
-        .filter((d) => d.value > 0);
+        }));
     },
     staleTime: 30000,
   });
@@ -249,12 +263,12 @@ function useEventosJmlByTipo(period: Period) {
       const counts: Record<string, number> = {};
       (data ?? []).forEach((r: any) => { counts[r.tipo] = (counts[r.tipo] || 0) + 1; });
       return Object.entries(counts)
-        .map(([tipo, value]) => ({
-          name: JML_TIPO_META[tipo]?.label || tipo,
-          value,
-          color: JML_TIPO_META[tipo]?.color || "hsl(215, 16%, 47%)",
-        }))
-        .filter((d) => d.value > 0);
+      return Object.entries(JML_TIPO_META)
+        .map(([tipo, meta]) => ({
+          name: meta.label,
+          value: counts[tipo] ?? 0,
+          color: meta.color,
+        }));
     },
     staleTime: 15000,
   });
