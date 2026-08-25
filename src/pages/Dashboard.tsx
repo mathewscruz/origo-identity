@@ -227,17 +227,24 @@ function useColabsByStatus() {
     queryKey: ["dashboard_colabs_status"],
     queryFn: async () => {
       const statuses = Object.keys(COLAB_STATUS_META);
-      const results = await Promise.all(
-        statuses.map((s) =>
-          supabase.from("colaboradores").select("id", { count: "exact", head: true }).eq("status", s as any),
+      const [results, tercAtivos, tercInativos] = await Promise.all([
+        Promise.all(
+          statuses.map((s) =>
+            supabase.from("colaboradores").select("id", { count: "exact", head: true }).eq("status", s as any),
+          ),
         ),
-      );
-      return statuses
-        .map((s, i) => ({
+        supabase.from("terceiros").select("id", { count: "exact", head: true }).eq("ativo", true),
+        supabase.from("terceiros").select("id", { count: "exact", head: true }).eq("ativo", false),
+      ]);
+      return [
+        ...statuses.map((s, i) => ({
           name: COLAB_STATUS_META[s].label,
           value: results[i].count ?? 0,
           color: COLAB_STATUS_META[s].color,
-        }));
+        })),
+        { name: "Terceiro ativo", value: tercAtivos.count ?? 0, color: "hsl(262, 52%, 47%)" },
+        { name: "Terceiro inativo", value: tercInativos.count ?? 0, color: "hsl(262, 20%, 60%)" },
+      ];
     },
     staleTime: 30000,
   });
@@ -574,7 +581,7 @@ export default function Dashboard() {
         <Card className="lg:col-span-3">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Colaboradores por Status</CardTitle>
+              <CardTitle className="text-base">Pessoas por Status</CardTitle>
               <Link to="/colaboradores" className="text-xs text-primary hover:underline flex items-center gap-1">
                 Ver todos <ArrowUpRight className="h-3 w-3" />
               </Link>
