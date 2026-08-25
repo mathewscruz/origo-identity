@@ -227,17 +227,24 @@ function useColabsByStatus() {
     queryKey: ["dashboard_colabs_status"],
     queryFn: async () => {
       const statuses = Object.keys(COLAB_STATUS_META);
-      const results = await Promise.all(
-        statuses.map((s) =>
-          supabase.from("colaboradores").select("id", { count: "exact", head: true }).eq("status", s as any),
+      const [results, tercAtivos, tercInativos] = await Promise.all([
+        Promise.all(
+          statuses.map((s) =>
+            supabase.from("colaboradores").select("id", { count: "exact", head: true }).eq("status", s as any),
+          ),
         ),
-      );
-      return statuses
-        .map((s, i) => ({
+        supabase.from("terceiros").select("id", { count: "exact", head: true }).eq("ativo", true),
+        supabase.from("terceiros").select("id", { count: "exact", head: true }).eq("ativo", false),
+      ]);
+      return [
+        ...statuses.map((s, i) => ({
           name: COLAB_STATUS_META[s].label,
           value: results[i].count ?? 0,
           color: COLAB_STATUS_META[s].color,
-        }));
+        })),
+        { name: "Terceiro ativo", value: tercAtivos.count ?? 0, color: "hsl(262, 52%, 47%)" },
+        { name: "Terceiro inativo", value: tercInativos.count ?? 0, color: "hsl(262, 20%, 60%)" },
+      ];
     },
     staleTime: 30000,
   });
