@@ -101,6 +101,7 @@ function AppBreadcrumb() {
 export default function AppLayout() {
   const { profile, mustChangePassword, refreshProfile } = useAuth();
   const avatarSrc = useAvatarUrl(profile?.avatar_url);
+  useRealtimeSync();
   const initials = profile?.nome ? profile.nome.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase() : "??";
 
   return (
