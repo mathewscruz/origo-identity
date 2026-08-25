@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders, handlePreflight } from "../_shared/cors.ts";
-import { ok, badRequest, unauthorized, serverError } from "../_shared/respond.ts";
+import { ok, badRequest, unauthorized, forbidden, serverError } from "../_shared/respond.ts";
 
 type Tipo = "joiner" | "mover" | "leaver" | "pre_leaver" | "pre_leaver_revertido";
 
@@ -32,6 +32,14 @@ Deno.serve(async (req) => {
     const { data: userResult, error: uerr } = await userClient.auth.getUser();
     if (uerr || !userResult?.user) return unauthorized("Invalid token");
     const user = userResult.user;
+
+    // Somente admin/operador podem iniciar eventos JML (a função usa service role).
+    let allowed = false;
+    for (const role of ["admin", "operador"]) {
+      const { data: hasRole } = await userClient.rpc("has_role", { _user_id: user.id, _role: role });
+      if (hasRole) { allowed = true; break; }
+    }
+    if (!allowed) return forbidden("Acesso negado");
 
     const admin = createClient(supabaseUrl, serviceKey);
     const body = (await req.json()) as Body;

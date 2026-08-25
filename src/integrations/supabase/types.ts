@@ -2681,6 +2681,16 @@ export type Database = {
           requested_by: string
         }[]
       }
+      licencas_catalogo: {
+        Args: never
+        Returns: {
+          aplicacao_id: string
+          id: string
+          nome: string
+          owner: string
+          tipo: string
+        }[]
+      }
     }
     Enums: {
       app_role: "admin" | "operador" | "viewer"
