@@ -591,7 +591,7 @@ export default function Dashboard() {
         <Card data-tour="chart-requests">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Eventos JML por Tipo</CardTitle>
+              <CardTitle className="text-base">Movimentações de Pessoas</CardTitle>
               <div className="flex gap-1">
                 {(["dia", "semana", "mes", "ano"] as Period[]).map(p => (
                   <Button key={p} size="sm" variant={solicitPeriod === p ? "default" : "ghost"} className="h-7 px-2.5 text-xs" onClick={() => setSolicitPeriod(p)}>
@@ -602,7 +602,7 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <CategoryBars rows={jmlTipo ?? []} unit="eventos" />
+            <CategoryBars rows={jmlTipo ?? []} unit="pessoas" />
           </CardContent>
         </Card>
 
