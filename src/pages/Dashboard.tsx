@@ -269,14 +269,13 @@ function useEventosJmlByTipo(period: Period) {
         if (data.length < pageSize) break;
       }
       const counts: Record<string, number> = {};
-      // Leaver = saída efetiva do colaborador: conta apenas 1 evento por pessoa
-      const leaverSeen = new Set<string>();
+      // Conta PESSOAS, não eventos: 1 por colaborador em cada tipo (entrada, mudança, saída)
+      const seen = new Set<string>();
       rows.forEach((r: any) => {
-        if (r.tipo === "leaver") {
-          const key = r.colaborador_id ?? r.colaborador_nome ?? Math.random().toString();
-          if (leaverSeen.has(key)) return;
-          leaverSeen.add(key);
-        }
+        const person = r.colaborador_id ?? r.colaborador_nome;
+        const key = `${r.tipo}:${person ?? Math.random().toString()}`;
+        if (person && seen.has(key)) return;
+        seen.add(key);
         counts[r.tipo] = (counts[r.tipo] || 0) + 1;
       });
       return Object.entries(JML_TIPO_META)
@@ -592,7 +591,7 @@ export default function Dashboard() {
         <Card data-tour="chart-requests">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Eventos JML por Tipo</CardTitle>
+              <CardTitle className="text-base">Movimentações de Pessoas</CardTitle>
               <div className="flex gap-1">
                 {(["dia", "semana", "mes", "ano"] as Period[]).map(p => (
                   <Button key={p} size="sm" variant={solicitPeriod === p ? "default" : "ghost"} className="h-7 px-2.5 text-xs" onClick={() => setSolicitPeriod(p)}>
@@ -603,7 +602,7 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <CategoryBars rows={jmlTipo ?? []} unit="eventos" />
+            <CategoryBars rows={jmlTipo ?? []} unit="pessoas" />
           </CardContent>
         </Card>
 
