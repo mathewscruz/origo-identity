@@ -16,6 +16,7 @@ import { NotificacoesBell } from "@/components/NotificacoesBell";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAvatarUrl } from "@/lib/avatarUrl";
 import ForcePasswordChangeDialog from "@/components/ForcePasswordChangeDialog";
+import { useRealtimeSync } from "@/hooks/useRealtimeSync";
 
 const routeLabels: Record<string, string> = {
   "/": "Dashboard",
