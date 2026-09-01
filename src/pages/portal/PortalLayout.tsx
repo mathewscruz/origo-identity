@@ -9,8 +9,10 @@ import PageTransition from "@/components/PageTransition";
 import { toast } from "sonner";
 import type { User } from "@supabase/supabase-js";
 import ForcePasswordChangeDialog from "@/components/ForcePasswordChangeDialog";
+import { useRealtimeSync } from "@/hooks/useRealtimeSync";
 
 export default function PortalLayout() {
+  useRealtimeSync();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [logoutOpen, setLogoutOpen] = useState(false);
