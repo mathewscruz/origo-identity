@@ -54,15 +54,22 @@ const TABLE_QUERY_KEYS: Record<string, string[]> = {
   workflow_execucoes: ["workflow_execucoes", "solicitacoes"],
   sod_conflitos: ["sod_conflitos", "sod"],
   regras: ["regras"],
+  regra_condicoes: ["regras"],
+  regra_resultados: ["regras"],
   sharepoint_sites: ["sharepoint_sites"],
   sharepoint_pastas: ["sharepoint_pastas", "sharepoint_pastas_all"],
   profiles: ["profiles", "usuarios"],
   user_roles: ["user_roles", "usuarios", "role"],
+  aplicacao_connectors: ["aplicacoes", "aplicacao"],
+  aplicacao_perfis_internos: ["aplicacoes", "aplicacao", "perfil_acesso"],
+  workflow_etapa_aprovadores: ["workflow", "workflow_etapas", "workflow_fluxos"],
+  contas_admin_conhecidas: ["contas_admin_conhecidas", "privilegiados"],
 };
 
 export function useRealtimeSync() {
   const qc = useQueryClient();
   const pending = useRef<Set<string>>(new Set());
+  const invalidateAll = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -70,23 +77,33 @@ export function useRealtimeSync() {
       timer.current = null;
       const keys = Array.from(pending.current);
       pending.current.clear();
+      if (invalidateAll.current) {
+        invalidateAll.current = false;
+        qc.invalidateQueries();
+        return;
+      }
       keys.forEach((key) => qc.invalidateQueries({ queryKey: [key] }));
     };
 
-    const schedule = (table: string) => {
-      const keys = TABLE_QUERY_KEYS[table] ?? [table];
-      keys.forEach((k) => pending.current.add(k));
+    const schedule = (table?: string) => {
+      const keys = table ? TABLE_QUERY_KEYS[table] : undefined;
+      if (keys) {
+        keys.forEach((k) => pending.current.add(k));
+      } else {
+        // Tabela sem mapeamento: revalida todo o cache (rede de segurança).
+        invalidateAll.current = true;
+      }
       if (!timer.current) timer.current = setTimeout(flush, 600);
     };
 
-    const channel = supabase.channel("origo-realtime-sync");
-    Object.keys(TABLE_QUERY_KEYS).forEach((table) => {
-      channel.on(
+    // Escuta o schema inteiro: qualquer INSERT/UPDATE/DELETE em qualquer tabela.
+    const channel = supabase
+      .channel("origo-realtime-sync")
+      .on(
         "postgres_changes" as any,
-        { event: "*", schema: "public", table },
-        () => schedule(table),
+        { event: "*", schema: "public" },
+        (payload: any) => schedule(payload?.table),
       );
-    });
     channel.subscribe();
 
     return () => {
