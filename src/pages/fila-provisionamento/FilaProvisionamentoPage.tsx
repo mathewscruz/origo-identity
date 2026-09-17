@@ -1,3 +1,5 @@
+import { completedQueueLink, queueStatuses } from "@/lib/dashboardFilters";
+import QueryState from "@/components/QueryState";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Bot, CheckCircle2, Clock, ListOrdered, Loader2, RotateCcw, Search, ShieldCheck, XCircle, Ban, Eye } from "lucide-react";
@@ -30,6 +32,7 @@ import { useQueryClient } from "@tanstack/react-query";
 type Row = any;
 
 const STATUS_FILTERS: { value: string; label: string; statuses: string[] }[] = [
+  { value: "agente", label: "Para o agente executar", statuses: queueStatuses("agente") },
   { value: "abertos", label: "Abertos", statuses: ["waiting_approval", "pending", "processing"] },
   { value: "waiting_approval", label: "Aguardando aprovação", statuses: ["waiting_approval"] },
   { value: "pending", label: "Pendente (agente)", statuses: ["pending"] },
@@ -58,6 +61,7 @@ export default function FilaProvisionamentoPage() {
   // aba "aprovacao" (decidir) ou "fila" (todos os itens); padrão: aprovação (filtros na URL abrem a lista)
   const tabParam = params.get("tab");
   const statusKey = params.get("status") || "abertos";
+  const processedFrom = params.get("processed_from") || undefined;
   const actionFilter = params.get("action") || "todos";
   const originFilter = params.get("origem") || "todos";
   const [busca, setBusca] = useState(params.get("q") || "");
@@ -68,21 +72,22 @@ export default function FilaProvisionamentoPage() {
   const [cancelTarget, setCancelTarget] = useState<Row | null>(null);
 
   useEffect(() => { const t = setTimeout(() => setBuscaDebounced(busca.trim()), 300); return () => clearTimeout(t); }, [busca]);
-  useEffect(() => { setPage(1); }, [statusKey, actionFilter, originFilter, buscaDebounced]);
+  useEffect(() => { setPage(1); }, [statusKey, actionFilter, originFilter, buscaDebounced, processedFrom]);
 
   const setFilter = (key: string, value: string) => {
     const next = new URLSearchParams(params);
-    if (!value || value === "todos" || (key === "status" && value === "abertos")) next.delete(key); else next.set(key, value);
+    if (key === "status") next.delete("processed_from");
+    if (!value || (value === "todos" && key !== "status") || (key === "status" && value === "abertos")) next.delete(key); else next.set(key, value);
     next.set("tab", "fila");
     setParams(next, { replace: true });
   };
 
   const statuses = STATUS_FILTERS.find((f) => f.value === statusKey)?.statuses ?? [];
-  const { data: stats, isLoading: statsLoading } = useQueueStats();
+  const { data: stats, isLoading: statsLoading, error: statsError, refetch: retryStats } = useQueueStats();
   const tab: "aprovacao" | "fila" = tabParam === "fila" || tabParam === "aprovacao" ? tabParam : (params.get("status") || params.get("action") || params.get("origem") ? "fila" : "aprovacao");
   const setTab = (t: "aprovacao" | "fila") => { const next = new URLSearchParams(params); next.set("tab", t); if (t === "aprovacao") { next.delete("status"); } setParams(next, { replace: true }); };
   const { data: agents } = useAgentStatus();
-  const { data: pageData, isLoading } = useQueuePage({ page, pageSize, status: statuses, actionType: actionFilter !== "todos" ? actionFilter : undefined, requestedBy: originFilter !== "todos" ? originFilter : undefined, search: buscaDebounced || undefined });
+  const { data: pageData, isLoading, error: pageError, refetch: retryPage, isPlaceholderData } = useQueuePage({ page, pageSize, processedFrom, status: statuses, actionType: actionFilter !== "todos" ? actionFilter : undefined, requestedBy: originFilter !== "todos" ? originFilter : undefined, search: buscaDebounced || undefined });
   const { data: filters } = useQueueDistinctActions(statuses.length ? statuses : ["waiting_approval", "pending", "processing", "success", "failed", "cancelled", "rejected"]);
   const reprocess = useReprocessQueueItem();
   const cancel = useCancelQueueItem();
@@ -137,14 +142,16 @@ export default function FilaProvisionamentoPage() {
         }
       />
 
+      <QueryState loading={statsLoading} error={statsError} retry={retryStats}>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         {kpis.map((k) => (
           <StatCard key={k.key} label={k.label} value={k.value} hint={k.hint} icon={k.icon} tone={k.tone} loading={statsLoading}
             active={k.key === "waiting_approval" ? tab === "aprovacao" : tab === "fila" && statusKey === k.key}
-            onClick={() => k.key === "waiting_approval" ? setTab("aprovacao") : setFilter("status", tab === "fila" && statusKey === k.key ? "abertos" : k.key)} />
+            onClick={() => k.key === "success" ? setParams(new URLSearchParams(completedQueueLink().split("?")[1])) : k.key === "waiting_approval" ? setTab("aprovacao") : setFilter("status", tab === "fila" && statusKey === k.key ? "abertos" : k.key)} />
         ))}
       </div>
 
+      </QueryState>
       <Tabs value={tab} onValueChange={(v) => setTab(v as "aprovacao" | "fila")}>
         <TabsList>
           <TabsTrigger value="aprovacao" className="gap-2"><ShieldCheck className="h-3.5 w-3.5" />Aguardando aprovação{(stats?.waiting_approval ?? 0) > 0 && <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">{stats?.waiting_approval}</Badge>}</TabsTrigger>
@@ -153,6 +160,7 @@ export default function FilaProvisionamentoPage() {
       </Tabs>
 
       {tab === "aprovacao" ? <AprovacaoTab /> : (<>
+      {processedFrom && <div className="text-sm">Concluídos desde {new Date(processedFrom).toLocaleString("pt-BR")} <Button variant="ghost" onClick={() => { const next = new URLSearchParams(params); next.delete("processed_from"); setParams(next); }}>Limpar período</Button></div>}
       <div data-tour="search-filter" className="flex flex-wrap gap-2">
         <div className="relative min-w-[220px] max-w-md flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -178,6 +186,7 @@ export default function FilaProvisionamentoPage() {
         </Select>
       </div>
 
+      <QueryState loading={isLoading || isPlaceholderData} error={pageError} retry={retryPage}>
       <Card data-tour="table">
         <CardContent className="p-0">
           {isLoading && rows.length === 0 ? (
@@ -256,6 +265,7 @@ export default function FilaProvisionamentoPage() {
         <span className="text-xs text-muted-foreground">{total.toLocaleString("pt-BR")} item(ns)</span>
         <TablePagination totalItems={total} pageSize={pageSize} currentPage={page} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
       </div>
+      </QueryState>
       </>)}
 
       <AlertDialog open={reprocessAllOpen} onOpenChange={setReprocessAllOpen}>

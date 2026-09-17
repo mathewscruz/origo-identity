@@ -10,16 +10,14 @@ import { supabase } from "@/integrations/supabase/client";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = any;
 
-async function fetchAll(table: string, select: string, orderCol: string, ascending = true, cap = Infinity): Promise<Row[]> {
+async function fetchAll(table: string, select: string, orderCol: string, ascending = true, cap = Infinity, tieBreaker?: string): Promise<Row[]> {
   const PAGE = 1000;
   const all: Row[] = [];
   let from = 0;
   while (all.length < cap) {
-    const { data, error } = await (supabase as Row)
-      .from(table)
-      .select(select)
-      .order(orderCol, { ascending })
-      .range(from, from + PAGE - 1);
+    let query = (supabase as Row).from(table).select(select).order(orderCol, { ascending });
+    if (tieBreaker) query = query.order(tieBreaker, { ascending });
+    const { data, error } = await query.range(from, from + PAGE - 1);
     if (error) throw error;
     if (!data || data.length === 0) break;
     all.push(...data);
@@ -168,7 +166,34 @@ export function usePerfilAtribuicoes(perfilId?: string, colaboradorId?: string) 
 }
 
 export function useEventosJML() {
-  return useQuery({ queryKey: ["eventos_jml"], queryFn: () => fetchAll("eventos_jml", "*", "created_at", false, 5000), ...REFETCH_OPTS });
+  return useQuery({ queryKey: ["eventos_jml"], queryFn: () => fetchAll("eventos_jml", "*", "created_at", false, Infinity, "id"), ...REFETCH_OPTS });
+}
+
+export interface EventosJMLPageParams { page: number; pageSize: number; search?: string; tipo?: string; origem?: string; since?: string }
+export function useEventosJMLPage(p: EventosJMLPageParams) {
+  return useQuery({
+    queryKey: ["eventos_jml_page", p],
+    queryFn: async () => {
+      let q = supabase.from("eventos_jml").select("*", { count: "exact" })
+        .order("created_at", { ascending: false }).order("id", { ascending: false })
+        .range((p.page - 1) * p.pageSize, p.page * p.pageSize - 1);
+      if (p.tipo && p.tipo !== "todos") q = q.eq("tipo", p.tipo as "joiner" | "mover" | "leaver" | "pre_leaver" | "pre_leaver_revertido");
+      if (p.origem && p.origem !== "todos") q = q.eq("origem", p.origem);
+      if (p.since) q = q.gte("created_at", p.since);
+      if (p.search) q = q.ilike("colaborador_nome", `%${p.search.replace(/[\\%_]/g, "\\$&")}%`);
+      const { data, error, count } = await q;
+      if (error) throw error;
+      if (count === null) throw new Error("Contagem JML indisponível");
+      return { rows: data ?? [], total: count };
+    },
+    ...REFETCH_OPTS,
+    placeholderData: undefined,
+  });
+}
+
+/** Minimal uncapped metadata preserves distinct-person KPIs and complete origin options. */
+export function useEventosJMLSummary() {
+  return useQuery({ queryKey: ["eventos_jml_summary"], queryFn: () => fetchAll("eventos_jml", "id,tipo,origem,created_at,colaborador_id,colaborador_nome,terceiro_id", "id"), ...REFETCH_OPTS });
 }
 
 export function useEventoJML(id: string | undefined) {
@@ -289,7 +314,7 @@ export function useAuditoriaFiltros() {
 }
 
 export function useAlertas() {
-  return useQuery({ queryKey: ["alertas"], queryFn: () => fetchAll("alertas", "*", "data", false, 3000), ...REFETCH_OPTS });
+  return useQuery({ queryKey: ["alertas"], queryFn: () => fetchAll("alertas", "*", "data", false, Infinity, "id"), ...REFETCH_OPTS });
 }
 
 // ─── Fila / execução ──────────────────────────────────────────────────────────
@@ -309,17 +334,18 @@ export function useQueueStats() {
 
 export interface QueuePageParams {
   page: number; pageSize: number; status?: string[]; actionType?: string; search?: string; requestedBy?: string;
-  colaboradorId?: string; terceiroId?: string;
+  colaboradorId?: string; terceiroId?: string; processedFrom?: string;
 }
 
 /** Fila paginada no servidor com filtros. */
 export function useQueuePage(p: QueuePageParams) {
   return useQuery({
-    queryKey: ["iam_queue_page", p.page, p.pageSize, (p.status ?? []).join(","), p.actionType ?? "", p.search ?? "", p.requestedBy ?? "", p.colaboradorId ?? "", p.terceiroId ?? ""],
+    queryKey: ["iam_queue_page", p.page, p.pageSize, (p.status ?? []).join(","), p.actionType ?? "", p.search ?? "", p.requestedBy ?? "", p.colaboradorId ?? "", p.terceiroId ?? "", p.processedFrom ?? ""],
     queryFn: async () => {
       let q = (supabase as Row).from("iam_queue").select("*", { count: "exact" }).order("created_at", { ascending: false })
         .range((p.page - 1) * p.pageSize, p.page * p.pageSize - 1);
       if (p.status?.length) q = q.in("status", p.status);
+      if (p.processedFrom) q = q.gte("processed_at", p.processedFrom);
       if (p.actionType) q = q.eq("action_type", p.actionType);
       if (p.requestedBy) q = q.eq("requested_by", p.requestedBy);
       if (p.colaboradorId) q = q.eq("colaborador_id", p.colaboradorId);

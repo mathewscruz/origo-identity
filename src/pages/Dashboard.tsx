@@ -1,3 +1,5 @@
+import QueryState from "@/components/QueryState";
+import { completedQueueLink } from "@/lib/dashboardFilters";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -221,8 +223,8 @@ function GovernanceList({ m, loading }: { m: Row; loading: boolean }) {
 export default function Dashboard() {
   const [period, setPeriod] = useState<Period>(30);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
-  const { data: m, isLoading } = useDashboardMetrics();
-  const { data: series } = useDashboardSeries(period);
+  const { data: m, isLoading, error: metricsError, refetch: retryMetrics } = useDashboardMetrics();
+  const { data: series, isLoading: seriesLoading, error: seriesError, refetch: retrySeries, isPlaceholderData: seriesPlaceholder } = useDashboardSeries(period);
 
   const chartData = useMemo(() => (series ?? []).map((p: DashboardSeriesPoint) => ({ ...p, label: fmtDay(p.dia) })), [series]);
   const totals = useMemo(() => (series ?? []).reduce((acc, p) => ({
@@ -239,7 +241,7 @@ export default function Dashboard() {
   const kpis = [
     { label: "Pessoas ativas", value: pessoas, hint: `${m?.colab_ativos ?? 0} colab. · ${m?.terc_ativos ?? 0} terceiros · ${(m?.colab_ferias ?? 0) + (m?.colab_afastados ?? 0)} afastados/férias`, icon: Users, tone: "primary" as const, to: "/colaboradores" },
     { label: "Aguardando aprovação", value: m?.fila_waiting ?? 0, hint: waitingAge ? `mais antigo há ${waitingAge}` : "nada aguardando", icon: ShieldCheck, tone: (m?.fila_waiting ?? 0) > 0 ? "warning" as const : "success" as const, to: "/fila-provisionamento?tab=aprovacao" },
-    { label: "Para o agente executar", value: (m?.fila_pending ?? 0) + (m?.fila_processing ?? 0), hint: `${m?.fila_processing ?? 0} em execução${pendingAge ? ` · mais antigo há ${pendingAge}` : ""}`, icon: Bot, tone: "info" as const, to: "/fila-provisionamento?status=pending" },
+    { label: "Para o agente executar", value: (m?.fila_pending ?? 0) + (m?.fila_processing ?? 0), hint: `${m?.fila_processing ?? 0} em execução${pendingAge ? ` · mais antigo há ${pendingAge}` : ""}`, icon: Bot, tone: "info" as const, to: "/fila-provisionamento?status=agente" },
     { label: "Falhas na fila", value: m?.fila_failed ?? 0, hint: `${m?.fila_success_24h ?? 0} sucesso(s) nas últimas 24 h`, icon: XCircle, tone: (m?.fila_failed ?? 0) > 0 ? "destructive" as const : "success" as const, to: "/fila-provisionamento?status=failed" },
     { label: "Exceções pendentes", value: m?.excecoes_pendentes ?? 0, hint: `${m?.excecoes_ativas ?? 0} ativa(s) · ${m?.excecoes_vencendo ?? 0} vencendo em 15 d`, icon: FileCheck, tone: (m?.excecoes_pendentes ?? 0) > 0 ? "warning" as const : "success" as const, to: "/excecoes" },
     { label: "Alertas não lidos", value: m?.alertas_nao_lidos ?? 0, hint: `${m?.alertas_criticos ?? 0} crítico(s)`, icon: AlertTriangle, tone: (m?.alertas_criticos ?? 0) > 0 ? "destructive" as const : (m?.alertas_nao_lidos ?? 0) > 0 ? "warning" as const : "success" as const, to: "/alertas" },
@@ -252,14 +254,14 @@ export default function Dashboard() {
     { label: "Inativos", value: m?.colab_inativos ?? 0, color: C.muted, to: "/colaboradores?status=inativo" },
     { label: "Desligados", value: m?.colab_desligados ?? 0, color: C.destructive, to: "/colaboradores?status=desligado" },
     { label: "Terceiros ativos", value: m?.terc_ativos ?? 0, color: C.violet, to: "/terceiros" },
-    { label: "Suspensos (pré-leaver)", value: m?.colab_suspensos ?? 0, color: "hsl(24, 90%, 55%)", to: "/colaboradores?status=ativo" },
+    { label: "Suspensos (pré-leaver)", value: m?.colab_suspensos ?? 0, color: "hsl(24, 90%, 55%)", to: "/colaboradores?suspenso_preventivo=true" },
   ];
   const filaRows = [
     { label: QUEUE_STATUS_META.waiting_approval.label, value: m?.fila_waiting ?? 0, color: C.info, to: "/fila-provisionamento?tab=aprovacao" },
     { label: QUEUE_STATUS_META.pending.label, value: m?.fila_pending ?? 0, color: C.warning, to: "/fila-provisionamento?status=pending" },
     { label: QUEUE_STATUS_META.processing.label, value: m?.fila_processing ?? 0, color: C.violet, to: "/fila-provisionamento?status=processing" },
     { label: QUEUE_STATUS_META.failed.label, value: m?.fila_failed ?? 0, color: C.destructive, to: "/fila-provisionamento?status=failed" },
-    { label: "Concluídos (7 dias)", value: m?.fila_success_7d ?? 0, color: C.success, to: "/fila-provisionamento?status=success" },
+    { label: "Concluídos (7 dias)", value: m?.fila_success_7d ?? 0, color: C.success, to: completedQueueLink(m?.gerado_em) },
   ];
   const acoes: Row[] = m?.fila_por_acao_7d ?? [];
   const falhas: Row[] = m?.fila_falhas_por_codigo ?? [];
@@ -269,9 +271,10 @@ export default function Dashboard() {
       <PageHeader
         title="Dashboard"
         description={<>Visão operacional do IAM/IGA em tempo real{m?.gerado_em ? <span className="text-xs"> · atualizado {relTime(m.gerado_em)}</span> : null}</>}
-        actions={<Badge variant="outline" className="gap-1 text-xs"><Activity className="h-3 w-3 text-success" />Tempo real</Badge>}
+        actions={<Badge variant="outline" className="gap-1 text-xs"><Activity className={`h-3 w-3 ${metricsError || seriesError ? "text-destructive" : "text-success"}`} />{metricsError || seriesError ? "Dados indisponíveis" : isLoading ? "Carregando" : "Tempo real"}</Badge>}
       />
 
+      <QueryState loading={isLoading} error={metricsError || (!isLoading && !m ? new Error("Métricas indisponíveis") : null)} retry={retryMetrics}>
       <SystemStrip m={m} loading={isLoading} />
 
       {/* KPIs */}
@@ -283,7 +286,9 @@ export default function Dashboard() {
         ))}
       </div>
 
+      </QueryState>
       {/* Séries */}
+      <QueryState loading={seriesLoading || seriesPlaceholder} error={seriesError} retry={retrySeries}>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
         <Card data-tour="chart-provisioning" className="xl:col-span-3">
           <CardHeader className="pb-2">
@@ -345,7 +350,9 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      </QueryState>
       {/* Distribuições + governança */}
+      <QueryState loading={isLoading} error={metricsError || (!isLoading && !m ? new Error("Métricas indisponíveis") : null)} retry={retryMetrics}>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
         <BarsPanel title="Pessoas por status" rows={pessoasRows} />
         <BarsPanel title="Fila por status" rows={filaRows} />
@@ -390,6 +397,7 @@ export default function Dashboard() {
         <GovernanceList m={m} loading={isLoading} />
       </div>
 
+      </QueryState>
       {/* Atividade recente — tudo o que aconteceu com pessoas e acessos (auditoria + fila + JML), em tempo real */}
       <Card data-tour="timeline" className="animate-content-in stagger-5">
         <CardHeader className="pb-2">

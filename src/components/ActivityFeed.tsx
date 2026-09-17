@@ -118,7 +118,7 @@ function ator(item: ActivityItem): string {
 export default function ActivityFeed({ limit = 12, showFilters = true, className, colaboradorId, terceiroId, emptyMessage }: { limit?: number; showFilters?: boolean; className?: string; colaboradorId?: string; terceiroId?: string; emptyMessage?: string }) {
   const [categoria, setCategoria] = useState("");
   const [expanded, setExpanded] = useState(false);
-  const { data, isLoading } = useActivityFeed(expanded ? Math.min(limit * 4, 200) : limit, categoria, colaboradorId, terceiroId);
+  const { data, isLoading, error, refetch, isPlaceholderData } = useActivityFeed(expanded ? Math.min(limit * 4, 200) : limit, categoria, colaboradorId, terceiroId);
   const pessoaFixa = !!(colaboradorId || terceiroId);
   const items = data ?? [];
 
@@ -131,7 +131,7 @@ export default function ActivityFeed({ limit = 12, showFilters = true, className
           ))}
         </div>
       )}
-      {isLoading ? (
+      {error ? <div role="alert" className="p-4 text-sm text-destructive">Não foi possível carregar a atividade. <Button variant="outline" onClick={() => refetch()}>Tentar novamente</Button></div> : isLoading || isPlaceholderData ? (
         <div className="space-y-3 p-4">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-11 w-full" />)}</div>
       ) : items.length === 0 ? (
         <EmptyState message={emptyMessage ?? "Nenhuma atividade registrada ainda."} size="lg" />
@@ -162,7 +162,7 @@ export default function ActivityFeed({ limit = 12, showFilters = true, className
           })}
         </ul>
       )}
-      {!isLoading && items.length >= limit && (
+      {!error && !isLoading && !isPlaceholderData && items.length >= limit && (
         <div className="border-t px-3 py-1.5 text-center">
           <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setExpanded((e) => !e)}>{expanded ? "Mostrar menos" : "Mostrar mais"}</Button>
         </div>
