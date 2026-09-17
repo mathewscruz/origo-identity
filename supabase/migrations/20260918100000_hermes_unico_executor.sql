@@ -125,20 +125,31 @@ DECLARE
   v_n int := 0; v_t int;
 BEGIN
   PERFORM set_config('origo.allow_hard_delete', 'on', true);
-  DELETE FROM public.revisao_itens WHERE revisao_id = ANY (v_revs) OR colaborador_id = ANY (v_colabs) OR perfil_id = ANY (v_perfis);
+  -- pessoas/eventos/revisões de demonstração (ids fixos; colaboradores só com e-mail @origo.com do scaffold)
+  DELETE FROM public.revisao_itens WHERE revisao_id = ANY (v_revs) OR colaborador_id = ANY (v_colabs);
   DELETE FROM public.revisoes WHERE id = ANY (v_revs);
-  DELETE FROM public.excecoes WHERE colaborador_id = ANY (v_colabs) OR perfil_id = ANY (v_perfis);
+  DELETE FROM public.excecoes WHERE colaborador_id = ANY (v_colabs);
   DELETE FROM public.eventos_jml WHERE id = ANY (v_evs) OR colaborador_id = ANY (v_colabs);
-  DELETE FROM public.perfil_atribuicoes WHERE colaborador_id = ANY (v_colabs) OR terceiro_id = ANY (v_tercs) OR perfil_id = ANY (v_perfis);
+  DELETE FROM public.perfil_atribuicoes WHERE colaborador_id = ANY (v_colabs) OR terceiro_id = ANY (v_tercs);
   DELETE FROM public.iam_queue WHERE colaborador_id = ANY (v_colabs) OR terceiro_id = ANY (v_tercs);
-  DELETE FROM public.licencas WHERE aplicacao_id = ANY (v_apps) AND nome IN ('Microsoft 365 E3','SAP ERP User','Jira Cloud Standard','Slack Business+','AWS Reserved','Datadog Pro');
   DELETE FROM public.colaboradores WHERE id = ANY (v_colabs) AND email LIKE '%@origo.com';
   GET DIAGNOSTICS v_t = ROW_COUNT; v_n := v_n + v_t;
-  DELETE FROM public.terceiros WHERE id = ANY (v_tercs);
+  DELETE FROM public.terceiros WHERE id = ANY (v_tercs) AND email LIKE '%@%.com' AND NOT EXISTS (SELECT 1 FROM public.perfil_atribuicoes pa WHERE pa.terceiro_id = terceiros.id AND pa.ativo);
   GET DIAGNOSTICS v_t = ROW_COUNT; v_n := v_n + v_t;
-  DELETE FROM public.perfis_acesso WHERE id = ANY (v_perfis);
+  -- perfis e aplicações de demonstração: só saem se NADA real ainda os usa
+  -- (atribuição ativa, cargo, exceção, revisão em andamento, licença ou item de fila aberto)
+  DELETE FROM public.perfis_acesso p WHERE p.id = ANY (v_perfis)
+     AND NOT EXISTS (SELECT 1 FROM public.perfil_atribuicoes pa WHERE pa.perfil_id = p.id AND pa.ativo)
+     AND NOT EXISTS (SELECT 1 FROM public.cargo_perfis cp WHERE cp.perfil_id = p.id)
+     AND NOT EXISTS (SELECT 1 FROM public.excecoes e WHERE e.perfil_id = p.id AND e.status::text IN ('pendente', 'aprovada'))
+     AND NOT EXISTS (SELECT 1 FROM public.revisao_itens ri JOIN public.revisoes r ON r.id = ri.revisao_id WHERE ri.perfil_id = p.id AND r.status::text = 'em_andamento');
   GET DIAGNOSTICS v_t = ROW_COUNT; v_n := v_n + v_t;
-  DELETE FROM public.aplicacoes WHERE id = ANY (v_apps) AND COALESCE(origem, 'manual') <> 'azure';
+  DELETE FROM public.licencas l WHERE l.aplicacao_id = ANY (v_apps)
+     AND l.nome IN ('Microsoft 365 E3','SAP ERP User','Jira Cloud Standard','Slack Business+','AWS Reserved','Datadog Pro');
+  DELETE FROM public.aplicacoes a WHERE a.id = ANY (v_apps) AND COALESCE(a.origem, 'manual') <> 'azure'
+     AND NOT EXISTS (SELECT 1 FROM public.perfil_aplicacoes pa WHERE pa.aplicacao_id = a.id)
+     AND NOT EXISTS (SELECT 1 FROM public.licencas l WHERE l.aplicacao_id = a.id)
+     AND NOT EXISTS (SELECT 1 FROM public.revisoes r WHERE r.aplicacao_id = a.id AND r.status::text = 'em_andamento');
   GET DIAGNOSTICS v_t = ROW_COUNT; v_n := v_n + v_t;
   PERFORM set_config('origo.allow_hard_delete', 'off', true);
   IF v_n > 0 THEN

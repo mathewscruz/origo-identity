@@ -6,7 +6,7 @@ projeto) e depois clicar em **Publish**. Este roteiro cobre tudo o que esta vers
 
 ## 0. O que muda nesta versão
 
-- 14 migrations novas (`20260917120000` → `20260918140000`) + `20260806141300_reconstruct_manual_objects.sql`
+- 13 migrations novas (`20260917120000` → `20260918140000`) + `20260806141300_reconstruct_manual_objects.sql`
   (só cria objetos que já existem em produção — no-op lá).
 - Edge functions: **novas/alteradas** `admin-users`, `auto-recertification`, `save-external-review`,
   `send-review-email`, `send-notification-email`, `iam-agent-api`, `reconcile-identities`, `mcp`,
@@ -32,7 +32,21 @@ git push origin main
 
 O Lovable sincroniza em ~1 min (aba GitHub do projeto mostra o commit).
 
-## 3. Banco + functions — prompt para o Lovable
+## Diagnóstico rápido: "subiu, mas está tudo zerado"
+
+O frontend novo já está publicado, mas o banco ainda está no schema antigo: as telas chamam RPCs
+(`dashboard_metrics`, `iam_queue_stats`, `revisao_criar`…) que ainda não existem, então mostram zero.
+Os dados continuam intactos. Confira de qualquer máquina com o repositório:
+
+```bash
+node scripts/check-prod-schema.mjs
+```
+
+`MISSING` em qualquer linha = execute o passo 3 (opção A ou B). Depois rode de novo até tudo ficar `ok`.
+
+## 3. Banco + functions
+
+### Opção A — pelo chat do Lovable (aplica migrations e faz deploy das functions)
 
 Cole no chat do projeto (modo padrão, não "plan"):
 
@@ -46,6 +60,20 @@ Cole no chat do projeto (modo padrão, não "plan"):
 
 Se o Lovable relatar erro em uma migration, me mande a mensagem — todas são idempotentes e podem ser
 reaplicadas depois da correção.
+
+### Opção B — SQL direto (mais rápido para o banco) + functions pelo chat
+
+1. Gere o arquivo consolidado (já versionado em `db/deploy/migrations-pendentes.sql`; para regenerar:
+   `node scripts/build-deploy-sql.mjs`). Ele contém as 14 migrations em ordem e registra as versões em
+   `supabase_migrations.schema_migrations` — testado de ponta a ponta contra uma cópia do schema antigo
+   (smoke 22/22 depois).
+2. Lovable → Cloud → **Database → SQL** (editor): cole o conteúdo inteiro e execute. Só devem aparecer
+   `NOTICE ... already exists, skipping` (objetos criados manualmente em produção).
+3. As edge functions ainda precisam do chat do Lovable:
+   > Faça o deploy de todas as edge functions do repositório (`supabase/functions/*`) e remova as
+   > functions `process-iam-queue`, `reset-entra-password` e `admin-create-user`, que não existem
+   > mais no repositório. Não altere arquivos.
+4. `node scripts/check-prod-schema.mjs` → tudo `ok`.
 
 ## 4. Uma vez, no SQL editor do Cloud (agenda + segredos do pg_cron)
 

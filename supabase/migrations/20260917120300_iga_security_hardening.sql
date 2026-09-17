@@ -39,10 +39,13 @@ CREATE TRIGGER trg_auditoria_immutable
 DROP POLICY IF EXISTS "Admins can insert parametros" ON public.parametros;
 DROP POLICY IF EXISTS "Admins can update parametros" ON public.parametros;
 DROP POLICY IF EXISTS "Admins can delete parametros" ON public.parametros;
+DROP POLICY IF EXISTS "Only admins insert parametros" ON public.parametros;
 CREATE POLICY "Only admins insert parametros" ON public.parametros FOR INSERT TO authenticated
   WITH CHECK (public.has_role(auth.uid(), 'admin'));
+DROP POLICY IF EXISTS "Only admins update parametros" ON public.parametros;
 CREATE POLICY "Only admins update parametros" ON public.parametros FOR UPDATE TO authenticated
   USING (public.has_role(auth.uid(), 'admin'));
+DROP POLICY IF EXISTS "Only admins delete parametros" ON public.parametros;
 CREATE POLICY "Only admins delete parametros" ON public.parametros FOR DELETE TO authenticated
   USING (public.has_role(auth.uid(), 'admin'));
 
@@ -69,11 +72,14 @@ GRANT EXECUTE ON FUNCTION public.is_platform_admin(uuid) TO authenticated, servi
 DROP POLICY IF EXISTS "Admins can manage roles" ON public.user_roles;
 DROP POLICY IF EXISTS "Admins can update roles" ON public.user_roles;
 DROP POLICY IF EXISTS "Admins can delete roles" ON public.user_roles;
+DROP POLICY IF EXISTS "Admins insert roles" ON public.user_roles;
 CREATE POLICY "Admins insert roles" ON public.user_roles FOR INSERT TO authenticated
   WITH CHECK (public.has_role(auth.uid(), 'admin') AND (role::text <> 'platform_admin' OR public.is_platform_admin(auth.uid())));
+DROP POLICY IF EXISTS "Admins update roles" ON public.user_roles;
 CREATE POLICY "Admins update roles" ON public.user_roles FOR UPDATE TO authenticated
   USING (public.has_role(auth.uid(), 'admin') AND (role::text <> 'platform_admin' OR public.is_platform_admin(auth.uid())))
   WITH CHECK (public.has_role(auth.uid(), 'admin') AND (role::text <> 'platform_admin' OR public.is_platform_admin(auth.uid())));
+DROP POLICY IF EXISTS "Admins delete roles" ON public.user_roles;
 CREATE POLICY "Admins delete roles" ON public.user_roles FOR DELETE TO authenticated
   USING (public.has_role(auth.uid(), 'admin') AND (role::text <> 'platform_admin' OR public.is_platform_admin(auth.uid())));
 
