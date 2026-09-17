@@ -7,7 +7,7 @@ export default defineTool({
   name: "run_admin_sql",
   title: "Executar SQL admin",
   description:
-    "Executa uma consulta SELECT arbitrária no banco Postgres do Órigo, retornando as linhas em JSON. Requer papel admin do usuário conectado. Toda execução é gravada na tabela auditoria automaticamente. Use com cautela — não há sandbox.",
+    "Executa uma consulta SELECT arbitrária no banco Postgres do Órigo, retornando as linhas em JSON. Requer papel platform_admin do usuário conectado. Toda execução é gravada na tabela auditoria automaticamente. Use com cautela — não há sandbox.",
   inputSchema: {
     sql: z.string().min(1).describe("SQL a executar. Deve ser uma expressão que retorne linhas (SELECT ... ou CTE terminando em SELECT)."),
   },

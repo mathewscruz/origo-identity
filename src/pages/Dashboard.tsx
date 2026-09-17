@@ -1,695 +1,413 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import {
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from "recharts";
+import {
+  Activity, AlertTriangle, Bot, CalendarClock, CheckCircle2, ClipboardCheck, Clock, FileCheck, KeyRound,
+  Loader2, RefreshCw, ShieldAlert, ShieldCheck, UserCheck, Users, XCircle, Crown, FileSpreadsheet, Hourglass,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
-import {
-  Users, AlertTriangle, ShieldCheck, RefreshCw, AppWindow, FileCheck,
-  ArrowUpRight, Clock, CheckCircle2, XCircle, Loader2, UserCheck, UserX,
-  Plane, HeartPulse, UserMinus, ListChecks,
-} from "lucide-react";
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from "recharts";
-import { Link } from "react-router-dom";
+import { Skeleton } from "@/components/ui/skeleton";
 import EmptyState from "@/components/EmptyState";
+import PageHeader from "@/components/PageHeader";
+import StatCard from "@/components/StatCard";
 import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
+import { useDashboardMetrics, useDashboardSeries, useParametro, type DashboardSeriesPoint } from "@/hooks/useOrigoData";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { fetchResourceCatalogs, resolveResourceLabel, type ResourceCatalogs } from "@/lib/resourceNames";
+import { QUEUE_ACTION_LABELS, QUEUE_STATUS_META } from "@/lib/queueLabels";
+import ActivityFeed from "@/components/ActivityFeed";
 
-const STATUS_MAP: Record<string, { label: string; color: string }> = {
-  pendente:     { label: "Pendente",     color: "hsl(38, 92%, 50%)" },
-  pending:      { label: "Pendente",     color: "hsl(38, 92%, 50%)" },
-  em_aprovacao: { label: "Em Aprovação", color: "hsl(199, 89%, 48%)" },
-  processing:   { label: "Processando", color: "hsl(199, 89%, 48%)" },
-  aprovada:     { label: "Aprovada",     color: "hsl(142, 71%, 45%)" },
-  success:      { label: "Concluído",   color: "hsl(142, 71%, 45%)" },
-  rejeitada:    { label: "Rejeitada",    color: "hsl(0, 84%, 60%)" },
-  failed:       { label: "Falhou",       color: "hsl(0, 84%, 60%)" },
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Row = any;
+
+const C = {
+  success: "hsl(142, 71%, 45%)",
+  destructive: "hsl(0, 84%, 60%)",
+  info: "hsl(199, 89%, 48%)",
+  warning: "hsl(38, 92%, 50%)",
+  primary: "hsl(176, 74%, 34%)",
+  muted: "hsl(215, 16%, 47%)",
+  violet: "hsl(262, 52%, 47%)",
 };
 
-type Period = "dia" | "semana" | "mes" | "ano";
-const PERIOD_LABELS: Record<Period, string> = { dia: "Dia", semana: "Semana", mes: "Mês", ano: "Ano" };
+type Period = 7 | 30 | 90;
+const PERIODS: { value: Period; label: string }[] = [{ value: 7, label: "7 dias" }, { value: 30, label: "30 dias" }, { value: 90, label: "90 dias" }];
 
-const SP_TZ = "America/Sao_Paulo";
-
-/** Componentes de data (ano/mês/dia) no fuso de São Paulo. */
-function spParts(d: Date) {
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: SP_TZ, year: "numeric", month: "2-digit", day: "2-digit",
-  });
-  const [y, m, day] = fmt.format(d).split("-").map(Number);
-  return { y, m, d: day };
+function fmtDay(iso: string) { const [, m, d] = iso.split("-"); return `${d}/${m}`; }
+function relTime(iso?: string | null) {
+  if (!iso) return "nunca";
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `há ${s}s`;
+  if (s < 3600) return `há ${Math.floor(s / 60)} min`;
+  if (s < 86400) return `há ${Math.floor(s / 3600)} h`;
+  return `há ${Math.floor(s / 86400)} d`;
 }
-/** Data "civil" (UTC-noon) equivalente ao dia em São Paulo — segura para aritmética. */
-function spCivil(d: Date) {
-  const { y, m, d: day } = spParts(d);
-  return new Date(Date.UTC(y, m - 1, day, 12, 0, 0));
-}
-const dayKey = (c: Date) => c.toISOString().slice(0, 10);
-const monthKey = (c: Date) => c.toISOString().slice(0, 7);
-const yearKey = (c: Date) => String(c.getUTCFullYear());
-/** Segunda-feira da semana da data civil. */
-function weekStart(c: Date) {
-  const w = new Date(c);
-  w.setUTCDate(w.getUTCDate() - ((w.getUTCDay() + 6) % 7));
-  return w;
-}
-function isoWeekNumber(c: Date) {
-  const t = new Date(c);
-  t.setUTCDate(t.getUTCDate() + 4 - ((t.getUTCDay() + 6) % 7 + 1));
-  const start = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
-  return Math.ceil(((t.getTime() - start.getTime()) / 86400000 + 1) / 7);
+function ageLabel(iso?: string | null) {
+  if (!iso) return null;
+  const h = (Date.now() - new Date(iso).getTime()) / 3600000;
+  if (h < 1) return "< 1 h";
+  if (h < 48) return `${Math.floor(h)} h`;
+  return `${Math.floor(h / 24)} d`;
 }
 
-type PeriodConfig = {
-  daysBack: number;
-  buckets: { key: string; label: string }[];
-  keyFn: (d: Date) => string;
-};
-
-type ProvisioningPeriodConfig = {
-  daysBack: number;
-  buckets: { key: string; label: string }[];
-  keyFn: (d: Date) => string;
-};
-
-function getProvisioningPeriodConfig(period: Period): ProvisioningPeriodConfig {
-  const today = spCivil(new Date());
-  const daysByPeriod: Record<Period, number> = {
-    dia: 14,
-    semana: 30,
-    mes: 90,
-    ano: 365,
-  };
-  const daysBack = daysByPeriod[period];
-  const buckets = Array.from({ length: daysBack }, (_, i) => {
-    const c = new Date(today);
-    c.setUTCDate(c.getUTCDate() - (daysBack - 1 - i));
-    return {
-      key: dayKey(c),
-      label: `${String(c.getUTCDate()).padStart(2, "0")}/${String(c.getUTCMonth() + 1).padStart(2, "0")}`,
-    };
-  });
-  return { daysBack, buckets, keyFn: (d) => dayKey(spCivil(d)) };
-}
-
-function getPeriodConfig(period: Period): PeriodConfig {
-  const today = spCivil(new Date());
-  switch (period) {
-    case "dia": {
-      const buckets = Array.from({ length: 14 }, (_, i) => {
-        const c = new Date(today);
-        c.setUTCDate(c.getUTCDate() - (13 - i));
-        return {
-          key: dayKey(c),
-          label: `${String(c.getUTCDate()).padStart(2, "0")}/${String(c.getUTCMonth() + 1).padStart(2, "0")}`,
-        };
-      });
-      return { daysBack: 14, buckets, keyFn: (d) => dayKey(spCivil(d)) };
-    }
-    case "semana": {
-      const thisWeek = weekStart(today);
-      const buckets = Array.from({ length: 8 }, (_, i) => {
-        const c = new Date(thisWeek);
-        c.setUTCDate(c.getUTCDate() - (7 - i) * 7);
-        return { key: dayKey(c), label: `Sem ${isoWeekNumber(c)}` };
-      });
-      return { daysBack: 60, buckets, keyFn: (d) => dayKey(weekStart(spCivil(d))) };
-    }
-    case "mes": {
-      const buckets = Array.from({ length: 12 }, (_, i) => {
-        const c = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - (11 - i), 1, 12));
-        const m = c.toLocaleDateString("pt-BR", { month: "short", timeZone: "UTC" }).replace(".", "");
-        return { key: monthKey(c), label: `${m}/${String(c.getUTCFullYear()).slice(2)}` };
-      });
-      return { daysBack: 366, buckets, keyFn: (d) => monthKey(spCivil(d)) };
-    }
-    case "ano": {
-      const y0 = today.getUTCFullYear() - 3;
-      const buckets = Array.from({ length: 4 }, (_, i) => ({ key: String(y0 + i), label: String(y0 + i) }));
-      return { daysBack: 1461, buckets, keyFn: (d) => yearKey(spCivil(d)) };
-    }
-  }
-}
-
-/* ── hooks ── */
-
-function useKpiCounts() {
-  return useQuery({
-
-    queryKey: ["dashboard_kpis"],
-    queryFn: async () => {
-      const [colabs, terceiros, apps, perfis, solicit, filaPending, filaWaiting, alertas] = await Promise.all([
-        supabase.from("colaboradores").select("id", { count: "exact", head: true }).not("status", "in", "(inativo,desligado)"),
-        supabase.from("terceiros").select("id", { count: "exact", head: true }).eq("ativo", true),
-        supabase.from("aplicacoes").select("id", { count: "exact", head: true }),
-        supabase.from("perfis_acesso").select("id", { count: "exact", head: true }).eq("ativo", true),
-        supabase.from("solicitacoes_acesso").select("id", { count: "exact", head: true }).in("status", ["pendente", "em_aprovacao"]),
-        supabase.from("iam_queue").select("id", { count: "exact", head: true }).eq("status", "pending"),
-        supabase.from("iam_queue").select("id", { count: "exact", head: true }).eq("status", "waiting_approval"),
-        supabase.from("alertas").select("id", { count: "exact", head: true }).eq("lido", false),
-      ]);
-      return {
-        pessoasAtivas: (colabs.count ?? 0) + (terceiros.count ?? 0),
-        terceirosAtivos: terceiros.count ?? 0,
-        appsConectadas: apps.count ?? 0,
-        perfisAtivos: perfis.count ?? 0,
-        solicitPendentes: solicit.count ?? 0,
-        filaPendente: (filaPending.count ?? 0) + (filaWaiting.count ?? 0),
-        filaAguardandoAprovacao: filaWaiting.count ?? 0,
-        filaProntoExecucao: filaPending.count ?? 0,
-        alertasNaoLidos: alertas.count ?? 0,
-      };
-    },
-    staleTime: 15000,
-  });
-}
-
-function useProvisioningData(period: Period) {
-  const cfg = getProvisioningPeriodConfig(period);
-  return useQuery({
-    queryKey: ["dashboard_prov", period],
-    queryFn: async () => {
-      const since = spCivil(new Date());
-      since.setUTCDate(since.getUTCDate() - cfg.daysBack);
-      since.setUTCHours(0, 0, 0, 0);
-
-      // Busca paginada (o padrão retorna no máximo 1000 linhas)
-      const rows: { action_type: string | null; created_at: string }[] = [];
-      const PAGE = 1000;
-      for (let from = 0; ; from += PAGE) {
-        const { data, error } = await supabase
-          .from("iam_queue")
-          .select("action_type, created_at")
-          .gte("created_at", since.toISOString())
-          .not("status", "eq", "cancelled")
-          .order("created_at", { ascending: true })
-          .range(from, from + PAGE - 1);
-        if (error) break;
-        rows.push(...((data ?? []) as any[]));
-        if (!data || data.length < PAGE) break;
-      }
-
-      const byKey = new Map(cfg.buckets.map((b) => [b.key, { assign: 0, remove: 0, other: 0 }]));
-      rows.forEach((r) => {
-        const bucket = byKey.get(cfg.keyFn(new Date(r.created_at)));
-        if (!bucket) return;
-        const at = r.action_type || "";
-        if (at.startsWith("assign")) bucket.assign++;
-        else if (at.startsWith("remove") || at.startsWith("disable")) bucket.remove++;
-        else bucket.other++;
-      });
-
-      // Valores por período (não acumulados)
-      return cfg.buckets.map((b) => {
-        const v = byKey.get(b.key) ?? { assign: 0, remove: 0, other: 0 };
-        return { dia: b.label, "Concessão": v.assign, "Revogação": v.remove, Outros: v.other };
-      });
-    },
-
-    staleTime: 15000,
-  });
-}
-
-const COLAB_STATUS_META: Record<string, { label: string; color: string }> = {
-  ativo:     { label: "Ativo",     color: "hsl(142, 71%, 45%)" },
-  ferias:    { label: "Férias",    color: "hsl(199, 89%, 48%)" },
-  afastado:  { label: "Afastado",  color: "hsl(38, 92%, 50%)" },
-  inativo:   { label: "Inativo",   color: "hsl(215, 16%, 47%)" },
-  desligado: { label: "Desligado", color: "hsl(0, 84%, 60%)" },
-};
-
-function useColabsByStatus() {
-  return useQuery({
-    queryKey: ["dashboard_colabs_status"],
-    queryFn: async () => {
-      const statuses = Object.keys(COLAB_STATUS_META);
-      const [results, tercAtivos, tercInativos] = await Promise.all([
-        Promise.all(
-          statuses.map((s) =>
-            supabase.from("colaboradores").select("id", { count: "exact", head: true }).eq("status", s as any),
-          ),
-        ),
-        supabase.from("terceiros").select("id", { count: "exact", head: true }).eq("ativo", true),
-        supabase.from("terceiros").select("id", { count: "exact", head: true }).eq("ativo", false),
-      ]);
-      return [
-        ...statuses.map((s, i) => ({
-          name: COLAB_STATUS_META[s].label,
-          value: results[i].count ?? 0,
-          color: COLAB_STATUS_META[s].color,
-        })),
-        { name: "Terceiro ativo", value: tercAtivos.count ?? 0, color: "hsl(262, 52%, 47%)" },
-        { name: "Terceiro inativo", value: tercInativos.count ?? 0, color: "hsl(262, 20%, 60%)" },
-      ];
-    },
-    staleTime: 30000,
-  });
-}
-
-const JML_TIPO_META: Record<string, { label: string; color: string }> = {
-  joiner: { label: "Joiner", color: "hsl(142, 71%, 45%)" },
-  mover:  { label: "Mover",  color: "hsl(199, 89%, 48%)" },
-  leaver: { label: "Leaver", color: "hsl(0, 84%, 60%)" },
-};
-
-function useEventosJmlByTipo(period: Period) {
-  const cfg = getPeriodConfig(period);
-  return useQuery({
-    queryKey: ["dashboard_jml_tipo", period],
-    queryFn: async () => {
-      const since = new Date();
-      since.setDate(since.getDate() - cfg.daysBack);
-      const rows: any[] = [];
-      const pageSize = 1000;
-      for (let from = 0; ; from += pageSize) {
-        const { data } = await supabase
-          .from("eventos_jml")
-          .select("tipo, colaborador_id, colaborador_nome")
-          .gte("created_at", since.toISOString())
-          .range(from, from + pageSize - 1);
-        if (!data?.length) break;
-        rows.push(...data);
-        if (data.length < pageSize) break;
-      }
-      const counts: Record<string, number> = {};
-      // Conta PESSOAS, não eventos: 1 por colaborador em cada tipo (entrada, mudança, saída)
-      const seen = new Set<string>();
-      rows.forEach((r: any) => {
-        const person = r.colaborador_id ?? r.colaborador_nome;
-        const key = `${r.tipo}:${person ?? Math.random().toString()}`;
-        if (person && seen.has(key)) return;
-        seen.add(key);
-        counts[r.tipo] = (counts[r.tipo] || 0) + 1;
-      });
-      return Object.entries(JML_TIPO_META)
-        .map(([tipo, meta]) => ({
-          name: meta.label,
-          value: counts[tipo] ?? 0,
-          color: meta.color,
-        }));
-    },
-    staleTime: 15000,
-  });
-}
-
-const QUEUE_STATUS_META: Record<string, { label: string; color: string; href: string }> = {
-  waiting_approval: { label: "Aguardando aprovação", color: "hsl(199, 89%, 48%)", href: "/fila-provisionamento?status=waiting_approval" },
-  pending:          { label: "Pendente execução",    color: "hsl(38, 92%, 50%)",  href: "/fila-provisionamento?status=pending" },
-  processing:       { label: "Processando",          color: "hsl(262, 52%, 47%)", href: "/fila-provisionamento?status=processing" },
-  failed:           { label: "Falhou",               color: "hsl(0, 84%, 60%)",   href: "/fila-provisionamento?status=failed" },
-  success:          { label: "Concluído (7d)",       color: "hsl(142, 71%, 45%)", href: "/fila-provisionamento?status=success" },
-};
-
-function useQueueByStatus() {
-  return useQuery({
-    queryKey: ["dashboard_queue_status"],
-    queryFn: async () => {
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      const statuses = Object.keys(QUEUE_STATUS_META);
-      const results = await Promise.all(
-        statuses.map((s) => {
-          let q = supabase.from("iam_queue").select("id", { count: "exact", head: true }).eq("status", s);
-          if (s === "success") q = q.gte("created_at", sevenDaysAgo.toISOString());
-          return q;
-        }),
-      );
-      return statuses.map((s, i) => ({
-        status: s,
-        label: QUEUE_STATUS_META[s].label,
-        value: results[i].count ?? 0,
-        color: QUEUE_STATUS_META[s].color,
-        href: QUEUE_STATUS_META[s].href,
-      }));
-    },
-    staleTime: 15000,
-  });
-}
-
-const ACTION_LABELS: Record<string, string> = {
-  assign_group: "Atribuição de Grupo",
-  remove_group: "Remoção de Grupo",
-  assign_app: "Atribuição de App",
-  remove_app: "Remoção de App",
-  assign_license: "Atribuição de Licença",
-  remove_license: "Remoção de Licença",
-  create: "Criação de Conta",
-  create_if_not_exists: "Criação de Conta",
-  update: "Atualização",
-  disable: "Desativação",
-  delete: "Exclusão",
-};
-
-function buildQueueLabel(
-  q: { action_type: string; target_identity: string | null; payload_json: any },
-  resolvedName?: string,
-  catalogs?: ResourceCatalogs,
-): string {
-  const p = q.payload_json || {};
-  const name = resolvedName || p.displayName || q.target_identity || "";
-  const at = q.action_type || "";
-  if (at.includes("group") || at.includes("app") || at.includes("license") || at.includes("sharepoint")) {
-    const resource = resolveResourceLabel(q, catalogs, "");
-    if (resource) return `${name} → ${resource}`;
-  }
-  return name || ACTION_LABELS[at] || at;
-}
-
-function useRecentActivity() {
-  return useQuery({
-    queryKey: ["dashboard_activity"],
-    queryFn: async () => {
-      const [queueRes, solicitRes, catalogs] = await Promise.all([
-        (supabase as any).from("iam_queue")
-          .select("id, action_type, target_identity, status, created_at, payload_json, colaborador_id")
-          .not("status", "eq", "cancelled")
-          .order("created_at", { ascending: false })
-          .limit(5),
-        supabase.from("solicitacoes_acesso")
-          .select("id, status, created_at, justificativa")
-          .order("created_at", { ascending: false })
-          .limit(5),
-        fetchResourceCatalogs(),
-      ]);
-
-      const colaboradorIds: string[] = Array.from(
-        new Set<string>(
-          (queueRes.data ?? [])
-            .map((q: any) => q.colaborador_id as string | null)
-            .filter((id): id is string => typeof id === "string" && id.length > 0),
-        ),
-      );
-      const colaboradorNames = new Map<string, string>();
-
-      if (colaboradorIds.length > 0) {
-        const { data: colaboradores } = await supabase
-          .from("colaboradores")
-          .select("id, nome")
-          .in("id", colaboradorIds);
-
-        (colaboradores ?? []).forEach((colaborador) => {
-          colaboradorNames.set(colaborador.id, colaborador.nome);
-        });
-      }
-
-      type ActivityItem = {
-        id: string; type: "queue" | "solicitacao"; label: string;
-        sublabel: string; status: string; date: string; link: string;
-      };
-      const items: ActivityItem[] = [];
-      (queueRes.data ?? []).forEach((q: any) => items.push({
-        id: q.id, type: "queue",
-        label: buildQueueLabel(q, q.colaborador_id ? colaboradorNames.get(q.colaborador_id) : undefined, catalogs),
-        sublabel: ACTION_LABELS[q.action_type] || q.action_type,
-        status: q.status, date: q.created_at,
-        link: `/fila-provisionamento/${q.id}`,
-      }));
-      (solicitRes.data ?? []).forEach((s: any) => items.push({
-        id: s.id, type: "solicitacao",
-        label: (s.justificativa || "Solicitação").slice(0, 60),
-        sublabel: "Solicitação de Acesso",
-        status: s.status, date: s.created_at,
-        link: "/solicitacoes",
-      }));
-      return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 8);
-    },
-    staleTime: 15000,
-  });
-}
-
-/* ── custom tooltip ── */
-function CustomTooltip({ active, payload, label }: any) {
+function ChartTooltip({ active, payload, label }: Row) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-lg border bg-card p-3 shadow-lg text-xs">
-      <p className="font-medium text-card-foreground mb-1">{label}</p>
-      {payload.map((p: any) => (
-        <div key={p.dataKey} className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
-          <span className="text-muted-foreground">{p.dataKey}:</span>
-          <span className="font-semibold text-card-foreground">{p.value}</span>
+    <div className="rounded-lg border bg-card p-3 text-xs shadow-lg">
+      <p className="mb-1 font-medium">{label}</p>
+      {payload.map((p: Row) => (
+        <div key={p.dataKey} className="flex items-center justify-between gap-4">
+          <span className="flex items-center gap-1.5 text-muted-foreground"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />{p.name}</span>
+          <span className="font-semibold tabular-nums">{p.value}</span>
         </div>
       ))}
     </div>
   );
 }
 
-type CategoryDatum = { name: string; value: number; color: string };
-
-function CategoryBars({ rows, unit }: { rows: CategoryDatum[]; unit: string }) {
-  const total = rows.reduce((sum, row) => sum + row.value, 0);
-  const max = Math.max(1, ...rows.map((row) => row.value));
-
+/* ── status do sistema (agente, ciclo, importação, aprovação) ── */
+function SystemStrip({ m, loading }: { m: Row; loading: boolean }) {
+  const approval = useParametro("iam_approval_required", "true") === "true";
+  const agent: Row = m?.agente?.[0];
+  const agentAge = agent ? (Date.now() - new Date(agent.last_seen_at).getTime()) / 60000 : Infinity;
+  const agentOnline = agentAge < 5;
+  const agentWarn = !agentOnline && agentAge < 30;
+  const ciclo: Row = m?.ultimo_ciclo;
+  const csv: Row = m?.ultimo_csv;
+  const items = [
+    {
+      icon: Bot, label: "Órigo Agente (executor)",
+      value: loading ? "…" : !agent ? "nunca visto" : agentOnline ? "online" : agentWarn ? "sem sinal" : "offline",
+      hint: agent ? `${agent.owner}${agent.version ? ` v${agent.version}` : ""} · ${agent.execute_mode === false ? "dry-run" : "executando"} · ${relTime(agent.last_seen_at)}` : "aguardando primeiro heartbeat",
+      tone: !agent || (!agentOnline && !agentWarn) ? "destructive" : agentWarn ? "warning" : "success",
+      to: "/fila-provisionamento",
+    },
+    {
+      icon: RefreshCw, label: "Ciclo diário (RH → reconciliação)",
+      value: loading ? "…" : !ciclo ? "nunca rodou" : ciclo.status === "running" ? "em andamento" : ciclo.status === "done" ? "concluído" : "falhou",
+      hint: ciclo ? `${relTime(ciclo.updated_at)} · ${String(ciclo.message || "").slice(0, 60)}` : "agendado 06:30 UTC",
+      tone: !ciclo ? "warning" : ciclo.status === "error" ? "destructive" : ciclo.status === "running" ? "info" : "success",
+      to: "/configuracoes/integracoes",
+    },
+    {
+      icon: FileSpreadsheet, label: "Última base do RH",
+      value: loading ? "…" : !csv ? "nenhuma" : csv.status === "running" ? "importando" : csv.status === "done" ? `${csv.colab_created ?? 0} novos · ${csv.colab_updated ?? 0} alt.` : "falhou",
+      hint: csv ? `${relTime(csv.updated_at)}${csv.filename ? ` · ${csv.filename}` : ""}` : "SharePoint RH_COLAB",
+      tone: !csv ? "warning" : csv.status === "error" ? "destructive" : "info",
+      to: "/configuracoes/integracoes",
+    },
+    {
+      icon: approval ? ShieldCheck : ShieldAlert, label: "Aprovação obrigatória",
+      value: approval ? "ligada" : "desligada",
+      hint: approval ? "nada vai ao agente sem aprovação" : "itens vão direto para execução",
+      tone: approval ? "success" : "warning",
+      to: "/fila-provisionamento?tab=aprovacao",
+    },
+  ] as const;
   return (
-    <div className="flex h-full min-h-[240px] flex-col justify-center gap-4">
-      <div className="flex items-baseline justify-between border-b pb-3">
-        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Total</span>
-        <span className="text-2xl font-semibold tracking-tight">{total}</span>
-      </div>
-      <div className="space-y-3">
-        {rows.map((row) => {
-          const pct = total > 0 ? Math.round((row.value / total) * 100) : 0;
-          const width = row.value > 0 ? Math.max(3, Math.round((row.value / max) * 100)) : 0;
-          return (
-            <div key={row.name} className="space-y-1.5">
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: row.color }} />
-                  <span className="truncate font-medium">{row.name}</span>
-                </div>
-                <div className="shrink-0 text-xs text-muted-foreground">
-                  <span className="font-semibold text-foreground">{row.value}</span> {unit} · {pct}%
-                </div>
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+      {items.map((it) => (
+        <Link key={it.label} to={it.to} className="group">
+          <Card className="h-full transition-all hover:-translate-y-0.5 hover:shadow-md">
+            <CardContent className="flex items-center gap-3 p-3">
+              <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                it.tone === "success" ? "bg-success/10 text-success" : it.tone === "destructive" ? "bg-destructive/10 text-destructive" : it.tone === "warning" ? "bg-warning/10 text-warning" : "bg-info/10 text-info"}`}>
+                <it.icon className="h-4 w-4" />
               </div>
-              <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full transition-all duration-300"
-                  style={{ width: `${width}%`, backgroundColor: row.color }}
-                />
+              <div className="min-w-0">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{it.label}</p>
+                <p className="flex items-center gap-1.5 text-sm font-semibold">
+                  <span className={`h-1.5 w-1.5 rounded-full ${it.tone === "success" ? "bg-success" : it.tone === "destructive" ? "bg-destructive" : it.tone === "warning" ? "bg-warning" : "bg-info animate-pulse"}`} />
+                  {it.value}
+                </p>
+                <p className="truncate text-[11px] text-muted-foreground">{it.hint}</p>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            </CardContent>
+          </Card>
+        </Link>
+      ))}
     </div>
   );
 }
 
-/* ── status icon ── */
-function StatusIcon({ status }: { status: string }) {
-  switch (status) {
-    case "pending": case "pendente": case "em_aprovacao":
-      return <Clock className="h-4 w-4 text-warning" />;
-    case "success": case "completed": case "aprovada":
-      return <CheckCircle2 className="h-4 w-4 text-success" />;
-    case "failed": case "permanent_failure": case "rejeitada":
-      return <XCircle className="h-4 w-4 text-destructive" />;
-    case "processing":
-      return <Loader2 className="h-4 w-4 text-info animate-spin" />;
-    default:
-      return <Clock className="h-4 w-4 text-muted-foreground" />;
-  }
+/* ── barras horizontais clicáveis ── */
+function BarsPanel({ title, rows, unit, footer }: { title: string; rows: { label: string; value: number; color: string; to?: string }[]; unit?: string; footer?: React.ReactNode }) {
+  const total = rows.reduce((s, r) => s + r.value, 0);
+  const max = Math.max(1, ...rows.map((r) => r.value));
+  return (
+    <Card className="h-full">
+      <CardHeader className="pb-2"><CardTitle className="text-base">{title}</CardTitle></CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-baseline justify-between border-b pb-2">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Total</span>
+          <span className="text-xl font-semibold tabular-nums">{total}</span>
+        </div>
+        {rows.map((r) => {
+          const pct = total > 0 ? Math.round((r.value / total) * 100) : 0;
+          const width = r.value > 0 ? Math.max(3, Math.round((r.value / max) * 100)) : 0;
+          const inner = (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="flex min-w-0 items-center gap-2"><span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: r.color }} /><span className="truncate" title={r.label}>{r.label}</span></span>
+                <span className="shrink-0 text-xs text-muted-foreground"><span className="font-semibold text-foreground tabular-nums">{r.value}</span>{unit ? ` ${unit}` : ""} · {pct}%</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full transition-all duration-500" style={{ width: `${width}%`, backgroundColor: r.color }} /></div>
+            </div>
+          );
+          return r.to ? <Link key={r.label} to={r.to} className="block rounded-md p-1 -m-1 hover:bg-muted/50">{inner}</Link> : <div key={r.label}>{inner}</div>;
+        })}
+        {footer}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ── pendências de governança ── */
+function GovernanceList({ m, loading }: { m: Row; loading: boolean }) {
+  const items: { icon: typeof Users; label: string; value: number; to: string; tone: "warning" | "destructive" | "info" | "muted" }[] = [
+    { icon: FileCheck, label: "Exceções pendentes de decisão", value: m?.excecoes_pendentes ?? 0, to: "/excecoes", tone: "warning" },
+    { icon: CalendarClock, label: "Exceções vencendo em 15 dias", value: m?.excecoes_vencendo ?? 0, to: "/excecoes", tone: "info" },
+    { icon: ClipboardCheck, label: "Revisões de acesso em aberto", value: m?.revisoes_abertas ?? 0, to: "/revisoes", tone: "info" },
+    { icon: Hourglass, label: "Revisões com prazo vencido", value: m?.revisoes_atrasadas ?? 0, to: "/revisoes", tone: "destructive" },
+    { icon: UserCheck, label: "Terceiros com contrato vencido", value: m?.terc_vencidos ?? 0, to: "/terceiros", tone: "destructive" },
+    { icon: CalendarClock, label: "Terceiros vencendo em 30 dias", value: m?.terc_vencendo_30d ?? 0, to: "/terceiros", tone: "warning" },
+    { icon: UserCheck, label: "Terceiros a revalidar", value: m?.terc_revalidar ?? 0, to: "/terceiros", tone: "warning" },
+    { icon: ShieldAlert, label: "Violações de SoD (pessoas com perfis conflitantes)", value: m?.sod_violacoes ?? 0, to: "/sod", tone: "destructive" },
+    { icon: KeyRound, label: "Licenças em nível crítico", value: m?.licencas_criticas ?? 0, to: "/licencas", tone: "warning" },
+    { icon: Users, label: "Contas órfãs no Entra aguardando revisão", value: m?.fila_orfaos ?? 0, to: "/fila-provisionamento?tab=aprovacao&action=review_orphan_entra", tone: "warning" },
+    { icon: FileSpreadsheet, label: "Linhas do RH em quarentena", value: m?.quarentena ?? 0, to: "/configuracoes/integracoes", tone: "warning" },
+    { icon: Users, label: "Ativos sem conta vinculada no Entra", value: m?.colab_sem_entra ?? 0, to: "/colaboradores?status=ativo", tone: "info" },
+    { icon: Users, label: "Ativos sem cargo (sem acesso por perfil)", value: m?.colab_sem_cargo ?? 0, to: "/colaboradores?status=ativo", tone: "muted" },
+    { icon: Crown, label: "Pessoas com funções privilegiadas", value: m?.priv_membros ?? 0, to: "/privilegiados", tone: "muted" },
+  ];
+  const open = items.filter((i) => i.value > 0);
+  return (
+    <Card className="h-full">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">Pendências de governança</CardTitle>
+          <Badge variant="outline" className="text-xs">{open.length} tema(s)</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        {loading ? (
+          <div className="space-y-2 p-4">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
+        ) : open.length === 0 ? (
+          <div className="py-10"><EmptyState message="Nenhuma pendência — tudo em dia." /></div>
+        ) : (
+          <ul className="divide-y">
+            {open.map((i) => (
+              <li key={i.label}>
+                <Link to={i.to} className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-muted/50">
+                  <i.icon className={`h-4 w-4 shrink-0 ${i.tone === "destructive" ? "text-destructive" : i.tone === "warning" ? "text-warning" : i.tone === "info" ? "text-info" : "text-muted-foreground"}`} />
+                  <span className="flex-1 truncate" title={i.label}>{i.label}</span>
+                  <Badge variant="outline" className={`tabular-nums ${i.tone === "destructive" ? "border-destructive/30 bg-destructive/10 text-destructive" : i.tone === "warning" ? "border-warning/30 bg-warning/10 text-warning" : ""}`}>{i.value}</Badge>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 /* ── main ── */
 export default function Dashboard() {
-  const [provPeriod, setProvPeriod] = useState<Period>("semana");
-  const [solicitPeriod, setSolicitPeriod] = useState<Period>("semana");
+  const [period, setPeriod] = useState<Period>(30);
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const { data: m, isLoading } = useDashboardMetrics();
+  const { data: series } = useDashboardSeries(period);
 
-  const { data: kpis } = useKpiCounts();
-  const { data: provData } = useProvisioningData(provPeriod);
-  const { data: colabsStatus } = useColabsByStatus();
-  const { data: jmlTipo } = useEventosJmlByTipo(solicitPeriod);
-  const { data: queueStatus } = useQueueByStatus();
-  const { data: activity } = useRecentActivity();
-  const provXAxisInterval = provPeriod === "dia" ? 0 : provPeriod === "semana" ? 4 : provPeriod === "mes" ? 9 : 30;
+  const chartData = useMemo(() => (series ?? []).map((p: DashboardSeriesPoint) => ({ ...p, label: fmtDay(p.dia) })), [series]);
+  const totals = useMemo(() => (series ?? []).reduce((acc, p) => ({
+    concessoes: acc.concessoes + p.concessoes, revogacoes: acc.revogacoes + p.revogacoes, falhas: acc.falhas + p.falhas,
+    joiners: acc.joiners + p.joiners, movers: acc.movers + p.movers, leavers: acc.leavers + p.leavers,
+  }), { concessoes: 0, revogacoes: 0, falhas: 0, joiners: 0, movers: 0, leavers: 0 }), [series]);
+  const toggle = (key: string) => setHidden((h) => { const n = new Set(h); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  const tick = period === 7 ? 0 : period === 30 ? 4 : 14;
 
-  const kpiCards = [
-    { title: "Pessoas Ativas", value: kpis?.pessoasAtivas ?? 0, sub: `${kpis?.terceirosAtivos ?? 0} terceiros`, icon: Users, href: "/colaboradores", color: "text-primary" },
-    { title: "Aplicações", value: kpis?.appsConectadas ?? 0, sub: "aplicações cadastradas", icon: AppWindow, href: "/aplicacoes", color: "text-info" },
-    { title: "Perfis Ativos", value: kpis?.perfisAtivos ?? 0, sub: "perfis de acesso", icon: ShieldCheck, href: "/perfis-acesso", color: "text-success" },
-    { title: "Solicitações Pendentes", value: kpis?.solicitPendentes ?? 0, sub: "aguardando decisão", icon: FileCheck, href: "/solicitacoes", color: "text-warning" },
-    { title: "Fila de Provisionamento", value: kpis?.filaPendente ?? 0, sub: `${kpis?.filaAguardandoAprovacao ?? 0} aguardando aprovação · ${kpis?.filaProntoExecucao ?? 0} p/ execução`, icon: RefreshCw, href: "/fila-provisionamento", color: "text-info" },
-    { title: "Alertas Não Lidos", value: kpis?.alertasNaoLidos ?? 0, sub: "requerem atenção", icon: AlertTriangle, href: "/alertas", color: (kpis?.alertasNaoLidos ?? 0) > 0 ? "text-destructive" : "text-success" },
+  const pessoas = (m?.colab_ativos ?? 0) + (m?.colab_ferias ?? 0) + (m?.colab_afastados ?? 0) + (m?.terc_ativos ?? 0);
+  const waitingAge = ageLabel(m?.fila_oldest_waiting);
+  const pendingAge = ageLabel(m?.fila_oldest_pending);
+
+  const kpis = [
+    { label: "Pessoas ativas", value: pessoas, hint: `${m?.colab_ativos ?? 0} colab. · ${m?.terc_ativos ?? 0} terceiros · ${(m?.colab_ferias ?? 0) + (m?.colab_afastados ?? 0)} afastados/férias`, icon: Users, tone: "primary" as const, to: "/colaboradores" },
+    { label: "Aguardando aprovação", value: m?.fila_waiting ?? 0, hint: waitingAge ? `mais antigo há ${waitingAge}` : "nada aguardando", icon: ShieldCheck, tone: (m?.fila_waiting ?? 0) > 0 ? "warning" as const : "success" as const, to: "/fila-provisionamento?tab=aprovacao" },
+    { label: "Para o agente executar", value: (m?.fila_pending ?? 0) + (m?.fila_processing ?? 0), hint: `${m?.fila_processing ?? 0} em execução${pendingAge ? ` · mais antigo há ${pendingAge}` : ""}`, icon: Bot, tone: "info" as const, to: "/fila-provisionamento?status=pending" },
+    { label: "Falhas na fila", value: m?.fila_failed ?? 0, hint: `${m?.fila_success_24h ?? 0} sucesso(s) nas últimas 24 h`, icon: XCircle, tone: (m?.fila_failed ?? 0) > 0 ? "destructive" as const : "success" as const, to: "/fila-provisionamento?status=failed" },
+    { label: "Exceções pendentes", value: m?.excecoes_pendentes ?? 0, hint: `${m?.excecoes_ativas ?? 0} ativa(s) · ${m?.excecoes_vencendo ?? 0} vencendo em 15 d`, icon: FileCheck, tone: (m?.excecoes_pendentes ?? 0) > 0 ? "warning" as const : "success" as const, to: "/excecoes" },
+    { label: "Alertas não lidos", value: m?.alertas_nao_lidos ?? 0, hint: `${m?.alertas_criticos ?? 0} crítico(s)`, icon: AlertTriangle, tone: (m?.alertas_criticos ?? 0) > 0 ? "destructive" as const : (m?.alertas_nao_lidos ?? 0) > 0 ? "warning" as const : "success" as const, to: "/alertas" },
   ];
 
+  const pessoasRows = [
+    { label: "Ativos", value: m?.colab_ativos ?? 0, color: C.success, to: "/colaboradores?status=ativo" },
+    { label: "Férias", value: m?.colab_ferias ?? 0, color: C.info, to: "/colaboradores?status=ferias" },
+    { label: "Afastados", value: m?.colab_afastados ?? 0, color: C.warning, to: "/colaboradores?status=afastado" },
+    { label: "Inativos", value: m?.colab_inativos ?? 0, color: C.muted, to: "/colaboradores?status=inativo" },
+    { label: "Desligados", value: m?.colab_desligados ?? 0, color: C.destructive, to: "/colaboradores?status=desligado" },
+    { label: "Terceiros ativos", value: m?.terc_ativos ?? 0, color: C.violet, to: "/terceiros" },
+    { label: "Suspensos (pré-leaver)", value: m?.colab_suspensos ?? 0, color: "hsl(24, 90%, 55%)", to: "/colaboradores?status=ativo" },
+  ];
+  const filaRows = [
+    { label: QUEUE_STATUS_META.waiting_approval.label, value: m?.fila_waiting ?? 0, color: C.info, to: "/fila-provisionamento?tab=aprovacao" },
+    { label: QUEUE_STATUS_META.pending.label, value: m?.fila_pending ?? 0, color: C.warning, to: "/fila-provisionamento?status=pending" },
+    { label: QUEUE_STATUS_META.processing.label, value: m?.fila_processing ?? 0, color: C.violet, to: "/fila-provisionamento?status=processing" },
+    { label: QUEUE_STATUS_META.failed.label, value: m?.fila_failed ?? 0, color: C.destructive, to: "/fila-provisionamento?status=failed" },
+    { label: "Concluídos (7 dias)", value: m?.fila_success_7d ?? 0, color: C.success, to: "/fila-provisionamento?status=success" },
+  ];
+  const acoes: Row[] = m?.fila_por_acao_7d ?? [];
+  const falhas: Row[] = m?.fila_falhas_por_codigo ?? [];
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Visão operacional consolidada em tempo real</p>
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        title="Dashboard"
+        description={<>Visão operacional do IAM/IGA em tempo real{m?.gerado_em ? <span className="text-xs"> · atualizado {relTime(m.gerado_em)}</span> : null}</>}
+        actions={<Badge variant="outline" className="gap-1 text-xs"><Activity className="h-3 w-3 text-success" />Tempo real</Badge>}
+      />
+
+      <SystemStrip m={m} loading={isLoading} />
 
       {/* KPIs */}
-      <div data-tour="kpi-cards" className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
-        {kpiCards.map((k, i) => (
-          <Link key={k.title} to={k.href} className={`group animate-content-in stagger-${i + 1}`}>
-            <Card className="transition-all duration-200 hover:shadow-md hover:border-primary/30 group-hover:-translate-y-0.5">
-              <CardHeader className="flex flex-row items-center justify-between pb-1 pt-4 px-4">
-                <CardTitle className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider leading-tight">{k.title}</CardTitle>
-                <k.icon className={`h-4 w-4 ${k.color} opacity-70`} />
-              </CardHeader>
-              <CardContent className="px-4 pb-4 pt-0">
-                <div className="text-2xl font-bold tracking-tight">{k.value}</div>
-                <div className="flex items-center gap-1 mt-0.5">
-                  <span className="text-[10px] text-muted-foreground">{k.sub}</span>
-                  <ArrowUpRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
+      <div data-tour="kpi-cards" className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-6">
+        {kpis.map((k, i) => (
+          <div key={k.label} className={`animate-content-in stagger-${i + 1}`}>
+            <StatCard label={k.label} value={k.value} hint={k.hint} icon={k.icon} tone={k.tone} to={k.to} loading={isLoading} />
+          </div>
         ))}
       </div>
 
-      {/* Row 2: Provisioning + collaborator status */}
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-7 animate-content-in stagger-3">
-        <Card data-tour="chart-provisioning" className="lg:col-span-4">
+      {/* Séries */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
+        <Card data-tour="chart-provisioning" className="xl:col-span-3">
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <CardTitle className="text-base">Provisionamento diário</CardTitle>
-                <p className="text-xs text-muted-foreground">Processamentos por dia, sem acumulado</p>
+                <CardTitle className="text-base">Atividade da fila de provisionamento</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  {totals.concessoes} concessões · {totals.revogacoes} revogações · {totals.falhas} falhas no período{m?.fila_tempo_medio_min ? ` · tempo médio aprovação→execução ${m.fila_tempo_medio_min} min` : ""}
+                </p>
               </div>
               <div className="flex gap-1">
-                {(["dia", "semana", "mes", "ano"] as Period[]).map(p => (
-                  <Button key={p} size="sm" variant={provPeriod === p ? "default" : "ghost"} className="h-7 px-2.5 text-xs" onClick={() => setProvPeriod(p)}>
-                    {PERIOD_LABELS[p]}
-                  </Button>
+                {PERIODS.map((p) => (
+                  <Button key={p.value} size="sm" variant={period === p.value ? "default" : "ghost"} className="h-7 px-2.5 text-xs" onClick={() => setPeriod(p.value)}>{p.label}</Button>
                 ))}
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={provData ?? []} barCategoryGap={provPeriod === "dia" ? "24%" : "12%"}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="dia" interval={provXAxisInterval} className="text-xs" tick={{ fill: "hsl(215, 16%, 47%)", fontSize: 11 }} />
-                <YAxis className="text-xs" tick={{ fill: "hsl(215, 16%, 47%)", fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="Concessão" stackId="processamentos" fill="hsl(142, 71%, 45%)" radius={[0, 0, 3, 3]} />
-                <Bar dataKey="Revogação" stackId="processamentos" fill="hsl(0, 84%, 60%)" />
-                <Bar dataKey="Outros" stackId="processamentos" fill="hsl(199, 89%, 48%)" radius={[3, 3, 0, 0]} />
-              </BarChart>
+            <ResponsiveContainer width="100%" height={260}>
+              <AreaChart data={chartData} margin={{ left: -16, right: 8, top: 8 }}>
+                <defs>
+                  {[["g1", C.success], ["g2", C.destructive], ["g3", C.info], ["g4", C.warning]].map(([id, color]) => (
+                    <linearGradient key={id} id={id} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={color} stopOpacity={0.35} /><stop offset="95%" stopColor={color} stopOpacity={0} /></linearGradient>
+                  ))}
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
+                <XAxis dataKey="label" interval={tick} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip content={<ChartTooltip />} />
+                <Legend onClick={(e: Row) => toggle(String(e.dataKey))} wrapperStyle={{ fontSize: 12, cursor: "pointer" }} />
+                <Area type="monotone" dataKey="concessoes" name="Concessões" stroke={C.success} fill="url(#g1)" strokeWidth={2} hide={hidden.has("concessoes")} />
+                <Area type="monotone" dataKey="revogacoes" name="Revogações" stroke={C.destructive} fill="url(#g2)" strokeWidth={2} hide={hidden.has("revogacoes")} />
+                <Area type="monotone" dataKey="outros" name="Contas/atributos" stroke={C.info} fill="url(#g3)" strokeWidth={2} hide={hidden.has("outros")} />
+                <Area type="monotone" dataKey="falhas" name="Falhas" stroke={C.warning} fill="url(#g4)" strokeWidth={2} hide={hidden.has("falhas")} />
+              </AreaChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-3">
+        <Card data-tour="chart-requests" className="xl:col-span-2">
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Pessoas por Status</CardTitle>
-              <Link to="/colaboradores" className="text-xs text-primary hover:underline flex items-center gap-1">
-                Ver todos <ArrowUpRight className="h-3 w-3" />
-              </Link>
-            </div>
+            <CardTitle className="text-base">Movimentações de pessoas (JML)</CardTitle>
+            <p className="text-xs text-muted-foreground">{totals.joiners} entradas · {totals.movers} mudanças · {totals.leavers} saídas no período</p>
           </CardHeader>
           <CardContent>
-            <CategoryBars rows={colabsStatus ?? []} unit="colab." />
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={chartData} margin={{ left: -16, right: 8, top: 8 }} barCategoryGap={period === 7 ? "30%" : "15%"}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
+                <XAxis dataKey="label" interval={tick} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip content={<ChartTooltip />} />
+                <Legend onClick={(e: Row) => toggle(String(e.dataKey))} wrapperStyle={{ fontSize: 12, cursor: "pointer" }} />
+                <Bar dataKey="joiners" name="Joiner" stackId="jml" fill={C.success} hide={hidden.has("joiners")} />
+                <Bar dataKey="movers" name="Mover" stackId="jml" fill={C.info} hide={hidden.has("movers")} />
+                <Bar dataKey="leavers" name="Leaver" stackId="jml" fill={C.destructive} radius={[3, 3, 0, 0]} hide={hidden.has("leavers")} />
+              </BarChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
       </div>
 
-      {/* Row 3: Eventos JML + Fila por status */}
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-2 animate-content-in stagger-4">
-        <Card data-tour="chart-requests">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Movimentações de Pessoas</CardTitle>
-              <div className="flex gap-1">
-                {(["dia", "semana", "mes", "ano"] as Period[]).map(p => (
-                  <Button key={p} size="sm" variant={solicitPeriod === p ? "default" : "ghost"} className="h-7 px-2.5 text-xs" onClick={() => setSolicitPeriod(p)}>
-                    {PERIOD_LABELS[p]}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <CategoryBars rows={jmlTipo ?? []} unit="pessoas" />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Fila de Provisionamento por Status</CardTitle>
-              <Link to="/fila-provisionamento" className="text-xs text-primary hover:underline flex items-center gap-1">
-                Ver fila <ArrowUpRight className="h-3 w-3" />
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {(() => {
-              const rows = queueStatus ?? [];
-              const max = Math.max(1, ...rows.map((r) => r.value));
-              const hasAny = rows.some((r) => r.value > 0);
-              if (!hasAny) {
-                return <div className="flex h-[200px] items-center justify-center"><EmptyState message="Fila vazia" /></div>;
-              }
-              return (
-                <div className="space-y-4">
-                  {rows.map((r) => {
-                    const pct = Math.round((r.value / max) * 100);
-                    return (
-                      <Link key={r.status} to={r.href} className="block group">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-sm font-medium group-hover:text-primary transition-colors">{r.label}</span>
-                          <span className="text-xs font-semibold text-muted-foreground">{r.value}</span>
+      {/* Distribuições + governança */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
+        <BarsPanel title="Pessoas por status" rows={pessoasRows} />
+        <BarsPanel title="Fila por status" rows={filaRows} />
+        <Card className="h-full">
+          <CardHeader className="pb-2"><CardTitle className="text-base">Ações dos últimos 7 dias</CardTitle></CardHeader>
+          <CardContent className="p-0">
+            {acoes.length === 0 ? <div className="py-8"><EmptyState message="Sem ações no período" /></div> : (
+              <ul className="divide-y">
+                {acoes.map((a) => {
+                  const okPct = a.total > 0 ? Math.round((a.sucesso / a.total) * 100) : 0;
+                  return (
+                    <li key={a.acao} className="px-4 py-2">
+                      <Link to={`/fila-provisionamento?action=${a.acao}`} className="block">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="truncate">{QUEUE_ACTION_LABELS[a.acao] || a.acao}</span>
+                          <span className="text-xs text-muted-foreground tabular-nums"><span className="font-semibold text-foreground">{a.total}</span>{a.falha > 0 ? <span className="text-destructive"> · {a.falha} falha(s)</span> : null}</span>
                         </div>
-                        <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-                          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: r.color }} />
+                        <div className="mt-1 flex h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                          <div className="h-full bg-success" style={{ width: `${okPct}%` }} />
+                          <div className="h-full bg-destructive" style={{ width: `${a.total > 0 ? Math.round((a.falha / a.total) * 100) : 0}%` }} />
                         </div>
                       </Link>
-                    );
-                  })}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {falhas.length > 0 && (
+              <div className="border-t px-4 py-3">
+                <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Falhas em aberto por causa</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {falhas.map((f) => (
+                    <Link key={f.codigo} to="/fila-provisionamento?status=failed">
+                      <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive">{f.codigo} · {f.total}</Badge>
+                    </Link>
+                  ))}
                 </div>
-              );
-            })()}
+              </div>
+            )}
           </CardContent>
         </Card>
+        <GovernanceList m={m} loading={isLoading} />
       </div>
 
-
-      {/* Row 4: Activity timeline */}
+      {/* Atividade recente — tudo o que aconteceu com pessoas e acessos (auditoria + fila + JML), em tempo real */}
       <Card data-tour="timeline" className="animate-content-in stagger-5">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Atividade Recente</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {(activity ?? []).length > 0 ? (
-            <div className="space-y-0">
-              {(activity ?? []).map((item, idx) => (
-                <Link
-                  key={item.id + item.type}
-                  to={item.link}
-                  className="flex items-center gap-4 py-3 px-2 -mx-2 rounded-md hover:bg-muted/50 transition-colors group"
-                  style={{ borderBottom: idx < (activity?.length ?? 0) - 1 ? "1px solid hsl(214, 32%, 91%)" : "none" }}
-                >
-                  <StatusIcon status={item.status} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">
-                      {item.label}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground">
-                      {item.sublabel} · {new Date(item.date).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
-                    </p>
-                  </div>
-                  <Badge variant="outline" className="text-[10px] uppercase shrink-0">
-                    {STATUS_MAP[item.status]?.label || item.status}
-                  </Badge>
-                </Link>
-              ))}
+          <div className="flex items-center justify-between">
+            <div><CardTitle className="text-base">Atividade recente</CardTitle><p className="text-xs text-muted-foreground">Criações, alterações, exclusões, atribuições e execuções — colaboradores e terceiros</p></div>
+            <div className="flex gap-3 text-xs">
+              <Link to="/fila-provisionamento" className="text-primary hover:underline">Fila</Link>
+              <Link to="/eventos-jml" className="text-primary hover:underline">Eventos JML</Link>
+              <Link to="/auditoria" className="text-primary hover:underline">Auditoria</Link>
             </div>
-          ) : (
-            <EmptyState message="Nenhuma atividade recente" size="lg" />
-          )}
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <ActivityFeed limit={15} />
         </CardContent>
       </Card>
       <OnboardingTour pageKey="dashboard" steps={tourSteps.dashboard} />
     </div>
   );
 }
+

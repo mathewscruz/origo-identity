@@ -11,7 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Link } from "react-router-dom";
 import ColaboradorActivityPopover from "@/components/ColaboradorActivityPopover";
-import { useColaboradores, useEmpresas, useAreas, useCargos, useLocalidades, useEntraGrupos, useEntraLicencas, useAplicacoes } from "@/hooks/useOrigoData";
+import { useColaboradores, useEmpresas, useAreas, useCargos, useLocalidades, useEntraGrupos, useEntraLicencas, useAplicacoes, useParametro } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
 import TablePagination, { usePagination } from "@/components/TablePagination";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -20,25 +20,18 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { provisionCargoAcessos } from "@/lib/provisionCargoAcessos";
-import { createEventoJML } from "@/lib/createEventoJML";
-import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
-import { logAuditoria, logAlerta } from "@/lib/auditLogger";
 import { handleStatusChange } from "@/lib/colaboradorLifecycle";
+import { generateEntraQueueForDiff } from "@/lib/entraQueueHelper";
+import PageHeader from "@/components/PageHeader";
+import { COLAB_STATUS_META } from "@/lib/queueLabels";
 import EmptyState from "@/components/EmptyState";
 import SortableHeader, { SortDirection, useSortableData } from "@/components/SortableHeader";
 import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
 import { formatAreaName } from "@/lib/formatters";
-import { authedFetch } from "@/lib/authedFetch";
+import { humanize } from "@/lib/labels";
 
-const statusConfig: Record<string, { label: string; class: string }> = {
-  ativo: { label: "Ativo", class: "bg-success/15 text-success border-success/30" },
-  inativo: { label: "Inativo", class: "bg-muted text-muted-foreground" },
-  ferias: { label: "Férias", class: "bg-info/15 text-info border-info/30" },
-  afastado: { label: "Afastado", class: "bg-warning/15 text-warning border-warning/30" },
-  desligado: { label: "Desligado", class: "bg-destructive/15 text-destructive border-destructive/30" },
-};
+const statusConfig = Object.fromEntries(Object.entries(COLAB_STATUS_META).map(([k, v]) => [k, { label: v.label, class: v.className }]));
 
 const statusOptions = [
   { value: "ativo", label: "Ativo" },
@@ -60,18 +53,20 @@ interface ColabForm {
   cargo_id: string;
   localidade_id: string;
   data_admissao: string;
+  gestor_id: string;
+  motivo: string;
 }
 
 const emptyForm: ColabForm = {
   nome: "", email: "", cpf: "", matricula: "", sam_account_name: "", status: "ativo",
-  empresa_id: "", area_id: "", cargo_id: "", localidade_id: "", data_admissao: "",
+  empresa_id: "", area_id: "", cargo_id: "", localidade_id: "", data_admissao: "", gestor_id: "", motivo: "",
 };
 
 export default function ColaboradoresPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [busca, setBusca] = useState("");
-  const [statusFilter, setStatusFilter] = useState("todos");
+  const [busca, setBusca] = useState(searchParams.get("q") || "");
+  const [statusFilter, setStatusFilter] = useState(searchParams.get("status") || "todos");
   const [cargoFilter, setCargoFilter] = useState("todos");
   const [areaFilter, setAreaFilter] = useState("todos");
   const [page, setPage] = useState(1);
@@ -91,6 +86,8 @@ export default function ColaboradoresPage() {
   const [syncing, setSyncing] = useState(false);
 
   const { data: colaboradores, isLoading } = useColaboradores();
+  const { data: gestores } = useColaboradores();
+  const emailDominio = useParametro("csv_email_dominio", "origoenergia.com.br");
   const { data: empresas } = useEmpresas();
   const { data: areas } = useAreas();
   const { data: cargos } = useCargos();
@@ -116,14 +113,39 @@ export default function ColaboradoresPage() {
     const first = parts[0];
     const last = parts.length > 1 ? parts[parts.length - 1] : first;
     const sam = `${first}.${last}`;
-    const email = `${sam}@origoenergia.com.br`;
+    const email = `${sam}@${emailDominio}`;
     setForm(prev => ({ ...prev, email, sam_account_name: sam }));
-  }, [form.nome, editingId]);
+  }, [form.nome, editingId, emailDominio]);
+
+  // ?edit=<id> vindo da página de detalhe abre o formulário já preenchido
+  useEffect(() => {
+    const editId = searchParams.get("edit");
+    if (!editId || !colaboradores) return;
+    const c = (colaboradores as any[]).find((x) => x.id === editId);
+    if (c) {
+      openEdit({
+        id: c.id, nome: c.nome, email: c.email || "", cpf_raw: c.cpf || "", matricula: c.matricula || "", sam_account_name: c.sam_account_name || "",
+        status: c.status, empresa_id: c.empresa_id || "", area_id: c.area_id || "", cargo_id: c.cargo_id || "", localidade_id: c.localidade_id || "",
+        data_admissao: c.data_admissao || "", origem: c.origem || "manual", gestor_id: c.gestor_id || "",
+      } as any);
+      const next = new URLSearchParams(searchParams); next.delete("edit"); setSearchParams(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, colaboradores]);
+
+  // ?new=1 (paleta de comandos) abre o formulário de novo colaborador
+  useEffect(() => {
+    if (searchParams.get("new") !== "1") return;
+    openNew();
+    const next = new URLSearchParams(searchParams); next.delete("new"); setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // Quick-assign individual resource state
   const [quickAssignColab, setQuickAssignColab] = useState<any>(null);
   const [quickAssignType, setQuickAssignType] = useState<"grupo" | "licenca" | "app" | null>(null);
   const [quickAssignValue, setQuickAssignValue] = useState("");
+  const [savingQuick, setSavingQuick] = useState(false);
 
   const mapped = (colaboradores ?? []).map((c: any) => ({
     id: c.id,
@@ -142,6 +164,8 @@ export default function ColaboradoresPage() {
     data_admissao: c.data_admissao || "",
     status: c.status,
     origem: c.origem || "manual",
+    gestor_id: c.gestor_id || "",
+    entra_id: c.entra_id || null,
   }));
 
   const filtered = mapped.filter((c) => {
@@ -178,274 +202,74 @@ export default function ColaboradoresPage() {
       sam_account_name: c.sam_account_name || "",
       status: c.status, empresa_id: c.empresa_id, area_id: c.area_id,
       cargo_id: c.cargo_id, localidade_id: c.localidade_id, data_admissao: c.data_admissao,
+      gestor_id: (c as any).gestor_id || "", motivo: "",
     });
     setDialogOpen(true);
   }
 
-  // Helper to look up names for payload
-  function getNameById(list: any[] | undefined, id: string) {
-    return list?.find((i: any) => i.id === id)?.nome || "";
-  }
-
+  // Criação/edição rodam no banco (RPC colaborador_salvar): conta AD, perfis do cargo,
+  // atributos no diretório, mudança de status e eventos JML numa única transação.
+  // O agente é quem executa; nada de senha nem de item da fila montado aqui.
   async function handleSave() {
     if (!form.nome.trim()) { toast({ title: "Nome é obrigatório", variant: "destructive" }); return; }
+    const statusChanged = !!editingId && form.status !== editingStatus;
+    if (statusChanged && form.status === "desligado" && form.motivo.trim().length < 5) {
+      toast({ title: "Informe o motivo do desligamento", variant: "destructive" }); return;
+    }
     setSaving(true);
-    const payload: any = {
-      nome: form.nome.trim(),
-      email: form.email.trim() || null,
-      cpf: form.cpf.trim() || null,
-      matricula: form.matricula.trim() || null,
-      sam_account_name: form.sam_account_name.trim() || null,
-      status: form.status as any,
-      empresa_id: form.empresa_id || null,
-      area_id: form.area_id || null,
-      cargo_id: form.cargo_id || null,
-      localidade_id: form.localidade_id || null,
-      data_admissao: form.data_admissao || null,
-      origem: "manual",
-    };
-
-    let colaboradorId = editingId;
-    let error;
-
-    if (editingId) {
-      ({ error } = await supabase.from("colaboradores").update(payload).eq("id", editingId));
-    } else {
-      const res = await supabase.from("colaboradores").insert(payload).select("id").single();
-      error = res.error;
-      colaboradorId = res.data?.id || null;
-    }
-    
-    if (error) { setSaving(false); toast({ title: "Erro ao salvar", description: error.message, variant: "destructive" }); return; }
-
-    // --- Lifecycle only for manual collaborators ---
-    const isManual = !editingId || editingOrigem === "manual";
-    
-    if (isManual && colaboradorId) {
-      const cargoChanged = form.cargo_id !== (editingCargoId || "");
-      const areaChanged = form.area_id !== (editingAreaId || "");
-      const statusChanged = editingId ? form.status !== editingStatus : false;
-      const becameInactive = statusChanged && editingStatus === "ativo" && form.status !== "ativo";
-      const becameActive = statusChanged && editingStatus !== "ativo" && form.status === "ativo";
-
-      // 1. Provision cargo access profiles.
-      //    For NEW manual users, grupos/licenças/apps are deferred until the AD account
-      //    replicates to Entra ID (see audit 'aguardar_replicacao_entra' abaixo).
-      //    Somente rodamos provisionamento aqui para mudanças de cargo em usuários já existentes.
-      if (editingId && cargoChanged && !becameInactive) {
-        const result = await provisionCargoAcessos(colaboradorId, form.cargo_id || null, editingCargoId || null);
-        if (result.skippedDirectory) {
-          toast({ title: "⚠️ Provisionamento de diretório ignorado", description: "O campo 'Nome de login AD' está vazio. Grupos e licenças não serão atribuídos no Entra ID.", variant: "destructive" });
-        }
-        if (result.provisioned > 0 || result.revoked > 0) {
-          toast({ title: `Acessos atualizados: ${result.provisioned} concedido(s), ${result.revoked} revogado(s)` });
-        }
-      }
-
-      // 2. Handle status changes via unified lifecycle helper
-      if (becameInactive || becameActive) {
-        const lifecycleResult = await handleStatusChange({
-          colab: {
-            id: colaboradorId,
-            nome: form.nome.trim(),
-            email: form.email.trim() || null,
-            sam_account_name: form.sam_account_name.trim() || null,
-            cargo_id: form.cargo_id || null,
-            gestor_id: null,
-            origem: editingOrigem || "manual",
-          },
-          oldStatus: editingStatus || "ativo",
-          newStatus: form.status,
-          operadorEmail: profile?.email || null,
-          operadorNome: profile?.nome || null,
-          skipStatusUpdate: true, // parent save already updated the status
-        });
-
-        if (!lifecycleResult.success) {
-          toast({ title: "Erro no ciclo de vida", description: lifecycleResult.error, variant: "destructive" });
-          setSaving(false);
-          return;
-        }
-
-        if (becameInactive) {
-          toast({ title: "Solicitação de desativação enviada para processamento" });
-        } else {
-          toast({ title: "Solicitação de reativação enviada para processamento" });
-        }
-      }
-
-      // 3. Queue create request for new collaborators — AD FIRST ONLY.
-      //    We do NOT provision grupos/licenças/apps agora nem importamos acessos do Entra ID:
-      //    o usuário precisa ser criado no AD e replicar para o Entra ID primeiro.
-      //    Quando ele aparecer no próximo CSV do SharePoint, o sync-sharepoint-csv linka
-      //    pelo CPF/e-mail/SAM/matrícula (sem duplicar) e dispara a atribuição dos acessos.
-      if (!editingId && form.status === "ativo") {
-        const nameParts = form.nome.trim().split(" ");
-        const givenName = nameParts[0] || "";
-        const surname = nameParts.slice(1).join(" ") || givenName;
-        const sam = form.sam_account_name.trim();
-
-        await supabase.from("iam_queue" as any).insert({
-          action_type: "create",
-          payload_json: {
-            givenName,
-            surname,
-            displayName: form.nome.trim(),
-            samAccountName: sam,
-            userPrincipalName: `${sam}@ebessolar.local`,
-            mail: form.email.trim() || null,
-            department: getNameById(areas, form.area_id),
-            title: getNameById(cargos, form.cargo_id),
-            manager: null,
-            company: getNameById(empresas, form.empresa_id),
-            telephoneNumber: null,
-            ouPath: "",
-            password: "Origo@2026er",
-            changePasswordAtLogon: true,
-            target_directory: "ad_only",
-            defer_entra_provisioning: true,
-          },
-          requested_by: profile?.email || "sistema",
-          colaborador_id: colaboradorId,
-          target_identity: sam || null,
-        });
-        toast({ title: "Solicitação enviada: usuário será criado no AD e aguardará replicação para o Entra ID" });
-
-        // Auditoria — aguardando replicação AD → Entra ID
-        await logAuditoria({
-          acao: "aguardar_replicacao_entra",
-          entidade: "colaboradores",
-          entidade_id: colaboradorId,
-          resumo: `Novo colaborador ${form.nome.trim()} criado no AD; grupos/licenças/apps ficam pendentes até replicação para o Entra ID e vínculo pelo RH/SharePoint`,
-          operador: profile?.email || "sistema",
-          detalhes: {
-            samAccountName: sam || null,
-            email: form.email.trim() || null,
-            cargo: getNameById(cargos, form.cargo_id),
-            area: getNameById(areas, form.area_id),
-            empresa: getNameById(empresas, form.empresa_id),
-            deferred: ["grupos", "licencas", "apps"],
-            link_strategy: ["cpf", "email", "sam_account_name", "matricula"],
-          },
-        });
-      }
-
-
-      // 4. Queue update for edits (cargo/area change)
-      if (editingId && (cargoChanged || areaChanged) && !becameInactive && !becameActive) {
-        const sam = form.sam_account_name.trim();
-        const changedFieldsList: string[] = [];
-        const newValues: Record<string, string> = {};
-        if (cargoChanged) { changedFieldsList.push("title"); newValues.title = getNameById(cargos, form.cargo_id); }
-        if (areaChanged) { changedFieldsList.push("department"); newValues.department = getNameById(areas, form.area_id); }
-
-        await supabase.from("iam_queue" as any).insert({
-          action_type: "update",
-          payload_json: {
-            samAccountName: sam,
-            mail: form.email.trim() || null,
-            displayName: form.nome.trim(),
-            status: "enabled",
-            changed_fields: changedFieldsList,
-            new_values: newValues,
-          },
-          requested_by: profile?.email || "sistema",
-          colaborador_id: colaboradorId,
-          target_identity: sam || null,
-        });
-        // Also update Entra ID simultaneously
-        const entraIdentityUpdate = form.email.trim() || sam;
-        if (entraIdentityUpdate) {
-          await supabase.from("iam_queue" as any).insert({
-            action_type: "update_entra",
-            payload_json: {
-              mail: form.email.trim() || null,
-              samAccountName: sam,
-              displayName: form.nome.trim(),
-              department: newValues.department || null,
-              jobTitle: newValues.title || null,
-              companyName: getNameById(empresas, form.empresa_id) || null,
-            },
-            requested_by: profile?.email || "sistema",
-            colaborador_id: colaboradorId,
-            target_identity: entraIdentityUpdate,
-          });
-        }
-        toast({ title: "Solicitação de atualização enviada para processamento" });
-      }
-
-      // 5. Generate JML events (only for non-status-change scenarios; status changes are handled by lifecycle helper)
-      if (!editingId) {
-        await createEventoJML({
-          colaboradorId,
-          colaboradorNome: form.nome.trim(),
-          tipo: "joiner",
-          dadosDepois: { cargo_id: form.cargo_id, area_id: form.area_id, status: form.status },
-        });
-      } else if (!becameInactive && !becameActive && (cargoChanged || areaChanged)) {
-        await createEventoJML({
-          colaboradorId,
-          colaboradorNome: form.nome.trim(),
-          tipo: "mover",
-          dadosAntes: { cargo_id: editingCargoId, area_id: editingAreaId },
-          dadosDepois: { cargo_id: form.cargo_id, area_id: form.area_id },
-        });
-      }
-    } else if (colaboradorId) {
-      // Non-manual: keep existing cargo provisioning only
-      const cargoChanged = form.cargo_id !== (editingCargoId || "");
-      if (cargoChanged || !editingId) {
-        const result = await provisionCargoAcessos(colaboradorId, form.cargo_id || null, editingCargoId || null);
-        if (result.provisioned > 0 || result.revoked > 0) {
-          toast({ title: `Acessos atualizados: ${result.provisioned} concedido(s), ${result.revoked} revogado(s)` });
-        }
-      }
-    }
-
+    const { data, error } = await supabase.rpc("colaborador_salvar", {
+      p_id: editingId,
+      p_dados: {
+        nome: form.nome.trim(), email: form.email.trim() || null, cpf: form.cpf.trim() || null, matricula: form.matricula.trim() || null,
+        sam_account_name: form.sam_account_name.trim() || null, status: form.status, empresa_id: form.empresa_id || null, area_id: form.area_id || null,
+        cargo_id: form.cargo_id || null, localidade_id: form.localidade_id || null, gestor_id: form.gestor_id || null,
+        data_admissao: form.data_admissao || null, motivo: form.motivo.trim() || null,
+      },
+      p_operador: profile?.email || null,
+    });
     setSaving(false);
-    const action = editingId ? "editar_colaborador" : "criar_colaborador";
-    await logAuditoria({ acao: action, entidade: "colaboradores", entidade_id: colaboradorId || undefined, resumo: `${action === "criar_colaborador" ? "Criado" : "Editado"}: ${form.nome}`, operador: profile?.email });
-    toast({ title: editingId ? "Colaborador atualizado" : "Colaborador criado" });
-    queryClient.invalidateQueries({ queryKey: ["colaboradores"] });
-    queryClient.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
-    queryClient.invalidateQueries({ queryKey: ["eventos_jml"] });
+    const r = (data ?? {}) as Record<string, any>;
+    if (error || r.ok === false) {
+      toast({ title: "Não foi possível salvar", description: error?.message || r.error, variant: "destructive" });
+      return;
+    }
+    const parts: string[] = [];
+    if (r.conta_enfileirada) parts.push("criação da conta AD enfileirada para o agente");
+    if (r.acessos_cargo) parts.push(`${r.acessos_cargo} acesso(s) do cargo enfileirado(s)`);
+    if (r.mover) parts.push(`mudança de cargo: ${r.mover.queued_assign ?? 0} concessão(ões), ${r.mover.queued_remove ?? 0} remoção(ões)`);
+    if (r.atributos_enfileirados) parts.push("atualização de atributos no diretório enfileirada");
+    if (r.status?.remocoes_enfileiradas) parts.push(`${r.status.remocoes_enfileiradas} remoção(ões) de acesso`);
+    if (r.status?.restaurados) parts.push(`${r.status.restaurados} acesso(s) restaurado(s) (aguardando aprovação)`);
+    toast({ title: editingId ? "Colaborador atualizado" : "Colaborador criado", description: parts.length ? parts.join(" · ") : undefined });
     setDialogOpen(false);
-
-    // Auto-process Entra ID queue
-    triggerEntraProcessing();
   }
 
   async function handleDelete() {
     if (!deleteId) return;
     const deletingColab = mapped.find(c => c.id === deleteId);
-    
-    // Queue delete request
-    if (deletingColab) {
-      const sam = deletingColab.sam_account_name || "";
-      await supabase.from("iam_queue" as any).insert({
-        action_type: "delete",
-        payload_json: {
-          samAccountName: sam,
-          mail: deletingColab.email || null,
-          displayName: deletingColab.nome,
-          status: "disabled",
-          motivo: "Exclusão do sistema",
-          data_solicitacao: new Date().toISOString(),
-        },
-        requested_by: profile?.email || "sistema",
-        colaborador_id: deleteId,
-        target_identity: sam || null,
-      });
-    }
-
-    const { error } = await supabase.from("colaboradores").delete().eq("id", deleteId);
-    if (error) { toast({ title: "Erro ao excluir", description: error.message, variant: "destructive" }); return; }
-    await logAuditoria({ acao: "excluir_colaborador", entidade: "colaboradores", entidade_id: deleteId, resumo: `Excluído: ${deletingColab?.nome}`, operador: profile?.email });
-    await logAlerta({ titulo: "Colaborador excluído", mensagem: `${deletingColab?.nome} foi removido do sistema`, severidade: "aviso", tipo: "colaborador_excluido" });
-    toast({ title: "Solicitação de exclusão enviada para processamento" });
+    // Identidades nunca são apagadas (auditoria/recertificação): "excluir" é um desligamento
+    // formal — desabilita AD/Entra, revoga perfis e enfileira a remoção dos acessos.
+    // (Exclusão de conta/mailbox fica fora do IAM, por política.)
+    const result = await handleStatusChange({
+      colab: {
+        id: deleteId,
+        nome: deletingColab?.nome || "",
+        email: deletingColab?.email || null,
+        sam_account_name: deletingColab?.sam_account_name || null,
+        cargo_id: deletingColab?.cargo_id || null,
+        gestor_id: (deletingColab as any)?.gestor_id || null,
+        origem: (deletingColab as any)?.origem || null,
+      },
+      oldStatus: deletingColab?.status || "ativo",
+      newStatus: "desligado",
+      operadorEmail: profile?.email || null,
+      operadorNome: profile?.nome || null,
+      motivo: "Exclusão solicitada na ferramenta",
+    });
+    if (!result.success) { toast({ title: "Não foi possível desligar", description: result.error, variant: "destructive" }); return; }
+    toast({ title: "Colaborador desligado", description: `${deletingColab?.nome}: contas desabilitadas e ${result.remocoes_enfileiradas ?? 0} remoção(ões) de acesso enfileirada(s). O registro é mantido para auditoria.` });
     queryClient.invalidateQueries({ queryKey: ["colaboradores"] });
     setDeleteId(null);
-    triggerEntraProcessing();
   }
   async function handleSyncAll() {
     const eligible = (colaboradores || []).filter(
@@ -480,12 +304,10 @@ export default function ColaboradoresPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Colaboradores</h1>
-          <p className="text-sm text-muted-foreground">Gestão de funcionários internos</p>
-        </div>
-        <div data-tour="actions" className="flex flex-wrap gap-2">
+      <PageHeader
+        title="Colaboradores"
+        description={`${mapped.filter((c) => c.status === "ativo").length} ativos · ${mapped.length} no total · origem RH (SharePoint) ou cadastro manual`}
+        actions={<div data-tour="actions" className="flex flex-wrap gap-2">
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -498,15 +320,15 @@ export default function ColaboradoresPage() {
           </TooltipProvider>
           <Button variant="outline" onClick={() => navigate("/configuracoes/integracoes")}><Upload className="mr-1 h-4 w-4" />Importar Base</Button>
           <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Colaborador</Button>
-        </div>
-      </div>
+        </div>}
+      />
 
       <div data-tour="search-filter" className="flex flex-wrap gap-2">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Buscar nome ou email..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
         </div>
-        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
+        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); const n = new URLSearchParams(searchParams); if (v === "todos") n.delete("status"); else n.set("status", v); setSearchParams(n, { replace: true }); }}>
           <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="todos">Todos status</SelectItem>
@@ -581,11 +403,11 @@ export default function ColaboradoresPage() {
                           c.origem === "csv" ? "bg-primary/10 text-primary border-primary/30" :
                           c.origem === "entra_id" ? "bg-info/10 text-info border-info/30" :
                           "bg-muted text-muted-foreground"
-                        }>{c.origem === "csv" ? "CSV" : c.origem === "entra_id" ? "Entra ID" : c.origem === "manual" ? "Manual" : c.origem}</Badge>
+                        }>{humanize(c.origem)}</Badge>
                       </td>
                       <td className="p-4">
                         <Badge variant="outline" className={statusConfig[c.status]?.class || ""}>
-                          {statusConfig[c.status]?.label || c.status}
+                          {statusConfig[c.status]?.label || humanize(c.status)}
                         </Badge>
                       </td>
                       <td className="p-4">
@@ -614,9 +436,11 @@ export default function ColaboradoresPage() {
                                 <Monitor className="mr-2 h-4 w-4" />Adicionar App
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId(c.id)}>
-                                <Trash2 className="mr-2 h-4 w-4" />Excluir
-                              </DropdownMenuItem>
+                              {c.status !== "desligado" && (
+                                <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId(c.id)}>
+                                  <Trash2 className="mr-2 h-4 w-4" />Desligar
+                                </DropdownMenuItem>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
@@ -647,7 +471,7 @@ export default function ColaboradoresPage() {
             </div>
             <div>
               <Label>Email</Label>
-              <Input type="email" value={form.email} readOnly disabled className="bg-muted cursor-not-allowed" />
+              <Input type="email" value={form.email} readOnly={!editingId} disabled={!editingId} className={!editingId ? "bg-muted cursor-not-allowed" : ""} onChange={(e) => setForm({ ...form, email: e.target.value })} />
             </div>
             <div>
               <Label>CPF</Label>
@@ -710,6 +534,25 @@ export default function ColaboradoresPage() {
               <Label>Data Admissão</Label>
               <Input type="date" value={form.data_admissao} onChange={(e) => setForm({ ...form, data_admissao: e.target.value })} />
             </div>
+            <div className="col-span-2">
+              <Label>Gestor direto</Label>
+              <Select value={form.gestor_id || "__none__"} onValueChange={(v) => setForm({ ...form, gestor_id: v === "__none__" ? "" : v })}>
+                <SelectTrigger><SelectValue placeholder="Sem gestor" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Sem gestor</SelectItem>
+                  {(gestores ?? []).filter((g: any) => g.id !== editingId && g.status === "ativo").map((g: any) => <SelectItem key={g.id} value={g.id}>{g.nome}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            {editingId && form.status !== editingStatus && (
+              <div className="col-span-2 rounded-md border border-warning/30 bg-warning/5 p-3">
+                <Label>Motivo da mudança de status {form.status === "desligado" ? "(obrigatório)" : ""}</Label>
+                <Input value={form.motivo} onChange={(e) => setForm({ ...form, motivo: e.target.value })} placeholder="Ex.: desligamento confirmado pelo RH em 17/09" />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {form.status === "desligado" || form.status === "inativo" ? "Contas serão desabilitadas e os acessos removidos pelo agente." : form.status === "ativo" ? "A reabilitação entra na fila aguardando aprovação." : "Férias/afastamento desabilitam a conta temporariamente."}
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
@@ -722,12 +565,12 @@ export default function ColaboradoresPage() {
       <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir colaborador?</AlertDialogTitle>
-            <AlertDialogDescription>Esta ação não pode ser desfeita. Todos os acessos e dados vinculados serão removidos. Uma solicitação de exclusão será enviada para o agente de provisionamento.</AlertDialogDescription>
+            <AlertDialogTitle>Desligar colaborador?</AlertDialogTitle>
+            <AlertDialogDescription>Identidades nunca são apagadas (auditoria e recertificação). O colaborador será marcado como desligado: contas desabilitadas e acessos removidos pelo Órigo Agente. O histórico é mantido.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Excluir</AlertDialogAction>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Desligar</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -756,47 +599,22 @@ export default function ColaboradoresPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setQuickAssignType(null); setQuickAssignColab(null); }}>Cancelar</Button>
-            <Button disabled={!quickAssignValue} onClick={async () => {
+            <Button disabled={!quickAssignValue || savingQuick} onClick={async () => {
               if (!quickAssignColab || !quickAssignValue || !quickAssignType) return;
               const colab = quickAssignColab;
-              const identity = colab.email || colab.sam_account_name || "";
-              if (!identity) { toast({ title: "Colaborador sem email ou login AD", variant: "destructive" }); return; }
-
-              let actionType = "";
-              let payloadJson: any = { displayName: colab.nome, mail: colab.email || "" };
-
-              if (quickAssignType === "grupo") {
-                const grp = (entraGrupos ?? []).find((g: any) => g.id === quickAssignValue);
-                if (!grp) return;
-                actionType = "assign_group";
-                payloadJson = { ...payloadJson, groupId: grp.entra_id, groupName: grp.nome };
-              } else if (quickAssignType === "licenca") {
-                const lic = (entraLicencas ?? []).find((l: any) => l.id === quickAssignValue);
-                if (!lic) return;
-                actionType = "assign_license";
-                payloadJson = { ...payloadJson, skuId: lic.sku_id, licenseName: lic.nome };
-              } else {
-                const app = (aplicacoes ?? []).find((a: any) => a.id === quickAssignValue);
-                if (!app?.entra_id) { toast({ title: "Aplicação sem ID Entra", variant: "destructive" }); return; }
-                actionType = "assign_app";
-                payloadJson = { ...payloadJson, appId: app.entra_id, appName: app.nome, appRoleId: app.default_app_role_id || "00000000-0000-0000-0000-000000000000" };
-              }
-
-              const { error } = await supabase.from("iam_queue" as any).insert({
-                action_type: actionType,
-                payload_json: payloadJson,
-                target_identity: identity,
-                requested_by: "manual_individual",
-                colaborador_id: colab.id,
-                status: "pending",
-              });
-
-              if (error) { toast({ title: "Erro ao criar solicitação", description: error.message, variant: "destructive" }); return; }
-              toast({ title: `${quickAssignType === "grupo" ? "Grupo" : quickAssignType === "licenca" ? "Licença" : "App"} adicionado(a) à fila` });
-              setQuickAssignType(null);
-              setQuickAssignColab(null);
-              setQuickAssignValue("");
-              await triggerEntraProcessing(true);
+              if (!colab.email && !colab.sam_account_name) { toast({ title: "Colaborador sem email ou login AD", variant: "destructive" }); return; }
+              setSavingQuick(true);
+              try {
+                const diff = { addedGrupoIds: [] as string[], removedGrupoIds: [], addedLicencaIds: [] as string[], removedLicencaIds: [], addedAppIds: [] as string[], removedAppIds: [] };
+                if (quickAssignType === "grupo") diff.addedGrupoIds = [quickAssignValue];
+                else if (quickAssignType === "licenca") diff.addedLicencaIds = [quickAssignValue];
+                else diff.addedAppIds = [quickAssignValue];
+                const n = await generateEntraQueueForDiff([{ id: colab.id, nome: colab.nome, email: colab.email || null, sam_account_name: colab.sam_account_name || null }], diff, { requestedBy: "manual_individual", motivo: `individual:${profile?.email || "operador"}` });
+                toast({ title: n > 0 ? "Concessão enfileirada para o agente" : "Recurso já concedido (ou item já aberto)" });
+                setQuickAssignType(null); setQuickAssignColab(null); setQuickAssignValue("");
+              } catch (err: any) {
+                toast({ title: "Erro ao criar solicitação", description: err.message, variant: "destructive" });
+              } finally { setSavingQuick(false); }
             }}>Atribuir</Button>
           </DialogFooter>
         </DialogContent>

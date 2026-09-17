@@ -1,6 +1,6 @@
 import { Outlet } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
-import { Briefcase, Building2, MapPin, Network, Sliders, Cloud, FileText, Bell } from "lucide-react";
+import { Briefcase, Building2, MapPin, Network, Sliders, Cloud } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import OnboardingTour from "@/components/OnboardingTour";
@@ -13,8 +13,6 @@ const subNav = [
   { title: "Localidades", url: "/configuracoes/localidades", icon: MapPin },
   { title: "Parâmetros", url: "/configuracoes/parametros", icon: Sliders },
   { title: "Integrações", url: "/configuracoes/integracoes", icon: Cloud },
-  { title: "Auditoria", url: "/configuracoes/auditoria", icon: FileText },
-  { title: "Alertas", url: "/configuracoes/alertas", icon: Bell },
 ];
 
 export default function ConfiguracoesLayout() {
@@ -24,7 +22,7 @@ export default function ConfiguracoesLayout() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
-        <p className="text-sm text-muted-foreground">Gerenciamento de dados base do sistema</p>
+        <p className="text-sm text-muted-foreground">Dados base (cargos, áreas, empresas, localidades), parâmetros de governança e integrações. Auditoria e alertas ficam no menu Controle.</p>
       </div>
 
       {isMobile ? (

@@ -7,7 +7,7 @@ export default defineTool({
   name: "apply_migration",
   title: "Aplicar migração (DDL)",
   description:
-    "Executa comandos DDL/DML arbitrários (CREATE/ALTER TABLE, políticas RLS, funções, triggers, INSERT/UPDATE/DELETE em qualquer tabela). Requer papel admin. Sempre inclua GRANTs após CREATE TABLE em schema public, ENABLE RLS e CREATE POLICY (padrão obrigatório do projeto). Toda execução é auditada.",
+    "Executa comandos DDL/DML arbitrários (CREATE/ALTER TABLE, políticas RLS, funções, triggers, INSERT/UPDATE/DELETE em qualquer tabela). Requer papel platform_admin. Sempre inclua GRANTs após CREATE TABLE em schema public, ENABLE RLS e CREATE POLICY (padrão obrigatório do projeto). Toda execução é auditada.",
   inputSchema: {
     sql: z.string().min(1).describe("SQL DDL/DML completo. Pode conter múltiplas statements separadas por ';'."),
     description: z.string().min(3).describe("Descrição curta e clara do que a migração faz (para a auditoria)."),

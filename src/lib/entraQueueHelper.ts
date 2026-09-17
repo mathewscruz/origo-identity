@@ -1,413 +1,202 @@
 import { supabase } from "@/integrations/supabase/client";
-import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 
-interface ColabIdentity {
+/**
+ * Geração de itens da fila IAM — SEMPRE via RPCs do banco, que calculam o acesso
+ * efetivo (perfis ativos + concessões individuais): uma remoção só é enfileirada
+ * quando nenhum outro caminho ainda concede o recurso, e itens abertos duplicados
+ * são ignorados (índice único por identidade × ação × recurso).
+ */
+
+export interface ColabIdentity {
   id: string;
   nome: string;
   email: string | null;
   sam_account_name: string | null;
+  /** padrão: colaborador */
+  tipo?: "colaborador" | "terceiro";
 }
 
-// ─── Resource IDs for a profile ───────────────────────────────────
+export interface SharepointItem { siteId: string; pastaId?: string | null; permissao: string }
 
-interface PerfilResources {
-  grupoIds: string[];
-  licencaIds: string[];
-  appIds: string[];
-  sharepointItems: { siteId: string; pastaId?: string | null; permissao: string }[];
+export interface ResourceDiff {
+  addedGrupoIds: string[];
+  removedGrupoIds: string[];
+  addedLicencaIds: string[];
+  removedLicencaIds: string[];
+  addedAppIds: string[];
+  removedAppIds: string[];
+  addedSharepointItems?: SharepointItem[];
+  removedSharepointItems?: SharepointItem[];
 }
+
+export interface QueueOptions {
+  requestedBy?: string;
+  /** 'pending' (padrão; o gate global pode converter em waiting_approval) ou 'waiting_approval' */
+  status?: "pending" | "waiting_approval";
+  motivo?: string;
+  /** perfil cuja composição está sendo editada — não conta como "ainda concede" nas remoções */
+  perfilId?: string;
+}
+
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+function idsOf(identity: ColabIdentity) {
+  return identity.tipo === "terceiro"
+    ? { p_colaborador_id: null as string | null, p_terceiro_id: identity.id as string | null }
+    : { p_colaborador_id: identity.id as string | null, p_terceiro_id: null as string | null };
+}
+
+function toResourceList(grupos: string[], licencas: string[], apps: string[], sharepoint: SharepointItem[]) {
+  return [
+    ...grupos.map((id) => ({ tipo: "grupo", id })),
+    ...licencas.map((id) => ({ tipo: "licenca", id })),
+    ...apps.map((id) => ({ tipo: "app", id })),
+    ...sharepoint.map((sp) => ({ tipo: "sharepoint", id: sp.siteId, pasta_id: sp.pastaId ?? null, permissao: sp.permissao })),
+  ];
+}
+
+// ─── Core: diff de recursos → fila ───────────────────────────────────────────
 
 /**
- * Fetches all grupo/licenca/app IDs linked to a perfil via separate queries
- * (avoids nested joins that fail without FK).
- */
-export async function getPerfilResourceIds(perfilId: string): Promise<PerfilResources> {
-  const [gRes, lRes, aRes, spRes] = await Promise.all([
-    (supabase as any).from("perfil_grupos").select("grupo_id").eq("perfil_id", perfilId),
-    (supabase as any).from("perfil_licencas").select("licenca_id").eq("perfil_id", perfilId),
-    (supabase as any).from("perfil_aplicacoes").select("aplicacao_id").eq("perfil_id", perfilId),
-    (supabase as any).from("perfil_sharepoint").select("site_id, pasta_nivel1_id, pasta_nivel2_id, permissao").eq("perfil_id", perfilId),
-  ]);
-  return {
-    grupoIds: (gRes.data ?? []).map((r: any) => r.grupo_id),
-    licencaIds: (lRes.data ?? []).map((r: any) => r.licenca_id),
-    appIds: (aRes.data ?? []).map((r: any) => r.aplicacao_id),
-    sharepointItems: (spRes.data ?? []).map((r: any) => ({
-      siteId: r.site_id,
-      pastaId: r.pasta_nivel2_id || r.pasta_nivel1_id || null,
-      permissao: r.permissao || "leitura",
-    })),
-  };
-}
-
-/**
- * Merges resources from multiple profiles into a single set of unique IDs.
- */
-export async function getMergedResourcesForPerfis(perfilIds: string[]): Promise<PerfilResources> {
-  const allG = new Set<string>();
-  const allL = new Set<string>();
-  const allA = new Set<string>();
-  const allSP = new Map<string, { siteId: string; pastaId?: string | null; permissao: string }>();
-  for (const pid of perfilIds) {
-    const r = await getPerfilResourceIds(pid);
-    r.grupoIds.forEach(id => allG.add(id));
-    r.licencaIds.forEach(id => allL.add(id));
-    r.appIds.forEach(id => allA.add(id));
-    r.sharepointItems.forEach(sp => allSP.set(`${sp.siteId}:${sp.pastaId || ""}:${sp.permissao}`, sp));
-  }
-  return { grupoIds: [...allG], licencaIds: [...allL], appIds: [...allA], sharepointItems: [...allSP.values()] };
-}
-
-// ─── Core: generate iam_queue entries from a diff ─────────────────
-
-/**
- * Generates iam_queue entries for a diff of groups/licenses/apps for a set of collaborators.
- * Uses email as primary identity, sam_account_name as fallback.
+ * Enfileira um diff de grupos/licenças/apps/SharePoint para um conjunto de identidades.
+ * Remoções respeitam o acesso efetivo (outros perfis ativos e concessões individuais).
  */
 export async function generateEntraQueueForDiff(
-  colabs: ColabIdentity[],
-  diff: {
-    addedGrupoIds: string[];
-    removedGrupoIds: string[];
-    addedLicencaIds: string[];
-    removedLicencaIds: string[];
-    addedAppIds: string[];
-    removedAppIds: string[];
-    addedSharepointItems?: { siteId: string; pastaId?: string | null; permissao: string }[];
-    removedSharepointItems?: { siteId: string; pastaId?: string | null; permissao: string }[];
-  },
-  opts?: { triggerImmediately?: boolean; requestedBy?: string }
+  identities: ColabIdentity[],
+  diff: ResourceDiff,
+  opts?: QueueOptions,
 ): Promise<number> {
-  if (colabs.length === 0) return 0;
+  if (identities.length === 0) return 0;
+  const added = toResourceList(diff.addedGrupoIds, diff.addedLicencaIds, diff.addedAppIds, diff.addedSharepointItems ?? []);
+  const removed = toResourceList(diff.removedGrupoIds, diff.removedLicencaIds, diff.removedAppIds, diff.removedSharepointItems ?? []);
+  if (added.length + removed.length === 0) return 0;
 
-
-  const addedSharepointItems = diff.addedSharepointItems ?? [];
-  const removedSharepointItems = diff.removedSharepointItems ?? [];
-
-  const hasDiff =
-    diff.addedGrupoIds.length + diff.removedGrupoIds.length +
-    diff.addedLicencaIds.length + diff.removedLicencaIds.length +
-    diff.addedAppIds.length + diff.removedAppIds.length +
-    addedSharepointItems.length + removedSharepointItems.length;
-  if (hasDiff === 0) return 0;
-
-  // Fetch metadata for referenced items (separate queries, no joins)
-  const allGrupoIds = [...new Set([...diff.addedGrupoIds, ...diff.removedGrupoIds])];
-  const allLicencaIds = [...new Set([...diff.addedLicencaIds, ...diff.removedLicencaIds])];
-  const allAppIds = [...new Set([...diff.addedAppIds, ...diff.removedAppIds])];
-  const allSharepointSiteIds = [...new Set([...addedSharepointItems, ...removedSharepointItems].map(sp => sp.siteId))];
-  const allSharepointPastaIds = [...new Set([...addedSharepointItems, ...removedSharepointItems].map(sp => sp.pastaId).filter(Boolean) as string[])];
-
-  const [gruposRes, licencasRes, appsRes, spSitesRes, spPastasRes] = await Promise.all([
-    allGrupoIds.length > 0
-      ? (supabase as any).from("entra_grupos").select("id, entra_id, nome, on_premises_sync").in("id", allGrupoIds)
-      : { data: [] },
-    allLicencaIds.length > 0
-      ? (supabase as any).from("entra_licencas").select("id, sku_id, nome").in("id", allLicencaIds)
-      : { data: [] },
-    allAppIds.length > 0
-      ? (supabase as any).from("aplicacoes").select("id, entra_id, nome, default_app_role_id").in("id", allAppIds)
-      : { data: [] },
-    allSharepointSiteIds.length > 0
-      ? (supabase as any).from("sharepoint_sites").select("id, site_id, nome, url").in("id", allSharepointSiteIds)
-      : { data: [] },
-    allSharepointPastaIds.length > 0
-      ? (supabase as any).from("sharepoint_pastas").select("id, drive_item_id, nome, caminho").in("id", allSharepointPastaIds)
-      : { data: [] },
-  ]);
-
-  const grupoMap = new Map<string, any>((gruposRes.data ?? []).map((g: any) => [g.id, g]));
-  const licencaMap = new Map<string, any>((licencasRes.data ?? []).map((l: any) => [l.id, l]));
-  const appMap = new Map<string, any>((appsRes.data ?? []).map((a: any) => [a.id, a]));
-  const spSiteMap = new Map<string, any>((spSitesRes.data ?? []).map((s: any) => [s.id, s]));
-  const spPastaMap = new Map<string, any>((spPastasRes.data ?? []).map((p: any) => [p.id, p]));
-
-  const queueEntries: any[] = [];
-
-  for (const colab of colabs) {
-    const identity = colab.email || colab.sam_account_name || "";
-    if (!identity) continue;
-
-    const base = {
-      target_identity: identity,
-      requested_by: opts?.requestedBy ?? "sistema",
-      colaborador_id: colab.id,
-      status: "pending",
-    };
-
-
-    for (const gid of diff.addedGrupoIds) {
-      const grp = grupoMap.get(gid);
-      if (!grp) continue;
-      const isOnPrem = grp.on_premises_sync || false;
-      queueEntries.push({
-        ...base,
-        action_type: "assign_group",
-        status: isOnPrem ? "failed" : "pending",
-        error_code: isOnPrem ? "on_premises_managed" : null,
-        result_message: isOnPrem ? `Grupo "${grp.nome}" é gerenciado pelo AD local` : null,
-        processed_at: isOnPrem ? new Date().toISOString() : null,
-        payload_json: { displayName: colab.nome, mail: colab.email || "", groupId: grp.entra_id, groupName: grp.nome, onPremisesSync: isOnPrem },
-      });
-    }
-
-    for (const gid of diff.removedGrupoIds) {
-      const grp = grupoMap.get(gid);
-      if (!grp) continue;
-      queueEntries.push({
-        ...base,
-        action_type: "remove_group",
-        payload_json: { displayName: colab.nome, mail: colab.email || "", groupId: grp.entra_id, groupName: grp.nome },
-      });
-    }
-
-    for (const lid of diff.addedLicencaIds) {
-      const lic = licencaMap.get(lid);
-      if (!lic) continue;
-      queueEntries.push({
-        ...base,
-        action_type: "assign_license",
-        payload_json: { displayName: colab.nome, mail: colab.email || "", skuId: lic.sku_id, licenseName: lic.nome },
-      });
-    }
-
-    for (const lid of diff.removedLicencaIds) {
-      const lic = licencaMap.get(lid);
-      if (!lic) continue;
-      queueEntries.push({
-        ...base,
-        action_type: "remove_license",
-        payload_json: { displayName: colab.nome, mail: colab.email || "", skuId: lic.sku_id, licenseName: lic.nome },
-      });
-    }
-
-    for (const aid of diff.addedAppIds) {
-      const app = appMap.get(aid);
-      if (!app?.entra_id) continue;
-      queueEntries.push({
-        ...base,
-        action_type: "assign_app",
-        payload_json: { displayName: colab.nome, mail: colab.email || "", appId: app.entra_id, appName: app.nome, appRoleId: app.default_app_role_id || "00000000-0000-0000-0000-000000000000" },
-      });
-    }
-
-    for (const aid of diff.removedAppIds) {
-      const app = appMap.get(aid);
-      if (!app?.entra_id) continue;
-      queueEntries.push({
-        ...base,
-        action_type: "remove_app",
-        payload_json: { displayName: colab.nome, mail: colab.email || "", appId: app.entra_id, appName: app.nome },
-      });
-    }
-
-    for (const sp of addedSharepointItems) {
-      const site = spSiteMap.get(sp.siteId);
-      if (!site?.site_id) continue;
-      const pasta = sp.pastaId ? spPastaMap.get(sp.pastaId) : null;
-      queueEntries.push({
-        ...base,
-        action_type: "assign_app",
-        payload_json: {
-          resourceType: "sharepoint",
-          displayName: colab.nome,
-          mail: colab.email || "",
-          siteId: site.site_id,
-          siteName: site.nome,
-          siteUrl: site.url || null,
-          driveItemId: pasta?.drive_item_id || null,
-          folderName: pasta?.nome || null,
-          folderPath: pasta?.caminho || null,
-          permission: sp.permissao || "leitura",
-        },
-      });
-    }
-
-    for (const sp of removedSharepointItems) {
-      const site = spSiteMap.get(sp.siteId);
-      if (!site?.site_id) continue;
-      const pasta = sp.pastaId ? spPastaMap.get(sp.pastaId) : null;
-      queueEntries.push({
-        ...base,
-        action_type: "remove_app",
-        payload_json: {
-          resourceType: "sharepoint",
-          displayName: colab.nome,
-          mail: colab.email || "",
-          siteId: site.site_id,
-          siteName: site.nome,
-          siteUrl: site.url || null,
-          driveItemId: pasta?.drive_item_id || null,
-          folderName: pasta?.nome || null,
-          folderPath: pasta?.caminho || null,
-          permission: sp.permissao || "leitura",
-        },
-      });
-    }
+  let total = 0;
+  for (const identity of identities) {
+    const { data, error } = await supabase.rpc("iam_enqueue_resource_diff", {
+      ...idsOf(identity),
+      p_added: added,
+      p_removed: removed,
+      p_requested_by: opts?.requestedBy ?? "sistema",
+      p_status: opts?.status ?? "pending",
+      p_motivo: opts?.motivo ?? null,
+      p_exclude_perfil_ids: opts?.perfilId ? [opts.perfilId] : [],
+      p_check_individual: true,
+    });
+    if (error) { console.error("[entraQueueHelper] iam_enqueue_resource_diff:", error.message); continue; }
+    total += Number(data ?? 0);
   }
-
-  if (queueEntries.length > 0) {
-    const { error } = await supabase.from("iam_queue" as any).insert(queueEntries);
-    if (error) console.error("[entraQueueHelper] insert error:", error);
-  }
-
-  if (opts?.triggerImmediately !== false && queueEntries.length > 0) {
-    await triggerEntraProcessing(true);
-  }
-
-  return queueEntries.length;
+  return total;
 }
 
-// ─── Discover affected collaborators ──────────────────────────────
+// ─── Discover affected collaborators ──────────────────────────────────────────
 
-/**
- * Finds all collaborators affected by a perfil change.
- * Looks in both perfil_atribuicoes (direct) AND cargo_perfis -> colaboradores (via cargo).
- */
 export async function findAffectedCollaborators(perfilId: string): Promise<ColabIdentity[]> {
-  // Source 1: direct perfil_atribuicoes
   const { data: directAssignments } = await supabase
     .from("perfil_atribuicoes")
-    .select("colaborador_id")
+    .select("colaborador_id, terceiro_id")
     .eq("perfil_id", perfilId)
     .eq("ativo", true);
 
   const directIds = (directAssignments ?? []).map((a: any) => a.colaborador_id).filter(Boolean) as string[];
+  const terceiroIds = (directAssignments ?? []).map((a: any) => a.terceiro_id).filter(Boolean) as string[];
 
-  // Source 2: cargo_perfis -> cargos -> colaboradores
-  const { data: cargoPerfis } = await (supabase as any)
-    .from("cargo_perfis")
-    .select("cargo_id")
-    .eq("perfil_id", perfilId);
-
+  const { data: cargoPerfis } = await (supabase as any).from("cargo_perfis").select("cargo_id").eq("perfil_id", perfilId);
   const cargoIds = (cargoPerfis ?? []).map((cp: any) => cp.cargo_id).filter(Boolean) as string[];
   let cargoColabIds: string[] = [];
-
   if (cargoIds.length > 0) {
-    const { data: cargoColabs } = await supabase
-      .from("colaboradores")
-      .select("id")
-      .in("cargo_id", cargoIds)
-      .in("status", ["ativo", "ferias", "afastado"]);
+    const { data: cargoColabs } = await supabase.from("colaboradores").select("id").in("cargo_id", cargoIds).in("status", ["ativo", "ferias", "afastado"]);
     cargoColabIds = (cargoColabs ?? []).map((c: any) => c.id);
   }
 
+  const out: ColabIdentity[] = [];
   const allIds = [...new Set([...directIds, ...cargoColabIds])];
-  if (allIds.length === 0) return [];
-
-  const { data: colabs } = await supabase
-    .from("colaboradores")
-    .select("id, nome, email, sam_account_name")
-    .in("id", allIds);
-
-  return (colabs ?? []).map((c: any) => ({
-    id: c.id,
-    nome: c.nome,
-    email: c.email,
-    sam_account_name: c.sam_account_name,
-  }));
+  if (allIds.length > 0) {
+    const { data: colabs } = await supabase.from("colaboradores").select("id, nome, email, sam_account_name").in("id", allIds);
+    for (const c of colabs ?? []) out.push({ id: c.id, nome: c.nome, email: c.email, sam_account_name: c.sam_account_name, tipo: "colaborador" });
+  }
+  if (terceiroIds.length > 0) {
+    const { data: tercs } = await (supabase as any).from("terceiros").select("id, nome, email, sam_account_name").in("id", [...new Set(terceiroIds)]);
+    for (const t of tercs ?? []) out.push({ id: t.id, nome: t.nome, email: t.email, sam_account_name: t.sam_account_name ?? null, tipo: "terceiro" });
+  }
+  return out;
 }
 
-// ─── High-level: queue assign/remove for entire profiles ──────────
+// ─── High-level: assign/remove de perfis inteiros ─────────────────────────────
 
-/**
- * Queues assign or remove actions for a set of complete profiles for given collaborators.
- * mode="assign" generates assign_* actions for all resources in those profiles.
- * mode="remove" generates remove_* actions.
- */
 export async function queueFullProfileActions(
-  colabs: ColabIdentity[],
+  identities: ColabIdentity[],
   perfilIds: string[],
   mode: "assign" | "remove",
-  opts?: { triggerImmediately?: boolean }
+  opts?: QueueOptions,
 ): Promise<number> {
-  if (colabs.length === 0 || perfilIds.length === 0) return 0;
-
-  const resources = await getMergedResourcesForPerfis(perfilIds);
-
-  const diff = mode === "assign"
-    ? {
-        addedGrupoIds: resources.grupoIds,
-        removedGrupoIds: [] as string[],
-        addedLicencaIds: resources.licencaIds,
-        removedLicencaIds: [] as string[],
-        addedAppIds: resources.appIds,
-        removedAppIds: [] as string[],
-        addedSharepointItems: resources.sharepointItems,
-        removedSharepointItems: [],
-      }
-    : {
-        addedGrupoIds: [] as string[],
-        removedGrupoIds: resources.grupoIds,
-        addedLicencaIds: [] as string[],
-        removedLicencaIds: resources.licencaIds,
-        addedAppIds: [] as string[],
-        removedAppIds: resources.appIds,
-        addedSharepointItems: [],
-        removedSharepointItems: resources.sharepointItems,
-      };
-
-  return generateEntraQueueForDiff(colabs, diff, opts);
+  if (identities.length === 0 || perfilIds.length === 0) return 0;
+  let total = 0;
+  for (const identity of identities) {
+    const { data, error } = await supabase.rpc("iam_enqueue_profile_actions", {
+      ...idsOf(identity),
+      p_perfil_ids: perfilIds,
+      p_mode: mode,
+      p_requested_by: opts?.requestedBy ?? "sistema",
+      p_status: opts?.status ?? "pending",
+      p_motivo: opts?.motivo ?? null,
+    });
+    if (error) { console.error("[entraQueueHelper] iam_enqueue_profile_actions:", error.message); continue; }
+    total += Number(data ?? 0);
+  }
+  return total;
 }
 
-// ─── High-level: reprovision cargo collaborators ──────────────────
+// ─── High-level: composição de um cargo mudou ─────────────────────────────────
 
 /**
- * For a cargo change: materializes perfil_atribuicoes and generates Entra queue entries.
+ * Cargo ganhou/perdeu perfis: materializa/revoga perfil_atribuicoes dos colaboradores
+ * do cargo e enfileira o delta. Remoções seguem `mover_remocao_modo`
+ * (aprovacao = waiting_approval, imediato = pending, nenhum = não remove).
  */
 export async function reprovisionCargoCollaborators(
   cargoId: string,
   addedPerfilIds: string[],
-  removedPerfilIds: string[]
+  removedPerfilIds: string[],
+  operador?: string | null,
 ): Promise<{ queued: number; materialized: number; revoked: number }> {
   const { data: colabs } = await supabase
     .from("colaboradores")
     .select("id, nome, email, sam_account_name")
     .eq("cargo_id", cargoId)
     .in("status", ["ativo", "ferias", "afastado"]);
+  const active = (colabs ?? []) as ColabIdentity[];
+  if (active.length === 0) return { queued: 0, materialized: 0, revoked: 0 };
 
-  const activeColabs = (colabs ?? []) as ColabIdentity[];
-  if (activeColabs.length === 0) return { queued: 0, materialized: 0, revoked: 0 };
+  const { data: modoParam } = await supabase.rpc("iam_param", { p_chave: "mover_remocao_modo", p_default: "aprovacao" });
+  const modo = String(modoParam ?? "aprovacao");
+  const requestedBy = operador ?? "cargo_reprovisionamento";
 
-  let materialized = 0;
-  let revoked = 0;
-  let totalQueued = 0;
-
-  // Added profiles: create perfil_atribuicoes + queue assign
-  for (const perfilId of addedPerfilIds) {
-    const inserts = activeColabs.map(c => ({
-      perfil_id: perfilId,
-      colaborador_id: c.id,
-      origem: "cargo",
-      ativo: true,
-    }));
-    const { data: inserted } = await supabase.from("perfil_atribuicoes").insert(inserts).select("id");
-    materialized += inserted?.length || 0;
+  let materialized = 0, revoked = 0, queued = 0;
+  for (const c of active) {
+    if (addedPerfilIds.length > 0) {
+      const { data: existing } = await supabase.from("perfil_atribuicoes").select("perfil_id").eq("colaborador_id", c.id).eq("ativo", true).in("perfil_id", addedPerfilIds);
+      const has = new Set((existing ?? []).map((e: any) => e.perfil_id));
+      const inserts = addedPerfilIds.filter((p) => !has.has(p)).map((perfil_id) => ({ perfil_id, colaborador_id: c.id, origem: "cargo", ativo: true }));
+      if (inserts.length > 0) {
+        const { data: ins } = await supabase.from("perfil_atribuicoes").insert(inserts).select("id");
+        materialized += ins?.length || 0;
+        queued += await queueFullProfileActions([c], inserts.map((i) => i.perfil_id), "assign", { requestedBy, motivo: "cargo_reprovisionamento" });
+      }
+    }
+    if (removedPerfilIds.length > 0) {
+      const { data: rev } = await supabase
+        .from("perfil_atribuicoes")
+        .update({ ativo: false, data_revogacao: new Date().toISOString() })
+        .eq("colaborador_id", c.id).eq("origem", "cargo").eq("ativo", true).in("perfil_id", removedPerfilIds)
+        .select("perfil_id");
+      revoked += rev?.length || 0;
+      if ((rev?.length || 0) > 0 && modo !== "nenhum") {
+        queued += await queueFullProfileActions([c], rev!.map((r: any) => r.perfil_id), "remove", { requestedBy, motivo: "cargo_reprovisionamento",
+          status: modo === "imediato" ? "pending" : "waiting_approval",
+        });
+      }
+    }
   }
-
-  if (addedPerfilIds.length > 0) {
-    const queued = await queueFullProfileActions(activeColabs, addedPerfilIds, "assign", { triggerImmediately: false });
-    totalQueued += queued;
-  }
-
-  // Removed profiles: revoke perfil_atribuicoes only (no Entra removal — additive only)
-  for (const perfilId of removedPerfilIds) {
-    const { data: revokedData } = await supabase
-      .from("perfil_atribuicoes")
-      .update({ ativo: false, data_revogacao: new Date().toISOString() })
-      .eq("perfil_id", perfilId)
-      .eq("origem", "cargo")
-      .eq("ativo", true)
-      .in("colaborador_id", activeColabs.map(c => c.id))
-      .select("id");
-    revoked += revokedData?.length || 0;
-  }
-  // Note: intentionally NOT queuing remove_* actions for removed profiles.
-  // Access is additive — only deactivation (leaver) removes Entra resources.
-
-  if (totalQueued > 0) {
-    await triggerEntraProcessing(true);
-  }
-
-  return { queued: totalQueued, materialized, revoked };
+  return { queued, materialized, revoked };
 }

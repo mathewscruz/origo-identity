@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import AppIcon from "@/components/AppIcon";
 import EmptyState from "@/components/EmptyState";
+import { humanize } from "@/lib/labels";
 
 const criticidadeColors: Record<string, string> = {
   baixa: "bg-muted text-muted-foreground",
@@ -418,7 +419,7 @@ export default function AplicacaoDetalhePage() {
               <div className="flex items-center gap-3 flex-wrap">
                 <AppIcon url={app.url} origem={app.origem} size={32} />
                 <h1 className="text-2xl font-semibold">{app.nome}</h1>
-                <Badge variant="outline" className={criticidadeColors[app.criticidade]}>{app.criticidade.charAt(0).toUpperCase() + app.criticidade.slice(1)}</Badge>
+                <Badge variant="outline" className={criticidadeColors[app.criticidade]}>{humanize(app.criticidade)}</Badge>
                 {(app as any).origem === "azure" ? (
                   <Badge variant="outline" className="bg-info/15 text-info border-info/30"><Cloud className="h-3 w-3 mr-1" />Azure SSO</Badge>
                 ) : (
@@ -429,7 +430,7 @@ export default function AplicacaoDetalhePage() {
                 </Badge>
               </div>
               <div className="flex flex-wrap gap-4 text-sm text-muted-foreground items-center">
-                {app.tipo_auth && <span><strong>Auth:</strong> {app.tipo_auth}</span>}
+                {app.tipo_auth && <span><strong>Auth:</strong> {humanize(app.tipo_auth)}</span>}
                 <div className="flex items-center gap-1">
                   <strong>Owner:</strong>
                   <Popover open={ownerOpen} onOpenChange={setOwnerOpen}>

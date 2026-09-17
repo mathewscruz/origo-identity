@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { sendEmail } from "../_shared/sendgrid.ts";
-import { requireRole } from "../_shared/auth.ts";
+import { requireRoleOrService } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,7 +8,7 @@ const corsHeaders = {
   "Content-Type": "application/json",
 };
 
-const APP_URL = "https://origo-identity.lovable.app";
+const APP_URL = (Deno.env.get("SITE_URL") || "https://origo-identity.lovable.app").replace(/\/$/, "");
 const LOGO_URL = "https://iam.origoenergia.com.br/email/logo-origo.png";
 const BRAND_COLOR = "#16968D";
 const BRAND_DARK = "#0d8276";
@@ -16,7 +16,7 @@ const BRAND_DARK = "#0d8276";
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
-  const auth = await requireRole(req, ["admin", "operador"]);
+  const auth = await requireRoleOrService(req, ["admin", "operador"]);
   if (auth instanceof Response) return auth;
 
   const supabase = createClient(
@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
 
     const { data: revisao, error: revErr } = await supabase
       .from("revisoes")
-      .select("*, aplicacoes(nome)")
+      .select("*, aplicacoes(nome), gestor:colaboradores(nome)")
       .eq("id", revisao_id)
       .single();
 
@@ -45,9 +45,13 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Owner sem e-mail configurado" }), { status: 400, headers: corsHeaders });
     }
 
-    const appName = revisao.aplicacoes?.nome || "Aplicação";
+    const isGestor = revisao.tipo === "gestor";
+    const isTerceiros = revisao.tipo === "terceiros";
+    const appName = isTerceiros ? `terceiros sob responsabilidade de ${revisao.gestor?.nome || revisao.responsavel || "você"}`
+      : isGestor ? `equipe de ${revisao.gestor?.nome || revisao.responsavel || "gestor"}` : (revisao.aplicacoes?.nome || "Aplicação");
     const reviewUrl = `${APP_URL}/revisao-externa/${revisao.token}`;
     const dataFim = revisao.data_fim ? new Date(revisao.data_fim).toLocaleDateString("pt-BR") : null;
+    const total = revisao.total_itens ?? 0;
 
     const htmlContent = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f0f4f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
@@ -58,21 +62,27 @@ Deno.serve(async (req) => {
   <tr><td style="background:linear-gradient(135deg,#1a1f2c 0%,#2d3748 100%);padding:28px 40px;text-align:center;">
     <img src="${LOGO_URL}" alt="Órigo" width="160" height="auto" style="display:block;margin:0 auto 12px;max-width:160px;" />
     <div style="width:40px;height:2px;background:${BRAND_COLOR};margin:0 auto 12px;border-radius:2px;"></div>
-    <p style="margin:0;color:#94a3b8;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;font-weight:500;">Revisão de Acesso</p>
+    <p style="margin:0;color:#94a3b8;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;font-weight:500;">${isTerceiros ? "Revalidação de Terceiros" : "Revisão de Acesso"}</p>
   </td></tr>
   <!-- Body -->
   <tr><td style="padding:36px 40px 28px;color:#1e293b;font-size:14px;line-height:1.8;">
     <p style="font-size:16px;">Olá,</p>
-    <p>Uma nova campanha de revisão de acesso foi criada para a aplicação <strong>${appName}</strong>. Como owner, você precisa revisar os acessos dos colaboradores e terceiros listados.</p>
-    ${dataFim ? `<div style="background:#fef2f2;border-left:4px solid #dc2626;border-radius:0 8px 8px 0;padding:14px 18px;color:#991b1b;font-size:13px;margin:20px 0;line-height:1.6"><strong>⏰ Prazo limite:</strong> ${dataFim}</div>` : ""}
+    <p>${isTerceiros
+      ? `Chegou a hora de revalidar os <strong>${appName}</strong>. Para cada terceiro, confirme se o acesso continua necessário (<strong>Manter</strong>) ou se deve ser encerrado (<strong>Desligar</strong>).`
+      : isGestor
+      ? `Chegou a hora de revisar os acessos da sua <strong>${appName}</strong>. Como gestor, você decide, para cada acesso, se a pessoa <strong>mantém</strong> ou <strong>perde</strong> o acesso.`
+      : `Uma nova campanha de revisão de acesso foi criada para a aplicação <strong>${appName}</strong>. Como owner, você decide quem <strong>mantém</strong> e quem <strong>perde</strong> o acesso.`}</p>
+    <p>${isTerceiros ? "Os desligamentos que você decidir são executados automaticamente pelo Órigo Agente (contas desabilitadas e acessos removidos)." : "As revogações que você decidir são executadas automaticamente pelo Órigo Agente — não há outra etapa de aprovação."}</p>
+    ${dataFim ? `<div style="background:#fef2f2;border-left:4px solid #dc2626;border-radius:0 8px 8px 0;padding:14px 18px;color:#991b1b;font-size:13px;margin:20px 0;line-height:1.6"><strong>⏰ Prazo limite:</strong> ${dataFim}${isTerceiros ? " — <strong>sem resposta até essa data, os terceiros desta lista são desativados automaticamente.</strong>" : ""}</div>` : ""}
     <table style="width:100%;border-collapse:collapse;margin:20px 0;background:#f8fafc;border-radius:10px;overflow:hidden">
-      <tr><td style="padding:14px 20px;color:#64748b;width:150px;font-size:13px;border-bottom:1px solid #e2e8f0">Aplicação</td><td style="padding:14px 20px;font-weight:600;color:#1e293b;font-size:14px;border-bottom:1px solid #e2e8f0">${appName}</td></tr>
+      <tr><td style="padding:14px 20px;color:#64748b;width:150px;font-size:13px;border-bottom:1px solid #e2e8f0">${isTerceiros || isGestor ? "Escopo" : "Aplicação"}</td><td style="padding:14px 20px;font-weight:600;color:#1e293b;font-size:14px;border-bottom:1px solid #e2e8f0">${appName}</td></tr>
+      <tr><td style="padding:14px 20px;color:#64748b;width:150px;font-size:13px;border-bottom:1px solid #e2e8f0">${isTerceiros ? "Terceiros a revalidar" : "Acessos a revisar"}</td><td style="padding:14px 20px;font-weight:600;color:#1e293b;font-size:14px;border-bottom:1px solid #e2e8f0">${total}</td></tr>
       ${dataFim ? `<tr><td style="padding:14px 20px;color:#64748b;width:150px;font-size:13px;">Prazo</td><td style="padding:14px 20px;font-weight:600;color:#dc2626;font-size:14px;">${dataFim}</td></tr>` : ""}
     </table>
   </td></tr>
   <!-- CTA -->
   <tr><td style="padding:0 40px 36px;text-align:center;">
-    <a href="${reviewUrl}" style="display:inline-block;padding:14px 40px;background-color:${BRAND_COLOR};background:linear-gradient(135deg,${BRAND_COLOR},${BRAND_DARK});color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;letter-spacing:0.3px;box-shadow:0 4px 14px rgba(22,150,141,0.3);mso-padding-alt:14px 40px;">Iniciar Revisão</a>
+    <a href="${reviewUrl}" style="display:inline-block;padding:14px 40px;background-color:${BRAND_COLOR};background:linear-gradient(135deg,${BRAND_COLOR},${BRAND_DARK});color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;letter-spacing:0.3px;box-shadow:0 4px 14px rgba(22,150,141,0.3);mso-padding-alt:14px 40px;">${isTerceiros ? "Revalidar Terceiros" : "Iniciar Revisão"}</a>
   </td></tr>
   <tr><td style="padding:0 40px 28px;">
     <p style="color:#94a3b8;font-size:12px;margin:0;text-align:center;">
@@ -92,7 +102,7 @@ Deno.serve(async (req) => {
 
     const result = await sendEmail({
       to: ownerEmail,
-      subject: `[Órigo Access & Identity] Revisão de Acesso — ${appName}`,
+      subject: `[Órigo Access & Identity] ${isTerceiros ? "Revalidação de terceiros" : "Revisão de acesso"} — ${appName}${dataFim ? ` (até ${dataFim})` : ""}`,
       htmlContent,
     });
 

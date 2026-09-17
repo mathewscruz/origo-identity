@@ -1,350 +1,146 @@
+// Recertificação e ciclo de terceiros (agendada: pg_cron 05:15 UTC; também manual/MCP).
+//   1. Campanhas de revisão por APLICAÇÃO (owner) a cada `revisao_periodicidade_dias`
+//      e por GESTOR (equipe) a cada `revisao_gestor_periodicidade_dias` — via RPC revisao_criar
+//   2. Lembretes 3 dias antes do prazo / campanhas atrasadas (alerta + e-mail, 1×/dia)
+//   3. Terceiros com contrato vencido → desligamento (RPC terceiro_alterar_status)
+//   4. Terceiros a revalidar (`terceiro_revalidacao_dias`) → campanha por responsável
+//      (RPC revisao_criar_por_responsaveis) com link externo por e-mail; sem resposta até o
+//      prazo (`terceiro_revalidacao_prazo_dias`) a campanha é concluída com "desligar" e os
+//      terceiros são desativados (contas/acessos removidos pelo agente)
+// Só lê/escreve no banco; toda execução em diretório é do Órigo Agente.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
-import { sendEmail } from "../_shared/sendgrid.ts";
-import { requireRoleOrService } from "../_shared/auth.ts";
+import { requireRoleOrService, serviceAuthHeader } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Content-Type": "application/json",
 };
 
-/**
- * auto-recertification: Checks applications that haven't been reviewed
- * in the configured period and auto-creates review campaigns.
- * 
- * Also checks for expired third-party contracts and deactivates them.
- * 
- * Triggered manually or via pg_cron.
- */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Row = any;
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
-
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   const auth = await requireRoleOrService(req, ["admin", "operador"]);
   if (auth instanceof Response) return auth;
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-  const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const sb = createClient(SUPABASE_URL, SERVICE_KEY);
+  const sb = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const SITE_URL = (Deno.env.get("SITE_URL") || "https://origo-identity.lovable.app").replace(/\/$/, "");
+  const results = { revisoes_app_criadas: 0, revisoes_gestor_criadas: 0, revalidacoes_criadas: 0, lembretes: 0, atrasadas: 0, terceiros_expirados: 0, terceiros_desativados_prazo: 0, errors: [] as string[] };
 
-
-  const results = {
-    revisoes_criadas: 0,
-    terceiros_expirados: 0,
-    terceiros_revalidados: 0,
-    errors: [] as string[],
+  const param = async (chave: string, def: number) => {
+    const { data } = await sb.from("parametros").select("valor").eq("chave", chave).maybeSingle();
+    const n = parseInt(String(data?.valor ?? ""), 10);
+    return Number.isFinite(n) ? n : def;
   };
+  const notify = (tipo: string, payload: Record<string, unknown>) =>
+    fetch(`${SUPABASE_URL}/functions/v1/send-notification-email`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: serviceAuthHeader() }, body: JSON.stringify({ tipo, payload }),
+    }).catch((e) => console.warn("[auto-recertification] notify:", e));
+  const sendReviewEmail = (revisaoId: string) =>
+    fetch(`${SUPABASE_URL}/functions/v1/send-review-email`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: serviceAuthHeader() }, body: JSON.stringify({ revisao_id: revisaoId }),
+    }).catch((e) => console.warn("[auto-recertification] review email:", e));
 
   try {
-    // ─── PART 1: Auto-Recertification ───
+    const today = new Date(); const hoje = today.toISOString().slice(0, 10);
+    const periodDays = await param("revisao_periodicidade_dias", 90);
+    const gestorDays = await param("revisao_gestor_periodicidade_dias", 180);
+    const cutoff = new Date(today.getTime() - periodDays * 86400000).toISOString();
+    const prazo = new Date(today.getTime() + 14 * 86400000).toISOString().slice(0, 10);
 
-    // Get configured period (default 90 days)
-    const { data: param } = await sb
-      .from("parametros")
-      .select("valor")
-      .eq("chave", "revisao_periodicidade_dias")
-      .single();
-    
-    const periodDays = parseInt(param?.valor || "90") || 90;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - periodDays);
-    const cutoffISO = cutoff.toISOString();
+    // ── 1a. campanhas por aplicação (owner) ──
+    const { data: apps } = await sb.from("aplicacoes").select("id, nome, owner").not("owner", "is", null).neq("owner", "");
+    for (const app of (apps || []) as Row[]) {
+      const { count } = await sb.from("revisoes").select("id", { count: "exact", head: true }).eq("aplicacao_id", app.id).gte("created_at", cutoff);
+      if ((count || 0) > 0) continue;
+      const { data: r, error } = await sb.rpc("revisao_criar", { p_tipo: "aplicacao", p_aplicacao_id: app.id, p_gestor_id: null, p_data_fim: prazo, p_nome: `Recertificação — ${app.nome}`, p_operador: "sistema" });
+      if (error || r?.ok === false) { results.errors.push(`revisão ${app.nome}: ${error?.message || r?.error}`); continue; }
+      if (r?.existente) continue;
+      if ((r?.total_itens ?? 0) === 0) { await sb.rpc("revisao_cancelar", { p_revisao_id: r.id, p_motivo: "Sem acessos para revisar" }); continue; }
+      results.revisoes_app_criadas++;
+      if (r?.owner_email) await sendReviewEmail(r.id);
+      else await sb.from("alertas").insert({ titulo: `Revisão sem responsável: ${app.nome}`, mensagem: `Não foi possível resolver o e-mail do owner "${app.owner}". Defina o owner da aplicação com e-mail para o link de revisão ser enviado.`, severidade: "aviso", tipo: "recertificacao", ref_tipo: "revisao", ref_id: r.id, ref_url: `/revisoes/${r.id}` });
+    }
 
-    // Get all applications with owners
-    const { data: apps } = await sb
-      .from("aplicacoes")
-      .select("id, nome, owner")
-      .not("owner", "is", null);
-
-    if (apps && apps.length > 0) {
-      for (const app of apps) {
-        // Check if there's a recent review for this app
-        const { data: recentReview } = await sb
-          .from("revisoes")
-          .select("id, created_at")
-          .ilike("nome", `%${app.nome}%`)
-          .gte("created_at", cutoffISO)
-          .limit(1);
-
-        if (recentReview && recentReview.length > 0) continue; // Already has recent review
-
-        // Get collaborators with active access to profiles linked to this app
-        const { data: perfilApps } = await sb
-          .from("perfil_aplicacoes")
-          .select("perfil_id")
-          .eq("aplicacao_id", app.id);
-
-        if (!perfilApps || perfilApps.length === 0) continue;
-
-        const perfilIds = perfilApps.map((pa: any) => pa.perfil_id);
-
-        const { data: atribuicoes } = await sb
-          .from("perfil_atribuicoes")
-          .select("colaborador_id, perfil_id")
-          .eq("ativo", true)
-          .in("perfil_id", perfilIds);
-
-        if (!atribuicoes || atribuicoes.length === 0) continue;
-
-        // Get colaborador names
-        const colabIds = [...new Set(atribuicoes.map((a: any) => a.colaborador_id).filter(Boolean))];
-        const colabMap = new Map<string, string>();
-        for (let i = 0; i < colabIds.length; i += 50) {
-          const { data: colabs } = await sb
-            .from("colaboradores")
-            .select("id, nome")
-            .in("id", colabIds.slice(i, i + 50));
-          colabs?.forEach((c: any) => colabMap.set(c.id, c.nome));
+    // ── 1b. campanhas por gestor (equipe) ──
+    if (gestorDays > 0) {
+      const gCutoff = new Date(today.getTime() - gestorDays * 86400000).toISOString();
+      const { count } = await sb.from("revisoes").select("id", { count: "exact", head: true }).eq("tipo", "gestor").gte("created_at", gCutoff);
+      if ((count || 0) === 0) {
+        const { data: r, error } = await sb.rpc("revisao_criar_por_gestores", { p_data_fim: prazo, p_operador: "sistema" });
+        if (error) results.errors.push(`revisões por gestor: ${error.message}`);
+        else {
+          results.revisoes_gestor_criadas = r?.criadas ?? 0;
+          for (const id of (r?.ids || []) as string[]) await sendReviewEmail(id);
         }
-
-        // Get perfil names
-        const perfilMap = new Map<string, string>();
-        const { data: perfisData } = await sb
-          .from("perfis_acesso")
-          .select("id, nome")
-          .in("id", perfilIds);
-        perfisData?.forEach((p: any) => perfilMap.set(p.id, p.nome));
-
-        // Create review
-        const hoje = new Date().toISOString().split("T")[0];
-        const dataLimite = new Date();
-        dataLimite.setDate(dataLimite.getDate() + 14); // 14 days to complete
-
-        const token = crypto.randomUUID();
-
-        // Resolve owner email from colaboradores
-        let ownerEmail: string | null = null;
-        if (app.owner) {
-          const { data: ownerColab } = await sb
-            .from("colaboradores")
-            .select("email")
-            .eq("id", app.owner)
-            .single();
-          ownerEmail = ownerColab?.email || null;
-        }
-
-        const { data: revisao, error: revError } = await sb
-          .from("revisoes")
-          .insert({
-            nome: `Recertificação — ${app.nome}`,
-            descricao: `Revisão automática de acessos à aplicação ${app.nome}. Período: ${periodDays} dias.`,
-            responsavel: app.owner,
-            status: "em_andamento",
-            data_inicio: hoje,
-            data_fim: dataLimite.toISOString().split("T")[0],
-            total_itens: atribuicoes.length,
-            itens_revisados: 0,
-            token,
-            aplicacao_id: app.id,
-            owner_email: ownerEmail,
-            tipo: "aplicacao",
-          })
-          .select("id")
-          .single();
-
-        if (revError) {
-          results.errors.push(`Erro ao criar revisão para ${app.nome}: ${revError.message}`);
-          continue;
-        }
-
-        // Create review items
-        const itens = atribuicoes.map((a: any) => ({
-          revisao_id: revisao.id,
-          colaborador_id: a.colaborador_id,
-          colaborador_nome: colabMap.get(a.colaborador_id) || "—",
-          perfil_id: a.perfil_id,
-          perfil_nome: perfilMap.get(a.perfil_id) || "—",
-        }));
-
-        const { error: itensError } = await sb.from("revisao_itens").insert(itens);
-        if (itensError) {
-          results.errors.push(`Erro ao criar itens para ${app.nome}: ${itensError.message}`);
-        }
-
-        // Create alert
-        await sb.from("alertas").insert({
-          titulo: `Recertificação automática criada: ${app.nome}`,
-          mensagem: `${atribuicoes.length} acessos para revisar. Prazo: ${dataLimite.toLocaleDateString("pt-BR")}.`,
-          severidade: "info",
-          tipo: "recertificacao",
-          ref_url: `/revisoes/${revisao.id}`,
-          ref_id: revisao.id,
-          ref_tipo: "revisao",
-        });
-
-        // Send review email to owner
-        if (ownerEmail) {
-          try {
-            const response = await fetch(`${SUPABASE_URL}/functions/v1/send-review-email`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${SERVICE_KEY}`,
-              },
-              body: JSON.stringify({ revisao_id: revisao.id }),
-            });
-            if (!response.ok) {
-              console.error(`Failed to send review email for ${app.nome}:`, await response.text());
-            }
-          } catch (emailErr) {
-            console.error(`Error sending review email for ${app.nome}:`, emailErr);
-          }
-        }
-
-        results.revisoes_criadas++;
-        console.log(`Auto-recertification created for ${app.nome}: ${atribuicoes.length} items`);
       }
     }
 
-    // ─── PART 2: Third-party Expiration ───
+    // ── 1c. revalidação de terceiros: uma campanha por responsável com terceiros vencidos ──
+    {
+      const { data: r, error } = await sb.rpc("revisao_criar_por_responsaveis", { p_data_fim: null, p_operador: "sistema", p_somente_vencidos: true });
+      if (error) results.errors.push(`revalidação de terceiros: ${error.message}`);
+      else {
+        results.revalidacoes_criadas = r?.criadas ?? 0;
+        for (const id of (r?.ids || []) as string[]) await sendReviewEmail(id);
+      }
+    }
 
-    const hoje = new Date().toISOString().split("T")[0];
-    const { data: terceirosExpirados } = await sb
-      .from("terceiros")
-      .select("id, nome, email, contrato_fim, responsavel, responsavel_colaborador_id")
-      .eq("ativo", true)
-      .not("contrato_fim", "is", null)
-      .lte("contrato_fim", hoje);
+    // ── 1d. prazo expirado em revalidação de terceiros → sem resposta = desligar ──
+    const { data: vencidasTerc } = await sb.from("revisoes").select("id, nome, owner_email, data_fim").eq("status", "em_andamento").eq("tipo", "terceiros").not("owner_email", "is", null).lt("data_fim", hoje);
+    for (const rv of (vencidasTerc || []) as Row[]) {
+      const { data: itens } = await sb.from("revisao_itens").select("colaborador_nome").eq("revisao_id", rv.id).is("decisao", null);
+      const { data: res, error } = await sb.rpc("revisao_concluir", { p_revisao_id: rv.id, p_decidido_por: "sistema", p_sem_decisao: "revogar" });
+      if (error || res?.ok === false) { results.errors.push(`prazo revalidação ${rv.nome}: ${error?.message || res?.error}`); continue; }
+      results.terceiros_desativados_prazo += Number(res?.automaticos ?? 0);
+      await notify("terceiros_desativados_prazo", { destinatario_email: rv.owner_email, revisao_nome: rv.nome, revisao_id: rv.id, prazo: new Date(rv.data_fim).toLocaleDateString("pt-BR"), mantidos: res?.mantidos ?? 0, desativados: res?.automaticos ?? 0, nomes: ((itens || []) as Row[]).map((i) => i.colaborador_nome) });
+    }
 
-    // Helper: resolve responsavel email (FK colaborador → responsavel text → terceiro.email)
-    const resolveResponsavelEmail = async (t: any): Promise<string | null> => {
+    // ── 1e. lembretes e atraso ──
+    const { data: abertas } = await sb.from("revisoes").select("id, nome, tipo, owner_email, data_fim, total_itens, itens_revisados, lembrete_enviado_em, token").eq("status", "em_andamento").not("data_fim", "is", null);
+    for (const rv of (abertas || []) as Row[]) {
+      const diasRestantes = Math.ceil((new Date(rv.data_fim).getTime() - today.getTime()) / 86400000);
+      const pendentes = (rv.total_itens || 0) - (rv.itens_revisados || 0);
+      if (pendentes <= 0 || diasRestantes > 3) continue;
+      const lastReminder = rv.lembrete_enviado_em ? new Date(rv.lembrete_enviado_em).getTime() : 0;
+      if (today.getTime() - lastReminder < 23 * 3600000) continue;
+      if (rv.owner_email) {
+        await notify("revisao_lembrete", { destinatario_email: rv.owner_email, revisao_nome: rv.nome, revisao_id: rv.id, prazo: new Date(rv.data_fim).toLocaleDateString("pt-BR"), pendentes, link_externo: `${SITE_URL}/revisao-externa/${rv.token}` });
+        results.lembretes++;
+      }
+      if (diasRestantes < 0) {
+        results.atrasadas++;
+        const { count } = await sb.from("alertas").select("id", { count: "exact", head: true }).eq("tipo", "revisao_atrasada").eq("ref_id", rv.id).gte("created_at", new Date(today.getTime() - 7 * 86400000).toISOString());
+        if (!count) await sb.from("alertas").insert({ titulo: `Revisão atrasada: ${rv.nome}`, mensagem: `${pendentes} item(ns) sem decisão; prazo era ${new Date(rv.data_fim).toLocaleDateString("pt-BR")}. Responsável: ${rv.owner_email || "—"}.`, severidade: "critico", tipo: "revisao_atrasada", ref_tipo: "revisao", ref_id: rv.id, ref_url: `/revisoes/${rv.id}` });
+      }
+      await sb.from("revisoes").update({ lembrete_enviado_em: today.toISOString() }).eq("id", rv.id);
+    }
+
+    // ── 2. terceiros com contrato vencido → desligamento ──
+    const resolveResponsavelEmail = async (t: Row): Promise<string | null> => {
       if (t.responsavel_colaborador_id) {
-        const { data: c } = await sb.from("colaboradores").select("email").eq("id", t.responsavel_colaborador_id).single();
+        const { data: c } = await sb.from("colaboradores").select("email").eq("id", t.responsavel_colaborador_id).maybeSingle();
         if (c?.email) return c.email;
       }
-      if (t.responsavel && typeof t.responsavel === "string") {
-        const match = t.responsavel.match(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/);
-        if (match) return match[0];
-      }
-      return t.email || null;
+      const { data: e } = await sb.rpc("iam_resolve_email", { p_text: t.responsavel || "" });
+      return (e as string | null) || null;
     };
-
-    if (terceirosExpirados && terceirosExpirados.length > 0) {
-      for (const terceiro of terceirosExpirados) {
-        // Deactivate
-        await sb.from("terceiros").update({ ativo: false }).eq("id", terceiro.id);
-
-        // Revoke all active access
-        await sb
-          .from("perfil_atribuicoes")
-          .update({ ativo: false, data_revogacao: new Date().toISOString() })
-          .eq("terceiro_id", terceiro.id)
-          .eq("ativo", true);
-
-        // Create JML leaver event
-        await sb.from("eventos_jml").insert({
-          tipo: "leaver",
-          colaborador_nome: terceiro.nome,
-          status: "executado",
-          origem: "auto_expiracao",
-          dados_antes: { nome: terceiro.nome, email: terceiro.email, contrato_fim: terceiro.contrato_fim },
-          dados_depois: { ativo: false },
-        });
-
-        // Create alert
-        await sb.from("alertas").insert({
-          titulo: `Terceiro expirado: ${terceiro.nome}`,
-          mensagem: `Contrato encerrado em ${terceiro.contrato_fim}. Acessos revogados automaticamente.`,
-          severidade: "aviso",
-          tipo: "terceiro_expirado",
-          ref_url: `/terceiros/${terceiro.id}`,
-          ref_id: terceiro.id,
-          ref_tipo: "terceiro",
-        });
-
-        // Audit
-        await sb.from("auditoria").insert({
-          entidade: "terceiro",
-          acao: "expirar",
-          entidade_id: terceiro.id,
-          resumo: `Terceiro ${terceiro.nome} expirado automaticamente. Acessos revogados.`,
-          operador: "sistema",
-        });
-
-        // Send email to responsavel (resolved via FK)
-        const responsavelEmail = await resolveResponsavelEmail(terceiro);
-        if (responsavelEmail) {
-          await sendEmail({
-            to: responsavelEmail,
-            subject: `Contrato expirado — ${terceiro.nome}`,
-            htmlContent: `<p>O contrato do terceiro <strong>${terceiro.nome}</strong> expirou em ${terceiro.contrato_fim}. Todos os acessos foram revogados automaticamente.</p>`,
-          });
-        }
-
-        results.terceiros_expirados++;
-        console.log(`Third-party expired: ${terceiro.nome}`);
-      }
+    const { data: expirados } = await sb.from("terceiros").select("id, nome, email, contrato_fim, responsavel, responsavel_colaborador_id").eq("ativo", true).not("contrato_fim", "is", null).lte("contrato_fim", hoje);
+    for (const t of (expirados || []) as Row[]) {
+      const { data: r, error } = await sb.rpc("terceiro_alterar_status", { p_terceiro_id: t.id, p_ativo: false, p_operador: "sistema", p_origem: "auto_expiracao", p_motivo: `Contrato encerrado em ${t.contrato_fim}` });
+      if (error || r?.ok === false) { results.errors.push(`terceiro ${t.nome}: ${error?.message || r?.error}`); continue; }
+      results.terceiros_expirados++;
+      const to = await resolveResponsavelEmail(t);
+      if (to) await notify("terceiro_expirando", { destinatario_email: to, terceiro_nome: t.nome, terceiro_id: t.id, contrato_fim: new Date(t.contrato_fim).toLocaleDateString("pt-BR"), responsavel: t.responsavel });
     }
 
-    // ─── PART 3: Third-party 45-day Revalidation ───
-
-    const { data: terceirosAtivos } = await sb
-      .from("terceiros")
-      .select("id, nome, email, responsavel, responsavel_colaborador_id, contrato_inicio, contrato_fim, ultima_revalidacao")
-      .eq("ativo", true)
-      .not("contrato_fim", "is", null);
-
-    if (terceirosAtivos && terceirosAtivos.length > 0) {
-      const todayDate = new Date();
-      for (const t of terceirosAtivos) {
-        // Skip if contract already expired (handled by PART 2)
-        if (t.contrato_fim && new Date(t.contrato_fim) <= todayDate) continue;
-
-        const baseDate = t.ultima_revalidacao ? new Date(t.ultima_revalidacao) : (t.contrato_inicio ? new Date(t.contrato_inicio) : null);
-        if (!baseDate) continue;
-
-        const daysSinceBase = Math.floor((todayDate.getTime() - baseDate.getTime()) / (1000 * 60 * 60 * 24));
-        if (daysSinceBase < 45) continue;
-
-        // 45 days have passed — create alert for responsible
-        await sb.from("alertas").insert({
-          titulo: `Revalidação de terceiro: ${t.nome}`,
-          mensagem: `O terceiro ${t.nome} precisa ser revalidado. O responsável (${t.responsavel || "não definido"}) deve decidir se mantém ou revoga o acesso.`,
-          severidade: "aviso",
-          tipo: "revalidacao_terceiro",
-          ref_url: `/terceiros/${t.id}`,
-          ref_id: t.id,
-          ref_tipo: "terceiro",
-        });
-
-        // Update ultima_revalidacao to today to avoid re-triggering
-        await sb.from("terceiros").update({ ultima_revalidacao: todayDate.toISOString().split("T")[0] }).eq("id", t.id);
-
-        // Audit
-        await sb.from("auditoria").insert({
-          entidade: "terceiro",
-          acao: "revalidacao_45dias",
-          entidade_id: t.id,
-          resumo: `Revalidação de 45 dias disparada para terceiro ${t.nome}. Responsável: ${t.responsavel || "—"}.`,
-          operador: "sistema",
-        });
-
-        // Send email to responsavel (resolved via FK)
-        const revalEmail = await resolveResponsavelEmail(t);
-        if (revalEmail) {
-          await sendEmail({
-            to: revalEmail,
-            subject: `Revalidação necessária — ${t.nome}`,
-            htmlContent: `<p>O terceiro <strong>${t.nome}</strong> precisa ser revalidado (45 dias desde última validação). Por favor, avalie se o acesso deve ser mantido ou revogado.</p>`,
-          });
-        }
-
-        results.terceiros_revalidados++;
-        console.log(`45-day revalidation triggered for ${t.nome}`);
-      }
-    }
-
-    return new Response(JSON.stringify(results), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(JSON.stringify(results), { status: 200, headers: corsHeaders });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Erro desconhecido";
     console.error("auto-recertification error:", msg);
-    return new Response(JSON.stringify({ error: msg }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(JSON.stringify({ error: msg, ...results }), { status: 500, headers: corsHeaders });
   }
 });

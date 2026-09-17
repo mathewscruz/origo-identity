@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """
-Órigo IAM Agent Executor (esqueleto inicial).
+Órigo IAM Agent Executor.
 
-Consome iam-agent-api /pending, executa ações suportadas e devolve
-resultado via /update. Roda em dry-run por padrão; use --execute
-para mutações reais.
+Consome iam-agent-api /pending (que RESERVA os itens: status=processing,
+claim_token e lease), executa e devolve o resultado via /update com o
+claim_token. Itens vêm com `identity` (e-mail/SAM/entra_id resolvidos do
+colaborador/terceiro) — o payload é só fallback. Roda em dry-run por
+padrão; use --execute para mutações reais.
+
+Este agente é o ÚNICO executor do Órigo Access & Identity: nenhuma edge function
+escreve em AD/Entra/SharePoint/apps. Cada chamada envia um heartbeat (headers
+X-Agent-*) que o dashboard usa para mostrar o agente online/offline.
 
 Suportado nesta versão:
   - disable_entra, enable_entra, update_entra
@@ -12,6 +18,9 @@ Suportado nesta versão:
   - assign_group, remove_group
   - assign_app, remove_app
   - assign_sharepoint, remove_sharepoint
+  - reset_password (AD via LDAP quando a conta é local; senão Entra via Graph) —
+    a senha temporária vai no campo `secret` do /update e a API a entrega por
+    e-mail ao solicitante; nunca é gravada.
 
 Bloqueado explicitamente:
   - *_user_app  → aguardando handler dedicado
@@ -32,6 +41,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import secrets
+import socket
+import string
 import sys
 import time
 from urllib.parse import quote
@@ -48,6 +60,29 @@ try:
     from ldap3 import Server, Connection, NTLM, SUBTREE, MODIFY_REPLACE
 except ImportError:  # pragma: no cover
     Server = Connection = NTLM = SUBTREE = MODIFY_REPLACE = None
+
+AGENT_VERSION = "2.0.0"
+
+
+def agent_headers(token: str, execute: bool) -> Dict[str, str]:
+    """Authorization + heartbeat (versão/host/modo) — a API grava em iam_agent_status."""
+    return {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "X-Agent-Version": AGENT_VERSION,
+        "X-Agent-Host": socket.gethostname(),
+        "X-Agent-Execute": "1" if execute else "0",
+    }
+
+
+def generate_temp_password(length: int = 14) -> str:
+    alphabet = string.ascii_letters + string.digits + "!@#$%&*"
+    while True:
+        pwd = "".join(secrets.choice(alphabet) for _ in range(length))
+        if (any(c.islower() for c in pwd) and any(c.isupper() for c in pwd)
+                and any(c.isdigit() for c in pwd) and any(c in "!@#$%&*" for c in pwd)):
+            return pwd
+
 
 SUPPORTED_ACTIONS = {
     "disable_entra",
@@ -103,24 +138,45 @@ def get_azure_token() -> str:
     return r.json()["access_token"]
 
 
-def fetch_pending(api_url: str, token: str) -> Dict[str, Any]:
-    r = requests.get(f"{api_url}/pending", headers={"Authorization": f"Bearer {token}"}, timeout=30)
+def fetch_pending(api_url: str, token: str, owner: str, limit: int = 10, lease: int = 600, execute: bool = False) -> Dict[str, Any]:
+    r = requests.get(
+        f"{api_url}/pending",
+        params={"owner": owner, "limit": limit, "lease": lease},
+        headers=agent_headers(token, execute),
+        timeout=30,
+    )
     r.raise_for_status()
     return r.json()
 
 
-def post_update(api_url: str, token: str, body: Dict[str, Any]) -> None:
+def post_release(api_url: str, token: str, item: Dict[str, Any], reason: str, execute: bool = False) -> None:
+    r = requests.post(
+        f"{api_url}/release",
+        headers=agent_headers(token, execute),
+        json={"id": item["id"], "claim_token": item.get("claim_token"), "reason": reason},
+        timeout=30,
+    )
+    r.raise_for_status()
+
+
+def post_update(api_url: str, token: str, body: Dict[str, Any], execute: bool = False) -> None:
     r = requests.post(
         f"{api_url}/update",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        headers=agent_headers(token, execute),
         json=body,
         timeout=30,
     )
     r.raise_for_status()
 
 
-def resolve_user_id(graph_token: str, email: Optional[str], sam: Optional[str]) -> Optional[str]:
+def resolve_user_id(graph_token: str, email: Optional[str], sam: Optional[str], entra_id: Optional[str] = None) -> Optional[str]:
+    """Resolução ESTRITA: entra_id → e-mail/UPN exato → SAM exato. Mais de um
+    candidato ⇒ None (ambíguo; nunca escolhe)."""
     headers = {"Authorization": f"Bearer {graph_token}"}
+    if entra_id:
+        r = requests.get(f"https://graph.microsoft.com/v1.0/users/{entra_id}", params={"$select": "id"}, headers=headers, timeout=30)
+        if r.ok:
+            return r.json().get("id")
     if email:
         safe = email.replace("'", "''")
         r = requests.get(
@@ -134,8 +190,10 @@ def resolve_user_id(graph_token: str, email: Optional[str], sam: Optional[str]) 
         )
         if r.ok:
             vals = r.json().get("value", [])
-            if vals:
+            if len(vals) == 1:
                 return vals[0]["id"]
+            if len(vals) > 1:
+                return None
     if sam:
         safe = sam.replace("'", "''")
         r = requests.get(
@@ -149,22 +207,23 @@ def resolve_user_id(graph_token: str, email: Optional[str], sam: Optional[str]) 
         )
         if r.ok:
             vals = r.json().get("value", [])
-            if vals:
+            if len(vals) == 1:
                 return vals[0]["id"]
     return None
 
 
 def has_approval(item: Dict[str, Any]) -> bool:
-    """Guardrail joiner/rehire para enable_entra.
-
-    Regra mínima: exigir payload_json.approved_by ou payload_json.evento_jml_id.
-    Substituir por consulta real ao workflow em produção.
-    """
+    """Guardrail joiner/rehire para enable_entra: o item precisa ter sido aprovado
+    na fila (colunas approved_by/approved_at gravadas pelo banco na aprovação).
+    Se a política iam_enable_requires_approval estiver desligada, a API sinaliza
+    em `enable_requires_approval=false` e o guardrail é dispensado."""
+    if item.get("_enable_requires_approval") is False:
+        return True
     payload = item.get("payload_json") or {}
-    return bool(payload.get("approved_by") or payload.get("evento_jml_id"))
+    return bool(item.get("approved_by") or item.get("approved_at") or payload.get("approved_by") or payload.get("evento_jml_id"))
 
 
-AD_ACTIONS = {"create", "create_if_not_exists", "update", "disable", "reset_password"}
+AD_ACTIONS = {"create", "create_if_not_exists", "update", "disable"}
 
 
 def _ldap_filter_value(value: str) -> str:
@@ -200,8 +259,8 @@ def _ad_find_user(conn, base_dn: str, sam: str) -> Optional[str]:
 
 
 def call_ad_ldap(action: str, payload: Dict[str, Any], execute: bool, target_identity: Optional[str] = None) -> Dict[str, Any]:
-    if action not in {"create", "create_if_not_exists", "disable"}:
-        return {"status": "failed", "error_code": "unsupported_ad_action", "result_message": f"AD LDAP só suporta create/create_if_not_exists/disable; recebido {action}."}
+    if action not in {"create", "create_if_not_exists", "disable", "update"}:
+        return {"status": "failed", "error_code": "unsupported_ad_action", "result_message": f"AD LDAP só suporta create/create_if_not_exists/disable/update; recebido {action}."}
     sam = payload.get("samAccountName") or payload.get("sAMAccountName") or target_identity
     if not sam:
         return {"status": "failed", "error_code": "invalid_payload", "result_message": "samAccountName/target_identity ausente para ação AD."}
@@ -229,6 +288,33 @@ def call_ad_ldap(action: str, payload: Dict[str, Any], execute: bool, target_ide
             if not (after & 2):
                 return {"status": "failed", "error_code": "ad_disable_postcheck_failed", "result_message": "Pós-checagem AD: conta não ficou desabilitada."}
             return {"status": "success", "result_message": "Conta AD desabilitada e validada via LDAP."}
+
+        if action == "update":
+            if not existing_dn:
+                return {"status": "failed", "error_code": "ad_user_not_found", "result_message": f"Usuário AD não encontrado para atualizar: {sam}."}
+            changes: Dict[str, Any] = {}
+            new_values = payload.get("new_values") or {}
+            for src, dest in [("title", "title"), ("department", "department"), ("company", "company"), ("displayName", "displayName")]:
+                if new_values.get(src):
+                    changes[dest] = [(MODIFY_REPLACE, [str(new_values[src])])]
+            want_enabled = str(payload.get("status") or new_values.get("status") or "").lower() == "enabled"
+            conn.search(existing_dn, "(objectClass=*)", attributes=["userAccountControl"])
+            current = int(conn.entries[0].userAccountControl.value or 512)
+            if want_enabled and (current & 2):
+                changes["userAccountControl"] = [(MODIFY_REPLACE, [current & ~2])]
+            if not changes:
+                return {"status": "success", "result_message": f"AD {sam}: nada a atualizar."}
+            if not execute:
+                return {"status": "pending", "error_code": "dry_run", "result_message": f"[dry-run] AD update {sam}: {sorted(changes.keys())}"}
+            ok = conn.modify(existing_dn, changes)
+            if not ok:
+                return {"status": "failed", "error_code": "ad_update_failed", "result_message": f"Falha ao atualizar AD: {conn.result}"[:300]}
+            if want_enabled:
+                conn.search(existing_dn, "(objectClass=*)", attributes=["userAccountControl"])
+                after = int(conn.entries[0].userAccountControl.value or 0)
+                if after & 2:
+                    return {"status": "failed", "error_code": "ad_enable_postcheck_failed", "result_message": "Pós-checagem AD: conta continua desabilitada."}
+            return {"status": "success", "result_message": f"AD {sam} atualizado: {', '.join(sorted(changes.keys()))}."}
 
         if existing_dn:
             return {"status": "success", "result_message": f"Usuário AD já existe: {sam}."}
@@ -279,6 +365,32 @@ def call_ad_ldap(action: str, payload: Dict[str, Any], execute: bool, target_ide
             return {"status": "success", "result_message": "Usuário AD criado, senha inicial definida e conta habilitada via LDAP."}
 
         return {"status": "success", "result_message": "Usuário AD criado desabilitado e validado via LDAP; senha inicial não configurada no agente."}
+    finally:
+        try:
+            conn.unbind()
+        except Exception:
+            pass
+
+
+def ad_ldap_reset_password(sam: str, execute: bool) -> Dict[str, Any]:
+    """Define senha temporária no AD (exige LDAPS/canal seguro para unicodePwd) e força troca no
+    próximo logon (pwdLastSet=0). Retorna `secret` para a API entregar ao solicitante."""
+    try:
+        conn, base_dn = _ad_ldap_connect()
+    except Exception as e:  # noqa: BLE001
+        return {"status": "failed", "error_code": "ad_ldap_not_configured", "result_message": f"Conexão LDAP AD indisponível: {str(e)[:220]}"}
+    try:
+        dn = _ad_find_user(conn, base_dn, sam)
+        if not dn:
+            return {"status": "failed", "error_code": "ad_user_not_found", "result_message": f"Usuário AD não encontrado para reset: {sam}."}
+        if not execute:
+            return {"status": "pending", "error_code": "dry_run", "result_message": f"[dry-run] reset de senha AD {sam}"}
+        new_password = generate_temp_password()
+        ok = conn.extend.microsoft.modify_password(dn, new_password)
+        if not ok:
+            return {"status": "failed", "error_code": "ad_password_set_failed", "result_message": f"Falha ao definir senha no AD (LDAPS necessário): {conn.result}"[:300]}
+        conn.modify(dn, {"pwdLastSet": [(MODIFY_REPLACE, [0])]})
+        return {"status": "success", "secret": new_password, "result_message": f"Senha temporária definida no AD para {sam}; troca obrigatória no próximo logon."}
     finally:
         try:
             conn.unbind()
@@ -340,6 +452,32 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
     if action in AD_ACTIONS:
         return call_ad_bridge(action, payload, execute)
 
+    if action == "reset_password":
+        identity = item.get("identity") or {}
+        sam = identity.get("sam") or payload.get("samAccountName")
+        ad_available = bool(os.environ.get("ORIGO_AD_LDAP_PASSWORD") or os.environ.get("AD_LDAP_PASSWORD"))
+        if sam and ad_available:
+            r = ad_ldap_reset_password(str(sam), execute)
+            if r.get("error_code") != "ad_user_not_found":
+                return r
+        # conta cloud-only (ou sem AD configurado): Entra via Graph
+        email = identity.get("email") or payload.get("mail")
+        entra_id = identity.get("entra_id") or payload.get("entra_id")
+        user_id = resolve_user_id(graph_token, email, sam, entra_id)
+        if not user_id:
+            return {"status": "failed", "error_code": "user_not_found",
+                    "result_message": f"Usuário não encontrado (ou ambíguo) para reset (email={email}, sam={sam})."}
+        if not execute:
+            return {"status": "pending", "error_code": "dry_run", "result_message": f"[dry-run] reset de senha Entra → {user_id}"}
+        new_password = generate_temp_password()
+        r = requests.patch(f"https://graph.microsoft.com/v1.0/users/{user_id}",
+                           headers={"Authorization": f"Bearer {graph_token}", "Content-Type": "application/json"},
+                           json={"passwordProfile": {"password": new_password, "forceChangePasswordNextSignIn": True}}, timeout=30)
+        if not r.ok:
+            return {"status": "failed", "error_code": "graph_api_error", "result_message": f"Graph {r.status_code}: {r.text[:200]}"}
+        return {"status": "success", "secret": new_password,
+                "result_message": "Senha temporária definida no Entra ID; troca obrigatória no próximo login."}
+
     if action == "enable_entra" and not has_approval(item):
         return {"status": "failed", "error_code": "missing_approval",
                 "result_message": "enable_entra requer joiner/rehire aprovado (payload sem approved_by/evento_jml_id)."}
@@ -354,12 +492,14 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
         return {"status": "failed", "error_code": "role_assignable_group",
                 "result_message": "Grupo role-assignable/privilegiado exige governança administrativa específica para alteração de membros."}
 
-    email = payload.get("mail") or payload.get("email")
-    sam = payload.get("samAccountName") or payload.get("sAMAccountName")
-    user_id = resolve_user_id(graph_token, email, sam)
+    identity = item.get("identity") or {}
+    email = identity.get("email") or payload.get("mail") or payload.get("email")
+    sam = identity.get("sam") or payload.get("samAccountName") or payload.get("sAMAccountName")
+    entra_id = identity.get("entra_id") or payload.get("entra_id")
+    user_id = resolve_user_id(graph_token, email, sam, entra_id)
     if not user_id:
         return {"status": "failed", "error_code": "user_not_found",
-                "result_message": f"Usuário não encontrado no Entra (email={email}, sam={sam})."}
+                "result_message": f"Usuário não encontrado (ou ambíguo) no Entra (email={email}, sam={sam}, entra_id={entra_id})."}
 
     if not execute:
         return {"status": "pending", "result_message": f"[dry-run] {action} → {user_id}",
@@ -374,7 +514,11 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
             r = requests.patch(f"{graph}/users/{user_id}", headers=headers,
                                json={"accountEnabled": False}, timeout=30)
             r.raise_for_status()
-            return {"status": "success", "result_message": "Conta desabilitada no Entra ID."}
+            extra = ""
+            if payload.get("revokeSignInSessions"):
+                rv = requests.post(f"{graph}/users/{user_id}/revokeSignInSessions", headers=headers, timeout=30)
+                extra = "; sessões revogadas" if rv.ok else f"; falha ao revogar sessões ({rv.status_code})"
+            return {"status": "success", "result_message": "Conta desabilitada no Entra ID" + extra + "."}
 
         if action == "enable_entra":
             r = requests.patch(f"{graph}/users/{user_id}", headers=headers,
@@ -621,6 +765,9 @@ def main() -> int:
     parser.add_argument("--execute", action="store_true", help="Aplicar mutações reais (default: dry-run)")
     parser.add_argument("--once", action="store_true", help="Rodar uma vez e sair")
     parser.add_argument("--interval", type=int, default=30, help="Intervalo entre polls (s)")
+    parser.add_argument("--limit", type=int, default=10, help="Itens reservados por poll")
+    parser.add_argument("--lease", type=int, default=600, help="Lease (s) da reserva de cada item")
+    parser.add_argument("--owner", default=os.environ.get("IAM_AGENT_OWNER", "origo-agent"), help="Identificação deste executor")
     args = parser.parse_args()
 
     api_url = env("IAM_AGENT_API_URL").rstrip("/")
@@ -637,27 +784,37 @@ def main() -> int:
                 graph_token = get_azure_token()
                 graph_token_at = time.time()
 
-            body = fetch_pending(api_url, api_token)
+            body = fetch_pending(api_url, api_token, owner=args.owner, limit=args.limit, lease=args.lease, execute=args.execute)
             items = body.get("data", []) or []
-            exec_mode = body.get("execution_mode", "?")
-            print(f"[origo-agent] {datetime.now(timezone.utc).isoformat()} exec_mode={exec_mode} pending={len(items)}")
+            enable_requires_approval = body.get("enable_requires_approval", True)
+            print(f"[origo-agent] {datetime.now(timezone.utc).isoformat()} reservados={len(items)}")
 
             for item in items:
+                item["_enable_requires_approval"] = enable_requires_approval
                 result = execute_item(graph_token, item, execute=args.execute)
+                print(f"  · {item['action_type']} {item['id']}: {result['status']} — {result.get('result_message','')[:120]}")
+                # Em dry-run nada é concluído: devolve o item para a fila (release).
+                if not args.execute or result.get("error_code") == "dry_run":
+                    try:
+                        post_release(api_url, api_token, item, f"dry-run: {result.get('result_message','')[:120]}", execute=args.execute)
+                    except Exception as e:  # noqa: BLE001
+                        print(f"    ! falha ao liberar item: {e}")
+                    continue
+                status = result["status"]
+                if status not in {"success", "failed", "cancelled", "pending"}:
+                    status = "failed"
                 update = {
                     "id": item["id"],
-                    "status": result["status"],
+                    "claim_token": item.get("claim_token"),
+                    "status": status,
                     "result_message": result.get("result_message"),
                     "error_code": result.get("error_code"),
-                    "processed_at": datetime.now(timezone.utc).isoformat(),
-                    "processed_by": "origo-agent" + ("" if args.execute else "-dryrun"),
+                    "processed_by": args.owner,
                 }
-                # Em dry-run não marcamos como success/failed final: apenas registramos e devolvemos pending.
-                if not args.execute:
-                    update["status"] = "pending"
-                print(f"  · {item['action_type']} {item['id']}: {result['status']} — {result.get('result_message','')[:120]}")
+                if result.get("secret"):
+                    update["secret"] = result["secret"]  # entregue por e-mail pela API; nunca logado/gravado
                 try:
-                    post_update(api_url, api_token, update)
+                    post_update(api_url, api_token, update, execute=args.execute)
                 except Exception as e:  # noqa: BLE001
                     print(f"    ! falha ao dar update: {e}")
 

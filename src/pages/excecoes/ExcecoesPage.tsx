@@ -13,14 +13,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import TablePagination, { usePagination } from "@/components/TablePagination";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeFunction } from "@/lib/invokeFunction";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { getPerfilResourceIds, generateEntraQueueForDiff } from "@/lib/entraQueueHelper";
-import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import EmptyState from "@/components/EmptyState";
 import { sendNotificationEmail } from "@/lib/sendNotificationEmail";
+import PageHeader from "@/components/PageHeader";
 
 const statusColors: Record<string, string> = {
   pendente: "bg-warning/15 text-warning border-warning/30",
@@ -169,97 +169,32 @@ export default function ExcecoesPage() {
     setDialogOpen(false);
   };
 
+  // Decisão transacional no banco (RPC excecao_decidir): anti-auto-aprovação, atribuição do
+  // perfil e enfileiramento pelo acesso efetivo — o Órigo Agente executa.
   const handleDecision = async () => {
     if (!decisionDialog) return;
     setProcessing(true);
-    const { id, action, colabId, perfilId, tipoExcecao } = decisionDialog;
-
+    const { id, action } = decisionDialog;
     try {
-      // Update exception status
-      const { error } = await supabase.from("excecoes").update({
-        status: action,
-        data_decisao: new Date().toISOString(),
-        aprovador: profile?.nome || profile?.email || "Sistema",
-      } as any).eq("id", id);
-      if (error) throw error;
+      const { data, error } = await supabase.rpc("excecao_decidir", { p_id: id, p_decisao: action, p_comentario: decisionComment || null });
+      const r = (data ?? {}) as Record<string, any>;
+      if (error || r.ok === false) throw new Error(error?.message || r.error || "Falha ao decidir");
+      toast({ title: action === "aprovada" ? "Exceção aprovada" : "Exceção rejeitada", description: r.enfileirados ? `${r.enfileirados} concessão(ões) enfileirada(s) para o agente` : undefined });
 
-      // Only provision access if type is 'acesso' and approved
-      if (action === "aprovada" && tipoExcecao !== "manter_ativo" && colabId && perfilId) {
-        // Dedupe: evita criar atribuição duplicada
-        const { data: existente } = await supabase
-          .from("perfil_atribuicoes")
-          .select("id")
-          .eq("colaborador_id", colabId)
-          .eq("perfil_id", perfilId)
-          .eq("ativo", true)
-          .maybeSingle();
-
-        if (!existente) {
-          await supabase.from("perfil_atribuicoes").insert({
-            colaborador_id: colabId,
-            perfil_id: perfilId,
-            origem: "excecao",
-            excecao_id: id,
-            ativo: true,
-          } as any);
-        }
-
-        // Get colab identity
-        const { data: colab } = await (supabase as any).from("colaboradores").select("id, nome, email, sam_account_name").eq("id", colabId).single();
-        if (colab) {
-          const resources = await getPerfilResourceIds(perfilId);
-          if (resources.grupoIds.length || resources.licencaIds.length || resources.appIds.length) {
-            await generateEntraQueueForDiff(
-              [{ id: colab.id, nome: colab.nome, email: colab.email, sam_account_name: colab.sam_account_name }],
-              {
-                addedGrupoIds: resources.grupoIds,
-                removedGrupoIds: [],
-                addedLicencaIds: resources.licencaIds,
-                removedLicencaIds: [],
-                addedAppIds: resources.appIds,
-                removedAppIds: [],
-              },
-              { triggerImmediately: false }
-            );
-            await triggerEntraProcessing();
-          }
-        }
-      }
-
-
-      // Audit
-      const tipoLabel = tipoExcecao === "manter_ativo" ? "Manter Ativo" : "Concessão de Acesso";
-      await supabase.from("auditoria").insert({
-        acao: action === "aprovada" ? "aprovar_excecao" : "rejeitar_excecao",
-        entidade: "excecoes",
-        entidade_id: id,
-        operador: profile?.email || "sistema",
-        resumo: `Exceção (${tipoLabel}) ${action}${decisionComment ? `: ${decisionComment}` : ""}`,
-      } as any);
-
-      toast({ title: action === "aprovada" ? "Exceção aprovada" : "Exceção rejeitada" });
-
-      // Find the exception to get the solicitante email
+      // notifica o solicitante (best-effort)
       const excecao = (excecoes as any[])?.find((e: any) => e.id === id);
       if (excecao?.solicitante) {
-        // Try to find solicitante email from profiles
         const { data: solProfile } = await supabase.from("profiles").select("email").eq("nome", excecao.solicitante).limit(1);
         const solEmail = solProfile?.[0]?.email || excecao.solicitante;
         if (solEmail && solEmail.includes("@")) {
           sendNotificationEmail("excecao_decidida", {
-            destinatario_email: solEmail,
-            colaborador_nome: excecao.colaborador_nome || "—",
-            status: action,
-            aprovador: profile?.nome || profile?.email || "Sistema",
-            comentario: decisionComment || undefined,
+            destinatario_email: solEmail, colaborador_nome: excecao.colaborador_nome || "—", status: action,
+            aprovador: profile?.nome || profile?.email || "Sistema", comentario: decisionComment || undefined,
           });
         }
       }
-
-      qc.invalidateQueries({ queryKey: ["excecoes"] });
-      qc.invalidateQueries({ queryKey: ["perfil_atribuicoes"] });
     } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+      toast({ title: "Não foi possível decidir", description: err.message, variant: "destructive" });
     } finally {
       setProcessing(false);
       setDecisionDialog(null);
@@ -269,32 +204,32 @@ export default function ExcecoesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Exceções de Acesso</h1>
-          <p className="text-sm text-muted-foreground">Concessões fora da regra e bypass de desativação com justificativa e aprovação</p>
-        </div>
-        <div className="flex gap-2">
-          {canEdit && (
-            <Button
-              variant="outline"
-              onClick={async () => {
-                setExpiring(true);
-                const { data, error } = await supabase.functions.invoke("expire-access-exceptions", { body: {} });
-                setExpiring(false);
-                if (error) toast({ title: "Erro", description: error.message, variant: "destructive" });
-                else toast({ title: "Expiração concluída", description: `${data?.expiradas ?? 0} exceções expiradas, ${data?.acoesGeradas ?? 0} ações Entra ID geradas` });
-                qc.invalidateQueries({ queryKey: ["excecoes"] });
-              }}
-              disabled={expiring}
-            >
-              <RefreshCw className={`mr-1 h-4 w-4 ${expiring ? "animate-spin" : ""}`} />
-              Expirar vencidas
-            </Button>
-          )}
-          {canEdit && <Button onClick={() => { resetForm(); setDialogOpen(true); }}><Plus className="mr-1 h-4 w-4" />Nova Exceção</Button>}
-        </div>
-      </div>
+      <PageHeader
+        title="Exceções de Acesso"
+        description="Concessões fora da regra e bypass de desativação com justificativa e aprovação"
+        actions={<>
+          <div className="flex gap-2">
+            {canEdit && (
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  setExpiring(true);
+                  const { data, error } = await invokeFunction("expire-access-exceptions", {});
+                  setExpiring(false);
+                  if (error) toast({ title: "Erro", description: error, variant: "destructive" });
+                  else toast({ title: "Expiração concluída", description: `${data?.expiradas ?? 0} exceções expiradas, ${data?.acoesGeradas ?? 0} ações Entra ID geradas` });
+                  qc.invalidateQueries({ queryKey: ["excecoes"] });
+                }}
+                disabled={expiring}
+              >
+                <RefreshCw className={`mr-1 h-4 w-4 ${expiring ? "animate-spin" : ""}`} />
+                Expirar vencidas
+              </Button>
+            )}
+            {canEdit && <Button onClick={() => { resetForm(); setDialogOpen(true); }}><Plus className="mr-1 h-4 w-4" />Nova Exceção</Button>}
+          </div>
+        </>}
+      />
 
 
       {/* Counters */}

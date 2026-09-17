@@ -1,7 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
+import { BrowserRouter, Route, Routes, Navigate, useLocation } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
-import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -27,8 +26,6 @@ import AuditoriaPage from "./pages/auditoria/AuditoriaPage";
 import SoDPage from "./pages/sod/SoDPage";
 import PrivilegiadosPage from "./pages/privilegiados/PrivilegiadosPage";
 import RelatoriosPage from "./pages/relatorios/RelatoriosPage";
-import SolicitacoesPage from "./pages/solicitacoes/SolicitacoesPage";
-import WorkflowPage from "./pages/workflow/WorkflowPage";
 import AlertasPage from "./pages/alertas/AlertasPage";
 import ConfiguracoesLayout from "./pages/configuracoes/ConfiguracoesLayout";
 import CargosPage from "./pages/configuracoes/CargosPage";
@@ -44,19 +41,22 @@ import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
 import OAuthConsentPage from "./pages/auth/OAuthConsentPage";
 import FilaProvisionamentoPage from "./pages/fila-provisionamento/FilaProvisionamentoPage";
 import SolicitacaoDetalhePage from "./pages/fila-provisionamento/SolicitacaoDetalhePage";
-import AprovacaoIAMPage from "./pages/AprovacaoIAMPage";
 
 import NotFound from "./pages/NotFound";
-import PortalLayout from "./pages/portal/PortalLayout";
-import PortalLoginPage from "./pages/portal/PortalLoginPage";
-import PortalSolicitacoesPage from "./pages/portal/PortalSolicitacoesPage";
 
 const queryClient = new QueryClient();
+
+/** /aprovacao-iam virou a aba "Aguardando aprovação" da fila — mantém links antigos (alertas, e-mails). */
+function AprovacaoRedirect() {
+  const { search } = useLocation();
+  const params = new URLSearchParams(search);
+  params.set("tab", "aprovacao");
+  return <Navigate to={`/fila-provisionamento?${params.toString()}`} replace />;
+}
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <Toaster />
       <Sonner />
       <AuthProvider>
         <BrowserRouter>
@@ -66,14 +66,10 @@ const App = () => (
             <Route path="/.lovable/oauth/consent" element={<OAuthConsentPage />} />
             <Route path="/auth/oauth/consent" element={<OAuthConsentPage />} />
             <Route path="/revisao-externa/:token" element={<RevisaoExternaPage />} />
-            <Route path="/portal/login" element={<PortalLoginPage />} />
-            <Route path="/portal" element={<PortalLayout />}>
-              <Route index element={<PortalSolicitacoesPage />} />
-            </Route>
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/fila-provisionamento" element={<FilaProvisionamentoPage />} />
-              <Route path="/aprovacao-iam" element={<AprovacaoIAMPage />} />
+              <Route path="/aprovacao-iam" element={<AprovacaoRedirect />} />
               <Route path="/fila-provisionamento/:id" element={<SolicitacaoDetalhePage />} />
               <Route path="/colaboradores" element={<ColaboradoresPage />} />
               <Route path="/colaboradores/:id" element={<ColaboradorDetalhePage />} />
@@ -95,10 +91,8 @@ const App = () => (
               <Route path="/sod" element={<SoDPage />} />
               <Route path="/privilegiados" element={<PrivilegiadosPage />} />
               <Route path="/relatorios" element={<RelatoriosPage />} />
-              <Route path="/solicitacoes" element={<SolicitacoesPage />} />
-              <Route path="/workflow" element={<WorkflowPage />} />
-              <Route path="/auditoria" element={<Navigate to="/configuracoes/auditoria" replace />} />
-              <Route path="/alertas" element={<Navigate to="/configuracoes/alertas" replace />} />
+              <Route path="/auditoria" element={<AuditoriaPage />} />
+              <Route path="/alertas" element={<AlertasPage />} />
               <Route path="/admin/usuarios" element={<UsuariosPage />} />
               <Route path="/configuracoes" element={<ConfiguracoesLayout />}>
                 <Route index element={<Navigate to="/configuracoes/cargos" replace />} />
@@ -109,8 +103,8 @@ const App = () => (
                 
                 <Route path="parametros" element={<ParametrosPage />} />
                 <Route path="integracoes" element={<IntegracoesPage />} />
-                <Route path="auditoria" element={<AuditoriaPage />} />
-                <Route path="alertas" element={<AlertasPage />} />
+                <Route path="auditoria" element={<Navigate to="/auditoria" replace />} />
+                <Route path="alertas" element={<Navigate to="/alertas" replace />} />
               </Route>
             </Route>
             <Route path="*" element={<NotFound />} />

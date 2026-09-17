@@ -1,0 +1,7 @@
+displayName;employID;mail;company;title;status;Data_Admissao;Cadastro_Pessoa_Fisica;Base_Local;departmentNumber;Data_Rescisao
+Ana Silva;1001;ana.silva@origo.com;Origo Energia;Analista de RH;Ativo;01/02/2020;111.111.111-11;Sao Paulo;Recursos Humanos;
+Bruno Novo;9001;bruno.novo@gmail.com;Origo Energia;Desenvolvedor Backend;Ativo;10/09/2026;222.222.222-22;Sao Paulo;Tecnologia;
+Carla Sem Matricula;;carla@origo.com;Origo Energia;Analista;Ativo;01/01/2024;333.333.333-33;Sao Paulo;Financeiro;
+Diego Duplicado;9002;diego@origoenergia.com.br;Origo Energia;Analista;Ativo;01/01/2024;444.444.444-44;Sao Paulo;Financeiro;
+Diego Duplicado;9003;diego@origoenergia.com.br;Origo Energia;Analista;Demitido;01/01/2022;444.444.444-44;Sao Paulo;Financeiro;15/03/2023
+Pedro Costa;1005;pedro.costa@origo.com;Origo Energia;Gerente de TI;Demitido;05/05/2018;555.555.555-55;Sao Paulo;Tecnologia;16/09/2026

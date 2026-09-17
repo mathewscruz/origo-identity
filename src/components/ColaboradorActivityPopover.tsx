@@ -9,6 +9,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Link } from "react-router-dom";
 import { useResourceNameResolver } from "@/lib/resourceNames";
+import { humanize } from "@/lib/labels";
 
 
 interface Props {
@@ -221,7 +222,7 @@ export default function ColaboradorActivityPopover({ colaboradorId, colaboradorN
                     <div className="flex items-center gap-1.5">
                       <span className="font-medium">{cfg.label}</span>
                       <Badge variant="outline" className="text-[10px] px-1 py-0">
-                        {ev.status}
+                        {humanize(ev.status)}
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground">

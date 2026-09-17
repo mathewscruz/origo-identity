@@ -1,5 +1,153 @@
 project_id = "jobopjhhxgcfanlhzlkc"
 
+# ---------------------------------------------------------------------------
+# Ambiente local (supabase start)
+# Portas deslocadas para 544xx para não conflitar com outros projetos locais
+# (ex.: akuris-local usa 5432x).
+# ---------------------------------------------------------------------------
+
+[api]
+enabled = true
+port = 54421
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[api.tls]
+enabled = false
+
+[db]
+port = 54422
+shadow_port = 54420
+health_timeout = "2m"
+major_version = 17
+
+[db.pooler]
+enabled = false
+port = 54429
+pool_mode = "transaction"
+default_pool_size = 20
+max_client_conn = 100
+
+[db.migrations]
+enabled = true
+schema_paths = []
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[db.network_restrictions]
+enabled = false
+allowed_cidrs = ["0.0.0.0/0"]
+allowed_cidrs_v6 = ["::/0"]
+
+[realtime]
+enabled = true
+
+[studio]
+enabled = true
+port = 54423
+api_url = "http://127.0.0.1"
+openai_api_key = "env(OPENAI_API_KEY)"
+
+[local_smtp]
+enabled = true
+port = 54424
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[storage.s3_protocol]
+enabled = true
+
+[storage.analytics]
+enabled = false
+max_namespaces = 5
+max_tables = 10
+max_catalogs = 2
+
+[storage.vector]
+enabled = true
+max_buckets = 10
+max_indexes = 5
+
+[auth]
+enabled = true
+# Vite roda em http://localhost:8080 (vite.config.ts)
+site_url = "http://localhost:8080"
+additional_redirect_urls = ["http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:8080/reset-password"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_signup = true
+enable_anonymous_sign_ins = false
+enable_manual_linking = false
+minimum_password_length = 6
+password_requirements = ""
+
+[auth.rate_limit]
+email_sent = 2
+sms_sent = 30
+anonymous_users = 30
+token_refresh = 150
+sign_in_sign_ups = 30
+token_verifications = 30
+web3 = 30
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false
+secure_password_change = false
+max_frequency = "1s"
+otp_length = 6
+otp_expiry = 3600
+
+[auth.sms]
+enable_signup = false
+enable_confirmations = false
+template = "Your code is {{ .Code }}"
+max_frequency = "5s"
+
+[auth.mfa]
+max_enrolled_factors = 10
+
+[auth.mfa.totp]
+enroll_enabled = false
+verify_enabled = false
+
+# OAuth server usado pelo MCP do projeto (src/pages/auth/OAuthConsentPage.tsx)
+[auth.oauth_server]
+enabled = true
+authorization_url_path = "/auth/oauth/consent"
+allow_dynamic_registration = true
+
+[edge_runtime]
+enabled = true
+policy = "per_worker"
+inspector_port = 8483
+deno_version = 2
+
+[analytics]
+enabled = false
+port = 54427
+backend = "postgres"
+
+[experimental]
+orioledb_version = ""
+s3_host = "env(S3_HOST)"
+s3_region = "env(S3_REGION)"
+s3_access_key = "env(S3_ACCESS_KEY)"
+s3_secret_key = "env(S3_SECRET_KEY)"
+
+[experimental.pgdelta]
+enabled = true
+
+# ---------------------------------------------------------------------------
+# Edge Functions (mantido do Lovable)
+# ---------------------------------------------------------------------------
 
 [functions.sync-csv-colab]
 verify_jwt = false
@@ -7,16 +155,10 @@ verify_jwt = false
 [functions.sync-sharepoint-csv]
 verify_jwt = false
 
-[functions.execute-rules]
-verify_jwt = false
-
 [functions.iam-agent-api]
 verify_jwt = false
 
 [functions.send-review-email]
-verify_jwt = false
-
-[functions.process-iam-queue]
 verify_jwt = false
 
 [functions.sync-entra-groups]
@@ -28,13 +170,10 @@ verify_jwt = false
 [functions.sync-entra-licencas]
 verify_jwt = false
 
-[functions.reset-entra-password]
-verify_jwt = false
-
 [functions.sync-entra-roles]
 verify_jwt = false
 
-[functions.admin-create-user]
+[functions.admin-users]
 verify_jwt = false
 
 [functions.sync-app-profiles]
@@ -48,4 +187,3 @@ verify_jwt = false
 
 [functions.sync-sharepoint-sites]
 verify_jwt = false
-

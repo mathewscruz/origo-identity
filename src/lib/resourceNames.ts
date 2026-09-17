@@ -17,7 +17,7 @@ function usableName(name: unknown, id?: unknown): string | null {
   return trimmed;
 }
 
-export function shortId(id: unknown): string {
+function shortId(id: unknown): string {
   const s = String(id ?? "").trim();
   if (!s) return "—";
   return s.length > 12 ? `${s.slice(0, 8)}…` : s;

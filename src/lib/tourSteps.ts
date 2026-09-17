@@ -2,10 +2,10 @@ import type { TourStep } from "@/components/OnboardingTour";
 
 export const tourSteps: Record<string, TourStep[]> = {
   dashboard: [
-    { target: "[data-tour='kpi-cards']", title: "KPIs em Tempo Real", description: "Acompanhe os indicadores-chave: colaboradores ativos, alertas críticos, aplicações conectadas e revisões em andamento." },
-    { target: "[data-tour='chart-provisioning']", title: "Gráfico de Provisionamento", description: "Visualize as ações de provisionamento ao longo do tempo. Use os botões Dia, Semana, Mês e Ano para alterar o período." },
-    { target: "[data-tour='chart-requests']", title: "Gráfico de Solicitações", description: "Monitore as solicitações de acesso por status. Alterne entre períodos para identificar tendências." },
-    { target: "[data-tour='timeline']", title: "Atividades Recentes", description: "Linha do tempo com as últimas ações do sistema — provisionamentos e solicitações em tempo real." },
+    { target: "[data-tour='kpi-cards']", title: "Indicadores em tempo real", description: "Pessoas ativas, itens aguardando aprovação, fila do agente, falhas, solicitações e alertas — tudo atualizado automaticamente." },
+    { target: "[data-tour='chart-provisioning']", title: "Atividade da fila", description: "Concessões, revogações e falhas por dia. Clique na legenda para esconder/mostrar séries e mude o período." },
+    { target: "[data-tour='chart-requests']", title: "Movimentações JML", description: "Entradas, mudanças e saídas de pessoas por dia." },
+    { target: "[data-tour='timeline']", title: "Atividade recente", description: "Últimas ações da fila e eventos JML — clique para abrir o detalhe." },
   ],
   colaboradores: [
     { target: "[data-tour='search-filter']", title: "Busca e Filtros", description: "Pesquise colaboradores por nome, matrícula ou e-mail. Use os filtros de status, empresa e área para refinar a lista." },
@@ -32,21 +32,11 @@ export const tourSteps: Record<string, TourStep[]> = {
     { target: "[data-tour='table']", title: "Campanhas de Revisão", description: "Acompanhe o progresso de cada campanha: itens revisados, prazo e status. Clique para revisar os acessos individualmente.", position: "top" },
   ],
   fila_provisionamento: [
-    { target: "[data-tour='tabs']", title: "Abas de Navegação", description: "Alterne entre a Fila de Provisionamento (ações técnicas) e Eventos JML (Joiner/Mover/Leaver)." },
-    { target: "[data-tour='search-filter']", title: "Filtros", description: "Filtre por tipo de ação, status e busque por identidade ou colaborador." },
-    { target: "[data-tour='table']", title: "Fila de Ações", description: "Veja as ações pendentes, em processamento e concluídas. Ações com falha podem ser reprocessadas.", position: "top" },
-  ],
-  solicitacoes: [
-    { target: "[data-tour='tabs']", title: "Tipos de Solicitação", description: "Alterne entre solicitações pendentes (aguardando decisão) e o histórico completo." },
-    { target: "[data-tour='actions']", title: "Nova Solicitação", description: "Solicite acesso a perfis, aplicações e grupos para colaboradores. Inclua justificativa obrigatória." },
-    { target: "[data-tour='table']", title: "Lista de Solicitações", description: "Aprove ou rejeite solicitações. Cada uma mostra o solicitante, perfil desejado e status atual.", position: "top" },
+    { target: "[data-tour='search-filter']", title: "Filtros", description: "Filtre por status, tipo de ação e origem, ou busque por pessoa, conta ou correlation ID. Os filtros ficam na URL." },
+    { target: "[data-tour='table']", title: "Fila de ações", description: "Só o Órigo Agente executa. Itens com falha podem ser reenviados; itens abertos podem ser cancelados; aprovações acontecem na Aprovação IAM.", position: "top" },
   ],
   configuracoes: [
     { target: "[data-tour='nav']", title: "Menu de Configurações", description: "Navegue entre as configurações do sistema: Cargos, Áreas, Empresas, Localidades, Parâmetros, Integrações, Auditoria e Alertas." },
     { target: "[data-tour='content']", title: "Área de Conteúdo", description: "Gerencie os dados cadastrais base que alimentam todo o sistema de identidade e acesso." },
-  ],
-  matriz: [
-    { target: "[data-tour='matrix']", title: "Matriz Cargo × Perfil", description: "Visualize quais perfis de acesso estão vinculados a cada cargo. ✓ indica vínculo direto, ⚙ indica vínculo via regra automatizada." },
-    { target: "[data-tour='actions']", title: "Exportar", description: "Exporte a matriz em formato CSV para relatórios e auditorias." },
   ],
 };

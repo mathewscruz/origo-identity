@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeFunction } from "@/lib/invokeFunction";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,7 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import TablePagination from "@/components/TablePagination";
 import EmptyState from "@/components/EmptyState";
+import PageHeader from "@/components/PageHeader";
 
 const PAGE_SIZE = 15;
 
@@ -101,8 +103,8 @@ export default function PrivilegiadosPage() {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const { data, error } = await supabase.functions.invoke("sync-entra-roles");
-      if (error) throw error;
+      const { data, error } = await invokeFunction("sync-entra-roles");
+      if (error) throw new Error(error);
       toast.success(`Sincronização concluída: ${data.roles} roles, ${data.members} atribuições${data.eligible ? `, ${data.eligible} elegíveis PIM` : ""}`);
       qc.invalidateQueries({ queryKey: ["entra-roles"] });
       qc.invalidateQueries({ queryKey: ["entra-role-members-all"] });
@@ -167,17 +169,11 @@ export default function PrivilegiadosPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Crown className="h-6 w-6 text-amber-500" /> Acessos Privilegiados</h1>
-          <p className="text-muted-foreground">
-            Funções administrativas do Microsoft Entra ID, atribuições permanentes e PIM.
-            <span className={`ml-2 font-medium ${freshnessColor(lastSync)}`}>
-              • Última sincronização: {relativeTime(lastSync)}
-            </span>
-          </p>
-        </div>
-        <div className="flex gap-2">
+      <PageHeader
+        title="Acessos Privilegiados"
+        icon={Crown}
+        description={<>Funções administrativas do Microsoft Entra ID, atribuições permanentes e PIM.<span className={`ml-2 font-medium ${freshnessColor(lastSync)}`}>• Última sincronização: {relativeTime(lastSync)}</span></>}
+        actions={<>
           <Button variant="outline" onClick={() => setAdminOpen(true)}>
             <KeyRound className="h-4 w-4 mr-2" /> Contas administrativas
           </Button>
@@ -185,8 +181,8 @@ export default function PrivilegiadosPage() {
             <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
             {syncing ? "Sincronizando..." : "Sincronizar com Entra ID"}
           </Button>
-        </div>
-      </div>
+        </>}
+      />
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Roles</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{totalRoles}</div></CardContent></Card>

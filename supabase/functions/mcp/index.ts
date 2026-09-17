@@ -3,7 +3,7 @@
 // supabase function: mcp
 // Bundled from src/lib/mcp/index.ts by @lovable.dev/mcp-js.
 // <define:import.meta.env>
-var define_import_meta_env_default = { VITE_SUPABASE_PROJECT_ID: "jobopjhhxgcfanlhzlkc", VITE_SUPABASE_PUBLISHABLE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpvYm9wamhoeGdjZmFubGh6bGtjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NzMyMTcsImV4cCI6MjA4OTM0OTIxN30.Hj5rhgW0U4XfbkjTGO9swcQhlP25ArfX1lbzKOum7QQ", VITE_SUPABASE_URL: "https://jobopjhhxgcfanlhzlkc.supabase.co", VITE_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpvYm9wamhoeGdjZmFubGh6bGtjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NzMyMTcsImV4cCI6MjA4OTM0OTIxN30.Hj5rhgW0U4XfbkjTGO9swcQhlP25ArfX1lbzKOum7QQ", MODE: "production", BASE_URL: "/", DEV: false, PROD: true, SSR: false };
+var define_import_meta_env_default = { VITE_SUPABASE_PROJECT_ID: "jobopjhhxgcfanlhzlkc", VITE_SUPABASE_PUBLISHABLE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpvYm9wamhoeGdjZmFubGh6bGtjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NzMyMTcsImV4cCI6MjA4OTM0OTIxN30.Hj5rhgW0U4XfbkjTGO9swcQhlP25ArfX1lbzKOum7QQ", VITE_SUPABASE_URL: "https://jobopjhhxgcfanlhzlkc.supabase.co", MODE: "production", BASE_URL: "/", DEV: false, PROD: true, SSR: false };
 
 // src/lib/mcp/index.ts
 import { auth, defineMcp } from "npm:@lovable.dev/mcp-js@0.20.0";
@@ -148,20 +148,80 @@ var list_terceiros_default = defineTool3({
   }
 });
 
-// src/lib/mcp/tools/list-iam-queue.ts
+// src/lib/mcp/tools/list-catalog.ts
 import { defineTool as defineTool4 } from "npm:@lovable.dev/mcp-js@0.20.0";
 import { z as z4 } from "npm:zod@^4.4.3";
-var list_iam_queue_default = defineTool4({
+var list_catalog_default = defineTool4({
+  name: "list_catalog",
+  title: "Cat\xE1logo de recursos",
+  description: "Lista o cat\xE1logo governado (perfis de acesso, grupos do Entra, licen\xE7as, aplica\xE7\xF5es, sites SharePoint) com busca por nome \u2014 use para transformar o texto de um chamado nos ids que request_access exige.",
+  inputSchema: {
+    tipo: z4.enum(["perfil", "grupo", "licenca", "app", "sharepoint", "cargo"]),
+    busca: z4.string().optional().describe("Trecho do nome (case-insensitive)"),
+    limit: z4.number().int().min(1).max(200).optional()
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async (input, ctx) => {
+    if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
+    const client = sb(ctx);
+    const limit = input.limit ?? 50;
+    const table = { perfil: "perfis_acesso", grupo: "entra_grupos", licenca: "entra_licencas", app: "aplicacoes", sharepoint: "sharepoint_sites", cargo: "cargos" }[input.tipo];
+    const cols = {
+      perfil: "id, nome, descricao, tipo, ativo",
+      grupo: "id, nome, entra_id, on_premises_sync",
+      licenca: "id, nome, friendly_name, sku_id, total, em_uso",
+      app: "id, nome, entra_id, origem, criticidade, connector_type",
+      sharepoint: "id, nome, url, site_id",
+      cargo: "id, nome, ativo"
+    }[input.tipo];
+    let q = client.from(table).select(cols).order("nome").limit(limit);
+    if (input.busca) q = q.ilike("nome", `%${input.busca.replace(/[%,()]/g, " ")}%`);
+    const { data, error } = await q;
+    if (error) return { content: [{ type: "text", text: error.message }], isError: true };
+    const result = { tipo: input.tipo, total: (data ?? []).length, items: data };
+    return { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result };
+  }
+});
+
+// src/lib/mcp/tools/get-effective-access.ts
+import { defineTool as defineTool5 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z5 } from "npm:zod@^4.4.3";
+var get_effective_access_default = defineTool5({
+  name: "get_effective_access",
+  title: "Acesso efetivo",
+  description: "Lista o acesso efetivo de um colaborador ou terceiro: recursos concedidos por perfis ativos (cargo, manual, exce\xE7\xE3o) e concess\xF5es individuais, com a origem de cada um. \xDAtil antes de conceder/revogar via request_access.",
+  inputSchema: {
+    colaborador_id: z5.string().uuid().optional(),
+    terceiro_id: z5.string().uuid().optional()
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async (input, ctx) => {
+    if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
+    if (!input.colaborador_id && !input.terceiro_id) return { content: [{ type: "text", text: "Informe colaborador_id ou terceiro_id" }], isError: true };
+    const { data, error } = await sb(ctx).rpc("iam_effective_access", {
+      p_colaborador_id: input.colaborador_id ?? null,
+      p_terceiro_id: input.terceiro_id ?? null
+    });
+    if (error) return { content: [{ type: "text", text: error.message }], isError: true };
+    const result = { total: (data ?? []).length, acessos: data };
+    return { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result };
+  }
+});
+
+// src/lib/mcp/tools/list-iam-queue.ts
+import { defineTool as defineTool6 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z6 } from "npm:zod@^4.4.3";
+var list_iam_queue_default = defineTool6({
   name: "list_iam_queue",
   title: "Listar fila IAM",
   description: "Lista itens da fila IAM (provisionamento/revoga\xE7\xE3o). Filtra por status, tipo de a\xE7\xE3o, requester e colaborador.",
   inputSchema: {
-    status: z4.array(z4.string()).optional().describe("Ex.: ['pending','waiting_approval','processing','success','failed','cancelled']"),
-    action_type: z4.string().optional(),
-    requested_by: z4.string().optional(),
-    colaborador_id: z4.string().uuid().optional(),
-    limit: z4.number().int().min(1).max(200).optional(),
-    offset: z4.number().int().min(0).optional()
+    status: z6.array(z6.string()).optional().describe("Ex.: ['pending','waiting_approval','processing','success','failed','cancelled']"),
+    action_type: z6.string().optional(),
+    requested_by: z6.string().optional(),
+    colaborador_id: z6.string().uuid().optional(),
+    limit: z6.number().int().min(1).max(200).optional(),
+    offset: z6.number().int().min(0).optional()
   },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: async (input, ctx) => {
@@ -183,56 +243,170 @@ var list_iam_queue_default = defineTool4({
 });
 
 // src/lib/mcp/tools/approve-iam-item.ts
-import { defineTool as defineTool5 } from "npm:@lovable.dev/mcp-js@0.20.0";
-import { z as z5 } from "npm:zod@^4.4.3";
-var approve_iam_item_default = defineTool5({
+import { defineTool as defineTool7 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z7 } from "npm:zod@^4.4.3";
+var approve_iam_item_default = defineTool7({
   name: "approve_iam_item",
-  title: "Aprovar item da fila IAM",
-  description: "Aprova (libera para execu\xE7\xE3o) ou cancela um item da fila IAM. Tamb\xE9m aceita motivo opcional para auditoria.",
+  title: "Decidir item da fila IAM",
+  description: "Aprova (libera para execu\xE7\xE3o), rejeita ou cancela itens da fila IAM. A decis\xE3o \xE9 registrada em nome do usu\xE1rio autenticado; auto-aprova\xE7\xE3o \xE9 recusada pelo banco.",
   inputSchema: {
-    item_id: z5.string().uuid(),
-    decision: z5.enum(["approve", "cancel"]),
-    reason: z5.string().optional()
+    item_id: z7.string().uuid().optional(),
+    item_ids: z7.array(z7.string().uuid()).optional(),
+    decision: z7.enum(["approve", "reject", "cancel"]),
+    reason: z7.string().optional()
   },
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
-  handler: async ({ item_id, decision, reason }, ctx) => {
+  handler: async ({ item_id, item_ids, decision, reason }, ctx) => {
     if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
-    const client = sb(ctx);
-    const newStatus = decision === "approve" ? "pending" : "cancelled";
-    const patch = {
-      status: newStatus,
-      updated_at: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    if (reason) patch.last_error = reason;
-    const { data, error } = await client.from("iam_queue").update(patch).eq("id", item_id).in("status", ["waiting_approval", "pending"]).select().maybeSingle();
-    if (error) return { content: [{ type: "text", text: error.message }], isError: true };
-    if (!data) return { content: [{ type: "text", text: "Item n\xE3o encontrado ou n\xE3o eleg\xEDvel." }], isError: true };
-    await client.from("auditoria").insert({
-      acao: decision === "approve" ? "aprovar_iam_item" : "cancelar_iam_item",
-      entidade: "iam_queue",
-      resumo: `Item ${item_id} ${decision === "approve" ? "aprovado" : "cancelado"} via MCP (Hermes agent)`,
-      operador: ctx.getUserEmail() ?? "hermes-agent",
-      detalhes: { item_id, decision, reason }
+    const ids = [...item_ids ?? [], ...item_id ? [item_id] : []];
+    if (ids.length === 0) return { content: [{ type: "text", text: "Informe item_id ou item_ids" }], isError: true };
+    const { data, error } = await sb(ctx).rpc("iam_queue_decidir", {
+      p_ids: ids,
+      p_decisao: decision,
+      p_motivo: reason ?? null
     });
+    if (error) return { content: [{ type: "text", text: error.message }], isError: true };
+    const result = { ok: true, decision, ids, ...data };
     return {
-      content: [{ type: "text", text: JSON.stringify({ ok: true, item: data }) }],
-      structuredContent: { ok: true, item: data }
+      content: [{ type: "text", text: JSON.stringify(result) }],
+      structuredContent: result
     };
   }
 });
 
+// src/lib/mcp/tools/request-access.ts
+import { defineTool as defineTool8 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z8 } from "npm:zod@^4.4.3";
+var recurso = z8.object({
+  tipo: z8.enum(["grupo", "licenca", "app", "sharepoint", "perfil"]).describe("perfil = perfil de acesso; os demais s\xE3o recursos individuais"),
+  id: z8.string().uuid().describe("id do cat\xE1logo (entra_grupos.id, entra_licencas.id, aplicacoes.id, sharepoint_sites.id ou perfis_acesso.id) \u2014 use list_catalog para resolver nomes"),
+  pasta_id: z8.string().uuid().optional().describe("sharepoint: pasta (sharepoint_pastas.id); omitido = raiz do site"),
+  permissao: z8.enum(["leitura", "edicao"]).optional().describe("sharepoint: padr\xE3o leitura")
+});
+var request_access_default = defineTool8({
+  name: "request_access",
+  title: "Conceder / revogar acesso",
+  description: "Concede ou revoga acessos (perfil de acesso, grupo, licen\xE7a, app ou pasta SharePoint) para um colaborador ou terceiro. Gera itens na fila IAM (aguardando aprova\xE7\xE3o quando o modo aprova\xE7\xE3o est\xE1 ligado) que o \xD3rigo Agente executa. Use para chamados do GLPI. Informe colaborador_id OU terceiro_id e o motivo (n\xFAmero do chamado).",
+  inputSchema: {
+    colaborador_id: z8.string().uuid().optional(),
+    terceiro_id: z8.string().uuid().optional(),
+    conceder: z8.array(recurso).optional().describe("Recursos/perfis a conceder"),
+    revogar: z8.array(recurso).optional().describe("Recursos/perfis a revogar"),
+    motivo: z8.string().min(3).describe("Justificativa \u2014 ex.: GLPI #12345")
+  },
+  annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async (input, ctx) => {
+    if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
+    if (!input.colaborador_id && !input.terceiro_id) return { content: [{ type: "text", text: "Informe colaborador_id ou terceiro_id" }], isError: true };
+    const client = sb(ctx);
+    const requestedBy = ctx.getUserEmail() ?? "hermes-agent";
+    const ids = { p_colaborador_id: input.colaborador_id ?? null, p_terceiro_id: input.terceiro_id ?? null };
+    const out = { enfileirados: 0, perfis_atribuidos: 0, perfis_revogados: 0 };
+    const errors = [];
+    const perfisAdd = (input.conceder ?? []).filter((r) => r.tipo === "perfil").map((r) => r.id);
+    const perfisRem = (input.revogar ?? []).filter((r) => r.tipo === "perfil").map((r) => r.id);
+    const toList = (rs) => rs.filter((r) => r.tipo !== "perfil").map((r) => ({ tipo: r.tipo, id: r.id, pasta_id: r.pasta_id ?? null, permissao: r.permissao ?? null }));
+    for (const perfilId of perfisAdd) {
+      const col = input.colaborador_id ? "colaborador_id" : "terceiro_id";
+      const { data: existente } = await client.from("perfil_atribuicoes").select("id").eq(col, input.colaborador_id ?? input.terceiro_id).eq("perfil_id", perfilId).eq("ativo", true).maybeSingle();
+      if (!existente) {
+        const { error: error2 } = await client.from("perfil_atribuicoes").insert({ [col]: input.colaborador_id ?? input.terceiro_id, perfil_id: perfilId, origem: "manual", ativo: true });
+        if (error2) {
+          errors.push(`perfil ${perfilId}: ${error2.message}`);
+          continue;
+        }
+      }
+      const { data, error } = await client.rpc("iam_enqueue_profile_actions", { ...ids, p_perfil_ids: [perfilId], p_mode: "assign", p_requested_by: requestedBy, p_status: "pending", p_motivo: input.motivo });
+      if (error) errors.push(`perfil ${perfilId}: ${error.message}`);
+      else {
+        out.enfileirados = out.enfileirados + Number(data ?? 0);
+        out.perfis_atribuidos = out.perfis_atribuidos + 1;
+      }
+    }
+    for (const perfilId of perfisRem) {
+      const col = input.colaborador_id ? "colaborador_id" : "terceiro_id";
+      const { error: e1 } = await client.from("perfil_atribuicoes").update({ ativo: false, data_revogacao: (/* @__PURE__ */ new Date()).toISOString() }).eq(col, input.colaborador_id ?? input.terceiro_id).eq("perfil_id", perfilId).eq("ativo", true);
+      if (e1) {
+        errors.push(`perfil ${perfilId}: ${e1.message}`);
+        continue;
+      }
+      const { data, error } = await client.rpc("iam_enqueue_profile_actions", { ...ids, p_perfil_ids: [perfilId], p_mode: "remove", p_requested_by: requestedBy, p_status: "pending", p_motivo: input.motivo });
+      if (error) errors.push(`perfil ${perfilId}: ${error.message}`);
+      else {
+        out.enfileirados = out.enfileirados + Number(data ?? 0);
+        out.perfis_revogados = out.perfis_revogados + 1;
+      }
+    }
+    const added = toList(input.conceder ?? []);
+    const removed = toList(input.revogar ?? []);
+    if (added.length || removed.length) {
+      const { data, error } = await client.rpc("iam_enqueue_resource_diff", {
+        ...ids,
+        p_added: added,
+        p_removed: removed,
+        p_requested_by: "manual_individual",
+        p_status: "pending",
+        p_motivo: input.motivo,
+        p_exclude_perfil_ids: [],
+        p_check_individual: false
+      });
+      if (error) errors.push(`recursos: ${error.message}`);
+      else out.enfileirados = out.enfileirados + Number(data ?? 0);
+    }
+    await client.from("auditoria").insert({
+      acao: "request_access_mcp",
+      entidade: input.colaborador_id ? "colaboradores" : "terceiros",
+      entidade_id: input.colaborador_id ?? input.terceiro_id ?? null,
+      resumo: `Solicita\xE7\xE3o de acesso via MCP (Hermes): ${(input.conceder ?? []).length} concess\xE3o(\xF5es), ${(input.revogar ?? []).length} revoga\xE7\xE3o(\xF5es) \u2014 ${input.motivo}`,
+      operador: requestedBy,
+      detalhes: { input, result: out, errors }
+    });
+    const result = { ok: errors.length === 0, ...out, errors, observacao: "Itens executados pelo \xD3rigo Agente ap\xF3s aprova\xE7\xE3o (se exigida). Acompanhe em list_iam_queue." };
+    return { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, isError: errors.length > 0 && out.enfileirados === 0 };
+  }
+});
+
+// src/lib/mcp/tools/reset-password.ts
+import { defineTool as defineTool9 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z9 } from "npm:zod@^4.4.3";
+var reset_password_default = defineTool9({
+  name: "reset_password",
+  title: "Resetar senha",
+  description: "Solicita reset de senha de um colaborador ou terceiro. Entra na fila IAM (sujeito a aprova\xE7\xE3o) e \xE9 executado pelo \xD3rigo Agente; a senha tempor\xE1ria \xE9 enviada por e-mail ao usu\xE1rio conectado. Contas privilegiadas exigem papel admin.",
+  inputSchema: {
+    colaborador_id: z9.string().uuid().optional(),
+    terceiro_id: z9.string().uuid().optional(),
+    motivo: z9.string().min(3).describe("Justificativa \u2014 ex.: GLPI #12345")
+  },
+  annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+  handler: async (input, ctx) => {
+    if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
+    if (!input.colaborador_id && !input.terceiro_id) return { content: [{ type: "text", text: "Informe colaborador_id ou terceiro_id" }], isError: true };
+    const { data, error } = await sb(ctx).rpc("iam_enqueue_reset_password", {
+      p_colaborador_id: input.colaborador_id ?? null,
+      p_terceiro_id: input.terceiro_id ?? null,
+      p_motivo: input.motivo
+    });
+    if (error) return { content: [{ type: "text", text: error.message }], isError: true };
+    const result = data;
+    return { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, isError: result?.ok === false };
+  }
+});
+
 // src/lib/mcp/tools/start-jml-event.ts
-import { defineTool as defineTool6 } from "npm:@lovable.dev/mcp-js@0.20.0";
-import { z as z6 } from "npm:zod@^4.4.3";
-var start_jml_event_default = defineTool6({
+import { defineTool as defineTool10 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z10 } from "npm:zod@^4.4.3";
+var start_jml_event_default = defineTool10({
   name: "start_jml_event",
   title: "Iniciar evento JML",
-  description: "Inicia um evento JML (Joiner/Mover/Leaver/Pr\xE9-Leaver) para um colaborador. Chama a Edge Function start-jml-event, respeitando as regras internas.",
+  description: "Executa um evento JML para um colaborador via Edge Function start-jml-event: leaver (desligamento: desabilita contas e enfileira remo\xE7\xE3o de acessos), joiner (reativa\xE7\xE3o/recontrata\xE7\xE3o, reabilita\xE7\xE3o aguarda aprova\xE7\xE3o), mover (mudan\xE7a de cargo \u2014 exige novoCargoId), pre_leaver (suspens\xE3o preventiva) e pre_leaver_revertido. Informe colaboradorId sempre que poss\xEDvel; nome s\xF3 funciona quando \xE9 \xFAnico.",
   inputSchema: {
-    tipo: z6.enum(["joiner", "mover", "leaver", "pre_leaver"]),
-    colaboradorId: z6.string().uuid().nullable().optional(),
-    colaboradorNome: z6.string(),
-    motivo: z6.string().min(3)
+    tipo: z10.enum(["joiner", "mover", "leaver", "pre_leaver", "pre_leaver_revertido"]),
+    colaboradorId: z10.string().uuid().nullable().optional(),
+    colaboradorNome: z10.string().optional(),
+    motivo: z10.string().min(3),
+    novoCargoId: z10.string().uuid().optional(),
+    statusFinal: z10.enum(["desligado", "inativo"]).optional()
   },
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   handler: async (input, ctx) => {
@@ -254,7 +428,7 @@ var start_jml_event_default = defineTool6({
     await sb(ctx).from("auditoria").insert({
       acao: "iniciar_evento_jml",
       entidade: "eventos_jml",
-      resumo: `Evento JML ${input.tipo} iniciado via MCP (Hermes) para ${input.colaboradorNome}`,
+      resumo: `Evento JML ${input.tipo} executado via MCP (Hermes) para ${input.colaboradorNome ?? input.colaboradorId}`,
       operador: ctx.getUserEmail() ?? "hermes-agent",
       detalhes: { input, response: body }
     });
@@ -266,18 +440,18 @@ var start_jml_event_default = defineTool6({
 });
 
 // src/lib/mcp/tools/list-eventos-jml.ts
-import { defineTool as defineTool7 } from "npm:@lovable.dev/mcp-js@0.20.0";
-import { z as z7 } from "npm:zod@^4.4.3";
-var list_eventos_jml_default = defineTool7({
+import { defineTool as defineTool11 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z11 } from "npm:zod@^4.4.3";
+var list_eventos_jml_default = defineTool11({
   name: "list_eventos_jml",
   title: "Listar eventos JML",
   description: "Lista eventos JML (Joiner/Mover/Leaver/Pr\xE9-Leaver) com filtros de tipo, status e colaborador.",
   inputSchema: {
-    tipo: z7.string().optional(),
-    status: z7.string().optional(),
-    colaborador_id: z7.string().uuid().optional(),
-    limit: z7.number().int().min(1).max(200).optional(),
-    offset: z7.number().int().min(0).optional()
+    tipo: z11.string().optional(),
+    status: z11.string().optional(),
+    colaborador_id: z11.string().uuid().optional(),
+    limit: z11.number().int().min(1).max(200).optional(),
+    offset: z11.number().int().min(0).optional()
   },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: async (input, ctx) => {
@@ -298,20 +472,20 @@ var list_eventos_jml_default = defineTool7({
 });
 
 // src/lib/mcp/tools/list-auditoria.ts
-import { defineTool as defineTool8 } from "npm:@lovable.dev/mcp-js@0.20.0";
-import { z as z8 } from "npm:zod@^4.4.3";
-var list_auditoria_default = defineTool8({
+import { defineTool as defineTool12 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z12 } from "npm:zod@^4.4.3";
+var list_auditoria_default = defineTool12({
   name: "list_auditoria",
   title: "Consultar auditoria",
   description: "Consulta o log de auditoria com filtros por a\xE7\xE3o, entidade, operador e intervalo de datas.",
   inputSchema: {
-    acao: z8.string().optional(),
-    entidade: z8.string().optional(),
-    operador: z8.string().optional(),
-    since: z8.string().optional().describe("ISO date, ex.: 2026-06-01"),
-    until: z8.string().optional(),
-    limit: z8.number().int().min(1).max(200).optional(),
-    offset: z8.number().int().min(0).optional()
+    acao: z12.string().optional(),
+    entidade: z12.string().optional(),
+    operador: z12.string().optional(),
+    since: z12.string().optional().describe("ISO date, ex.: 2026-06-01"),
+    until: z12.string().optional(),
+    limit: z12.number().int().min(1).max(200).optional(),
+    offset: z12.number().int().min(0).optional()
   },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: async (input, ctx) => {
@@ -334,17 +508,17 @@ var list_auditoria_default = defineTool8({
 });
 
 // src/lib/mcp/tools/list-alertas.ts
-import { defineTool as defineTool9 } from "npm:@lovable.dev/mcp-js@0.20.0";
-import { z as z9 } from "npm:zod@^4.4.3";
-var list_alertas_default = defineTool9({
+import { defineTool as defineTool13 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z13 } from "npm:zod@^4.4.3";
+var list_alertas_default = defineTool13({
   name: "list_alertas",
   title: "Listar alertas",
   description: "Lista alertas do sistema com filtros por severidade e status (lido/n\xE3o lido).",
   inputSchema: {
-    severidade: z9.string().optional(),
-    lido: z9.boolean().optional(),
-    limit: z9.number().int().min(1).max(200).optional(),
-    offset: z9.number().int().min(0).optional()
+    severidade: z13.string().optional(),
+    lido: z13.boolean().optional(),
+    limit: z13.number().int().min(1).max(200).optional(),
+    offset: z13.number().int().min(0).optional()
   },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: async (input, ctx) => {
@@ -363,15 +537,291 @@ var list_alertas_default = defineTool9({
   }
 });
 
+// src/lib/mcp/tools/get-inbox.ts
+import { defineTool as defineTool14 } from "npm:@lovable.dev/mcp-js@0.20.0";
+var get_inbox_default = defineTool14({
+  name: "get_inbox",
+  title: "Caixa de entrada do Hermes",
+  description: "Resumo operacional em uma chamada: fila (por status), aprova\xE7\xF5es pendentes, falhas, exce\xE7\xF5es pendentes, revis\xF5es abertas/atrasadas, quarentena do RH, terceiros vencendo/para revalidar, alertas cr\xEDticos n\xE3o lidos, status do agente e do \xFAltimo ciclo di\xE1rio. Comece por aqui em todo ciclo.",
+  inputSchema: {},
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async (_input, ctx) => {
+    if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
+    const { data, error } = await sb(ctx).rpc("hermes_inbox");
+    if (error) return { content: [{ type: "text", text: error.message }], isError: true };
+    const inbox = data;
+    return { content: [{ type: "text", text: JSON.stringify(inbox) }], structuredContent: inbox };
+  }
+});
+
+// src/lib/mcp/tools/reviews.ts
+import { defineTool as defineTool15 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z14 } from "npm:zod@^4.4.3";
+function rpcResult(data, error) {
+  if (error) return { content: [{ type: "text", text: error.message }], isError: true };
+  const r = data ?? {};
+  return { content: [{ type: "text", text: JSON.stringify(r) }], structuredContent: r, isError: r?.ok === false };
+}
+var listReviewsTool = defineTool15({
+  name: "list_reviews",
+  title: "Listar revis\xF5es de acesso",
+  description: "Lista campanhas de revis\xE3o (por aplica\xE7\xE3o ou por gestor) com status, prazo, progresso e respons\xE1vel. Use status=em_andamento para o que ainda espera decis\xE3o.",
+  inputSchema: {
+    status: z14.enum(["em_andamento", "concluida", "cancelada"]).optional(),
+    tipo: z14.enum(["aplicacao", "gestor", "terceiros"]).optional(),
+    atrasadas: z14.boolean().optional().describe("Somente em andamento com prazo vencido"),
+    limit: z14.number().int().min(1).max(200).optional()
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async (input, ctx) => {
+    if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
+    let q = sb(ctx).from("revisoes").select("id, nome, tipo, status, responsavel, owner_email, data_inicio, data_fim, total_itens, itens_revisados, resultado, concluida_em, concluida_por, criada_por, aplicacao_id, gestor_id, created_at").order("created_at", { ascending: false }).limit(input.limit ?? 50);
+    if (input.status) q = q.eq("status", input.status);
+    if (input.tipo) q = q.eq("tipo", input.tipo);
+    if (input.atrasadas) q = q.eq("status", "em_andamento").lt("data_fim", (/* @__PURE__ */ new Date()).toISOString().slice(0, 10));
+    const { data, error } = await q;
+    if (error) return { content: [{ type: "text", text: error.message }], isError: true };
+    const items = (data ?? []).map((r) => ({ ...r, pendentes: (r.total_itens ?? 0) - (r.itens_revisados ?? 0), atrasada: r.status === "em_andamento" && r.data_fim && r.data_fim < (/* @__PURE__ */ new Date()).toISOString().slice(0, 10) }));
+    return { content: [{ type: "text", text: JSON.stringify({ total: items.length, items }) }], structuredContent: { total: items.length, items } };
+  }
+});
+var getReviewTool = defineTool15({
+  name: "get_review",
+  title: "Detalhar revis\xE3o",
+  description: "Campanha de revis\xE3o com todos os itens (pessoa, acesso, origem, decis\xE3o, justificativa, quem decidiu, executado_em) e as a\xE7\xF5es da fila geradas por ela.",
+  inputSchema: { revisao_id: z14.string().uuid() },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async (input, ctx) => {
+    if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
+    const client = sb(ctx);
+    const [{ data: revisao, error: e1 }, { data: itens, error: e2 }, { data: fila }] = await Promise.all([
+      client.from("revisoes").select("*, aplicacoes(nome), gestor:colaboradores(nome, email)").eq("id", input.revisao_id).maybeSingle(),
+      client.from("revisao_itens").select("id, tipo, colaborador_id, terceiro_id, colaborador_nome, perfil_id, perfil_nome, recurso_nome, resource_key, origem, cargo_nome, area_nome, decisao, justificativa, decidido_por, decidido_em, executado_em").eq("revisao_id", input.revisao_id).order("colaborador_nome"),
+      client.from("iam_queue").select("id, action_type, status, target_identity, result_message, processed_at, created_at").eq("requested_by", `revisao:${input.revisao_id}`).order("created_at")
+    ]);
+    if (e1 || e2) return { content: [{ type: "text", text: (e1 || e2).message }], isError: true };
+    if (!revisao) return { content: [{ type: "text", text: "Revis\xE3o n\xE3o encontrada" }], isError: true };
+    const r = revisao;
+    if (r.token) delete r.token;
+    const out = { revisao: r, itens: itens ?? [], execucao: fila ?? [] };
+    return { content: [{ type: "text", text: JSON.stringify(out) }], structuredContent: out };
+  }
+});
+var createReviewTool = defineTool15({
+  name: "create_review",
+  title: "Criar campanha de revis\xE3o",
+  description: "Abre uma campanha de revis\xE3o: 'aplicacao' (owner decide quem mant\xE9m/perde cada acesso), 'gestor' (gestor revisa a equipe), 'todos_gestores' (uma por gestor), 'terceiros' (respons\xE1vel \u2014 gestor_id = colaborador \u2014 revalida ou desliga cada terceiro; prazo = terceiro_revalidacao_prazo_dias e sem resposta os terceiros s\xE3o desativados) ou 'todos_responsaveis' (uma revalida\xE7\xE3o por respons\xE1vel). O respons\xE1vel recebe o link por e-mail (send-review-email). Se j\xE1 existir campanha em andamento para o mesmo alvo, devolve existente=true.",
+  inputSchema: {
+    tipo: z14.enum(["aplicacao", "gestor", "todos_gestores", "terceiros", "todos_responsaveis"]),
+    aplicacao_id: z14.string().uuid().optional(),
+    gestor_id: z14.string().uuid().optional().describe("colaborador_id do gestor (ou do respons\xE1vel, em tipo=terceiros)"),
+    somente_vencidos: z14.boolean().optional().describe("tipo=todos_responsaveis: s\xF3 respons\xE1veis com terceiros vencidos (padr\xE3o false = todos)"),
+    data_fim: z14.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Prazo (YYYY-MM-DD); padr\xE3o 14 dias"),
+    nome: z14.string().optional(),
+    enviar_email: z14.boolean().optional().describe("Enviar o link ao respons\xE1vel (padr\xE3o true)")
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  handler: async (input, ctx) => {
+    if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
+    const client = sb(ctx);
+    const sendMail = async (id) => {
+      const { data: data2, error: error2 } = await client.functions.invoke("send-review-email", { body: { revisao_id: id } });
+      return error2 ? `erro: ${error2.message}` : data2?.error ? `erro: ${data2.error}` : "enviado";
+    };
+    if (input.tipo === "todos_responsaveis") {
+      const { data: data2, error: error2 } = await client.rpc("revisao_criar_por_responsaveis", { p_data_fim: input.data_fim ?? null, p_operador: "hermes", p_somente_vencidos: input.somente_vencidos ?? false });
+      if (error2) return { content: [{ type: "text", text: error2.message }], isError: true };
+      const r2 = data2 ?? {};
+      const emails = {};
+      if (input.enviar_email !== false) for (const id of r2.ids || []) emails[id] = await sendMail(id);
+      const out2 = { ...r2, emails };
+      return { content: [{ type: "text", text: JSON.stringify(out2) }], structuredContent: out2 };
+    }
+    if (input.tipo === "todos_gestores") {
+      const { data: data2, error: error2 } = await client.rpc("revisao_criar_por_gestores", { p_data_fim: input.data_fim ?? null, p_operador: "hermes" });
+      if (error2) return { content: [{ type: "text", text: error2.message }], isError: true };
+      const r2 = data2 ?? {};
+      const emails = {};
+      if (input.enviar_email !== false) for (const id of r2.ids || []) emails[id] = await sendMail(id);
+      const out2 = { ...r2, emails };
+      return { content: [{ type: "text", text: JSON.stringify(out2) }], structuredContent: out2 };
+    }
+    if (input.tipo === "aplicacao" && !input.aplicacao_id) return { content: [{ type: "text", text: "aplicacao_id \xE9 obrigat\xF3rio para tipo=aplicacao" }], isError: true };
+    if ((input.tipo === "gestor" || input.tipo === "terceiros") && !input.gestor_id) return { content: [{ type: "text", text: "gestor_id \xE9 obrigat\xF3rio para tipo=gestor/terceiros" }], isError: true };
+    const { data, error } = await client.rpc("revisao_criar", {
+      p_tipo: input.tipo,
+      p_aplicacao_id: input.aplicacao_id ?? null,
+      p_gestor_id: input.gestor_id ?? null,
+      p_data_fim: input.data_fim ?? null,
+      p_nome: input.nome ?? null,
+      p_operador: "hermes",
+      p_responsavel: null
+    });
+    if (error) return { content: [{ type: "text", text: error.message }], isError: true };
+    const r = data ?? {};
+    let email = null;
+    if (r.ok !== false && !r.existente && r.owner_email && input.enviar_email !== false) email = await sendMail(r.id);
+    const out = { ...r, email };
+    return { content: [{ type: "text", text: JSON.stringify(out) }], structuredContent: out, isError: r?.ok === false };
+  }
+});
+var decideReviewTool = defineTool15({
+  name: "decide_review_items",
+  title: "Registrar decis\xF5es de revis\xE3o",
+  description: "Registra decis\xF5es (manter|revogar) em itens de uma campanha em andamento, em nome de quem decidiu (o gestor/owner que respondeu no chamado, por exemplo). N\xE3o executa nada at\xE9 close_review.",
+  inputSchema: {
+    revisao_id: z14.string().uuid(),
+    decisoes: z14.record(z14.string().uuid(), z14.enum(["manter", "revogar"])).describe("{ item_id: 'manter'|'revogar' }"),
+    justificativas: z14.record(z14.string().uuid(), z14.string()).optional().describe("{ item_id: 'motivo' }"),
+    decidido_por: z14.string().optional().describe("Quem decidiu (e-mail/nome); padr\xE3o: usu\xE1rio conectado")
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  handler: async (input, ctx) => {
+    if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
+    const { data, error } = await sb(ctx).rpc("revisao_decidir_itens", {
+      p_revisao_id: input.revisao_id,
+      p_decisoes: input.decisoes,
+      p_justificativas: input.justificativas ?? {},
+      p_decidido_por: input.decidido_por ?? null
+    });
+    return rpcResult(data, error);
+  }
+});
+var closeReviewTool = defineTool15({
+  name: "close_review",
+  title: "Concluir revis\xE3o e executar",
+  description: "Conclui a campanha: itens 'revogar' perdem o acesso (em tipo=terceiros: o terceiro \xE9 desligado) \u2014 as a\xE7\xF5es entram na fila J\xC1 APROVADAS (a decis\xE3o do respons\xE1vel \xE9 a aprova\xE7\xE3o) e o \xD3rigo Agente executa; itens sem decis\xE3o s\xE3o mantidos, salvo sem_decisao='revogar' (uso do prazo expirado). Devolve mantidos/revogados/a\xE7\xF5es enfileiradas.",
+  inputSchema: { revisao_id: z14.string().uuid(), decidido_por: z14.string().optional(), sem_decisao: z14.enum(["manter", "revogar"]).optional() },
+  annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+  handler: async (input, ctx) => {
+    if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
+    const { data, error } = await sb(ctx).rpc("revisao_concluir", { p_revisao_id: input.revisao_id, p_decidido_por: input.decidido_por ?? null, p_sem_decisao: input.sem_decisao ?? "manter" });
+    return rpcResult(data, error);
+  }
+});
+var cancelReviewTool = defineTool15({
+  name: "cancel_review",
+  title: "Cancelar revis\xE3o",
+  description: "Cancela uma campanha em andamento sem executar nada (ex.: aberta por engano ou sem itens).",
+  inputSchema: { revisao_id: z14.string().uuid(), motivo: z14.string().min(3) },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  handler: async (input, ctx) => {
+    if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
+    const { data, error } = await sb(ctx).rpc("revisao_cancelar", { p_revisao_id: input.revisao_id, p_motivo: input.motivo });
+    return rpcResult(data, error);
+  }
+});
+
+// src/lib/mcp/tools/governance.ts
+import { defineTool as defineTool16 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z15 } from "npm:zod@^4.4.3";
+function rpcResult2(data, error) {
+  if (error) return { content: [{ type: "text", text: error.message }], isError: true };
+  const r = typeof data === "object" && data !== null ? data : { ok: true, result: data };
+  return { content: [{ type: "text", text: JSON.stringify(r) }], structuredContent: r, isError: r?.ok === false };
+}
+var decideExceptionTool = defineTool16({
+  name: "decide_exception",
+  title: "Decidir exce\xE7\xE3o de acesso",
+  description: "Aprova ou rejeita uma exce\xE7\xE3o de acesso pendente (get_inbox \u2192 excecoes_pendentes). Aprovar atribui o perfil e enfileira as concess\xF5es para o \xD3rigo Agente; a decis\xE3o fica em nome do usu\xE1rio conectado.",
+  inputSchema: {
+    excecao_id: z15.string().uuid(),
+    decisao: z15.enum(["aprovada", "rejeitada"]),
+    comentario: z15.string().optional()
+  },
+  annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+  handler: async (input, ctx) => {
+    if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
+    const { data, error } = await sb(ctx).rpc("excecao_decidir", { p_id: input.excecao_id, p_decisao: input.decisao, p_comentario: input.comentario ?? null });
+    return rpcResult2(data, error);
+  }
+});
+var resolveQuarantineTool = defineTool16({
+  name: "resolve_quarantine",
+  title: "Resolver item da quarentena do RH",
+  description: "Marca uma linha da quarentena da importa\xE7\xE3o do RH como 'resolvido' (o RH corrigiu a base; a pr\xF3xima importa\xE7\xE3o reavalia) ou 'descartado' (falso positivo). N\xE3o altera colaboradores.",
+  inputSchema: {
+    quarentena_id: z15.string().uuid(),
+    status: z15.enum(["resolvido", "descartado"]),
+    observacao: z15.string().optional()
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  handler: async (input, ctx) => {
+    if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
+    const { data, error } = await sb(ctx).rpc("quarentena_decidir", { p_id: input.quarentena_id, p_status: input.status, p_observacao: input.observacao ?? null });
+    return rpcResult2(data, error);
+  }
+});
+var ackAlertsTool = defineTool16({
+  name: "ack_alerts",
+  title: "Marcar alertas como lidos",
+  description: "Marca alertas como lidos (ids espec\xEDficos ou todos os n\xE3o lidos quando ids \xE9 omitido). Use depois de tratar a causa.",
+  inputSchema: { ids: z15.array(z15.string().uuid()).optional() },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  handler: async (input, ctx) => {
+    if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
+    const { data, error } = await sb(ctx).rpc("alertas_marcar_lidos", { p_ids: input.ids ?? null });
+    if (error) return { content: [{ type: "text", text: error.message }], isError: true };
+    const r = { ok: true, marcados: Number(data ?? 0) };
+    return { content: [{ type: "text", text: JSON.stringify(r) }], structuredContent: r };
+  }
+});
+var revalidateTerceiroTool = defineTool16({
+  name: "revalidate_terceiro",
+  title: "Revalidar terceiro",
+  description: "Registra a revalida\xE7\xE3o do acesso de um terceiro pelo respons\xE1vel (reinicia o prazo de revalida\xE7\xE3o e fecha os alertas). Opcionalmente renova o contrato (novo_contrato_fim, YYYY-MM-DD) \u2014 a expira\xE7\xE3o da conta no AD acompanha a nova data no pr\xF3ximo ciclo do agente.",
+  inputSchema: {
+    terceiro_id: z15.string().uuid(),
+    novo_contrato_fim: z15.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    motivo: z15.string().optional().describe("Ex.: GLPI #123 \u2014 respons\xE1vel confirmou")
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  handler: async (input, ctx) => {
+    if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
+    const { data, error } = await sb(ctx).rpc("terceiro_revalidar", { p_terceiro_id: input.terceiro_id, p_novo_contrato_fim: input.novo_contrato_fim ?? null, p_motivo: input.motivo ?? null });
+    return rpcResult2(data, error);
+  }
+});
+var setTerceiroStatusTool = defineTool16({
+  name: "set_terceiro_status",
+  title: "Desligar ou reativar terceiro",
+  description: "Desliga (ativo=false: revoga perfis, desabilita contas e enfileira remo\xE7\xF5es) ou reativa (ativo=true: restaura perfis do \xFAltimo desligamento; reabilita\xE7\xE3o de contas aguarda aprova\xE7\xE3o) um terceiro. Tudo executado pelo \xD3rigo Agente.",
+  inputSchema: {
+    terceiro_id: z15.string().uuid(),
+    ativo: z15.boolean(),
+    motivo: z15.string().min(3).describe("Justificativa \u2014 ex.: GLPI #123, fim de contrato")
+  },
+  annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+  handler: async (input, ctx) => {
+    if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
+    const { data, error } = await sb(ctx).rpc("terceiro_alterar_status", { p_terceiro_id: input.terceiro_id, p_ativo: input.ativo, p_operador: "hermes", p_origem: "manual", p_motivo: input.motivo });
+    return rpcResult2(data, error);
+  }
+});
+var retryFailedTool = defineTool16({
+  name: "retry_failed_items",
+  title: "Reprocessar falhas da fila",
+  description: "Recoloca em 'pending' os itens da fila com status 'failed' (opcionalmente s\xF3 alguns action_types) para o \xD3rigo Agente tentar de novo. Use depois de corrigir a causa (get_inbox \u2192 falhas).",
+  inputSchema: { action_types: z15.array(z15.string()).optional() },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  handler: async (input, ctx) => {
+    if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "N\xE3o autenticado" }], isError: true };
+    const { data, error } = await sb(ctx).rpc("iam_queue_reprocessar_falhas", { p_action_types: input.action_types ?? null });
+    if (error) return { content: [{ type: "text", text: error.message }], isError: true };
+    const r = { ok: true, reprocessados: Number(data ?? 0) };
+    return { content: [{ type: "text", text: JSON.stringify(r) }], structuredContent: r };
+  }
+});
+
 // src/lib/mcp/tools/run-admin-sql.ts
-import { defineTool as defineTool10 } from "npm:@lovable.dev/mcp-js@0.20.0";
-import { z as z10 } from "npm:zod@^4.4.3";
-var run_admin_sql_default = defineTool10({
+import { defineTool as defineTool17 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z16 } from "npm:zod@^4.4.3";
+var run_admin_sql_default = defineTool17({
   name: "run_admin_sql",
   title: "Executar SQL admin",
-  description: "Executa uma consulta SELECT arbitr\xE1ria no banco Postgres do \xD3rigo, retornando as linhas em JSON. Requer papel admin do usu\xE1rio conectado. Toda execu\xE7\xE3o \xE9 gravada na tabela auditoria automaticamente. Use com cautela \u2014 n\xE3o h\xE1 sandbox.",
+  description: "Executa uma consulta SELECT arbitr\xE1ria no banco Postgres do \xD3rigo, retornando as linhas em JSON. Requer papel platform_admin do usu\xE1rio conectado. Toda execu\xE7\xE3o \xE9 gravada na tabela auditoria automaticamente. Use com cautela \u2014 n\xE3o h\xE1 sandbox.",
   inputSchema: {
-    sql: z10.string().min(1).describe("SQL a executar. Deve ser uma express\xE3o que retorne linhas (SELECT ... ou CTE terminando em SELECT).")
+    sql: z16.string().min(1).describe("SQL a executar. Deve ser uma express\xE3o que retorne linhas (SELECT ... ou CTE terminando em SELECT).")
   },
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   handler: async ({ sql }, ctx) => {
@@ -386,15 +836,15 @@ var run_admin_sql_default = defineTool10({
 });
 
 // src/lib/mcp/tools/apply-migration.ts
-import { defineTool as defineTool11 } from "npm:@lovable.dev/mcp-js@0.20.0";
-import { z as z11 } from "npm:zod@^4.4.3";
-var apply_migration_default = defineTool11({
+import { defineTool as defineTool18 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z17 } from "npm:zod@^4.4.3";
+var apply_migration_default = defineTool18({
   name: "apply_migration",
   title: "Aplicar migra\xE7\xE3o (DDL)",
-  description: "Executa comandos DDL/DML arbitr\xE1rios (CREATE/ALTER TABLE, pol\xEDticas RLS, fun\xE7\xF5es, triggers, INSERT/UPDATE/DELETE em qualquer tabela). Requer papel admin. Sempre inclua GRANTs ap\xF3s CREATE TABLE em schema public, ENABLE RLS e CREATE POLICY (padr\xE3o obrigat\xF3rio do projeto). Toda execu\xE7\xE3o \xE9 auditada.",
+  description: "Executa comandos DDL/DML arbitr\xE1rios (CREATE/ALTER TABLE, pol\xEDticas RLS, fun\xE7\xF5es, triggers, INSERT/UPDATE/DELETE em qualquer tabela). Requer papel platform_admin. Sempre inclua GRANTs ap\xF3s CREATE TABLE em schema public, ENABLE RLS e CREATE POLICY (padr\xE3o obrigat\xF3rio do projeto). Toda execu\xE7\xE3o \xE9 auditada.",
   inputSchema: {
-    sql: z11.string().min(1).describe("SQL DDL/DML completo. Pode conter m\xFAltiplas statements separadas por ';'."),
-    description: z11.string().min(3).describe("Descri\xE7\xE3o curta e clara do que a migra\xE7\xE3o faz (para a auditoria).")
+    sql: z17.string().min(1).describe("SQL DDL/DML completo. Pode conter m\xFAltiplas statements separadas por ';'."),
+    description: z17.string().min(3).describe("Descri\xE7\xE3o curta e clara do que a migra\xE7\xE3o faz (para a auditoria).")
   },
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   handler: async ({ sql, description }, ctx) => {
@@ -409,16 +859,16 @@ var apply_migration_default = defineTool11({
 });
 
 // src/lib/mcp/tools/introspect-schema.ts
-import { defineTool as defineTool12 } from "npm:@lovable.dev/mcp-js@0.20.0";
-import { z as z12 } from "npm:zod@^4.4.3";
-var introspect_schema_default = defineTool12({
+import { defineTool as defineTool19 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z18 } from "npm:zod@^4.4.3";
+var introspect_schema_default = defineTool19({
   name: "introspect_schema",
   title: "Introspec\xE7\xE3o do schema",
   description: "Retorna metadados do banco: lista de tabelas, colunas, pol\xEDticas RLS, \xEDndices ou fun\xE7\xF5es. Requer papel admin.",
   inputSchema: {
-    kind: z12.enum(["tables", "columns", "policies", "indexes", "functions"]),
-    schema: z12.string().optional().describe("Padr\xE3o: 'public'"),
-    table: z12.string().optional().describe("Nome da tabela (para kind=columns/policies/indexes).")
+    kind: z18.enum(["tables", "columns", "policies", "indexes", "functions"]),
+    schema: z18.string().optional().describe("Padr\xE3o: 'public'"),
+    table: z18.string().optional().describe("Nome da tabela (para kind=columns/policies/indexes).")
   },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: async ({ kind, schema, table }, ctx) => {
@@ -453,16 +903,16 @@ function quote(v) {
 }
 
 // src/lib/mcp/tools/invoke-edge-function.ts
-import { defineTool as defineTool13 } from "npm:@lovable.dev/mcp-js@0.20.0";
-import { z as z13 } from "npm:zod@^4.4.3";
-var invoke_edge_function_default = defineTool13({
+import { defineTool as defineTool20 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z19 } from "npm:zod@^4.4.3";
+var invoke_edge_function_default = defineTool20({
   name: "invoke_edge_function",
   title: "Invocar Edge Function",
-  description: "Chama qualquer Edge Function do projeto \xD3rigo (ex.: reconcile-identities, process-iam-queue, sync-entra-groups, start-jml-event, etc.). Encaminha o JWT do usu\xE1rio conectado \u2014 a fun\xE7\xE3o-alvo aplica suas pr\xF3prias regras. Requer papel admin.",
+  description: "Chama uma Edge Function de sincroniza\xE7\xE3o/orquestra\xE7\xE3o do projeto \xD3rigo (reconcile-identities, run-daily-cycle, sync-sharepoint-csv, sync-entra-groups, sync-entra-licencas, sync-entra-apps, sync-entra-roles, sync-sharepoint-sites, expire-access-exceptions, auto-recertification). Nenhuma delas executa a\xE7\xF5es em diret\xF3rio \u2014 isso \xE9 exclusivo do \xD3rigo Agente. Encaminha o JWT do usu\xE1rio conectado. Requer papel admin.",
   inputSchema: {
-    name: z13.string().min(1).describe("Nome da edge function (sem prefixo)."),
-    payload: z13.any().optional().describe("Corpo JSON opcional a enviar."),
-    method: z13.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]).optional().describe("Padr\xE3o POST.")
+    name: z19.string().min(1).describe("Nome da edge function (sem prefixo)."),
+    payload: z19.any().optional().describe("Corpo JSON opcional a enviar."),
+    method: z19.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]).optional().describe("Padr\xE3o POST.")
   },
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   handler: async ({ name, payload, method }, ctx) => {
@@ -508,12 +958,12 @@ var invoke_edge_function_default = defineTool13({
 });
 
 // src/lib/mcp/tools/health-check.ts
-import { defineTool as defineTool14 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { defineTool as defineTool21 } from "npm:@lovable.dev/mcp-js@0.20.0";
 function safeMessage(error) {
   if (error instanceof Error) return `${error.name}: ${error.message}`;
   return String(error);
 }
-var health_check_default = defineTool14({
+var health_check_default = defineTool21({
   name: "health_check",
   title: "Diagn\xF3stico MCP",
   description: "Diagn\xF3stico read-only do MCP \xD3rigo: valida autentica\xE7\xE3o, config Supabase e uma consulta m\xEDnima sem expor tokens.",
@@ -563,22 +1013,43 @@ var projectRef = "jobopjhhxgcfanlhzlkc";
 var mcp_default = defineMcp({
   name: "origo-access-identity-mcp",
   title: "\xD3rigo Access & Identity",
-  version: "0.2.1",
-  instructions: "Servidor MCP do \xD3rigo Access & Identity (IGA para JML da \xD3rigo Energia). Ferramentas de neg\xF3cio permitem consultar colaboradores, terceiros, eventos JML, fila IAM, auditoria e alertas; iniciar eventos JML; aprovar/cancelar itens da fila IAM. Ferramentas admin (run_admin_sql, apply_migration, introspect_schema, invoke_edge_function) exigem papel admin e s\xE3o auditadas \u2014 use com cautela e sempre com motivo claro. Todas as a\xE7\xF5es executam como o usu\xE1rio autenticado via OAuth e respeitam RLS/pap\xE9is.",
+  version: "0.4.0",
+  instructions: "Servidor MCP do \xD3rigo Access & Identity (IGA da \xD3rigo Energia). Voc\xEA \xE9 o Hermes, o c\xE9rebro operacional do sistema: decide, orquestra e explica; o \xD3rigo Agente (executor) \xE9 o \xDANICO que toca AD/Entra/SharePoint/apps, sempre a partir da fila IAM. Nunca insira na fila nem altere dados de identidade via SQL \u2014 use as ferramentas, que passam por RPCs auditadas e respeitam pap\xE9is/RLS do usu\xE1rio OAuth conectado.\n\nCICLO OPERACIONAL (a cada turno ou chamado): 1) get_inbox \u2192 veja aprova\xE7\xF5es pendentes, falhas, exce\xE7\xF5es, revis\xF5es abertas/atrasadas, quarentena do RH, terceiros a vencer/revalidar, alertas cr\xEDticos e se o agente est\xE1 online. 2) Trate cada fila: approve_iam_item (aprovar/rejeitar itens em nome do usu\xE1rio \u2014 auto-aprova\xE7\xE3o \xE9 recusada), retry_failed_items depois de corrigir a causa, decide_exception, resolve_quarantine, revalidate_terceiro / set_terceiro_status, ack_alerts s\xF3 depois de tratar. 3) Revis\xF5es: create_review (por aplica\xE7\xE3o, por gestor ou todos os gestores) envia o link ao respons\xE1vel; quando o gestor/owner responder pelo chamado, decide_review_items e close_review \u2014 as revoga\xE7\xF5es entram na fila j\xE1 aprovadas e o agente executa; acompanhe com get_review (bloco execucao). 4) Registre no chamado o que foi feito e o que ficou aguardando (aprova\xE7\xE3o, agente offline, e-mail sem destinat\xE1rio).\n\nCHAMADOS (GLPI): identifique a pessoa (list_colaboradores/get_colaborador/list_terceiros), o recurso (list_catalog), confira get_effective_access antes de conceder/revogar, e use request_access, reset_password ou start_jml_event (joiner/mover/leaver/pr\xE9-leaver). Acesso fora do perfil do cargo \xE9 exce\xE7\xE3o com justificativa e validade. A\xE7\xF5es destrutivas (leaver, revoga\xE7\xE3o em massa, desligar terceiro) exigem confirma\xE7\xE3o expl\xEDcita do solicitante no chamado.\n\nFerramentas admin (run_admin_sql, apply_migration, introspect_schema, invoke_edge_function) exigem papel admin/platform_admin, s\xE3o auditadas e servem para diagn\xF3stico/manuten\xE7\xE3o \u2014 nunca para provisionar.",
   auth: auth.oauth.issuer({
     issuer: `https://${projectRef}.supabase.co/auth/v1`,
     acceptedAudiences: "authenticated"
   }),
   tools: [
+    // Ciclo operacional
+    get_inbox_default,
+    list_iam_queue_default,
+    approve_iam_item_default,
+    retryFailedTool,
+    decideExceptionTool,
+    resolveQuarantineTool,
+    ackAlertsTool,
+    list_alertas_default,
+    // Identidades e acessos
     list_colaboradores_default,
     get_colaborador_default,
     list_terceiros_default,
-    list_iam_queue_default,
-    approve_iam_item_default,
+    revalidateTerceiroTool,
+    setTerceiroStatusTool,
+    list_catalog_default,
+    get_effective_access_default,
+    request_access_default,
+    reset_password_default,
     start_jml_event_default,
     list_eventos_jml_default,
+    // Revisões de acesso
+    listReviewsTool,
+    getReviewTool,
+    createReviewTool,
+    decideReviewTool,
+    closeReviewTool,
+    cancelReviewTool,
+    // Auditoria
     list_auditoria_default,
-    list_alertas_default,
     // Admin (requer papel admin)
     run_admin_sql_default,
     apply_migration_default,

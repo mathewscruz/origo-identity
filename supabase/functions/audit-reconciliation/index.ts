@@ -2,7 +2,7 @@
 // enfileirou/pulou itens corretamente. NÃO altera itens — apenas gera relatório em `auditoria`
 // e retorna contagens de acertos/erros.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
-import { requireRole } from "../_shared/auth.ts";
+import { requireRoleOrService } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -173,7 +173,7 @@ async function runAudit(sb: any) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  const auth = await requireRole(req, ["admin", "operador"]);
+  const auth = await requireRoleOrService(req, ["admin", "operador"]);
   if (auth instanceof Response) return auth;
 
   const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);

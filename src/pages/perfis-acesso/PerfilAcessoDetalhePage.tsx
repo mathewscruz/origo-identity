@@ -20,11 +20,11 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { generateEntraQueueForDiff, findAffectedCollaborators } from "@/lib/entraQueueHelper";
 import { logAuditoria } from "@/lib/auditLogger";
 import EmptyState from "@/components/EmptyState";
 import { formatAreaName } from "@/lib/formatters";
+import { humanize } from "@/lib/labels";
 
 const origemColors: Record<string, string> = {
   regra: "bg-primary/15 text-primary border-primary/30",
@@ -214,7 +214,7 @@ export default function PerfilAcessoDetalhePage() {
               addedGrupoIds: addedGrupos, removedGrupoIds: removedGrupos,
               addedLicencaIds: addedLicencas, removedLicencaIds: removedLicencas,
               addedAppIds: addedApps, removedAppIds: removedApps,
-            }, { triggerImmediately: false });
+            }, { perfilId: id!, requestedBy: "perfil_edicao", motivo: `perfil_edicao:${id}` });
             if (queued > 0) toast({ title: `${queued} ação(ões) gerada(s) para o Entra ID` });
           }
         } catch (err) { console.error("Queue insert error:", err); }
@@ -228,7 +228,6 @@ export default function PerfilAcessoDetalhePage() {
       queryClient.invalidateQueries({ queryKey: ["perfil_sharepoint", id] });
       queryClient.invalidateQueries({ queryKey: ["cargo_perfis_detalhe", id] });
       setEditOpen(false);
-      triggerEntraProcessing();
     } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
     setSaving(false);
   };
@@ -248,7 +247,7 @@ export default function PerfilAcessoDetalhePage() {
         <div className="flex-1">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold tracking-tight">{perfil.nome}</h1>
-            <Badge variant="outline">{perfil.tipo.charAt(0).toUpperCase() + perfil.tipo.slice(1)}</Badge>
+            <Badge variant="outline">{humanize(perfil.tipo)}</Badge>
             <Badge variant={perfil.ativo ? "default" : "secondary"}>{perfil.ativo ? "Ativo" : "Inativo"}</Badge>
           </div>
           <p className="text-sm text-muted-foreground mt-1">{perfil.descricao || "Sem descrição"}</p>

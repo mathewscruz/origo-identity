@@ -1,8 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 
 type NotificationType =
-  | "solicitacao_criada"
-  | "solicitacao_decidida"
   | "excecao_criada"
   | "excecao_decidida"
   | "colaborador_desabilitado"

@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { sendEmail } from "../_shared/sendgrid.ts";
-import { requireRole } from "../_shared/auth.ts";
+import { requireRoleOrService } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -51,8 +51,6 @@ function infoTable(rows: Array<[string, string]>): string {
 }
 
 type NotificationType =
-  | "solicitacao_criada"
-  | "solicitacao_decidida"
   | "excecao_criada"
   | "excecao_decidida"
   | "colaborador_desabilitado"
@@ -60,7 +58,9 @@ type NotificationType =
   | "alerta_critico"
   | "revisao_concluida"
   | "revisao_lembrete"
-  | "usuario_boas_vindas";
+  | "usuario_boas_vindas"
+  | "senha_temporaria"
+  | "terceiros_desativados_prazo";
 
 function buildEmail(tipo: NotificationType, p: Record<string, any>): { subject: string; html: string } | null {
   switch (tipo) {
@@ -82,36 +82,21 @@ function buildEmail(tipo: NotificationType, p: Record<string, any>): { subject: 
           p.link || BASE_URL, "Acessar o Sistema"),
       };
     }
-    case "solicitacao_criada":
+    case "senha_temporaria":
+      // reset executado pelo agente: a senha vai só para quem solicitou (nunca é gravada)
       return {
-        subject: `[Órigo Access & Identity] Nova solicitação de acesso — ${p.colaborador_nome}`,
-        html: baseLayout("Nova Solicitação de Acesso",
-          `<p>Uma nova solicitação de acesso foi criada e aguarda sua aprovação.</p>
+        subject: `[Órigo Access & Identity] Senha temporária — ${p.colaborador_nome || p.conta}`,
+        html: baseLayout("Senha Temporária",
+          `<p>O reset de senha solicitado por <strong>${p.solicitante || "você"}</strong> foi executado pelo agente.</p>
           ${infoTable([
-            ["Colaborador", p.colaborador_nome],
-            ["Itens Solicitados", p.itens || "—"],
-            ["Justificativa", p.justificativa || "—"],
-            ["Solicitado por", p.solicitante || "—"],
-          ])}`,
-          `${BASE_URL}/solicitacoes`, "Ver Solicitação"),
+            ["Usuário", p.colaborador_nome || "—"],
+            ["Conta", p.conta || "—"],
+            ["Senha temporária", `<span style="font-family:'Courier New',monospace;font-size:15px;letter-spacing:1px;color:${BRAND_COLOR}">${p.senha}</span>`],
+          ])}
+          <div style="background:#fef3cd;border-left:4px solid #f59e0b;border-radius:0 8px 8px 0;padding:14px 18px;color:#92400e;font-size:13px;margin:20px 0;line-height:1.6">
+            ⚠️ Entregue ao usuário por um canal seguro. A troca é obrigatória no próximo login e esta senha não fica registrada no sistema.
+          </div>`),
       };
-    case "solicitacao_decidida": {
-      const statusColor = p.status === "aprovada" ? "#059669" : "#dc2626";
-      const statusLabel = p.status === "aprovada" ? "Aprovada ✅" : "Rejeitada ❌";
-      const rows: Array<[string, string]> = [
-        ["Colaborador", p.colaborador_nome],
-        ["Itens", p.itens || "—"],
-        ["Aprovador", p.aprovador || "—"],
-      ];
-      if (p.comentario) rows.push(["Comentário", p.comentario]);
-      return {
-        subject: `[Órigo Access & Identity] Solicitação ${p.status} — ${p.colaborador_nome}`,
-        html: baseLayout("Decisão sobre Solicitação",
-          `<p>A solicitação de acesso foi <strong style="color:${statusColor}">${statusLabel}</strong>.</p>
-          ${infoTable(rows)}`,
-          `${BASE_URL}/solicitacoes`, "Ver Detalhes"),
-      };
-    }
     case "excecao_criada": {
       const rows: Array<[string, string]> = [
         ["Tipo", p.tipo_excecao === "manter_ativo" ? "Manter Ativo" : "Concessão de Acesso"],
@@ -208,6 +193,23 @@ function buildEmail(tipo: NotificationType, p: Record<string, any>): { subject: 
           ])}`,
           p.link_externo || `${BASE_URL}/revisoes/${p.revisao_id || ""}`, "Revisar Agora"),
       };
+    case "terceiros_desativados_prazo":
+      return {
+        subject: `[Órigo Access & Identity] Terceiros desativados por falta de revalidação — ${p.revisao_nome}`,
+        html: baseLayout("Revalidação de Terceiros — Prazo Expirado",
+          `<div style="background:#fef2f2;border-left:4px solid #dc2626;border-radius:0 8px 8px 0;padding:14px 18px;color:#991b1b;font-size:14px;margin:0 0 20px;line-height:1.6;font-weight:600">
+            O prazo da revalidação terminou sem resposta: os terceiros abaixo foram desativados e seus acessos estão sendo removidos.
+          </div>
+          ${infoTable([
+            ["Campanha", p.revisao_nome],
+            ["Prazo", p.prazo || "—"],
+            ["Mantidos (revalidados)", `<span style="color:#059669">${p.mantidos || 0}</span>`],
+            ["Desativados", `<span style="color:#dc2626;font-weight:700">${p.desativados || 0}</span>`],
+            ["Terceiros desativados", (p.nomes || []).join(", ") || "—"],
+          ])}
+          <p style="color:#64748b;font-size:13px">Se algum terceiro ainda precisa de acesso, peça a reativação ao time de IAM — a reabilitação das contas passa por aprovação.</p>`,
+          `${BASE_URL}/revisoes/${p.revisao_id || ""}`, "Ver Revalidação"),
+      };
     default:
       return null;
   }
@@ -218,7 +220,7 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  const auth = await requireRole(req, ["admin", "operador"]);
+  const auth = await requireRoleOrService(req, ["admin", "operador"]);
   if (auth instanceof Response) return auth;
 
   try {

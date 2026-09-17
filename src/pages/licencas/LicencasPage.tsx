@@ -22,6 +22,8 @@ import { useToast } from "@/hooks/use-toast";
 import { logAuditoria } from "@/lib/auditLogger";
 import EmptyState from "@/components/EmptyState";
 import { authedFetch } from "@/lib/authedFetch";
+import PageHeader from "@/components/PageHeader";
+import { humanize } from "@/lib/labels";
 
 type UnifiedLicense = {
   id: string;
@@ -192,18 +194,18 @@ export default function LicencasPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Licenças</h1>
-          <p className="text-sm text-muted-foreground">Inventário de licenças Microsoft e externas</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={handleSync} disabled={syncing} title="Sincronizar licenças Microsoft">
-            <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-          </Button>
-          {canEdit && <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Licença Externa</Button>}
-        </div>
-      </div>
+      <PageHeader
+        title="Licenças"
+        description="Inventário de licenças Microsoft e externas"
+        actions={<>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="icon" onClick={handleSync} disabled={syncing} title="Sincronizar licenças Microsoft">
+              <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+            </Button>
+            {canEdit && <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Licença Externa</Button>}
+          </div>
+        </>}
+      />
 
       {/* Counters */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -325,7 +327,7 @@ export default function LicencasPage() {
                       </span>
                     </div>
                   </td>
-                  <td className="p-4 text-muted-foreground text-xs hidden lg:table-cell">{l.tipo || "—"}</td>
+                  <td className="p-4 text-muted-foreground text-xs hidden lg:table-cell">{humanize(l.tipo)}</td>
                   <td className="p-4">
                     {l.origem === "externa" ? (
                       <div className="flex gap-1">

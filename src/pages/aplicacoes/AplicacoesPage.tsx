@@ -15,6 +15,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeFunction } from "@/lib/invokeFunction";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { logAuditoria } from "@/lib/auditLogger";
@@ -23,6 +24,8 @@ import AppIcon from "@/components/AppIcon";
 import EmptyState from "@/components/EmptyState";
 import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
+import PageHeader from "@/components/PageHeader";
+import { humanize } from "@/lib/labels";
 
 const criticidadeColors: Record<string, string> = {
   baixa: "bg-muted text-muted-foreground",
@@ -106,8 +109,8 @@ export default function AplicacoesPage() {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const { data, error } = await supabase.functions.invoke("sync-entra-apps");
-      if (error) throw error;
+      const { data, error } = await invokeFunction("sync-entra-apps");
+      if (error) throw new Error(error);
       toast({
         title: "Sincronização concluída",
         description: `${data.total} apps encontrados — ${data.created} novos, ${data.updated} atualizados`,
@@ -122,23 +125,23 @@ export default function AplicacoesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Aplicações</h1>
-          <p className="text-sm text-muted-foreground">Catálogo corporativo de aplicações</p>
-        </div>
-        <div className="flex gap-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" size="icon" onClick={handleSync} disabled={syncing}>
-                <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Sincronizar apps do Azure</TooltipContent>
-          </Tooltip>
-          {canEdit && <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Aplicação</Button>}
-        </div>
-      </div>
+      <PageHeader
+        title="Aplicações"
+        description="Catálogo corporativo de aplicações"
+        actions={<>
+          <div className="flex gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="icon" onClick={handleSync} disabled={syncing}>
+                  <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Sincronizar apps do Azure</TooltipContent>
+            </Tooltip>
+            {canEdit && <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Aplicação</Button>}
+          </div>
+        </>}
+      />
 
       {/* Counters */}
       <div data-tour="kpi-cards" className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -223,7 +226,7 @@ export default function AplicacoesPage() {
                         <Badge variant="outline" className="bg-muted text-muted-foreground"><Globe className="h-3 w-3 mr-1" />Manual</Badge>
                       )}
                     </td>
-                    <td className="p-4 hidden lg:table-cell"><Badge variant="outline">{app.tipo_auth || "—"}</Badge></td>
+                    <td className="p-4 hidden lg:table-cell"><Badge variant="outline">{humanize(app.tipo_auth)}</Badge></td>
                     <td className="p-4 text-muted-foreground hidden md:table-cell">{app.owner || <span className="text-warning">Sem owner</span>}</td>
                     <td className="p-4 hidden lg:table-cell">
                       {app.aprovacao_necessaria ? (

@@ -1,7 +1,8 @@
-// Ciclo diário: orquestra sync-sharepoint-csv → reconcile-identities → process-iam-queue
+// Ciclo diário: orquestra sync-sharepoint-csv → reconcile-identities.
+// A execução dos itens gerados é do Órigo Agente (iam-agent-api) — nada é executado aqui.
 // Reporta progresso via sync_jobs (tipo='daily_cycle').
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
-import { requireRole } from "../_shared/auth.ts";
+import { requireRoleOrService, serviceAuthHeader } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -44,7 +45,7 @@ async function waitForJob(sb: any, tipo: string, sinceIso: string, timeoutMs: nu
   return lastJob ?? { status: "error", error: "Timeout aguardando conclusão." };
 }
 
-async function runCycle(sb: any, jobId: string, auth: string, opts: { skipCsv: boolean }) {
+async function runCycle(sb: any, jobId: string, auth: string, opts: { skipCsv: boolean; operador: string }) {
   const summary: Record<string, any> = { steps: [] };
   try {
     // Etapa 1: SharePoint CSV
@@ -69,18 +70,17 @@ async function runCycle(sb: any, jobId: string, auth: string, opts: { skipCsv: b
     const jr = await waitForJob(sb, "reconcile_identities", startedR, 15 * 60 * 1000);
     summary.steps.push({ step: "reconcile_identities", status: jr.status, message: jr.message });
     if (jr.status === "error") throw new Error(`Reconcile: ${jr.error || "falha"}`);
-    await updateJob(sb, jobId, { phase: "reconcile", message: jr.message || "Reconciliação concluída.", users_percent: 70 });
+    await updateJob(sb, jobId, { phase: "reconcile", message: jr.message || "Reconciliação concluída.", users_percent: 85 });
 
-    // Etapa 3: process-iam-queue (força execução)
-    await updateJob(sb, jobId, { phase: "processando_fila", message: "Processando fila IAM (disable/enable/assign)…", users_percent: 75 });
-    const rp = await callFn("process-iam-queue", auth, { force: true });
-    if (!rp.ok) throw new Error(`Fila IAM: ${rp.body?.error || rp.status}`);
-    summary.steps.push({ step: "process_iam_queue", status: "done", summary: rp.body?.summary || rp.body });
-    await updateJob(sb, jobId, { phase: "processando_fila", message: `Fila processada: ${JSON.stringify(rp.body?.summary || {})}`, users_percent: 95 });
+    // Etapa 3: o que foi enfileirado fica para o Órigo Agente (único executor)
+    const { data: qs } = await sb.rpc("iam_queue_stats");
+    summary.steps.push({ step: "fila", status: "done", pending: qs?.pending ?? null, waiting_approval: qs?.waiting_approval ?? null });
+    await updateJob(sb, jobId, { phase: "fila", message: `Fila: ${qs?.pending ?? 0} pendente(s) para o agente · ${qs?.waiting_approval ?? 0} aguardando aprovação.`, users_percent: 95 });
 
     await sb.from("auditoria").insert({
       entidade: "ciclo_diario",
       acao: "executar",
+      operador: opts.operador,
       resumo: `Ciclo diário concluído (${summary.steps.length} etapas)`,
       detalhes: summary,
     });
@@ -96,9 +96,10 @@ async function runCycle(sb: any, jobId: string, auth: string, opts: { skipCsv: b
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  const auth = await requireRole(req, ["admin", "operador"]);
+  const auth = await requireRoleOrService(req, ["admin", "operador"]);
   if (auth instanceof Response) return auth;
-  const authHeader = req.headers.get("Authorization")!;
+  // as sub-funções são chamadas com a service role (aceitam via requireRoleOrService)
+  const authHeader = serviceAuthHeader();
 
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
   const body = await req.json().catch(() => ({}));
@@ -128,9 +129,9 @@ Deno.serve(async (req) => {
     }
 
     // @ts-ignore
-    (globalThis as any).EdgeRuntime?.waitUntil(runCycle(sb, job.id, authHeader, { skipCsv }));
+    (globalThis as any).EdgeRuntime?.waitUntil(runCycle(sb, job.id, authHeader, { skipCsv, operador: auth.email }));
     if (!(globalThis as any).EdgeRuntime) {
-      runCycle(sb, job.id, authHeader, { skipCsv }).catch((e) => console.error("bg", e));
+      runCycle(sb, job.id, authHeader, { skipCsv, operador: auth.email }).catch((e) => console.error("bg", e));
     }
 
     return new Response(JSON.stringify({ success: true, started: true, job_id: job.id }), { status: 202, headers: corsHeaders });

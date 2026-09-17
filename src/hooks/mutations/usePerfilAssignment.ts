@@ -2,7 +2,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { queueFullProfileActions } from "@/lib/entraQueueHelper";
-import { logAuditoria } from "@/lib/auditLogger";
 
 interface ColabIdentity {
   id: string;
@@ -33,15 +32,8 @@ export function useAssignPerfil() {
       if (error) throw error;
 
       await queueFullProfileActions([identity], [perfilId], "assign");
-
-      await logAuditoria({
-        acao: "atribuir_perfil",
-        entidade: "perfil_atribuicoes",
-        entidade_id: identity.id,
-        resumo: `Perfil atribuído manualmente a ${identity.nome}`,
-        operador: operadorEmail ?? undefined,
-      });
-
+      // auditoria: trigger perfil_atribuicoes_audit (operador = usuário logado)
+      void operadorEmail;
       return { ok: true };
     },
     onSuccess: (_d, vars) => {
@@ -75,15 +67,8 @@ export function useRevokePerfil() {
       if (error) throw error;
 
       await queueFullProfileActions([identity], [perfilId], "remove");
-
-      await logAuditoria({
-        acao: "revogar_perfil",
-        entidade: "perfil_atribuicoes",
-        entidade_id: identity.id,
-        resumo: `Perfil revogado de ${identity.nome}`,
-        operador: operadorEmail ?? undefined,
-      });
-
+      // auditoria: trigger perfil_atribuicoes_audit (operador = usuário logado)
+      void operadorEmail;
       return { ok: true };
     },
     onSuccess: (_d, vars) => {

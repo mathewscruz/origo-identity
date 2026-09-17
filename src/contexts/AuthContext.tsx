@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
+import { toast } from "sonner";
 
 interface AuthContextType {
   user: User | null;
@@ -19,24 +20,44 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext);
 
+/** papel efetivo = o mais alto entre os atribuídos (platform_admin ⊇ admin ⊇ operador ⊇ viewer) */
+const ROLE_ORDER = ["platform_admin", "admin", "operador", "viewer"];
+function highestRole(roles: string[]): string {
+  return ROLE_ORDER.find((r) => roles.includes(r)) ?? "viewer";
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [profile, setProfile] = useState<any>(null);
   const [role, setRole] = useState<string | null>(null);
+  const signingOut = useRef(false);
+
+  // conta desativada pelo administrador: encerra a sessão na hora
+  const forceSignOut = useCallback(async (motivo: string) => {
+    if (signingOut.current) return;
+    signingOut.current = true;
+    await supabase.auth.signOut();
+    toast.error("Sessão encerrada", { description: motivo, duration: 8000 });
+    signingOut.current = false;
+  }, []);
 
   const fetchProfile = useCallback(async (userId: string) => {
     try {
       const { data: p } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+      if (p && p.ativo === false) { await forceSignOut("Sua conta foi desativada. Fale com o administrador do painel."); return; }
       setProfile(p);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: roles } = await (supabase as any).from("user_roles").select("role").eq("user_id", userId);
-      setRole(roles?.[0]?.role ?? "viewer");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setRole(highestRole(((roles ?? []) as any[]).map((r) => r.role)));
     } catch {
       setRole("viewer");
     }
     setLoading(false);
-  }, []);
+  }, [forceSignOut]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -63,6 +84,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => subscription.unsubscribe();
   }, [fetchProfile]);
+
+  // tempo real no próprio perfil/papel: desativação derruba a sessão; troca de papel reflete sem F5
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel(`auth-profile-${user.id}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${user.id}` }, (payload) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const row = payload.new as any;
+        if (row?.ativo === false) { void forceSignOut("Sua conta foi desativada por um administrador."); return; }
+        setProfile(row);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_roles", filter: `user_id=eq.${user.id}` }, () => { void fetchProfile(user.id); })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [user, fetchProfile, forceSignOut]);
 
   const refreshProfile = useCallback(async () => {
     if (user) await fetchProfile(user.id);

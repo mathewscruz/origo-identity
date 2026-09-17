@@ -23,12 +23,13 @@ import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { findAffectedCollaborators, generateEntraQueueForDiff, queueFullProfileActions } from "@/lib/entraQueueHelper";
-import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { logAuditoria } from "@/lib/auditLogger";
 import EmptyState from "@/components/EmptyState";
 import SortableHeader, { SortDirection, useSortableData } from "@/components/SortableHeader";
 import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
+import PageHeader from "@/components/PageHeader";
+import { humanize } from "@/lib/labels";
 
 interface PerfilForm {
   nome: string;
@@ -220,10 +221,9 @@ export default function PerfisAcessoPage() {
           try {
             const colabs = await findAffectedCollaborators(perfilId);
             if (colabs.length > 0) {
-              const queued = await generateEntraQueueForDiff(colabs, diff, { triggerImmediately: false });
+              const queued = await generateEntraQueueForDiff(colabs, diff, { perfilId, requestedBy: "perfil_edicao", motivo: `perfil_edicao:${perfilId}` });
               if (queued > 0) {
                 toast({ title: "Provisionamento", description: `${queued} ações geradas para ${colabs.length} colaborador(es)` });
-                triggerEntraProcessing();
               }
             }
           } catch (provErr) { console.error("[PerfisAcessoPage] Erro no provisionamento:", provErr); }
@@ -249,7 +249,7 @@ export default function PerfisAcessoPage() {
       // Cleanup Entra ID: remove all resources from affected collaborators
       const colabs = await findAffectedCollaborators(perfId);
       if (colabs.length > 0) {
-        const queued = await queueFullProfileActions(colabs, [perfId], "remove", { triggerImmediately: false });
+        const queued = await queueFullProfileActions(colabs, [perfId], "remove", { requestedBy: "perfil_exclusao", motivo: `perfil_exclusao:${perfId}` });
         if (queued > 0) {
           toast({ title: "Cleanup Entra ID", description: `${queued} ações de remoção geradas para ${colabs.length} colaborador(es)` });
         }
@@ -270,7 +270,6 @@ export default function PerfisAcessoPage() {
       const { error } = await supabase.from("perfis_acesso").delete().eq("id", perfId);
       if (error) throw error;
 
-      triggerEntraProcessing();
       await logAuditoria({ acao: "excluir_perfil", entidade: "perfis_acesso", entidade_id: perfId, resumo: `Perfil excluído` });
       toast({ title: "Perfil excluído" });
       queryClient.invalidateQueries({ queryKey: ["perfis_acesso"] });
@@ -282,13 +281,13 @@ export default function PerfisAcessoPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Perfis de Acesso</h1>
-          <p className="text-sm text-muted-foreground">Perfis baseados em cargo com múltiplas aplicações vinculadas</p>
-        </div>
-        <div data-tour="actions"><Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Perfil</Button></div>
-      </div>
+      <PageHeader
+        title="Perfis de Acesso"
+        description="Perfis baseados em cargo com múltiplas aplicações vinculadas"
+        actions={<>
+          <div data-tour="actions"><Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Perfil</Button></div>
+        </>}
+      />
 
       {/* Header counters */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -362,7 +361,7 @@ export default function PerfisAcessoPage() {
                           <Link to={`/perfis-acesso/${p.id}`} className="font-medium text-primary hover:underline">{p.nome}</Link>
                           {p.descricao && <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-xs">{p.descricao}</p>}
                         </td>
-                        <td className="p-4 hidden md:table-cell"><Badge variant="outline">{p.tipo.charAt(0).toUpperCase() + p.tipo.slice(1)}</Badge></td>
+                        <td className="p-4 hidden md:table-cell"><Badge variant="outline">{humanize(p.tipo)}</Badge></td>
                         <td className="p-4 text-center hidden sm:table-cell"><span className="font-medium">{pessoasCount}</span></td>
                         <td className="p-4 text-center hidden sm:table-cell"><span className="font-medium">{apps.length}</span></td>
                         <td className="p-4 text-center hidden lg:table-cell"><span className="font-medium">{licCount}</span></td>

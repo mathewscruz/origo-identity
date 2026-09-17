@@ -1,30 +1,28 @@
 import { useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Pencil, RefreshCw, Plus, X, UserX, RotateCcw, Info, Workflow } from "lucide-react";
+import { ArrowLeft, Pencil, Plus, X, UserX, RotateCcw, Info, Workflow, ShieldCheck } from "lucide-react";
 import StartJmlEventDialog from "@/components/jml/StartJmlEventDialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useTerceiro, usePerfisAcesso } from "@/hooks/useOrigoData";
+import { useTerceiro, usePerfisAcesso, useParametro } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
 import { queueFullProfileActions } from "@/lib/entraQueueHelper";
 import { desligarTerceiro, reativarTerceiro } from "@/lib/iam/terceiroLifecycle";
-import { logAuditoria } from "@/lib/auditLogger";
 import EmptyState from "@/components/EmptyState";
+import { humanize } from "@/lib/labels";
 
 const criticidadeConfig: Record<string, { label: string; class: string }> = {
   baixa: { label: "Baixa", class: "bg-muted text-muted-foreground" },
@@ -49,7 +47,11 @@ function diasRestantes(dataFim: string | null): number {
 export default function TerceiroDetalhePage() {
   const { id } = useParams();
   const { data: terceiro, isLoading } = useTerceiro(id);
+  const navigate = useNavigate();
   const [renovarOpen, setRenovarOpen] = useState(false);
+  const [renovarForm, setRenovarForm] = useState({ novo_fim: "", motivo: "" });
+  const [revalidando, setRevalidando] = useState(false);
+  const revalidacaoDias = parseInt(useParametro("terceiro_revalidacao_dias", "45"), 10) || 45;
   const [startJmlOpen, setStartJmlOpen] = useState(false);
   const [atribuirOpen, setAtribuirOpen] = useState(false);
   const [desligarOpen, setDesligarOpen] = useState(false);
@@ -89,6 +91,7 @@ export default function TerceiroDetalhePage() {
     nome: terceiro?.nome || "",
     email: terceiro?.email || null,
     sam_account_name: sam || null,
+    tipo: "terceiro" as const,
   });
 
   const handleAtribuirPerfil = async () => {
@@ -102,25 +105,22 @@ export default function TerceiroDetalhePage() {
     });
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
     // Generate iam_queue for groups/licenses/apps
-    await queueFullProfileActions([getTerceiroIdentity()], [selectedPerfil], "assign", { triggerImmediately: false });
-    await logAuditoria({ acao: "atribuir_perfil_terceiro", entidade: "perfil_atribuicoes", entidade_id: id, resumo: `Perfil "${perfilNome}" atribuído ao terceiro ${terceiro.nome}`, operador: profile?.email });
-    toast({ title: "Perfil atribuído — solicitações de acesso enviadas" });
+    await queueFullProfileActions([getTerceiroIdentity()], [selectedPerfil], "assign", undefined);
+    // auditoria: trigger perfil_atribuicoes_audit
+    toast({ title: "Perfil atribuído", description: `"${perfilNome}" — concessões enviadas ao agente` });
     qc.invalidateQueries({ queryKey: ["terceiro_atribuicoes", id] });
     setAtribuirOpen(false);
     setSelectedPerfil("");
-    triggerEntraProcessing();
   };
 
   const handleRevogar = async (atribuicaoId: string, perfilId?: string) => {
     await supabase.from("perfil_atribuicoes").update({ ativo: false, data_revogacao: new Date().toISOString() }).eq("id", atribuicaoId);
     // Generate iam_queue to remove groups/licenses/apps
     if (perfilId) {
-      await queueFullProfileActions([getTerceiroIdentity()], [perfilId], "remove", { triggerImmediately: false });
+      await queueFullProfileActions([getTerceiroIdentity()], [perfilId], "remove", undefined);
     }
-    await logAuditoria({ acao: "revogar_perfil_terceiro", entidade: "perfil_atribuicoes", entidade_id: id!, resumo: `Perfil revogado do terceiro ${terceiro.nome}`, operador: profile?.email });
-    toast({ title: "Perfil revogado — solicitações de remoção enviadas" });
+    toast({ title: "Perfil revogado", description: "Remoções enviadas ao agente" });
     qc.invalidateQueries({ queryKey: ["terceiro_atribuicoes", id] });
-    triggerEntraProcessing();
   };
 
   const handleDesligar = async () => {
@@ -143,13 +143,28 @@ export default function TerceiroDetalhePage() {
       toast({ title: "Não foi possível desligar", description: res.error, variant: "destructive" });
       return;
     }
-    triggerEntraProcessing(true);
     toast({
       title: "Terceiro desligado",
       description: `${res.perfisRevogados ?? 0} perfis revogados e remoções enviadas para processamento.`,
     });
     qc.invalidateQueries({ queryKey: ["terceiro", id] });
     qc.invalidateQueries({ queryKey: ["terceiro_atribuicoes", id] });
+  };
+
+  // Revalidação (e renovação opcional do contrato): RPC terceiro_revalidar — registra
+  // ultima_revalidacao, auditoria e fecha os alertas de revalidação pendentes
+  const handleRevalidar = async () => {
+    if (!id) return;
+    setRevalidando(true);
+    const { data, error } = await supabase.rpc("terceiro_revalidar", { p_terceiro_id: id, p_novo_contrato_fim: renovarForm.novo_fim || null, p_motivo: renovarForm.motivo || null });
+    setRevalidando(false);
+    const res = data as { ok?: boolean; error?: string } | null;
+    if (error || res?.ok === false) { toast({ title: "Erro ao revalidar", description: error?.message || res?.error, variant: "destructive" }); return; }
+    toast({ title: "Acesso revalidado", description: renovarForm.novo_fim ? `Contrato renovado até ${new Date(renovarForm.novo_fim + "T12:00:00").toLocaleDateString("pt-BR")}. A conta no AD passa a expirar na nova data.` : `Próxima revalidação em ${revalidacaoDias} dias.` });
+    setRenovarOpen(false); setRenovarForm({ novo_fim: "", motivo: "" });
+    qc.invalidateQueries({ queryKey: ["terceiro", id] });
+    qc.invalidateQueries({ queryKey: ["terceiros"] });
+    qc.invalidateQueries({ queryKey: ["alertas"] });
   };
 
   const handleReativar = async () => {
@@ -170,7 +185,6 @@ export default function TerceiroDetalhePage() {
       toast({ title: "Erro ao reativar", description: res.error, variant: "destructive" });
       return;
     }
-    triggerEntraProcessing(true);
     toast({
       title: "Terceiro reativado",
       description: `${res.perfisRestaurados ?? 0} perfis e ${res.individuaisRestaurados ?? 0} recursos individuais restaurados.`,
@@ -214,8 +228,8 @@ export default function TerceiroDetalhePage() {
           <Button variant="outline" size="sm" onClick={() => setStartJmlOpen(true)}>
             <Workflow className="mr-1 h-3 w-3" /> Iniciar evento JML
           </Button>
-          <Button variant="outline" size="sm"><Pencil className="mr-1 h-3 w-3" /> Editar</Button>
-          <Button size="sm" onClick={() => setRenovarOpen(true)}><RefreshCw className="mr-1 h-3 w-3" /> Renovar Contrato</Button>
+          <Button variant="outline" size="sm" onClick={() => navigate(`/terceiros?edit=${id}`)}><Pencil className="mr-1 h-3 w-3" /> Editar</Button>
+          {terceiro.ativo && <Button size="sm" onClick={() => setRenovarOpen(true)}><ShieldCheck className="mr-1 h-3 w-3" /> Revalidar / Renovar</Button>}
         </div>
       </div>
 
@@ -266,12 +280,12 @@ export default function TerceiroDetalhePage() {
           <Alert className="border-primary/30 bg-primary/5">
             <Info className="h-4 w-4 text-primary" />
             <AlertDescription className="text-sm">
-              <strong>Revalidação automática a cada 45 dias.</strong> O responsável ({(terceiro as any).responsavel_colaborador?.email || (terceiro as any).responsavel_colaborador?.nome || terceiro.responsavel || "não definido"}) receberá um e-mail com as opções de manter ou revogar o acesso.
+              <strong>Revalidação a cada {revalidacaoDias} dias.</strong> O responsável ({(terceiro as any).responsavel_colaborador?.email || (terceiro as any).responsavel_colaborador?.nome || terceiro.responsavel || "não definido"}) recebe por e-mail um link para <strong>Manter</strong> ou <strong>Desligar</strong> este terceiro; sem resposta até o prazo (parâmetro "Prazo para revalidar terceiros"), o terceiro é desativado automaticamente. Ao vencer o contrato o desligamento também é automático.
               {terceiro.contrato_inicio && (() => {
                 const inicio = new Date(terceiro.contrato_inicio!);
                 const ultimaRev = (terceiro as any).ultima_revalidacao ? new Date((terceiro as any).ultima_revalidacao) : inicio;
                 const proxima = new Date(ultimaRev);
-                proxima.setDate(proxima.getDate() + 45);
+                proxima.setDate(proxima.getDate() + revalidacaoDias);
                 return <span className="block mt-1 text-xs text-muted-foreground">Próxima revalidação prevista: <strong>{proxima.toLocaleDateString("pt-BR")}</strong></span>;
               })()}
             </AlertDescription>
@@ -315,8 +329,8 @@ export default function TerceiroDetalhePage() {
                     {(atribuicoes || []).map((a: any) => (
                       <tr key={a.id} className="border-b last:border-0">
                         <td className="p-3 font-medium">{a.perfis_acesso?.nome || "—"}</td>
-                        <td className="p-3"><Badge variant="outline">{a.perfis_acesso?.tipo || "—"}</Badge></td>
-                        <td className="p-3 text-muted-foreground">{a.origem || "—"}</td>
+                        <td className="p-3"><Badge variant="outline">{humanize(a.perfis_acesso?.tipo)}</Badge></td>
+                        <td className="p-3 text-muted-foreground">{humanize(a.origem)}</td>
                         <td className="p-3 text-muted-foreground text-xs">{new Date(a.data_concessao).toLocaleDateString("pt-BR")}</td>
                         <td className="p-3">
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleRevogar(a.id, a.perfil_id)}>
@@ -336,20 +350,16 @@ export default function TerceiroDetalhePage() {
       <Dialog open={renovarOpen} onOpenChange={setRenovarOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Renovar Contrato</DialogTitle>
-            <DialogDescription>Renovar contrato de {terceiro.nome} ({terceiro.empresa_terceira})</DialogDescription>
+            <DialogTitle>Revalidar acesso</DialogTitle>
+            <DialogDescription>Confirma que {terceiro.nome} ({terceiro.empresa_terceira || "—"}) continua precisando dos acessos atuais. Opcionalmente renove o contrato — a expiração da conta no AD acompanha a nova data.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="space-y-2"><Label>Nova data de fim</Label><Input type="date" /></div>
-            <div className="space-y-2"><Label>Justificativa</Label><Textarea placeholder="Motivo da renovação..." rows={3} /></div>
-            <div className="flex items-center justify-between">
-              <div><Label>Manter acessos atuais</Label><p className="text-xs text-muted-foreground">Os acessos ativos serão mantidos</p></div>
-              <Switch defaultChecked />
-            </div>
+            <div className="space-y-2"><Label>Nova data de fim do contrato <span className="text-muted-foreground">(opcional)</span></Label><Input type="date" value={renovarForm.novo_fim} min={new Date().toISOString().slice(0, 10)} onChange={(e) => setRenovarForm({ ...renovarForm, novo_fim: e.target.value })} /><p className="text-xs text-muted-foreground">Atual: {terceiro.contrato_fim ? new Date(terceiro.contrato_fim).toLocaleDateString("pt-BR") : "sem data"}</p></div>
+            <div className="space-y-2"><Label>Justificativa</Label><Textarea placeholder="Motivo da revalidação/renovação..." rows={3} value={renovarForm.motivo} onChange={(e) => setRenovarForm({ ...renovarForm, motivo: e.target.value })} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRenovarOpen(false)}>Cancelar</Button>
-            <Button onClick={() => setRenovarOpen(false)}>Confirmar Renovação</Button>
+            <Button onClick={handleRevalidar} disabled={revalidando}>{revalidando ? "Salvando..." : renovarForm.novo_fim ? "Revalidar e renovar" : "Revalidar"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -366,7 +376,7 @@ export default function TerceiroDetalhePage() {
                 <SelectTrigger><SelectValue placeholder="Selecione um perfil" /></SelectTrigger>
                 <SelectContent>
                   {(perfisAcesso || []).filter((p: any) => p.ativo).map((p: any) => (
-                    <SelectItem key={p.id} value={p.id}>{p.nome} ({p.tipo})</SelectItem>
+                    <SelectItem key={p.id} value={p.id}>{p.nome} ({humanize(p.tipo)})</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

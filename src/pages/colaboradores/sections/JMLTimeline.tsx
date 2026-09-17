@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import EmptyState from "@/components/EmptyState";
+import { humanize } from "@/lib/labels";
 
 const tipoJMLColors: Record<string, string> = {
   joiner: "bg-success text-success-foreground",
@@ -52,10 +53,10 @@ export default function JMLTimeline({ eventos }: Props) {
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <Badge className={`${tipoJMLColors[ev.tipo] || ""} text-[10px] uppercase`}>
-                        {tipoJMLLabels[ev.tipo] || ev.tipo}
+                        {tipoJMLLabels[ev.tipo] || humanize(ev.tipo)}
                       </Badge>
                       <Badge variant="outline" className="text-[10px]">
-                        {statusLabels[ev.status] || ev.status}
+                        {statusLabels[ev.status] || humanize(ev.status)}
                       </Badge>
                     </div>
                     <p className="text-sm">

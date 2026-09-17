@@ -1,544 +1,329 @@
-import { useState, useCallback, useEffect, useRef } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useCallback, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  RefreshCw, CheckCircle, AlertCircle, Cloud, Users, FileUp, AlertTriangle, FileSpreadsheet, Shield, Plug, FolderOpen, Bot, Eye, Check, X,
+} from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import {
-  RefreshCw, CheckCircle, AlertCircle, Cloud, Users,
-  FileUp, Trash2, AlertTriangle, FileSpreadsheet, Clock, Shield, Plug, FolderOpen,
-} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useSyncJobsCsv } from "@/hooks/useOrigoData";
+import { useAgentStatus, useColabQuarentena, useParametro, useSyncJob } from "@/hooks/useOrigoData";
 import { supabase } from "@/integrations/supabase/client";
-import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import EmptyState from "@/components/EmptyState";
 import { authedFetch } from "@/lib/authedFetch";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Row = any;
+
+function relTime(iso?: string | null) {
+  if (!iso) return "nunca";
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `há ${s}s`;
+  if (s < 3600) return `há ${Math.floor(s / 60)} min`;
+  if (s < 86400) return `há ${Math.floor(s / 3600)} h`;
+  return `há ${Math.floor(s / 86400)} d`;
+}
+
+async function callFunction(name: string, body?: unknown): Promise<{ ok: boolean; status: number; body: Row }> {
+  const res = await authedFetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: body === undefined ? "{}" : JSON.stringify(body),
+  });
+  const text = await res.text();
+  let parsed: Row = null;
+  try { parsed = JSON.parse(text); } catch { parsed = { raw: text }; }
+  return { ok: res.ok || res.status === 202, status: res.status, body: parsed };
+}
+
 export default function IntegracoesPage() {
-  const [csvSyncing, setCsvSyncing] = useState(false);
-  const [spSyncing, setSpSyncing] = useState(false);
-  const [cleaning, setCleaning] = useState(false);
-  const [groupSyncing, setGroupSyncing] = useState(false);
-  const [spSiteSyncing, setSpSiteSyncing] = useState(false);
-  const [cycleRunning, setCycleRunning] = useState(false);
   const { toast } = useToast();
-  const { data: csvJob, refetch: refetchCsv } = useSyncJobsCsv();
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const qc = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState<Record<string, boolean>>({});
+  const [preview, setPreview] = useState<Row | null>(null);
+  const setB = (k: string, v: boolean) => setBusy((b) => ({ ...b, [k]: v }));
 
-  // Job persistente da reconciliação (tipo='reconcile_identities')
-  const { data: reconcileJob, refetch: refetchReconcileJob } = useQuery({
-    queryKey: ["sync_jobs_reconcile_identities"],
+  const { data: csvJob } = useSyncJob("csv_colab");
+  const { data: reconcileJob } = useSyncJob("reconcile_identities");
+  const { data: dailyJob } = useSyncJob("daily_cycle");
+  const { data: agents } = useAgentStatus();
+  const { data: quarentena } = useColabQuarentena();
+  const spSite = useParametro("sharepoint_rh_site", "origoenergia.sharepoint.com:/sites/dataanalytics");
+  const spPasta = useParametro("sharepoint_rh_pasta", "RH_COLAB");
+  const spPrefixo = useParametro("sharepoint_rh_prefixo", "base_colab_");
+
+  const { data: reconcileStats } = useQuery({
+    queryKey: ["colaboradores_reconcile_stats"],
     queryFn: async () => {
-      const { data } = await (supabase as any)
-        .from("sync_jobs").select("*")
-        .eq("tipo", "reconcile_identities")
-        .order("created_at", { ascending: false }).limit(1);
-      return data?.[0] ?? null;
-    },
-    refetchInterval: (q: any) => (q.state.data?.status === "running" ? 3000 : false),
-  });
-
-  // Job do ciclo diário
-  const { data: dailyJob, refetch: refetchDaily } = useQuery({
-    queryKey: ["sync_jobs_daily_cycle"],
-    queryFn: async () => {
-      const { data } = await (supabase as any)
-        .from("sync_jobs").select("*")
-        .eq("tipo", "daily_cycle")
-        .order("created_at", { ascending: false }).limit(1);
-      return data?.[0] ?? null;
-    },
-    refetchInterval: (q: any) => (q.state.data?.status === "running" ? 3000 : false),
-  });
-
-  const reconRunning = reconcileJob?.status === "running";
-  const reconStale = reconRunning && reconcileJob?.updated_at &&
-    Date.now() - new Date(reconcileJob.updated_at).getTime() > 5 * 60 * 1000;
-  const dailyRunning = dailyJob?.status === "running";
-  const dailyStale = dailyRunning && dailyJob?.updated_at &&
-    Date.now() - new Date(dailyJob.updated_at).getTime() > 30 * 60 * 1000;
-
-  const { data: reconcileStats, refetch: refetchReconcile } = useQuery({
-    queryKey: ["reconcile-stats"],
-    queryFn: async () => {
-      const [
-        { count: total }, { count: linked }, { count: desligados },
-        { count: aReconciliar }, { count: pendJoiners }, { count: pendLeavers },
-      ] = await Promise.all([
-        (supabase as any).from("colaboradores").select("id", { count: "exact", head: true }),
-        (supabase as any).from("colaboradores").select("id", { count: "exact", head: true }).not("entra_id", "is", null),
-        (supabase as any).from("colaboradores").select("id", { count: "exact", head: true }).in("status", ["desligado", "inativo"]),
-        (supabase as any).from("colaboradores").select("id", { count: "exact", head: true })
-          .eq("status", "ativo").is("entra_id", null).not("email", "is", null),
-        (supabase as any).from("eventos_jml").select("id", { count: "exact", head: true }).eq("tipo", "joiner").eq("status", "pendente"),
-        (supabase as any).from("eventos_jml").select("id", { count: "exact", head: true }).eq("tipo", "leaver").eq("status", "pendente"),
+      const [{ count: total }, { count: linked }, { count: desligados }, { count: aReconciliar }] = await Promise.all([
+        (supabase as Row).from("colaboradores").select("id", { count: "exact", head: true }),
+        (supabase as Row).from("colaboradores").select("id", { count: "exact", head: true }).not("entra_id", "is", null),
+        (supabase as Row).from("colaboradores").select("id", { count: "exact", head: true }).in("status", ["desligado", "inativo"]),
+        (supabase as Row).from("colaboradores").select("id", { count: "exact", head: true }).eq("status", "ativo").is("entra_id", null).not("email", "is", null),
       ]);
-      return {
-        total: total || 0, linked: linked || 0, desligados: desligados || 0,
-        aReconciliar: aReconciliar || 0,
-        pendJoiners: pendJoiners || 0, pendLeavers: pendLeavers || 0,
-      };
+      return { total: total || 0, linked: linked || 0, desligados: desligados || 0, aReconciliar: aReconciliar || 0 };
     },
-    refetchInterval: 15000,
   });
-
-  // Refetch stats quando um job termina
-  useEffect(() => {
-    if (reconcileJob?.status === "done" || dailyJob?.status === "done") {
-      refetchReconcile();
-    }
-  }, [reconcileJob?.status, dailyJob?.status, refetchReconcile]);
-
-  const handleReconcile = useCallback(async () => {
-    try {
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reconcile-identities`;
-      const res = await authedFetch(url, { method: "POST", headers: { "Content-Type": "application/json" } });
-      const body = await res.json();
-      if (!res.ok && res.status !== 202) {
-        toast({ title: "Erro na reconciliação", description: body.error || `HTTP ${res.status}`, variant: "destructive" });
-      } else {
-        toast({
-          title: body.already_running ? "Reconciliação já em andamento" : "Reconciliação iniciada",
-          description: "Acompanhe o progresso no painel abaixo.",
-        });
-        refetchReconcileJob();
-      }
-    } catch (err: unknown) {
-      toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
-    }
-  }, [toast, refetchReconcileJob]);
-
-  const handleDailyCycle = useCallback(async () => {
-    setCycleRunning(true);
-    try {
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/run-daily-cycle`;
-      const res = await authedFetch(url, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ skip_csv: false }),
-      });
-      const body = await res.json();
-      if (!res.ok && res.status !== 202) {
-        toast({ title: "Erro no ciclo diário", description: body.error || `HTTP ${res.status}`, variant: "destructive" });
-      } else {
-        toast({
-          title: body.already_running ? "Ciclo já em andamento" : "Ciclo diário iniciado",
-          description: "Etapas: CSV → Reconciliar → Processar fila.",
-        });
-        refetchDaily();
-      }
-    } catch (err: unknown) {
-      toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
-    }
-    setCycleRunning(false);
-  }, [toast, refetchDaily]);
-
   const { data: connectorStats } = useQuery({
-    queryKey: ["connector-stats"],
-    queryFn: async () => {
-      const { data, error } = await (supabase as any).from("aplicacoes").select("id, nome, connector_type").neq("connector_type", "manual");
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryKey: ["aplicacoes_connectors"],
+    queryFn: async () => { const { data, error } = await (supabase as Row).from("aplicacoes").select("id, nome, connector_type").neq("connector_type", "manual"); if (error) throw error; return (data ?? []) as Row[]; },
   });
 
-  useEffect(() => {
-    if (csvJob?.status === "running" && csvJob?.updated_at) {
-      const updatedAt = new Date(csvJob.updated_at).getTime();
-      const now = Date.now();
-      const staleMs = 10 * 60 * 1000; // 10 minutes
-      setCsvSyncing(now - updatedAt < staleMs);
-    } else {
-      setCsvSyncing(false);
-    }
-  }, [csvJob?.status, csvJob?.updated_at]);
+  const isStale = (job: Row, minutes: number) => job?.status === "running" && job?.updated_at && Date.now() - new Date(job.updated_at).getTime() > minutes * 60_000;
+  const running = (job: Row, minutes: number) => job?.status === "running" && !isStale(job, minutes);
 
-  const handleCsvUpload = useCallback(async (file: File) => {
-    setCsvSyncing(true);
+  const run = useCallback(async (key: string, fn: string, body: unknown, okMsg: (b: Row) => string) => {
+    setB(key, true);
     try {
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-csv-colab`;
-      const formData = new FormData();
-      formData.append("file", file);
-      authedFetch(url, { method: "POST", body: formData })
-        .then(async (res) => { if (!res.ok) { const body = await res.text(); toast({ title: "Erro na importação CSV", description: body, variant: "destructive" }); } refetchCsv(); })
-        .catch((err) => { toast({ title: "Erro", description: err.message, variant: "destructive" }); setCsvSyncing(false); });
-      setTimeout(() => refetchCsv(), 1500);
-    } catch (err: unknown) { toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" }); setCsvSyncing(false); }
-  }, [toast, refetchCsv]);
-
-  const handleSharePointSync = useCallback(async () => {
-    setSpSyncing(true);
-    try {
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-sharepoint-csv`;
-      const res = await authedFetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, });
-      const body = await res.json();
-      if (!res.ok) { toast({ title: "Erro SharePoint", description: body.error || `HTTP ${res.status}`, variant: "destructive" }); }
-      else { toast({ title: "Sincronização iniciada", description: `Arquivo: ${body.file}` }); setTimeout(() => refetchCsv(), 2000); }
-    } catch (err: unknown) { toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" }); }
-    setSpSyncing(false);
-  }, [toast, refetchCsv]);
-
-  const handleSyncGroups = useCallback(async () => {
-    setGroupSyncing(true);
-    try {
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-entra-groups`;
-      const res = await authedFetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        toast({ title: "Erro ao sincronizar grupos", description: body.error || `HTTP ${res.status}`, variant: "destructive" });
-      } else {
-        toast({
-          title: "Grupos sincronizados",
-          description: `${body.total} grupos importados (${body.cloudOnly} cloud-only, ${body.onPremises} on-premises)`,
-        });
-      }
-    } catch (err: unknown) {
+      const r = await callFunction(fn, body);
+      if (!r.ok) toast({ title: "Erro", description: r.body?.error || `HTTP ${r.status}`, variant: "destructive" });
+      else toast({ title: okMsg(r.body) });
+    } catch (err) {
       toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
-    }
-    setGroupSyncing(false);
+    } finally { setB(key, false); }
   }, [toast]);
 
-  const handleSyncSharepointSites = useCallback(async () => {
-    setSpSiteSyncing(true);
+  const uploadCsv = useCallback(async (file: File, dryRun: boolean) => {
+    setB("csv", true);
     try {
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-sharepoint-sites`;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 120000);
-      const res = await authedFetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      const body = await res.json();
-      if (!res.ok) { toast({ title: "Erro ao sincronizar sites", description: body.error || `HTTP ${res.status}`, variant: "destructive" }); }
-      else { toast({ title: "Sites SharePoint sincronizados", description: `${body.sites} sites importados. As pastas serão carregadas sob demanda ao selecionar um site no perfil de acesso.` }); }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Erro";
-      toast({ title: "Erro na sincronização", description: msg.includes("abort") ? "Timeout: a sincronização pode ainda estar rodando em segundo plano." : msg, variant: "destructive" });
-    }
-    setSpSiteSyncing(false);
+      const fd = new FormData(); fd.append("file", file);
+      const res = await authedFetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-csv-colab${dryRun ? "?dry_run=1" : ""}`, { method: "POST", body: fd });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { toast({ title: "Erro na importação", description: body?.error || `HTTP ${res.status}`, variant: "destructive" }); return; }
+      if (dryRun) setPreview({ ...body, filename: file.name });
+      else toast({ title: "Importação concluída", description: `${body.created ?? 0} novos · ${body.updated ?? 0} atualizados · ${body.removed ?? 0} desligados · ${body.quarantined ?? 0} em quarentena` });
+    } catch (err) {
+      toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
+    } finally { setB("csv", false); }
   }, [toast]);
 
-  const handleCleanBase = useCallback(async () => {
-    setCleaning(true);
-    try {
-      const { data: systemUsers } = await supabase.from("profiles").select("email");
-      const protectedEmails = new Set((systemUsers || []).map((o: any) => o.email?.toLowerCase()));
-      const { data: toClean } = await supabase.from("colaboradores").select("id, email");
-      const safeToClean = (toClean || []).filter((c: any) => !c.email || !protectedEmails.has(c.email.toLowerCase()));
-      if (safeToClean.length === 0) { toast({ title: "Nada a limpar" }); setCleaning(false); return; }
-      const ids = safeToClean.map((c: any) => c.id);
-      const BATCH = 200;
-      for (let i = 0; i < ids.length; i += BATCH) {
-        const batch = ids.slice(i, i + BATCH);
-        await supabase.from("perfil_atribuicoes").delete().in("colaborador_id", batch);
-        await supabase.from("eventos_jml").delete().in("colaborador_id", batch);
-        await supabase.from("iam_queue").delete().in("colaborador_id", batch);
-        await supabase.from("colab_quarentena").delete().in("colaborador_id", batch);
-        await supabase.from("excecoes").delete().in("colaborador_id", batch);
-        await supabase.from("revisao_itens").delete().in("colaborador_id", batch);
-        const { error } = await supabase.from("colaboradores").delete().in("id", batch);
-        if (error) throw error;
-      }
-      toast({ title: "Base limpa", description: `${ids.length} colaborador(es) excluídos permanentemente.` });
-    } catch (err: unknown) { toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" }); }
-    setCleaning(false);
-  }, [toast]);
+  const decideQuarentena = async (row: Row, status: "resolvido" | "descartado") => {
+    const { data, error } = await supabase.rpc("quarentena_decidir", { p_id: row.id, p_status: status });
+    const res = data as { ok?: boolean; error?: string } | null;
+    if (error || res?.ok === false) { toast({ title: "Erro", description: error?.message || res?.error || "Erro", variant: "destructive" }); return; }
+    toast({ title: status === "resolvido" ? "Marcado como resolvido" : "Descartado", description: row.nome || row.matricula || undefined });
+    qc.invalidateQueries({ queryKey: ["colab_quarentena"] });
+  };
 
-  const showCsvProgress = (() => {
-    if (!csvJob) return false;
-    if (!["running", "done", "error"].includes(csvJob.status)) return false;
-    const updatedAt = csvJob.updated_at ? new Date(csvJob.updated_at).getTime() : 0;
-    const twoHoursMs = 2 * 60 * 60 * 1000;
-    return Date.now() - updatedAt < twoHoursMs;
-  })();
+  const agent = agents?.[0];
+  const agentAge = agent ? (Date.now() - new Date(agent.last_seen_at).getTime()) / 60000 : Infinity;
 
   return (
     <div className="space-y-4">
-      {/* Connector Summary Card */}
-      <Card className="border-primary/20">
+      {/* Executor */}
+      <Card className={`${!agent || agentAge > 30 ? "border-destructive/30" : agentAge > 5 ? "border-warning/30" : "border-success/30"}`}>
         <CardHeader>
           <div className="flex items-center gap-3">
-            <Plug className="h-5 w-5 text-primary" />
-            <div><CardTitle className="text-base">Conectores de Aplicações</CardTitle><CardDescription>Integrações com sistemas externos (GLPI, SAP, etc.) para gestão de usuários</CardDescription></div>
-            <Badge className="ml-auto" variant="outline">{(connectorStats || []).length} ativo(s)</Badge>
+            <Bot className="h-5 w-5 text-primary" />
+            <div><CardTitle className="text-base">Órigo Agente — executor único</CardTitle><CardDescription>Consome a fila via iam-agent-api e executa em AD, Entra ID, SharePoint e apps. Nenhuma função do sistema executa ações em diretório.</CardDescription></div>
+            <Badge variant="outline" className={`ml-auto ${!agent || agentAge > 30 ? "border-destructive/30 bg-destructive/10 text-destructive" : agentAge > 5 ? "border-warning/30 bg-warning/10 text-warning" : "border-success/30 bg-success/10 text-success"}`}>
+              {!agent ? "nunca visto" : agentAge <= 5 ? "online" : agentAge <= 30 ? "sem sinal" : "offline"}
+            </Badge>
           </div>
         </CardHeader>
-        <CardContent className="space-y-3">
-          {(connectorStats || []).length === 0 ? (
-            <EmptyState message="Nenhuma aplicação com conector configurado. Configure na página de detalhe de cada aplicação." />
-          ) : (
-            <div className="space-y-2">
-              {(connectorStats || []).map((app: any) => (
-                <div key={app.id} className="flex items-center justify-between text-sm border rounded-md px-3 py-2 hover:bg-muted/50 cursor-pointer" onClick={() => navigate(`/aplicacoes/${app.id}`)}>
-                  <span className="font-medium">{app.nome}</span>
-                  <Badge variant="outline" className="bg-success/15 text-success border-success/30">{app.connector_type === "rest_api" ? "REST API" : app.connector_type === "scim" ? "SCIM" : app.connector_type}</Badge>
-                </div>
-              ))}
+        <CardContent>
+          {agent ? (
+            <div className="grid grid-cols-2 gap-3 text-xs md:grid-cols-5">
+              <div><p className="text-muted-foreground">Executor</p><p className="font-medium">{agent.owner}</p></div>
+              <div><p className="text-muted-foreground">Versão / host</p><p className="font-medium">{agent.version || "?"} · {agent.host || "?"}</p></div>
+              <div><p className="text-muted-foreground">Modo</p><p className="font-medium">{agent.execute_mode === false ? "dry-run (nada é aplicado)" : "executando"}</p></div>
+              <div><p className="text-muted-foreground">Último contato</p><p className="font-medium">{relTime(agent.last_seen_at)}</p></div>
+              <div><p className="text-muted-foreground">Último resultado</p><p className="font-medium truncate" title={agent.last_result || ""}>{agent.last_result ? `${agent.last_result} (${relTime(agent.last_result_at)})` : "—"}</p></div>
             </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">O agente ainda não chamou a API. Configure <code className="rounded bg-muted px-1">IAM_AGENT_API_URL</code> e <code className="rounded bg-muted px-1">IAM_AGENT_TOKEN</code> no host do agente e execute <code className="rounded bg-muted px-1">python agent/origo_iam_agent_executor.py --execute</code>.</p>
           )}
-          <Button variant="outline" size="sm" onClick={() => navigate("/aplicacoes")}>Ver todas as aplicações</Button>
         </CardContent>
       </Card>
 
+      {/* Ciclo diário / RH */}
       <Card className="border-primary/30 bg-primary/5">
         <CardHeader>
           <div className="flex items-center gap-3">
             <Cloud className="h-5 w-5 text-primary" />
-            <div><CardTitle className="text-base">Sincronização Manual — SharePoint</CardTitle><CardDescription>Busca o CSV mais recente na pasta RH_COLAB do SharePoint sob demanda</CardDescription></div>
+            <div><CardTitle className="text-base">Base do RH — SharePoint</CardTitle><CardDescription>Ciclo diário automático às 06:30 UTC: busca o CSV mais recente → importa (joiners, movers, leavers com limite de segurança, quarentena) → reconcilia com o Entra ID → fila para o agente.</CardDescription></div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="text-sm text-muted-foreground space-y-1">
-            <p><strong>Site:</strong> origoenergia.sharepoint.com/sites/dataanalytics</p>
-            <p><strong>Pasta:</strong> Shared Documents / RH_COLAB</p>
-            <p><strong>Prefixo:</strong> <code className="text-xs bg-muted px-1 rounded">base_colab_</code></p>
+          <div className="grid grid-cols-1 gap-1 text-sm text-muted-foreground md:grid-cols-3">
+            <p><strong>Site:</strong> {spSite}</p><p><strong>Pasta:</strong> Documentos / {spPasta}</p><p><strong>Prefixo:</strong> <code className="rounded bg-muted px-1 text-xs">{spPrefixo}</code></p>
           </div>
-          <Button onClick={handleSharePointSync} disabled={spSyncing}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${spSyncing ? "animate-spin" : ""}`} />{spSyncing ? "Buscando no SharePoint..." : "Buscar Dados do SharePoint"}
-          </Button>
-          {showCsvProgress && <CsvProgressPanel job={csvJob} />}
-        </CardContent>
-      </Card>
-
-      <Card className="border-primary/30 bg-primary/5">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <Users className="h-5 w-5 text-primary" />
-            <div>
-              <CardTitle className="text-base">Reconciliar Identidades — AD / Entra ID</CardTitle>
-              <CardDescription>
-                Linka colaboradores existentes ao Entra ID, resolve joiners pendentes e gera desabilitações
-                para desligados que ainda não foram processados
-              </CardDescription>
-            </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => run("cycle", "run-daily-cycle", { skip_csv: false }, (b) => b.already_running ? "Ciclo já em andamento" : "Ciclo diário iniciado")} disabled={busy.cycle || running(dailyJob, 30)}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${busy.cycle || running(dailyJob, 30) ? "animate-spin" : ""}`} />{running(dailyJob, 30) ? "Ciclo em andamento…" : "Rodar ciclo diário agora"}
+            </Button>
+            <Button variant="outline" onClick={() => run("sp", "sync-sharepoint-csv", {}, (b) => `Importação iniciada: ${b.file || "arquivo mais recente"}`)} disabled={busy.sp || running(csvJob, 10)}>
+              <FileSpreadsheet className="mr-2 h-4 w-4" />Só importar o CSV
+            </Button>
+            <Button variant="outline" onClick={() => run("recon", "reconcile-identities", {}, (b) => b.already_running ? "Reconciliação já em andamento" : "Reconciliação iniciada")} disabled={busy.recon || running(reconcileJob, 15)}>
+              <Users className="mr-2 h-4 w-4" />Só reconciliar identidades
+            </Button>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
           {reconcileStats && (
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
-              <div className="rounded border p-2">
-                <div className="text-muted-foreground">Total</div>
-                <div className="text-lg font-semibold">{reconcileStats.total}</div>
-              </div>
-              <div className="rounded border p-2">
-                <div className="text-muted-foreground">Linkados no Entra</div>
-                <div className="text-lg font-semibold text-emerald-600">{reconcileStats.linked}</div>
-              </div>
-              <div className="rounded border p-2">
-                <div className="text-muted-foreground">A reconciliar</div>
-                <div className="text-lg font-semibold text-amber-600">{reconcileStats.aReconciliar}</div>
-                <div className="text-[10px] text-muted-foreground">ativos sem entra_id</div>
-              </div>
-              <div className="rounded border p-2">
-                <div className="text-muted-foreground">Desligados</div>
-                <div className="text-lg font-semibold text-red-600">{reconcileStats.desligados}</div>
-              </div>
-              <div className="rounded border p-2">
-                <div className="text-muted-foreground">JML pendentes</div>
-                <div className="text-lg font-semibold">
-                  {reconcileStats.pendJoiners}J / {reconcileStats.pendLeavers}L
-                </div>
-              </div>
+            <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
+              <div className="rounded border bg-background p-2"><div className="text-muted-foreground">Colaboradores</div><div className="text-lg font-semibold">{reconcileStats.total}</div></div>
+              <div className="rounded border bg-background p-2"><div className="text-muted-foreground">Vinculados ao Entra</div><div className="text-lg font-semibold text-emerald-600">{reconcileStats.linked}</div></div>
+              <div className="rounded border bg-background p-2"><div className="text-muted-foreground">Ativos sem vínculo</div><div className="text-lg font-semibold text-amber-600">{reconcileStats.aReconciliar}</div></div>
+              <div className="rounded border bg-background p-2"><div className="text-muted-foreground">Desligados / inativos</div><div className="text-lg font-semibold text-red-600">{reconcileStats.desligados}</div></div>
             </div>
           )}
-          <div className="text-sm text-muted-foreground">
-            Fluxo diário: <strong>CSV do SharePoint</strong> → <strong>Reconciliar identidades</strong> (linka Entra, resolve joiners, gera leavers/disable) → <strong>Processar fila</strong> (executa disable/enable/assign no Entra).
-            O botão abaixo executa a reconciliação isoladamente; use "Rodar ciclo diário" para orquestrar as 3 etapas.
-          </div>
-
-          {reconcileJob && <ReconcileProgressPanel job={reconcileJob} />}
-
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={handleReconcile} disabled={reconRunning && !reconStale}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${reconRunning && !reconStale ? "animate-spin" : ""}`} />
-              {reconRunning && !reconStale ? "Reconciliando..." : "Rodar reconciliação"}
-            </Button>
-            <Button variant="secondary" onClick={handleDailyCycle} disabled={(dailyRunning && !dailyStale) || cycleRunning}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${(dailyRunning && !dailyStale) || cycleRunning ? "animate-spin" : ""}`} />
-              {dailyRunning && !dailyStale ? "Ciclo diário em andamento..." : "Rodar ciclo diário completo"}
-            </Button>
-          </div>
-
-          {dailyJob && <ReconcileProgressPanel job={dailyJob} label="Ciclo diário" />}
+          {dailyJob && <JobPanel job={dailyJob} label="Ciclo diário" staleMinutes={30} />}
+          {csvJob && (dailyJob?.status !== "running") && <CsvPanel job={csvJob} />}
+          {reconcileJob && (dailyJob?.status !== "running") && <JobPanel job={reconcileJob} label="Reconciliação" staleMinutes={15} />}
         </CardContent>
       </Card>
 
-
-
-      <Card className="border-primary/20">
+      {/* Quarentena */}
+      <Card className={(quarentena?.length ?? 0) > 0 ? "border-warning/40" : ""}>
         <CardHeader>
           <div className="flex items-center gap-3">
-            <Shield className="h-5 w-5 text-primary" />
-            <div><CardTitle className="text-base">Sincronizar Grupos — Entra ID</CardTitle><CardDescription>Puxa todos os grupos do Entra ID (cloud e on-premises) para a base local</CardDescription></div>
+            <AlertTriangle className={`h-5 w-5 ${(quarentena?.length ?? 0) > 0 ? "text-warning" : "text-muted-foreground"}`} />
+            <div><CardTitle className="text-base">Quarentena da importação</CardTitle><CardDescription>Linhas do RH que não viraram identidade (sem matrícula, duplicadas, ausentes com limite de segurança acionado). Corrija na base do RH; a próxima importação reavalia.</CardDescription></div>
+            <Badge variant="outline" className="ml-auto">{quarentena?.length ?? 0} pendente(s)</Badge>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="text-sm text-muted-foreground space-y-1">
-            <p>Importa todos os grupos do Entra ID via Microsoft Graph API.</p>
-            <p>Grupos <strong>cloud-only</strong> podem ser gerenciados diretamente pelo sistema.</p>
-            <p>Grupos <strong>on-premises</strong> (sincronizados do AD) são identificados automaticamente.</p>
-          </div>
-          <Button onClick={handleSyncGroups} disabled={groupSyncing}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${groupSyncing ? "animate-spin" : ""}`} />{groupSyncing ? "Sincronizando grupos..." : "Sincronizar Grupos do Entra ID"}
-          </Button>
+        <CardContent className="p-0">
+          {(quarentena?.length ?? 0) === 0 ? <div className="py-6"><EmptyState message="Nada em quarentena." /></div> : (
+            <table className="w-full text-sm">
+              <thead><tr className="border-b text-left text-xs uppercase tracking-wider text-muted-foreground"><th className="p-3 font-medium">Pessoa</th><th className="p-3 font-medium">Motivo</th><th className="p-3 font-medium hidden md:table-cell">Detalhe</th><th className="p-3 font-medium">Quando</th><th className="p-3"></th></tr></thead>
+              <tbody>
+                {(quarentena ?? []).slice(0, 100).map((q: Row) => (
+                  <tr key={q.id} className="border-b last:border-0">
+                    <td className="p-3"><div className="font-medium">{q.nome || "—"}</div><div className="text-xs text-muted-foreground">{q.matricula ? `mat. ${q.matricula}` : ""}{q.email ? ` · ${q.email}` : ""}</div></td>
+                    <td className="p-3"><Badge variant="outline" className="border-warning/30 bg-warning/10 text-warning">{String(q.motivo || "").replace(/_/g, " ")}</Badge></td>
+                    <td className="p-3 hidden md:table-cell max-w-[360px] truncate text-xs text-muted-foreground" title={q.detalhe || ""}>{q.detalhe || "—"}</td>
+                    <td className="p-3 text-xs text-muted-foreground">{relTime(q.created_at)}</td>
+                    <td className="p-3"><div className="flex justify-end gap-1">
+                      {q.colaborador_id && <Button variant="ghost" size="sm" className="h-7" onClick={() => navigate(`/colaboradores/${q.colaborador_id}`)}><Eye className="h-3.5 w-3.5" /></Button>}
+                      <Button variant="ghost" size="sm" className="h-7 text-success" title="Resolvido (corrigido no RH)" onClick={() => decideQuarentena(q, "resolvido")}><Check className="h-3.5 w-3.5" /></Button>
+                      <Button variant="ghost" size="sm" className="h-7 text-muted-foreground" title="Descartar" onClick={() => decideQuarentena(q, "descartado")}><X className="h-3.5 w-3.5" /></Button>
+                    </div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </CardContent>
       </Card>
 
+      {/* Catálogo Entra / SharePoint */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Card className="border-primary/20">
+          <CardHeader><div className="flex items-center gap-3"><Shield className="h-5 w-5 text-primary" /><div><CardTitle className="text-base">Grupos do Entra ID</CardTitle><CardDescription>Catálogo de grupos (cloud e on-premises) usado nos perfis de acesso. Somente leitura do Graph.</CardDescription></div></div></CardHeader>
+          <CardContent><Button onClick={() => run("groups", "sync-entra-groups", {}, (b) => `${b.total ?? 0} grupos (${b.cloudOnly ?? 0} cloud, ${b.onPremises ?? 0} on-prem)`)} disabled={busy.groups}><RefreshCw className={`mr-2 h-4 w-4 ${busy.groups ? "animate-spin" : ""}`} />Sincronizar grupos</Button></CardContent>
+        </Card>
+        <Card className="border-primary/20">
+          <CardHeader><div className="flex items-center gap-3"><FolderOpen className="h-5 w-5 text-primary" /><div><CardTitle className="text-base">Sites do SharePoint</CardTitle><CardDescription>Sites e pastas (2 níveis) para os perfis de acesso. Somente leitura do Graph.</CardDescription></div></div></CardHeader>
+          <CardContent><Button onClick={() => run("sites", "sync-sharepoint-sites", {}, (b) => `${b.sites ?? 0} sites importados`)} disabled={busy.sites}><RefreshCw className={`mr-2 h-4 w-4 ${busy.sites ? "animate-spin" : ""}`} />Sincronizar sites</Button></CardContent>
+        </Card>
+      </div>
+
+      {/* Conectores */}
       <Card className="border-primary/20">
         <CardHeader>
           <div className="flex items-center gap-3">
-            <FolderOpen className="h-5 w-5 text-primary" />
-            <div><CardTitle className="text-base">Sincronizar Sites — SharePoint</CardTitle><CardDescription>Importa sites e pastas (2 níveis) do SharePoint via Microsoft Graph para uso nos perfis de acesso</CardDescription></div>
+            <Plug className="h-5 w-5 text-primary" />
+            <div><CardTitle className="text-base">Conectores de aplicações</CardTitle><CardDescription>Apps externos (REST/SCIM) provisionados pelo agente via create/update/disable_user_app.</CardDescription></div>
+            <Badge className="ml-auto" variant="outline">{(connectorStats || []).length} ativo(s)</Badge>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="text-sm text-muted-foreground space-y-1">
-            <p>Lista todos os sites do tenant e suas pastas até 2 níveis de profundidade.</p>
-            <p>Os sites e pastas importados ficam disponíveis para vincular aos <strong>Perfis de Acesso</strong>.</p>
-          </div>
-          <Button onClick={handleSyncSharepointSites} disabled={spSiteSyncing}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${spSiteSyncing ? "animate-spin" : ""}`} />{spSiteSyncing ? "Sincronizando sites..." : "Sincronizar Sites do SharePoint"}
-          </Button>
+        <CardContent className="space-y-3">
+          {(connectorStats || []).length === 0 ? <EmptyState message="Nenhuma aplicação com conector. Configure na página de detalhe da aplicação." /> : (
+            <div className="space-y-2">
+              {(connectorStats || []).map((app: Row) => (
+                <div key={app.id} className="flex cursor-pointer items-center justify-between rounded-md border px-3 py-2 text-sm hover:bg-muted/50" onClick={() => navigate(`/aplicacoes/${app.id}`)}>
+                  <span className="font-medium">{app.nome}</span>
+                  <Badge variant="outline" className="border-success/30 bg-success/15 text-success">{app.connector_type === "rest_api" ? "REST API" : app.connector_type === "scim" ? "SCIM" : app.connector_type}</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+          <Button variant="outline" size="sm" onClick={() => navigate("/aplicacoes")}>Ver aplicações</Button>
         </CardContent>
       </Card>
 
+      {/* Upload manual */}
       <Card className="border-primary/20">
         <CardHeader>
           <div className="flex items-center gap-3">
-            <FileSpreadsheet className="h-5 w-5 text-primary" />
-            <div><CardTitle className="text-base">Importação CSV — Upload Manual</CardTitle><CardDescription>Fallback: envie um CSV manualmente caso a rotina automática falhe</CardDescription></div>
+            <FileUp className="h-5 w-5 text-primary" />
+            <div><CardTitle className="text-base">Importação manual (contingência)</CardTitle><CardDescription>Mesmo motor da importação automática. Use "Pré-visualizar" para ver o que mudaria sem gravar nada.</CardDescription></div>
             <Badge className="ml-auto" variant="outline">Fallback</Badge>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleCsvUpload(file); e.target.value = ""; }} />
-          <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={csvSyncing}>
-            <FileUp className={`mr-2 h-4 w-4 ${csvSyncing ? "animate-spin" : ""}`} />{csvSyncing ? "Importando..." : "Importar CSV"}
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card className="border-destructive/20">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <Trash2 className="h-5 w-5 text-destructive" />
-            <div><CardTitle className="text-base">Limpar Base Completa</CardTitle><CardDescription>Excluir permanentemente todos os colaboradores do sistema</CardDescription></div>
+        <CardContent className="space-y-3">
+          <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCsv(f, (fileInputRef.current?.dataset.mode || "preview") === "preview"); e.target.value = ""; }} />
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" disabled={busy.csv} onClick={() => { if (fileInputRef.current) { fileInputRef.current.dataset.mode = "preview"; fileInputRef.current.click(); } }}><Eye className="mr-2 h-4 w-4" />Pré-visualizar CSV</Button>
+            <Button disabled={busy.csv} onClick={() => { if (fileInputRef.current) { fileInputRef.current.dataset.mode = "apply"; fileInputRef.current.click(); } }}><FileUp className={`mr-2 h-4 w-4 ${busy.csv ? "animate-spin" : ""}`} />Importar CSV</Button>
           </div>
-        </CardHeader>
-        <CardContent>
-          <AlertDialog>
-            <AlertDialogTrigger asChild><Button variant="destructive" disabled={cleaning}><Trash2 className="mr-2 h-4 w-4" />{cleaning ? "Excluindo..." : "Limpar Base Completa"}</Button></AlertDialogTrigger>
-             <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle><AlertDialogDescription>Todos os colaboradores serão excluídos permanentemente do sistema, independente da origem. Esta ação não pode ser desfeita.</AlertDialogDescription></AlertDialogHeader>
-              <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleCleanBase}>Confirmar</AlertDialogAction></AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          {preview && (
+            <div className="rounded-md border p-3 text-sm">
+              <div className="mb-2 flex items-center justify-between"><span className="font-medium">Pré-visualização — {preview.filename}</span><Button variant="ghost" size="sm" onClick={() => setPreview(null)}>Fechar</Button></div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <Badge variant="outline" className="border-success/30 bg-success/10 text-success">{preview.created ?? 0} novos</Badge>
+                <Badge variant="outline">{preview.updated ?? 0} atualizados</Badge>
+                <Badge variant="outline">{preview.unchanged ?? 0} sem mudança</Badge>
+                <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive">{preview.removed ?? 0} desligamentos</Badge>
+                <Badge variant="outline" className="border-warning/30 bg-warning/10 text-warning">{preview.quarantined ?? 0} quarentena</Badge>
+                {preview.rehired ? <Badge variant="outline">{preview.rehired} recontratações</Badge> : null}
+                {preview.leaverGuardTriggered && <Badge variant="destructive">Limite de desligamentos seria acionado</Badge>}
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">{preview.total ?? 0} linha(s) válidas de {preview.rawTotal ?? 0}. Nada foi gravado.</p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
   );
 }
 
-function CsvProgressPanel({ job }: { job: any }) {
-  const { toast } = useToast();
-  const [resetting, setResetting] = useState(false);
-  const isDone = job.status === "done";
-  const isError = job.status === "error";
-  const isRunning = job.status === "running";
-  const updatedAtMs = job.updated_at ? new Date(job.updated_at).getTime() : 0;
-  const isStale = isRunning && Date.now() - updatedAtMs > 5 * 60 * 1000;
-
-  const handleReset = async () => {
-    setResetting(true);
-    const { error } = await supabase
-      .from("sync_jobs")
-      .update({ status: "error", error: "Marcado como travado pelo usuário", message: "Marcado como travado pelo usuário" })
-      .eq("id", job.id);
-    if (error) toast({ title: "Erro", description: error.message, variant: "destructive" });
-    else toast({ title: "Sincronização marcada como travada", description: "Você pode disparar um novo sync." });
-    setResetting(false);
-  };
-
+function CsvPanel({ job }: { job: Row }) {
+  const isDone = job.status === "done"; const isError = job.status === "error"; const isRunning = job.status === "running";
+  const isStale = isRunning && Date.now() - new Date(job.updated_at || 0).getTime() > 10 * 60_000;
+  const recent = Date.now() - new Date(job.updated_at || job.created_at).getTime() < 2 * 3600_000;
+  if (!recent && !isRunning) return null;
   return (
-    <div className="rounded-md border p-4 space-y-4">
-      <div className="flex items-center gap-2">
+    <div className="space-y-3 rounded-md border bg-background p-3">
+      <div className="flex items-center gap-2 text-sm">
         {isError ? <AlertCircle className="h-4 w-4 text-destructive" /> : isDone ? <CheckCircle className="h-4 w-4 text-success" /> : <RefreshCw className="h-4 w-4 animate-spin text-primary" />}
-        <span className="font-medium text-sm">{job.message || "Iniciando..."}</span>
+        <span className="font-medium">Importação: {job.message || "Iniciando…"}</span>
+        <span className="ml-auto text-xs text-muted-foreground">{relTime(job.updated_at)}</span>
       </div>
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-sm"><div className="flex items-center gap-2"><Users className="h-4 w-4 text-muted-foreground" /><span className="font-medium">Colaboradores</span></div><span className="text-muted-foreground">{job.colab_percent || 0}%</span></div>
-        <Progress value={job.colab_percent || 0} className="h-2" />
-        {(job.colab_total ?? 0) > 0 && <div className="flex gap-2 text-xs flex-wrap">
-          <Badge variant="outline" className="bg-success/15 text-success border-success/30">{job.colab_created || 0} novos</Badge>
+      <Progress value={job.colab_percent || 0} className="h-2" />
+      {(job.colab_total ?? 0) > 0 && (
+        <div className="flex flex-wrap gap-2 text-xs">
+          <Badge variant="outline" className="border-success/30 bg-success/15 text-success">{job.colab_created || 0} novos</Badge>
           <Badge variant="outline">{job.colab_updated || 0} atualizados</Badge>
-          {(job.colab_quarentena ?? 0) > 0 && <Badge variant="outline" className="bg-destructive/15 text-destructive border-destructive/30">{job.colab_quarentena} removidos</Badge>}
-          <span className="text-muted-foreground">{job.colab_total} total</span>
-        </div>}
-      </div>
-      {isStale && (
-        <div className="rounded-md border border-warning/30 bg-warning/10 p-3 space-y-2">
-          <p className="text-sm font-medium text-warning-foreground flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4" />
-            Sincronização parece travada (sem atualização há mais de 5 min)
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Os dados já importados foram preservados. Marque como travada para poder disparar um novo sync.
-          </p>
-          <Button size="sm" variant="outline" onClick={handleReset} disabled={resetting}>
-            {resetting ? "Marcando..." : "Marcar como travada"}
-          </Button>
+          {(job.colab_inativos ?? 0) > 0 && <Badge variant="outline" className="border-destructive/30 bg-destructive/15 text-destructive">{job.colab_inativos} desligados</Badge>}
+          {(job.colab_quarentena ?? 0) > 0 && <Badge variant="outline" className="border-warning/30 bg-warning/15 text-warning">{job.colab_quarentena} quarentena</Badge>}
+          <span className="text-muted-foreground">{job.colab_total} no arquivo</span>
         </div>
       )}
+      {isStale && <p className="text-xs text-warning">Sem atualização há mais de 10 min — a função pode ter sido interrompida; rode novamente.</p>}
       {isError && job.error && <p className="text-sm text-destructive">{job.error}</p>}
       {job.filename && <p className="text-xs text-muted-foreground">Arquivo: {job.filename}</p>}
     </div>
   );
 }
 
-function ReconcileProgressPanel({ job, label }: { job: any; label?: string }) {
-  const isDone = job.status === "done";
-  const isError = job.status === "error";
-  const isRunning = job.status === "running";
-  const updatedAtMs = job.updated_at ? new Date(job.updated_at).getTime() : 0;
-  const staleWindow = job.tipo === "daily_cycle" ? 30 * 60 * 1000 : 10 * 60 * 1000;
-  const isStale = isRunning && Date.now() - updatedAtMs > staleWindow;
-  const pct = job.users_percent || 0;
-  const relTime = updatedAtMs ? new Date(updatedAtMs).toLocaleTimeString("pt-BR") : "—";
-
+function JobPanel({ job, label, staleMinutes }: { job: Row; label: string; staleMinutes: number }) {
+  const isDone = job.status === "done"; const isError = job.status === "error"; const isRunning = job.status === "running";
+  const isStale = isRunning && Date.now() - new Date(job.updated_at || 0).getTime() > staleMinutes * 60_000;
+  const recent = Date.now() - new Date(job.updated_at || job.created_at).getTime() < 24 * 3600_000;
+  if (!recent && !isRunning) return null;
   return (
-    <div className="rounded-md border p-3 space-y-2">
-      <div className="flex items-center gap-2">
-        {isError ? <AlertCircle className="h-4 w-4 text-destructive" /> :
-         isDone ? <CheckCircle className="h-4 w-4 text-success" /> :
-         <RefreshCw className="h-4 w-4 animate-spin text-primary" />}
-        <span className="font-medium text-sm">{label || "Reconciliação"}: {job.message || job.phase || "iniciando…"}</span>
-        <span className="ml-auto text-xs text-muted-foreground">{relTime}</span>
+    <div className="space-y-2 rounded-md border bg-background p-3">
+      <div className="flex items-center gap-2 text-sm">
+        {isError ? <AlertCircle className="h-4 w-4 text-destructive" /> : isDone ? <CheckCircle className="h-4 w-4 text-success" /> : <RefreshCw className="h-4 w-4 animate-spin text-primary" />}
+        <span className="font-medium">{label}: {job.message || job.phase || "iniciando…"}</span>
+        <span className="ml-auto text-xs text-muted-foreground">{relTime(job.updated_at)}</span>
       </div>
-      <Progress value={pct} className="h-2" />
-      <div className="flex justify-between text-xs text-muted-foreground">
-        <span>Fase: {job.phase || "—"}</span>
-        <span>{pct}%</span>
-      </div>
-      {isStale && (
-        <div className="rounded-md border border-warning/30 bg-warning/10 p-2 text-xs text-warning-foreground flex items-center gap-2">
-          <AlertTriangle className="h-3 w-3" />
-          Sem atualização há mais de {Math.round(staleWindow / 60000)} min — rode novamente.
-        </div>
-      )}
+      <Progress value={job.users_percent || 0} className="h-2" />
+      {isStale && <p className="text-xs text-warning">Sem atualização há mais de {staleMinutes} min — rode novamente.</p>}
       {isError && job.error && <p className="text-xs text-destructive">{job.error}</p>}
     </div>
   );
 }
-

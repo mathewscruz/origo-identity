@@ -6,28 +6,26 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Search, Plus, AlertTriangle, Pencil, Trash2 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useTerceiros } from "@/hooks/useOrigoData";
+import { useTerceiros, useParametro } from "@/hooks/useOrigoData";
+import PageHeader from "@/components/PageHeader";
+import StatCard from "@/components/StatCard";
+import { UserCheck, CalendarClock, ShieldAlert } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import TablePagination, { usePagination } from "@/components/TablePagination";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
-import { useQueryClient } from "@tanstack/react-query";
 import EmptyState from "@/components/EmptyState";
 import SortableHeader, { SortDirection, useSortableData } from "@/components/SortableHeader";
 import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { queueFullProfileActions } from "@/lib/entraQueueHelper";
-import { createEventoJML } from "@/lib/createEventoJML";
-import { triggerEntraProcessing } from "@/lib/triggerEntraProcessing";
-import { logAuditoria, logAlerta } from "@/lib/auditLogger";
 import ColaboradorPicker from "@/components/ColaboradorPicker";
 
 const criticidadeConfig: Record<string, { label: string; class: string }> = {
@@ -43,7 +41,7 @@ function normalize(str: string): string {
   return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
-function generateTerceiroCredentials(nome: string, empresaTerceira: string): { sam: string; email: string } {
+function generateTerceiroCredentials(nome: string, empresaTerceira: string, dominio: string): { sam: string; email: string } {
   if (!nome.trim() || !empresaTerceira.trim()) return { sam: "", email: "" };
   const prepositions = new Set(["de", "da", "do", "dos", "das", "e"]);
   const parts = normalize(nome).split(/\s+/).filter(p => !prepositions.has(p) && p.length > 0);
@@ -52,7 +50,7 @@ function generateTerceiroCredentials(nome: string, empresaTerceira: string): { s
   const last = parts.length > 1 ? parts[parts.length - 1] : first;
   const companyFirst = normalize(empresaTerceira).split(/\s+/).filter(p => p.length > 0)[0] || "";
   const sam = `${first}.${last}_${companyFirst}`;
-  const email = `${sam}@parceiroorigoenergia.com.br`;
+  const email = `${sam}@${dominio}`;
   return { sam, email };
 }
 
@@ -76,16 +74,37 @@ export default function TerceirosPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editing, setEditing] = useState<any>(null);
-  const [form, setForm] = useState({ nome: "", email: "", empresa_terceira: "", contrato_inicio: "", contrato_fim: "", criticidade: "media", responsavel: "", responsavel_colaborador_id: "" as string | "", ativo: true, sam_account_name: "" });
-  const qc = useQueryClient();
+  const [form, setForm] = useState({ nome: "", email: "", empresa_terceira: "", contrato_inicio: "", contrato_fim: "", criticidade: "media", responsavel: "", responsavel_colaborador_id: "" as string | "", ativo: true, sam_account_name: "", motivo: "" });
+  const [saving, setSaving] = useState(false);
   const { toast } = useToast();
   const { profile } = useAuth();
+  const dominioTerceiro = useParametro("terceiro_email_dominio", "parceiroorigoenergia.com.br");
+  const revalidacaoDias = useParametro("terceiro_revalidacao_dias", "45");
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  // Auto-generate credentials when nome or empresa change
+  // /terceiros?new=1 (paleta) abre o cadastro; ?edit=<id> (detalhe) abre a edição
   useEffect(() => {
-    const { sam, email } = generateTerceiroCredentials(form.nome, form.empresa_terceira);
+    if (searchParams.get("new") === "1") {
+      openNew();
+      searchParams.delete("new");
+      setSearchParams(searchParams, { replace: true });
+      return;
+    }
+    const editId = searchParams.get("edit");
+    if (!editId || !terceiros) return;
+    const t = (terceiros as any[]).find((x) => x.id === editId);
+    if (t) openEdit(t);
+    searchParams.delete("edit");
+    setSearchParams(searchParams, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, terceiros]);
+
+  // Login/e-mail gerados só na criação (na edição a identidade já existe no diretório)
+  useEffect(() => {
+    if (editing) return;
+    const { sam, email } = generateTerceiroCredentials(form.nome, form.empresa_terceira, dominioTerceiro);
     setForm(prev => ({ ...prev, sam_account_name: sam, email: email }));
-  }, [form.nome, form.empresa_terceira]);
+  }, [form.nome, form.empresa_terceira, editing, dominioTerceiro]);
 
   const list = terceiros ?? [];
   const vencendo7d = list.filter((t: any) => { const d = diasRestantes(t.contrato_fim); return d >= 0 && d <= 7; }).length;
@@ -93,163 +112,62 @@ export default function TerceirosPage() {
   const sorted = useSortableData(filtered, sortField, sortDir);
   const { paginatedItems, safePage } = usePagination(sorted, page, pageSize);
 
-  const openNew = () => { setEditing(null); setForm({ nome: "", email: "", empresa_terceira: "", contrato_inicio: "", contrato_fim: "", criticidade: "media", responsavel: "", responsavel_colaborador_id: "", ativo: true, sam_account_name: "" }); setDialogOpen(true); };
-  const openEdit = (t: any) => { setEditing(t); setForm({ nome: t.nome, email: t.email || "", empresa_terceira: t.empresa_terceira || "", contrato_inicio: t.contrato_inicio || "", contrato_fim: t.contrato_fim || "", criticidade: t.criticidade, responsavel: t.responsavel || "", responsavel_colaborador_id: t.responsavel_colaborador_id || "", ativo: t.ativo, sam_account_name: t.sam_account_name || "" }); setDialogOpen(true); };
+  const openNew = () => { setEditing(null); setForm({ nome: "", email: "", empresa_terceira: "", contrato_inicio: "", contrato_fim: "", criticidade: "media", responsavel: "", responsavel_colaborador_id: "", ativo: true, sam_account_name: "", motivo: "" }); setDialogOpen(true); };
+  const openEdit = (t: any) => { setEditing(t); setForm({ nome: t.nome, email: t.email || "", empresa_terceira: t.empresa_terceira || "", contrato_inicio: t.contrato_inicio || "", contrato_fim: t.contrato_fim || "", criticidade: t.criticidade, responsavel: t.responsavel || "", responsavel_colaborador_id: t.responsavel_colaborador_id || "", ativo: t.ativo, sam_account_name: t.sam_account_name || "", motivo: "" }); setDialogOpen(true); };
 
+  // Criação/edição no banco (RPC terceiro_salvar): conta AD com expiração do contrato,
+  // ativar/desativar via terceiro_alterar_status (revoga perfis, remove acessos, evento JML).
   const handleSave = async () => {
     if (!form.nome.trim()) { toast({ title: "Nome obrigatório", variant: "destructive" }); return; }
     if (!form.empresa_terceira.trim()) { toast({ title: "Empresa obrigatória", variant: "destructive" }); return; }
-    if (!form.sam_account_name.trim()) { toast({ title: "Preencha nome e empresa para gerar login e e-mail", variant: "destructive" }); return; }
-    const payload: any = { nome: form.nome.trim(), email: form.email || null, empresa_terceira: form.empresa_terceira || null, contrato_inicio: form.contrato_inicio || null, contrato_fim: form.contrato_fim || null, criticidade: form.criticidade as any, responsavel: form.responsavel || null, responsavel_colaborador_id: form.responsavel_colaborador_id || null, ativo: form.ativo, sam_account_name: form.sam_account_name.trim() || null };
-    if (editing) {
-      // Detect disable: was active, now inactive
-      const wasActive = editing.ativo;
-      const nowInactive = !form.ativo;
-      const { error } = await supabase.from("terceiros").update(payload).eq("id", editing.id);
-      if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
-
-      if (wasActive && nowInactive && form.sam_account_name.trim()) {
-        const sam = form.sam_account_name.trim();
-        const terceiroId = editing.id;
-
-        // Get active perfil_atribuicoes and revoke
-        const { data: activeAtribuicoes } = await supabase.from("perfil_atribuicoes").select("perfil_id").eq("terceiro_id", terceiroId).eq("ativo", true);
-        const perfilIds = (activeAtribuicoes ?? []).map((a: any) => a.perfil_id).filter(Boolean);
-        if (perfilIds.length > 0) {
-          await supabase.from("perfil_atribuicoes").update({ ativo: false, data_revogacao: new Date().toISOString() }).eq("terceiro_id", terceiroId).eq("ativo", true);
-          const identity = form.email || sam;
-          if (identity) {
-            await queueFullProfileActions([{ id: terceiroId, nome: form.nome.trim(), email: form.email || null, sam_account_name: sam }], perfilIds, "remove", { triggerImmediately: false });
-          }
-        }
-
-        // Remove individual resources
-        const { data: individualItems } = await (supabase as any).from("iam_queue")
-          .select("action_type, payload_json, target_identity")
-          .eq("colaborador_id", terceiroId)
-          .eq("requested_by", "manual_individual").eq("status", "success")
-          .in("action_type", ["assign_group", "assign_license", "assign_app"]);
-        const individualSnapshot: any[] = [];
-        const reverseMap: Record<string, string> = { assign_group: "remove_group", assign_license: "remove_license", assign_app: "remove_app" };
-        for (const item of (individualItems ?? [])) {
-          individualSnapshot.push({ action_type: item.action_type, payload_json: item.payload_json, target_identity: item.target_identity });
-          await supabase.from("iam_queue" as any).insert({ action_type: reverseMap[item.action_type], payload_json: item.payload_json, requested_by: "sistema_desativacao", colaborador_id: terceiroId, target_identity: item.target_identity, status: "pending" });
-        }
-
-        // AD disable
-        await supabase.from("iam_queue" as any).insert({ action_type: "disable", payload_json: { samAccountName: sam, mail: form.email || null, displayName: form.nome.trim(), status: "disabled" }, target_identity: sam, requested_by: "sistema", status: "pending", colaborador_id: terceiroId });
-        // Entra disable
-        const entraId = form.email || sam;
-        await supabase.from("iam_queue" as any).insert({ action_type: "disable_entra", payload_json: { mail: form.email || null, samAccountName: sam, displayName: form.nome.trim() }, target_identity: entraId, requested_by: "sistema", status: "pending", colaborador_id: terceiroId });
-
-        await createEventoJML({ colaboradorId: terceiroId, colaboradorNome: form.nome.trim(), tipo: "leaver", dadosAntes: { status: "ativo", perfis: perfilIds, recursos_individuais: individualSnapshot }, dadosDepois: { status: "inativo" } });
-        await logAuditoria({ acao: "desativar_terceiro_inline", entidade: "terceiros", entidade_id: terceiroId, resumo: `Terceiro ${form.nome.trim()} desativado via edição`, operador: profile?.email });
-        triggerEntraProcessing(true);
-        toast({ title: "Terceiro desativado — remoções e desativação enviadas" });
-      } else if (!wasActive && !nowInactive && form.sam_account_name.trim()) {
-        // Reactivation via switch
-        const sam = form.sam_account_name.trim();
-        const terceiroId = editing.id;
-
-        // Enable AD + Entra
-        await supabase.from("iam_queue" as any).insert({ action_type: "update", payload_json: { samAccountName: sam, mail: form.email || null, displayName: form.nome.trim(), status: "enabled" }, target_identity: sam, requested_by: "sistema", status: "pending", colaborador_id: terceiroId });
-        const entraId = form.email || sam;
-        await supabase.from("iam_queue" as any).insert({ action_type: "enable_entra", payload_json: { mail: form.email || null, samAccountName: sam, displayName: form.nome.trim() }, target_identity: entraId, requested_by: "sistema", status: "pending", colaborador_id: terceiroId });
-
-        // Restore from last leaver event
-        const { data: lastLeaver } = await supabase.from("eventos_jml").select("dados_antes").eq("colaborador_id", terceiroId).eq("tipo", "leaver").order("created_at", { ascending: false }).limit(1);
-        const dadosAntes = lastLeaver?.[0]?.dados_antes as any;
-        const savedPerfis = dadosAntes?.perfis || [];
-        const savedIndividuals = dadosAntes?.recursos_individuais || [];
-
-        if (savedPerfis.length > 0) {
-          for (const perfilId of savedPerfis) {
-            await supabase.from("perfil_atribuicoes").insert({ perfil_id: perfilId, terceiro_id: terceiroId, origem: "manual", ativo: true });
-          }
-          await queueFullProfileActions([{ id: terceiroId, nome: form.nome.trim(), email: form.email || null, sam_account_name: sam }], savedPerfis, "assign", { triggerImmediately: false });
-        }
-        for (const item of savedIndividuals) {
-          await supabase.from("iam_queue" as any).insert({ action_type: item.action_type, payload_json: item.payload_json, requested_by: "manual_individual", colaborador_id: terceiroId, target_identity: item.target_identity, status: "pending" });
-        }
-
-        await createEventoJML({ colaboradorId: terceiroId, colaboradorNome: form.nome.trim(), tipo: "joiner", dadosAntes: { status: "inativo" }, dadosDepois: { status: "ativo", perfis_restaurados: savedPerfis.length, recursos_individuais_restaurados: savedIndividuals.length } });
-        await logAuditoria({ acao: "reativar_terceiro_inline", entidade: "terceiros", entidade_id: terceiroId, resumo: `Terceiro ${form.nome.trim()} reativado via edição`, operador: profile?.email });
-        triggerEntraProcessing(true);
-        toast({ title: "Terceiro reativado — perfis e recursos restaurados" });
-      } else {
-        toast({ title: "Terceiro atualizado" });
-      }
-    } else {
-      const { data: inserted, error } = await supabase.from("terceiros").insert(payload).select("id").single();
-      if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
-      // Generate iam_queue for AD creation
-      if (form.sam_account_name.trim()) {
-        const sam = form.sam_account_name.trim();
-        const nameParts = form.nome.trim().split(" ");
-        await supabase.from("iam_queue" as any).insert({
-          action_type: "create",
-          payload_json: {
-            givenName: nameParts[0] || "",
-            surname: nameParts.slice(1).join(" ") || nameParts[0],
-            displayName: form.nome.trim(),
-            samAccountName: sam,
-            userPrincipalName: `${sam}@ebessolar.local`,
-            mail: form.email || null,
-            department: null,
-            title: "Terceiro",
-            company: form.empresa_terceira || null,
-            telephoneNumber: null,
-            manager: null,
-            ouPath: "",
-            password: "Origo@2026er",
-            changePasswordAtLogon: true,
-          },
-          target_identity: sam,
-          requested_by: "sistema",
-          status: "pending",
-        });
-      }
-      toast({ title: "Terceiro criado — solicitação enviada para processamento" });
-    }
-    qc.invalidateQueries({ queryKey: ["terceiros"] });
+    if (!editing && !form.sam_account_name.trim()) { toast({ title: "Preencha nome e empresa para gerar login e e-mail", variant: "destructive" }); return; }
+    if (editing && editing.ativo && !form.ativo && form.motivo.trim().length < 5) { toast({ title: "Informe o motivo da desativação", variant: "destructive" }); return; }
+    setSaving(true);
+    const { data, error } = await supabase.rpc("terceiro_salvar", {
+      p_id: editing?.id ?? null,
+      p_dados: {
+        nome: form.nome.trim(), email: form.email || null, empresa_terceira: form.empresa_terceira.trim(), contrato_inicio: form.contrato_inicio || null,
+        contrato_fim: form.contrato_fim || null, criticidade: form.criticidade, responsavel: form.responsavel || null,
+        responsavel_colaborador_id: form.responsavel_colaborador_id || null, ativo: form.ativo, sam_account_name: form.sam_account_name.trim() || null,
+        motivo: form.motivo.trim() || null,
+      },
+      p_operador: profile?.email || null,
+    });
+    setSaving(false);
+    const r = (data ?? {}) as Record<string, any>;
+    if (error || r.ok === false) { toast({ title: "Não foi possível salvar", description: error?.message || r.error, variant: "destructive" }); return; }
+    const parts: string[] = [];
+    if (r.conta_enfileirada) parts.push("criação da conta AD enfileirada para o agente");
+    if (r.status?.remocoes) parts.push(`${r.status.remocoes} remoção(ões) de acesso enfileirada(s)`);
+    if (r.status?.perfisRestaurados !== undefined) parts.push(`${r.status.perfisRestaurados} perfil(is) restaurado(s) — reabilitação aguarda aprovação`);
+    toast({ title: editing ? "Terceiro atualizado" : "Terceiro criado", description: parts.length ? parts.join(" · ") : undefined });
     setDialogOpen(false);
   };
 
+  // "Excluir" = desligar (identidades nunca são apagadas) — RPC terceiro_alterar_status
   const handleDelete = async () => {
     if (!deleteId) return;
-    // Find the terceiro to get sam_account_name
-    const deleting = list.find((t: any) => t.id === deleteId);
-    if (deleting && (deleting as any).sam_account_name) {
-      const sam = (deleting as any).sam_account_name;
-      await supabase.from("iam_queue" as any).insert({
-        action_type: "disable",
-        payload_json: {
-          samAccountName: sam,
-          mail: deleting.email || null,
-          displayName: deleting.nome,
-          status: "disabled",
-          motivo: "Exclusão de terceiro do sistema",
-        },
-        target_identity: sam,
-        requested_by: "sistema",
-        status: "pending",
-      });
-    }
-    const { error } = await supabase.from("terceiros").delete().eq("id", deleteId);
-    if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
-    toast({ title: "Terceiro excluído — solicitação de desativação enviada" });
-    qc.invalidateQueries({ queryKey: ["terceiros"] });
+    const { data, error } = await supabase.rpc("terceiro_alterar_status", { p_terceiro_id: deleteId, p_ativo: false, p_operador: profile?.email || "sistema", p_origem: "manual", p_motivo: "Exclusão solicitada na ferramenta" });
+    const r = (data ?? {}) as Record<string, any>;
+    if (error || r.ok === false) { toast({ title: "Erro", description: error?.message || r.error, variant: "destructive" }); return; }
+    toast({ title: r.noop ? "Terceiro já estava desligado" : "Terceiro desligado", description: r.noop ? undefined : `${r.perfisRevogados ?? 0} perfil(is) revogado(s) · ${r.remocoes ?? 0} remoção(ões) enfileirada(s) para o agente` });
     setDeleteId(null);
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div><h1 className="text-2xl font-semibold tracking-tight">Terceiros</h1><p className="text-sm text-muted-foreground">Ciclo de vida de terceiros com controle de contrato</p></div>
-        <div data-tour="actions"><Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Terceiro</Button></div>
-      </div>
+      <PageHeader
+        title="Terceiros"
+        description="Prestadores com contrato: conta expira no fim do contrato; o responsável revalida periodicamente por e-mail (Manter ou Desligar) e, sem resposta no prazo, o terceiro é desativado. Contrato vencido = desligamento automático."
+        actions={<div data-tour="actions"><Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Terceiro</Button></div>}
+      />
 
-      {vencendo7d > 0 && <Card className="border-destructive/30 bg-destructive/5"><CardContent className="flex items-center gap-3 py-3"><AlertTriangle className="h-4 w-4 text-destructive" /><span className="text-sm font-medium text-destructive">{vencendo7d} terceiro(s) com contrato vencendo em 7 dias</span></CardContent></Card>}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatCard label="Ativos" value={list.filter((t: any) => t.ativo).length} icon={UserCheck} tone="success" />
+        <StatCard label="Vencendo em 30 dias" value={list.filter((t: any) => { const d = diasRestantes(t.contrato_fim); return t.ativo && d >= 0 && d <= 30; }).length} icon={CalendarClock} tone="warning" hint={vencendo7d > 0 ? `${vencendo7d} em 7 dias` : undefined} />
+        <StatCard label="Contrato vencido" value={list.filter((t: any) => t.ativo && t.contrato_fim && diasRestantes(t.contrato_fim) < 0).length} icon={AlertTriangle} tone="destructive" hint="desligados no próximo ciclo" />
+        <StatCard label="Críticos" value={list.filter((t: any) => t.ativo && t.criticidade === "critica").length} icon={ShieldAlert} tone="info" />
+      </div>
 
       <div data-tour="search-filter" className="relative flex-1 min-w-[200px] max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -273,7 +191,7 @@ export default function TerceirosPage() {
                 <td className="p-4"><Badge variant={t.ativo ? "default" : "secondary"}>{t.ativo ? "Ativo" : "Inativo"}</Badge></td>
                 <td className="p-4"><div className="flex gap-1">
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(t)}><Pencil className="h-3 w-3" /></Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(t.id)}><Trash2 className="h-3 w-3" /></Button>
+                  {t.ativo && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" title="Desligar" onClick={() => setDeleteId(t.id)}><Trash2 className="h-3 w-3" /></Button>}
                 </div></td>
               </tr>
             ))}
@@ -290,8 +208,8 @@ export default function TerceirosPage() {
               <div className="space-y-2"><Label>Empresa *</Label><Input value={form.empresa_terceira} onChange={(e) => setForm({ ...form, empresa_terceira: e.target.value })} /></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Nome de login AD</Label><Input value={form.sam_account_name} readOnly disabled className="bg-muted cursor-not-allowed" /></div>
-              <div className="space-y-2"><Label>Email</Label><Input type="email" value={form.email} readOnly disabled className="bg-muted cursor-not-allowed" /></div>
+              <div className="space-y-2"><Label>Nome de login AD</Label><Input value={form.sam_account_name} readOnly={!editing} disabled={!editing} className={!editing ? "bg-muted cursor-not-allowed" : ""} onChange={(e) => setForm({ ...form, sam_account_name: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Email</Label><Input type="email" value={form.email} readOnly={!editing} disabled={!editing} className={!editing ? "bg-muted cursor-not-allowed" : ""} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Início contrato</Label><Input type="date" value={form.contrato_inicio} onChange={(e) => setForm({ ...form, contrato_inicio: e.target.value })} /></div>
@@ -300,7 +218,7 @@ export default function TerceirosPage() {
             <Alert className="border-primary/30 bg-primary/5">
               <Info className="h-4 w-4 text-primary" />
               <AlertDescription className="text-xs text-muted-foreground">
-                Este terceiro será revalidado automaticamente a cada 45 dias. O responsável receberá um e-mail com as opções de manter ou revogar o acesso.
+                A conta no AD expira no fim do contrato. A cada {revalidacaoDias} dias o responsável recebe um e-mail com link para manter ou desligar cada terceiro; sem resposta no prazo configurado, o terceiro é desativado. Ao vencer o contrato, o desligamento é automático.
               </AlertDescription>
             </Alert>
             <div className="grid grid-cols-2 gap-4">
@@ -321,18 +239,25 @@ export default function TerceirosPage() {
                   })}
                   placeholder="Selecione o responsável..."
                 />
-                <p className="text-xs text-muted-foreground">Receberá o e-mail de revalidação a cada 45 dias.</p>
+                <p className="text-xs text-muted-foreground">Receberá o e-mail de revalidação a cada {revalidacaoDias} dias. Sem responsável com e-mail, a revalidação não acontece (alerta).</p>
               </div>
             </div>
             <div className="flex items-center gap-2"><Switch checked={form.ativo} onCheckedChange={(v) => setForm({ ...form, ativo: v })} /><Label>Ativo</Label></div>
+            {editing && editing.ativo !== form.ativo && (
+              <div className="rounded-md border border-warning/30 bg-warning/5 p-3 space-y-1">
+                <Label>Motivo {form.ativo ? "" : "(obrigatório)"}</Label>
+                <Input value={form.motivo} onChange={(e) => setForm({ ...form, motivo: e.target.value })} placeholder={form.ativo ? "Ex.: contrato renovado" : "Ex.: fim de contrato antecipado"} />
+                <p className="text-xs text-muted-foreground">{form.ativo ? "Conta reabilitada e perfis restaurados — aguardando aprovação." : "Conta desabilitada, perfis revogados e acessos removidos pelo agente."}</p>
+              </div>
+            )}
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button onClick={handleSave}>Salvar</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button onClick={handleSave} disabled={saving}>{saving ? "Salvando..." : "Salvar"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir terceiro?</AlertDialogTitle><AlertDialogDescription>Esta ação não pode ser desfeita.</AlertDialogDescription></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleDelete}>Excluir</AlertDialogAction></AlertDialogFooter>
+        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Desligar terceiro?</AlertDialogTitle><AlertDialogDescription>Identidades nunca são apagadas. O terceiro fica inativo: conta desabilitada, perfis revogados e acessos removidos pelo Órigo Agente. O histórico é mantido.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Desligar</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
       <OnboardingTour pageKey="terceiros" steps={tourSteps.terceiros} />

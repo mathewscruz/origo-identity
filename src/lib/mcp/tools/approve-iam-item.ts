@@ -1,47 +1,38 @@
-import { defineTool, type ToolContext } from "@lovable.dev/mcp-js";
+import { defineTool } from "@lovable.dev/mcp-js";
 import { sb } from "../supabase-client";
 import { z } from "zod";
 
-
+/**
+ * Aprovar/rejeitar/cancelar itens da fila IAM via RPC `iam_queue_decidir`.
+ * O banco aplica a máquina de estados, grava approved_by = usuário autenticado
+ * e recusa auto-aprovação (aprovador ≠ solicitante).
+ */
 export default defineTool({
   name: "approve_iam_item",
-  title: "Aprovar item da fila IAM",
+  title: "Decidir item da fila IAM",
   description:
-    "Aprova (libera para execução) ou cancela um item da fila IAM. Também aceita motivo opcional para auditoria.",
+    "Aprova (libera para execução), rejeita ou cancela itens da fila IAM. A decisão é registrada em nome do usuário autenticado; auto-aprovação é recusada pelo banco.",
   inputSchema: {
-    item_id: z.string().uuid(),
-    decision: z.enum(["approve", "cancel"]),
+    item_id: z.string().uuid().optional(),
+    item_ids: z.array(z.string().uuid()).optional(),
+    decision: z.enum(["approve", "reject", "cancel"]),
     reason: z.string().optional(),
   },
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
-  handler: async ({ item_id, decision, reason }, ctx) => {
+  handler: async ({ item_id, item_ids, decision, reason }, ctx) => {
     if (!ctx.isAuthenticated()) return { content: [{ type: "text", text: "Não autenticado" }], isError: true };
-    const client = sb(ctx);
-    const newStatus = decision === "approve" ? "pending" : "cancelled";
-    const patch: Record<string, unknown> = {
-      status: newStatus,
-      updated_at: new Date().toISOString(),
-    };
-    if (reason) patch.last_error = reason;
-    const { data, error } = await client
-      .from("iam_queue")
-      .update(patch)
-      .eq("id", item_id)
-      .in("status", ["waiting_approval", "pending"])
-      .select()
-      .maybeSingle();
-    if (error) return { content: [{ type: "text", text: error.message }], isError: true };
-    if (!data) return { content: [{ type: "text", text: "Item não encontrado ou não elegível." }], isError: true };
-    await client.from("auditoria").insert({
-      acao: decision === "approve" ? "aprovar_iam_item" : "cancelar_iam_item",
-      entidade: "iam_queue",
-      resumo: `Item ${item_id} ${decision === "approve" ? "aprovado" : "cancelado"} via MCP (Hermes agent)`,
-      operador: ctx.getUserEmail() ?? "hermes-agent",
-      detalhes: { item_id, decision, reason },
+    const ids = [...(item_ids ?? []), ...(item_id ? [item_id] : [])];
+    if (ids.length === 0) return { content: [{ type: "text", text: "Informe item_id ou item_ids" }], isError: true };
+    const { data, error } = await sb(ctx).rpc("iam_queue_decidir", {
+      p_ids: ids,
+      p_decisao: decision,
+      p_motivo: reason ?? null,
     });
+    if (error) return { content: [{ type: "text", text: error.message }], isError: true };
+    const result = { ok: true, decision, ids, ...(data as Record<string, unknown>) };
     return {
-      content: [{ type: "text", text: JSON.stringify({ ok: true, item: data }) }],
-      structuredContent: { ok: true, item: data },
+      content: [{ type: "text", text: JSON.stringify(result) }],
+      structuredContent: result,
     };
   },
 });

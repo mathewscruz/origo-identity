@@ -9,6 +9,15 @@ interface AuditEntry {
   detalhes?: Record<string, any>;
 }
 
+async function currentOperator(): Promise<string> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.user?.email || "painel";
+  } catch {
+    return "painel";
+  }
+}
+
 export async function logAuditoria(entry: AuditEntry) {
   try {
     await supabase.from("auditoria").insert({
@@ -16,7 +25,7 @@ export async function logAuditoria(entry: AuditEntry) {
       entidade: entry.entidade,
       entidade_id: entry.entidade_id || null,
       resumo: entry.resumo || null,
-      operador: entry.operador || "sistema",
+      operador: entry.operador || (await currentOperator()),
       detalhes: entry.detalhes || null,
     } as any);
   } catch (err) {

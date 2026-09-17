@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useDbChange } from "@/hooks/useRealtimeSync";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,8 @@ import { logAuditoria, logAlerta } from "@/lib/auditLogger";
 import { ShieldAlert, Plus, Trash2, Search, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import EmptyState from "@/components/EmptyState";
+import PageHeader from "@/components/PageHeader";
+import { humanize } from "@/lib/labels";
 
 interface SoDConflito {
   id: string;
@@ -139,6 +142,7 @@ export default function SoDPage() {
   };
 
   useEffect(() => { fetchData(); }, []);
+  useDbChange(["sod_conflitos", "perfil_atribuicoes", "perfis_acesso"], fetchData);
 
   const handleSave = async () => {
     if (!perfilAId || !perfilBId) {
@@ -223,13 +227,13 @@ export default function SoDPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">SoD / Conflitos de Acesso</h1>
-          <p className="text-muted-foreground">Segregation of Duties — defina perfis que não podem coexistir</p>
-        </div>
-        <Button onClick={() => setDialogOpen(true)}><Plus className="mr-2 h-4 w-4" />Novo Conflito</Button>
-      </div>
+      <PageHeader
+        title="SoD / Conflitos de Acesso"
+        description="Segregation of Duties — defina perfis que não podem coexistir"
+        actions={<>
+          <Button onClick={() => setDialogOpen(true)}><Plus className="mr-2 h-4 w-4" />Novo Conflito</Button>
+        </>}
+      />
 
       {/* Counters */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -287,7 +291,7 @@ export default function SoDPage() {
                     <TableCell className="text-muted-foreground max-w-[200px] truncate">{c.descricao || "—"}</TableCell>
                     <TableCell>
                       <Badge variant={c.severidade === "critico" ? "destructive" : "outline"} className={c.severidade === "alto" ? "border-orange-500 text-orange-600" : ""}>
-                        {c.severidade}
+                        {humanize(c.severidade)}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -335,7 +339,7 @@ export default function SoDPage() {
                     <TableCell>{v.perfil_b_nome}</TableCell>
                     <TableCell>
                       <Badge variant={v.severidade === "critico" ? "destructive" : "outline"} className={v.severidade === "alto" ? "border-orange-500 text-orange-600" : ""}>
-                        {v.severidade}
+                        {humanize(v.severidade)}
                       </Badge>
                     </TableCell>
                   </TableRow>
@@ -357,7 +361,7 @@ export default function SoDPage() {
                 <SelectTrigger><SelectValue placeholder="Selecione o perfil A" /></SelectTrigger>
                 <SelectContent>
                   {perfis.filter(p => p.id !== perfilBId).map(p => (
-                    <SelectItem key={p.id} value={p.id}>{p.nome} ({p.tipo})</SelectItem>
+                    <SelectItem key={p.id} value={p.id}>{p.nome} ({humanize(p.tipo)})</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -368,7 +372,7 @@ export default function SoDPage() {
                 <SelectTrigger><SelectValue placeholder="Selecione o perfil B" /></SelectTrigger>
                 <SelectContent>
                   {perfis.filter(p => p.id !== perfilAId).map(p => (
-                    <SelectItem key={p.id} value={p.id}>{p.nome} ({p.tipo})</SelectItem>
+                    <SelectItem key={p.id} value={p.id}>{p.nome} ({humanize(p.tipo)})</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

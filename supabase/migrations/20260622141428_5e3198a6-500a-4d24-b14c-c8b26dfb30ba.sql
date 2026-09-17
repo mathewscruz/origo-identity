@@ -45,11 +45,17 @@ CREATE POLICY "admin/operador read contas_admin"
   USING (public.has_role(auth.uid(),'admin') OR public.has_role(auth.uid(),'operador'));
 
 -- 3. Realtime whitelist
-DROP POLICY IF EXISTS "Authenticated can subscribe to iam_queue channel" ON realtime.messages;
-DROP POLICY IF EXISTS "authenticated can subscribe iam_queue" ON realtime.messages;
-DROP POLICY IF EXISTS "Allow authenticated to read messages" ON realtime.messages;
-DROP POLICY IF EXISTS "authenticated read whitelisted topics" ON realtime.messages;
+-- (tolerante a falta de privilégio em realtime.messages no ambiente local)
+DO $$
+BEGIN
+  DROP POLICY IF EXISTS "Authenticated can subscribe to iam_queue channel" ON realtime.messages;
+  DROP POLICY IF EXISTS "authenticated can subscribe iam_queue" ON realtime.messages;
+  DROP POLICY IF EXISTS "Allow authenticated to read messages" ON realtime.messages;
+  DROP POLICY IF EXISTS "authenticated read whitelisted topics" ON realtime.messages;
 
-CREATE POLICY "authenticated read whitelisted topics"
-  ON realtime.messages FOR SELECT TO authenticated
-  USING (realtime.topic() IN ('iam_queue', 'public:iam_queue'));
+  CREATE POLICY "authenticated read whitelisted topics"
+    ON realtime.messages FOR SELECT TO authenticated
+    USING (realtime.topic() IN ('iam_queue', 'public:iam_queue'));
+EXCEPTION WHEN insufficient_privilege THEN
+  RAISE NOTICE 'realtime.messages: sem privilégio neste ambiente, política ignorada';
+END $$;

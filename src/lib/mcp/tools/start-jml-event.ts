@@ -7,12 +7,14 @@ export default defineTool({
   name: "start_jml_event",
   title: "Iniciar evento JML",
   description:
-    "Inicia um evento JML (Joiner/Mover/Leaver/Pré-Leaver) para um colaborador. Chama a Edge Function start-jml-event, respeitando as regras internas.",
+    "Executa um evento JML para um colaborador via Edge Function start-jml-event: leaver (desligamento: desabilita contas e enfileira remoção de acessos), joiner (reativação/recontratação, reabilitação aguarda aprovação), mover (mudança de cargo — exige novoCargoId), pre_leaver (suspensão preventiva) e pre_leaver_revertido. Informe colaboradorId sempre que possível; nome só funciona quando é único.",
   inputSchema: {
-    tipo: z.enum(["joiner", "mover", "leaver", "pre_leaver"]),
+    tipo: z.enum(["joiner", "mover", "leaver", "pre_leaver", "pre_leaver_revertido"]),
     colaboradorId: z.string().uuid().nullable().optional(),
-    colaboradorNome: z.string(),
+    colaboradorNome: z.string().optional(),
     motivo: z.string().min(3),
+    novoCargoId: z.string().uuid().optional(),
+    statusFinal: z.enum(["desligado", "inativo"]).optional(),
   },
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   handler: async (input, ctx) => {
@@ -35,7 +37,7 @@ export default defineTool({
     await sb(ctx).from("auditoria").insert({
       acao: "iniciar_evento_jml",
       entidade: "eventos_jml",
-      resumo: `Evento JML ${input.tipo} iniciado via MCP (Hermes) para ${input.colaboradorNome}`,
+      resumo: `Evento JML ${input.tipo} executado via MCP (Hermes) para ${input.colaboradorNome ?? input.colaboradorId}`,
       operador: ctx.getUserEmail() ?? "hermes-agent",
       detalhes: { input, response: body },
     });

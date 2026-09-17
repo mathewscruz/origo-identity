@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { XCircle } from "lucide-react";
 import EmptyState from "@/components/EmptyState";
+import { humanize } from "@/lib/labels";
 
 const origemColors: Record<string, string> = {
   regra: "bg-primary/15 text-primary border-primary/30",
@@ -55,7 +56,7 @@ export default function PerfisAtribuidosTable({ atribuicoes, getPerfilApps, onRe
                     </td>
                     <td className="p-4">
                       <Badge variant="outline" className={origemColors[a.origem || "manual"]}>
-                        {origemLabels[a.origem || "manual"] || a.origem}
+                        {origemLabels[a.origem || "manual"] || humanize(a.origem)}
                       </Badge>
                     </td>
                     <td className="p-4 text-muted-foreground">{new Date(a.data_concessao).toLocaleDateString("pt-BR")}</td>

@@ -122,6 +122,9 @@ function queueKey(actionType: string, payload: any): string {
   return `${actionType}:${JSON.stringify(payload)}`;
 }
 
+const resourceKeyFor = (action: string, p: Record<string, any>): string | null =>
+  action.endsWith("_group") ? `grupo:${p.groupId}` : action.endsWith("_license") ? `licenca:${p.skuId}` : action.endsWith("_app") ? `app:${p.appId}` : null;
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -271,6 +274,7 @@ Deno.serve(async (req) => {
         if (activeKeys.has(key)) continue;
         queueEntries.push({
           action_type: "assign_group",
+          resource_key: resourceKeyFor("assign_group", payload),
           target_identity: identity,
           colaborador_id: colaborador_id,
           requested_by: "entra_sync",
@@ -298,6 +302,7 @@ Deno.serve(async (req) => {
         if (activeKeys.has(key)) continue;
         queueEntries.push({
           action_type: "assign_license",
+          resource_key: resourceKeyFor("assign_license", payload),
           target_identity: identity,
           colaborador_id: colaborador_id,
           requested_by: "entra_sync",
@@ -329,6 +334,7 @@ Deno.serve(async (req) => {
         if (activeKeys.has(key)) continue;
         queueEntries.push({
           action_type: "assign_app",
+          resource_key: resourceKeyFor("assign_app", payload),
           target_identity: identity,
           colaborador_id: colaborador_id,
           requested_by: "entra_sync",
@@ -356,6 +362,7 @@ Deno.serve(async (req) => {
       const payload = typeof row.payload_json === "string" ? JSON.parse(row.payload_json) : row.payload_json;
       queueEntries.push({
         action_type: reverseAction,
+        resource_key: resourceKeyFor(reverseAction, payload),
         target_identity: identity,
         colaborador_id,
         requested_by: "entra_sync",
