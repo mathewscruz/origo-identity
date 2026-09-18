@@ -2254,6 +2254,7 @@ export type Database = {
         Returns: Json
       }
       dashboard_metrics: { Args: never; Returns: Json }
+      dashboard_people_series: { Args: { p_days?: number }; Returns: Json }
       dashboard_series: { Args: { p_days?: number }; Returns: Json }
       excecao_decidir: {
         Args: { p_comentario?: string; p_decisao: string; p_id: string }

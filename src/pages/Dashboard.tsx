@@ -1,10 +1,10 @@
 import QueryState from "@/components/QueryState";
 import { completedQueueLink } from "@/lib/dashboardFilters";
-import { RH_SERIES, summarizeRhSeries } from "@/lib/rhActivity";
+import PeopleLifecycleChart from "@/components/PeopleLifecycleChart";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
   Activity, AlertTriangle, Bot, CalendarClock, CheckCircle2, ClipboardCheck, Clock, FileCheck, KeyRound,
@@ -39,7 +39,6 @@ const C = {
 };
 
 type Period = 7 | 30 | 90;
-const PERIODS: { value: Period; label: string }[] = [{ value: 7, label: "7 dias" }, { value: 30, label: "30 dias" }, { value: 90, label: "90 dias" }];
 
 function fmtDay(iso: string) { const [, m, d] = iso.split("-"); return `${d}/${m}`; }
 function relTime(iso?: string | null) {
@@ -228,7 +227,6 @@ export default function Dashboard() {
   const { data: series, isLoading: seriesLoading, error: seriesError, refetch: retrySeries, isPlaceholderData: seriesPlaceholder } = useDashboardSeries(period);
 
   const chartData = useMemo(() => (series ?? []).map((p: DashboardSeriesPoint) => ({ ...p, label: fmtDay(p.dia) })), [series]);
-  const rhTotals = useMemo(() => summarizeRhSeries(series ?? []), [series]);
   const totals = useMemo(() => (series ?? []).reduce((acc, p) => ({
     concessoes: acc.concessoes + p.concessoes, revogacoes: acc.revogacoes + p.revogacoes, falhas: acc.falhas + p.falhas,
     joiners: acc.joiners + p.joiners, movers: acc.movers + p.movers, leavers: acc.leavers + p.leavers,
@@ -290,58 +288,11 @@ export default function Dashboard() {
 
       </QueryState>
       {/* Séries */}
-      <QueryState loading={seriesLoading || seriesPlaceholder} error={seriesError} retry={retrySeries}>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
-        <Card data-tour="chart-provisioning" className="xl:col-span-3">
-          <CardHeader className="pb-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <CardTitle className="text-base">Atividade de provisionamento — RH e fila IAM</CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  Fila: {totals.concessoes} ações de concessão · {totals.revogacoes} ações de revogação · {totals.falhas} falhas no período{m?.fila_tempo_medio_min ? ` · tempo médio aprovação→execução ${m.fila_tempo_medio_min} min` : ""}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">{rhTotals ? `RH: ${rhTotals.rh_entradas} entradas verificadas · ${rhTotals.rh_saidas} saídas verificadas · ${rhTotals.rh_parciais} saídas parciais · ${rhTotals.rh_cadastrais} atualizações cadastrais` : "Séries RH indisponíveis nesta resposta; não equivalem a zero."}</p>
-                <p className="mt-1 text-xs text-muted-foreground">RH conta pessoas por ocorrência; fila conta ações processadas, não usuários únicos nem eventos pendentes. Não some as fontes. Parcial não significa concluído; desligamento/bloqueio não exclui a conta. Dias em America/Sao_Paulo.</p>
-              </div>
-              <div className="flex gap-1">
-                {PERIODS.map((p) => (
-                  <Button key={p.value} size="sm" variant={period === p.value ? "default" : "ghost"} className="h-7 px-2.5 text-xs" onClick={() => setPeriod(p.value)}>{p.label}</Button>
-                ))}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={260}>
-              <AreaChart data={chartData} margin={{ left: -16, right: 24, top: 8 }}>
-                <defs>
-                  {[["g1", C.success], ["g2", C.destructive], ["g3", C.info], ["g4", C.warning]].map(([id, color]) => (
-                    <linearGradient key={id} id={id} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={color} stopOpacity={0.35} /><stop offset="95%" stopColor={color} stopOpacity={0} /></linearGradient>
-                  ))}
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                <XAxis dataKey="label" interval={tick} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                <Tooltip content={<ChartTooltip />} />
-                <Area type="monotone" dataKey="concessoes" name="Fila: concessões (ações)" stroke={C.success} fill="url(#g1)" strokeWidth={2} hide={hidden.has("concessoes")} />
-                <Area type="monotone" dataKey="revogacoes" name="Fila: revogações (ações)" stroke={C.destructive} fill="url(#g2)" strokeWidth={2} hide={hidden.has("revogacoes")} />
-                <Area type="monotone" dataKey="outros" name="Fila: contas/atributos (ações)" stroke={C.info} fill="url(#g3)" strokeWidth={2} hide={hidden.has("outros")} />
-                <Area type="monotone" dataKey="falhas" name="Fila: falhas (ações)" stroke={C.warning} fill="url(#g4)" strokeWidth={2} hide={hidden.has("falhas")} />
-                {rhTotals && RH_SERIES.map(({ key, label, color }) => <Area key={key} type="linear" dataKey={key} name={label} stroke={color} fill="none" strokeDasharray="5 3" strokeWidth={2} hide={hidden.has(key)} />)}
-              </AreaChart>
-            </ResponsiveContainer>
-            <div className="mt-3 flex flex-wrap justify-center gap-x-3 gap-y-2" aria-label="Séries do gráfico">
-              {[
-                { key: "concessoes", label: "Fila: concessões (ações)", color: C.success },
-                { key: "revogacoes", label: "Fila: revogações (ações)", color: C.destructive },
-                { key: "outros", label: "Fila: contas/atributos (ações)", color: C.info },
-                { key: "falhas", label: "Fila: falhas (ações)", color: C.warning },
-                ...(rhTotals ? RH_SERIES : []),
-              ].map(({ key, label, color }) => <button key={key} type="button" aria-pressed={!hidden.has(key)} onClick={() => toggle(key)} className={`flex items-center gap-1 text-xs ${hidden.has(key) ? "opacity-50 line-through" : ""}`}><span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />{label}</button>)}
-            </div>
-          </CardContent>
-        </Card>
+        <PeopleLifecycleChart period={period} onPeriodChange={setPeriod} />
 
-        <Card data-tour="chart-requests" className="xl:col-span-2">
+        <div className="xl:col-span-2"><QueryState loading={seriesLoading || seriesPlaceholder} error={seriesError} retry={retrySeries}>
+        <Card data-tour="chart-requests">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Registros de movimentações (JML)</CardTitle>
             <p className="text-xs text-muted-foreground">{totals.joiners} entradas · {totals.movers} mudanças · {totals.leavers} saídas no período</p>
@@ -362,9 +313,9 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </CardContent>
         </Card>
+        </QueryState></div>
       </div>
 
-      </QueryState>
       {/* Distribuições + governança */}
       <QueryState loading={isLoading} error={metricsError || (!isLoading && !m ? new Error("Métricas indisponíveis") : null)} retry={retryMetrics}>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">

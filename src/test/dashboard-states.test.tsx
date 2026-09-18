@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 const state = vi.hoisted(() => ({ metrics: { data: undefined as Record<string, unknown> | undefined, isLoading: false, error: new Error('RPC missing') as Error | null, refetch: vi.fn() }, series: { data: undefined, isLoading: false, error: new Error('RPC missing'), refetch: vi.fn() } }));
+vi.mock('@/hooks/usePeopleSeries', () => ({ usePeopleSeries: () => state.series }));
 vi.mock('@/hooks/useOrigoData', () => ({ useDashboardMetrics: () => state.metrics, useDashboardSeries: () => state.series, useParametro: () => 'true' }));
 vi.mock('@/components/ActivityFeed', () => ({ default: () => <div>Independent activity feed</div> }));
 vi.mock('@/components/OnboardingTour', () => ({ default: () => null }));
@@ -10,7 +11,7 @@ afterEach(cleanup);
 describe('Dashboard read failures', () => {
  it('does not render zero KPIs, false empty governance or offline agents when RPCs fail', () => {
   render(<MemoryRouter><Dashboard /></MemoryRouter>);
-  expect(screen.getAllByRole('alert').length).toBe(3);
+  expect(screen.getAllByRole('alert').length).toBe(4);
   expect(screen.queryByText('Pessoas ativas')).toBeNull();
   expect(screen.queryByText('Nenhuma pendência — tudo em dia.')).toBeNull();
   expect(screen.queryByText('nunca visto')).toBeNull();

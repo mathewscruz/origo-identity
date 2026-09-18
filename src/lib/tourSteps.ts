@@ -3,7 +3,7 @@ import type { TourStep } from "@/components/OnboardingTour";
 export const tourSteps: Record<string, TourStep[]> = {
   dashboard: [
     { target: "[data-tour='kpi-cards']", title: "Indicadores em tempo real", description: "Pessoas ativas, itens aguardando aprovação, fila do agente, falhas, solicitações e alertas — tudo atualizado automaticamente." },
-    { target: "[data-tour='chart-provisioning']", title: "Atividade RH e fila IAM", description: "RH conta pessoas por ocorrência; fila conta ações processadas. Não some as fontes. Saída parcial não é concluída. Clique na legenda para alternar séries e mude o período." },
+    { target: "[data-tour='chart-provisioning']", title: "Entradas e saídas de pessoas", description: "Somente pessoas com criação confirmada ou desligamento integral verificado, por dia. Licenças, grupos, apps, sincronizações e parciais não contam. Alterne Entradas/Saídas e o período." },
     { target: "[data-tour='chart-requests']", title: "Registros JML", description: "Eventos registrados por dia; não confirmam execução de acessos." },
     { target: "[data-tour='timeline']", title: "Atividade recente", description: "RH por pessoa, auditoria, fila e JML. Confira fonte, status e pendências; clique para abrir o detalhe." },
   ],
