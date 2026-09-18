@@ -32,6 +32,7 @@ export interface ActivityItem {
 }
 
 const CATEGORIAS: { value: string; label: string }[] = [
+  { value: "rh", label: "RH" },
   { value: "", label: "Tudo" }, { value: "pessoa", label: "Pessoas" }, { value: "acesso", label: "Acessos" }, { value: "catalogo", label: "Catálogo" }, { value: "sistema", label: "Sistema" },
 ];
 
@@ -50,6 +51,11 @@ export function useActivityFeed(limit: number, categoria: string, colaboradorId?
 
 /** Rótulo humano da ação de auditoria (verbo_entidade → frase) */
 const ACAO_LABELS: Record<string, string> = {
+  rh_desligamento: "Desligamento RH — bloqueio de acessos",
+  rh_entrada: "Entrada RH — provisionamento",
+  rh_desligamento_escopo14: "Desligamento RH — bloqueio de acessos",
+  rh_desligamento_cloud_verificado: "Desligamento RH — verificação na nuvem",
+  rh_cadastral_incremental: "Atualização cadastral RH",
   criar_colaborador: "Colaborador criado", editar_colaborador: "Colaborador editado", alterar_status_colaborador: "Status de colaborador alterado",
   purgar_colaboradores: "Colaboradores purgados", suspender_preventivo: "Suspensão preventiva", reverter_suspensao_preventiva: "Suspensão revertida",
   criar_terceiro: "Terceiro criado", editar_terceiro: "Terceiro editado", desligar_terceiro: "Terceiro desligado", reativar_terceiro: "Terceiro reativado",
@@ -75,6 +81,12 @@ const ACAO_LABELS: Record<string, string> = {
 
 function acaoIcon(item: ActivityItem): { icon: LucideIcon; tone: string } {
   const a = item.acao || "";
+  if (item.origem === "rh") {
+    if (item.status === "partial") return { icon: AlertTriangle, tone: "bg-warning/10 text-warning" };
+    if (item.status === "failed") return { icon: XCircle, tone: "bg-destructive/10 text-destructive" };
+    if (item.status === "pending") return { icon: Clock, tone: "bg-warning/10 text-warning" };
+    return { icon: a === "rh_cadastral_incremental" ? Pencil : a === "rh_entrada" ? UserPlus : UserMinus, tone: "bg-info/10 text-info" };
+  }
   if (item.fonte === "fila") {
     if (item.status === "success") return { icon: CheckCircle2, tone: "bg-success/10 text-success" };
     if (item.status === "failed") return { icon: XCircle, tone: "bg-destructive/10 text-destructive" };
@@ -120,14 +132,15 @@ export default function ActivityFeed({ limit = 12, showFilters = true, className
   const [expanded, setExpanded] = useState(false);
   const { data, isLoading, error, refetch, isPlaceholderData } = useActivityFeed(expanded ? Math.min(limit * 4, 200) : limit, categoria, colaboradorId, terceiroId);
   const pessoaFixa = !!(colaboradorId || terceiroId);
-  const items = data ?? [];
+  // Only dedupe the same immutable record; never merge different people/actions.
+  const items = Array.from(new Map((data ?? []).map((item) => [`${item.fonte}:${item.id}`, item])).values());
 
   return (
     <div className={className}>
       {showFilters && (
         <div className="flex flex-wrap items-center gap-1 border-b px-3 py-2">
           {CATEGORIAS.map((c) => (
-            <button key={c.value} type="button" onClick={() => setCategoria(c.value)} className={cn("rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors", categoria === c.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>{c.label}</button>
+            <button key={c.value} type="button" aria-pressed={categoria === c.value} onClick={() => { setCategoria(c.value); setExpanded(false); }} className={cn("rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors", categoria === c.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>{c.label}</button>
           ))}
         </div>
       )}
@@ -144,12 +157,12 @@ export default function ActivityFeed({ limit = 12, showFilters = true, className
                 <span className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", tone)}><Icon className={cn("h-4 w-4", item.status === "processing" && "animate-spin")} /></span>
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                    <span className="truncate text-[13px] font-medium">{item.pessoa && !pessoaFixa ? <>{item.pessoa}<span className="text-muted-foreground"> · </span></> : null}{titulo(item)}</span>
+                    <span className="break-words text-[13px] font-medium">{item.pessoa && !pessoaFixa ? <>{item.pessoa}<span className="text-muted-foreground"> · </span></> : null}{titulo(item)}</span>
                     {item.pessoa_tipo && !pessoaFixa && <Badge variant="outline" className="h-4 px-1 text-[9px] uppercase tracking-wide text-muted-foreground">{item.pessoa_tipo === "terceiro" || item.pessoa_tipo === "terceiros" ? "Terceiro" : "Colaborador"}</Badge>}
-                    {item.fonte === "fila" && item.status && <Badge variant="outline" className={cn("h-4 px-1.5 text-[9px]", QUEUE_STATUS_META[item.status]?.className)}>{statusLabel(item.status)}</Badge>}
+                    {item.status && <Badge variant="outline" className={cn("px-1.5 text-[10px]", QUEUE_STATUS_META[item.status]?.className, item.status === "partial" && "border-warning/30 text-warning")}>{item.fonte === "fila" ? statusLabel(item.status) : humanize(item.status)}</Badge>}
                   </span>
-                  {item.detalhe && item.fonte !== "jml" && <span className="mt-0.5 line-clamp-2 block text-xs leading-snug text-muted-foreground">{item.detalhe}</span>}
-                  <span className="mt-0.5 block text-[11px] text-muted-foreground/70">{ator(item)}{item.fonte === "fila" && item.origem && item.origem !== item.ator ? ` · ${humanize(item.origem)}` : ""} · <span title={new Date(item.ts).toLocaleString("pt-BR")}>{tempoRelativo(item.ts)}</span></span>
+                  {item.detalhe && <span className="mt-0.5 block break-words text-xs leading-snug text-muted-foreground">{item.detalhe}</span>}
+                  <span className="mt-0.5 block text-[11px] text-muted-foreground">Fonte: {item.fonte === "fila" ? "Fila IAM" : item.fonte === "jml" ? "Eventos JML" : "Auditoria"}{item.origem ? ` · ${humanize(item.origem)}` : ""} · {ator(item)} · <span title={new Date(item.ts).toLocaleString("pt-BR")}>{tempoRelativo(item.ts)}</span></span>
                 </span>
                 {item.link && <ArrowUpRight className="mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground/50 opacity-0 transition-opacity group-hover:opacity-100" />}
               </>
@@ -162,7 +175,7 @@ export default function ActivityFeed({ limit = 12, showFilters = true, className
           })}
         </ul>
       )}
-      {!error && !isLoading && !isPlaceholderData && items.length >= limit && (
+      {!error && !isLoading && !isPlaceholderData && (expanded || (data?.length ?? 0) >= limit) && (
         <div className="border-t px-3 py-1.5 text-center">
           <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setExpanded((e) => !e)}>{expanded ? "Mostrar menos" : "Mostrar mais"}</Button>
         </div>

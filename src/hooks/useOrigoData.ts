@@ -487,6 +487,9 @@ export function useDashboardMetrics() {
 export interface DashboardSeriesPoint {
   dia: string; concessoes: number; revogacoes: number; outros: number; falhas: number;
   joiners: number; movers: number; leavers: number; pre_leavers: number;
+  // Additive RH contract: absent keys mean unavailable, not confirmed zero.
+  rh_entradas?: number; rh_saidas?: number; rh_parciais?: number; rh_cadastrais?: number;
+  rh_ad_bloqueios?: number; rh_falhas?: number; rh_pendentes?: number;
 }
 
 export function useDashboardSeries(days: number) {

@@ -1,5 +1,6 @@
 import QueryState from "@/components/QueryState";
 import { completedQueueLink } from "@/lib/dashboardFilters";
+import { RH_SERIES, summarizeRhSeries } from "@/lib/rhActivity";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -91,16 +92,16 @@ function SystemStrip({ m, loading }: { m: Row; loading: boolean }) {
     },
     {
       icon: RefreshCw, label: "Ciclo diário (RH → reconciliação)",
-      value: loading ? "…" : !ciclo ? "nunca rodou" : ciclo.status === "running" ? "em andamento" : ciclo.status === "done" ? "concluído" : "falhou",
-      hint: ciclo ? `${relTime(ciclo.updated_at)} · ${String(ciclo.message || "").slice(0, 60)}` : "agendado 06:30 UTC",
-      tone: !ciclo ? "warning" : ciclo.status === "error" ? "destructive" : ciclo.status === "running" ? "info" : "success",
+      value: loading ? "…" : !ciclo ? "nunca rodou" : ciclo.display_status === "paused" ? "pausado por segurança" : ciclo.status === "running" ? "em andamento" : ciclo.status === "done" ? "concluído" : "falhou",
+      hint: ciclo ? `${ciclo.display_status === "paused" ? "Coleta: " : ""}${relTime(ciclo.updated_at)} · ${String(ciclo.message || "").slice(0, 80)}` : "sem execução registrada",
+      tone: !ciclo || ciclo.display_status === "paused" ? "warning" : ciclo.status === "error" ? "destructive" : ciclo.status === "running" ? "info" : "success",
       to: "/configuracoes/integracoes",
     },
     {
       icon: FileSpreadsheet, label: "Última base do RH",
-      value: loading ? "…" : !csv ? "nenhuma" : csv.status === "running" ? "importando" : csv.status === "done" ? `${csv.colab_created ?? 0} novos · ${csv.colab_updated ?? 0} alt.` : "falhou",
-      hint: csv ? `${relTime(csv.updated_at)}${csv.filename ? ` · ${csv.filename}` : ""}` : "SharePoint RH_COLAB",
-      tone: !csv ? "warning" : csv.status === "error" ? "destructive" : "info",
+      value: loading ? "…" : !csv ? "nenhuma" : csv.display_status === "collected_not_imported" ? "coletada; não importada" : csv.status === "running" ? "importando" : csv.status === "done" ? `${csv.colab_created ?? 0} novos · ${csv.colab_updated ?? 0} alt.` : "falhou",
+      hint: csv ? `${csv.filename || "RH_COLAB"} · fonte: ${relTime(csv.source_modified_at || csv.updated_at)}${csv.collected_at ? ` · coleta: ${relTime(csv.collected_at)}` : ""}` : "SharePoint RH_COLAB",
+      tone: !csv || csv.display_status === "collected_not_imported" ? "warning" : csv.status === "error" ? "destructive" : "info",
       to: "/configuracoes/integracoes",
     },
     {
@@ -227,6 +228,7 @@ export default function Dashboard() {
   const { data: series, isLoading: seriesLoading, error: seriesError, refetch: retrySeries, isPlaceholderData: seriesPlaceholder } = useDashboardSeries(period);
 
   const chartData = useMemo(() => (series ?? []).map((p: DashboardSeriesPoint) => ({ ...p, label: fmtDay(p.dia) })), [series]);
+  const rhTotals = useMemo(() => summarizeRhSeries(series ?? []), [series]);
   const totals = useMemo(() => (series ?? []).reduce((acc, p) => ({
     concessoes: acc.concessoes + p.concessoes, revogacoes: acc.revogacoes + p.revogacoes, falhas: acc.falhas + p.falhas,
     joiners: acc.joiners + p.joiners, movers: acc.movers + p.movers, leavers: acc.leavers + p.leavers,
@@ -294,10 +296,12 @@ export default function Dashboard() {
           <CardHeader className="pb-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <CardTitle className="text-base">Atividade da fila de provisionamento</CardTitle>
+                <CardTitle className="text-base">Atividade de provisionamento — RH e fila IAM</CardTitle>
                 <p className="text-xs text-muted-foreground">
-                  {totals.concessoes} concessões · {totals.revogacoes} revogações · {totals.falhas} falhas no período{m?.fila_tempo_medio_min ? ` · tempo médio aprovação→execução ${m.fila_tempo_medio_min} min` : ""}
+                  Fila: {totals.concessoes} ações de concessão · {totals.revogacoes} ações de revogação · {totals.falhas} falhas no período{m?.fila_tempo_medio_min ? ` · tempo médio aprovação→execução ${m.fila_tempo_medio_min} min` : ""}
                 </p>
+                <p className="mt-1 text-xs text-muted-foreground">{rhTotals ? `RH: ${rhTotals.rh_entradas} entradas verificadas · ${rhTotals.rh_saidas} saídas verificadas · ${rhTotals.rh_parciais} saídas parciais · ${rhTotals.rh_cadastrais} atualizações cadastrais` : "Séries RH indisponíveis nesta resposta; não equivalem a zero."}</p>
+                <p className="mt-1 text-xs text-muted-foreground">RH conta pessoas por ocorrência; fila conta ações processadas, não usuários únicos nem eventos pendentes. Não some as fontes. Parcial não significa concluído; desligamento/bloqueio não exclui a conta. Dias em America/Sao_Paulo.</p>
               </div>
               <div className="flex gap-1">
                 {PERIODS.map((p) => (
@@ -308,7 +312,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={260}>
-              <AreaChart data={chartData} margin={{ left: -16, right: 8, top: 8 }}>
+              <AreaChart data={chartData} margin={{ left: -16, right: 24, top: 8 }}>
                 <defs>
                   {[["g1", C.success], ["g2", C.destructive], ["g3", C.info], ["g4", C.warning]].map(([id, color]) => (
                     <linearGradient key={id} id={id} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={color} stopOpacity={0.35} /><stop offset="95%" stopColor={color} stopOpacity={0} /></linearGradient>
@@ -318,20 +322,30 @@ export default function Dashboard() {
                 <XAxis dataKey="label" interval={tick} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
                 <Tooltip content={<ChartTooltip />} />
-                <Legend onClick={(e: Row) => toggle(String(e.dataKey))} wrapperStyle={{ fontSize: 12, cursor: "pointer" }} />
-                <Area type="monotone" dataKey="concessoes" name="Concessões" stroke={C.success} fill="url(#g1)" strokeWidth={2} hide={hidden.has("concessoes")} />
-                <Area type="monotone" dataKey="revogacoes" name="Revogações" stroke={C.destructive} fill="url(#g2)" strokeWidth={2} hide={hidden.has("revogacoes")} />
-                <Area type="monotone" dataKey="outros" name="Contas/atributos" stroke={C.info} fill="url(#g3)" strokeWidth={2} hide={hidden.has("outros")} />
-                <Area type="monotone" dataKey="falhas" name="Falhas" stroke={C.warning} fill="url(#g4)" strokeWidth={2} hide={hidden.has("falhas")} />
+                <Area type="monotone" dataKey="concessoes" name="Fila: concessões (ações)" stroke={C.success} fill="url(#g1)" strokeWidth={2} hide={hidden.has("concessoes")} />
+                <Area type="monotone" dataKey="revogacoes" name="Fila: revogações (ações)" stroke={C.destructive} fill="url(#g2)" strokeWidth={2} hide={hidden.has("revogacoes")} />
+                <Area type="monotone" dataKey="outros" name="Fila: contas/atributos (ações)" stroke={C.info} fill="url(#g3)" strokeWidth={2} hide={hidden.has("outros")} />
+                <Area type="monotone" dataKey="falhas" name="Fila: falhas (ações)" stroke={C.warning} fill="url(#g4)" strokeWidth={2} hide={hidden.has("falhas")} />
+                {rhTotals && RH_SERIES.map(({ key, label, color }) => <Area key={key} type="linear" dataKey={key} name={label} stroke={color} fill="none" strokeDasharray="5 3" strokeWidth={2} hide={hidden.has(key)} />)}
               </AreaChart>
             </ResponsiveContainer>
+            <div className="mt-3 flex flex-wrap justify-center gap-x-3 gap-y-2" aria-label="Séries do gráfico">
+              {[
+                { key: "concessoes", label: "Fila: concessões (ações)", color: C.success },
+                { key: "revogacoes", label: "Fila: revogações (ações)", color: C.destructive },
+                { key: "outros", label: "Fila: contas/atributos (ações)", color: C.info },
+                { key: "falhas", label: "Fila: falhas (ações)", color: C.warning },
+                ...(rhTotals ? RH_SERIES : []),
+              ].map(({ key, label, color }) => <button key={key} type="button" aria-pressed={!hidden.has(key)} onClick={() => toggle(key)} className={`flex items-center gap-1 text-xs ${hidden.has(key) ? "opacity-50 line-through" : ""}`}><span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />{label}</button>)}
+            </div>
           </CardContent>
         </Card>
 
         <Card data-tour="chart-requests" className="xl:col-span-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Movimentações de pessoas (JML)</CardTitle>
+            <CardTitle className="text-base">Registros de movimentações (JML)</CardTitle>
             <p className="text-xs text-muted-foreground">{totals.joiners} entradas · {totals.movers} mudanças · {totals.leavers} saídas no período</p>
+            <p className="text-xs text-muted-foreground">Eventos registrados; não confirmam execução de acessos.</p>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={260}>
@@ -402,7 +416,7 @@ export default function Dashboard() {
       <Card data-tour="timeline" className="animate-content-in stagger-5">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <div><CardTitle className="text-base">Atividade recente</CardTitle><p className="text-xs text-muted-foreground">Criações, alterações, exclusões, atribuições e execuções — colaboradores e terceiros</p></div>
+            <div><CardTitle className="text-base">Atividade recente</CardTitle><p className="text-xs text-muted-foreground">RH por pessoa, auditoria, fila IAM e JML — confira a fonte e o status de cada ação. Bloqueio/desligamento não é exclusão de conta.</p></div>
             <div className="flex gap-3 text-xs">
               <Link to="/fila-provisionamento" className="text-primary hover:underline">Fila</Link>
               <Link to="/eventos-jml" className="text-primary hover:underline">Eventos JML</Link>
