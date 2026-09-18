@@ -10,6 +10,7 @@ import { ptBR } from "date-fns/locale";
 import { Link } from "react-router-dom";
 import { useResourceNameResolver } from "@/lib/resourceNames";
 import { humanize } from "@/lib/labels";
+import { isSyncObservation } from "@/lib/syncObservation";
 
 
 interface Props {
@@ -34,6 +35,8 @@ interface Atribuicao {
 
 interface QueueItem {
   id: string;
+  requested_by: string | null;
+  processed_by: string | null;
   action_type: string;
   status: string;
   created_at: string;
@@ -109,7 +112,7 @@ export default function ColaboradorActivityPopover({ colaboradorId, colaboradorN
     let allQueueItems: QueueItem[] = [];
     const { data: q1 } = await (supabase as any)
       .from("iam_queue")
-      .select("id, action_type, status, created_at, processed_at, result_message, payload_json")
+      .select("id, action_type, status, created_at, processed_at, result_message, payload_json, requested_by, processed_by")
       .eq("colaborador_id", colaboradorId)
       .order("created_at", { ascending: false })
       .limit(20);
@@ -119,7 +122,7 @@ export default function ColaboradorActivityPopover({ colaboradorId, colaboradorN
     if (sam) {
       const { data: q2 } = await (supabase as any)
         .from("iam_queue")
-        .select("id, action_type, status, created_at, processed_at, result_message, payload_json")
+        .select("id, action_type, status, created_at, processed_at, result_message, payload_json, requested_by, processed_by")
         .eq("target_identity", sam)
         .order("created_at", { ascending: false })
         .limit(20);
@@ -131,6 +134,8 @@ export default function ColaboradorActivityPopover({ colaboradorId, colaboradorN
       }
     }
 
+    // Legacy sync rows are inventory observations, not executed access changes.
+    allQueueItems = allQueueItems.filter((item) => !isSyncObservation(item));
     // Sort by created_at desc and take top 15
     allQueueItems.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     allQueueItems = allQueueItems.slice(0, 15);
