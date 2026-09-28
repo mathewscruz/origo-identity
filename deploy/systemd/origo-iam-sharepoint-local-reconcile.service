@@ -1,0 +1,19 @@
+[Unit]
+Description=Órigo IAM - reconciliação local diária do SharePoint (shadow seguro)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /root/.hermes/scripts/origo_iam_sharepoint_local_reconcile.py --mode shadow
+TimeoutStartSec=900
+Nice=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/root/origo_work/iam_sharepoint_local /run/lock
+
+[Install]
+WantedBy=default.target
