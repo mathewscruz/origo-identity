@@ -47,7 +47,11 @@ Deno.serve(async (req) => {
     if (files.length === 0) {
       return new Response(JSON.stringify({ error: `Nenhum CSV com prefixo ${prefix} em ${folder}` }), { status: 404, headers: corsHeaders });
     }
-    const latest = files[0];
+    const requested = typeof body?.file === "string" ? body.file.trim().toLowerCase() : "";
+    const latest = requested ? files.find((f: any) => String(f.name).toLowerCase() === requested) : files[0];
+    if (!latest) {
+      return new Response(JSON.stringify({ error: `Arquivo ${body.file} não encontrado em ${folder}` }), { status: 404, headers: corsHeaders });
+    }
 
     let bytes: Uint8Array;
     if (latest["@microsoft.graph.downloadUrl"]) {
