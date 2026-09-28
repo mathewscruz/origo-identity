@@ -1,0 +1,12 @@
+[Unit]
+Description=Órigo IAM - executar reconciliação local do SharePoint diariamente
+
+[Timer]
+OnCalendar=*-*-* 11:00:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+AccuracySec=30s
+Unit=origo-iam-sharepoint-local-reconcile.service
+
+[Install]
+WantedBy=timers.target
