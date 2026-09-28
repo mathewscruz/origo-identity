@@ -1,3 +1,4 @@
+import QueryState from "@/components/QueryState";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Activity, ExternalLink, Search, UserMinus, UserPlus, ArrowLeftRight, ShieldAlert } from "lucide-react";
@@ -10,8 +11,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
 import StatCard from "@/components/StatCard";
-import TablePagination, { usePagination } from "@/components/TablePagination";
-import { useEventosJML } from "@/hooks/useOrigoData";
+import TablePagination from "@/components/TablePagination";
+import { useEventosJMLPage, useEventosJMLSummary } from "@/hooks/useOrigoData";
 import { JML_ORIGEM_LABELS, JML_TIPO_META } from "@/lib/queueLabels";
 import { humanize } from "@/lib/labels";
 
@@ -32,7 +33,7 @@ function summary(ev: Row): string {
 }
 
 export default function EventosJMLPage() {
-  const { data: eventos, isLoading } = useEventosJML();
+  const { data: eventos, isLoading: summaryLoading, error: summaryError, refetch: retrySummary } = useEventosJMLSummary();
   const [busca, setBusca] = useState("");
   const [tipoFilter, setTipoFilter] = useState("todos");
   const [origemFilter, setOrigemFilter] = useState("todos");
@@ -44,12 +45,9 @@ export default function EventosJMLPage() {
   const origens = useMemo(() => Array.from(new Set(list.map((e) => e.origem).filter(Boolean))).sort() as string[], [list]);
   const since = useMemo(() => periodo === "todos" ? 0 : Date.now() - Number(periodo) * 86400000, [periodo]);
 
-  const filtered = useMemo(() => list
-    .filter((e) => !since || new Date(e.created_at).getTime() >= since)
-    .filter((e) => tipoFilter === "todos" || e.tipo === tipoFilter)
-    .filter((e) => origemFilter === "todos" || e.origem === origemFilter)
-    .filter((e) => !busca || (e.colaborador_nome || "").toLowerCase().includes(busca.toLowerCase())),
-  [list, since, tipoFilter, origemFilter, busca]);
+  const { data: pageData, isLoading, error, refetch } = useEventosJMLPage({ page, pageSize, search: busca, tipo: tipoFilter, origem: origemFilter, since: since ? new Date(since).toISOString() : undefined });
+  const paginatedItems = pageData?.rows ?? [];
+  const total = pageData?.total ?? 0;
 
   const counts = useMemo(() => {
     const inPeriod = list.filter((e) => !since || new Date(e.created_at).getTime() >= since);
@@ -57,7 +55,7 @@ export default function EventosJMLPage() {
     return { joiner: people("joiner"), mover: people("mover"), leaver: people("leaver"), pre_leaver: people("pre_leaver") };
   }, [list, since]);
 
-  const { paginatedItems, safePage } = usePagination(filtered, page, pageSize);
+
 
   return (
     <div className="space-y-5">
@@ -73,6 +71,7 @@ export default function EventosJMLPage() {
         }
       />
 
+      <QueryState loading={summaryLoading} error={summaryError} retry={retrySummary}>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatCard label="Entradas (joiner)" value={counts.joiner} icon={UserPlus} tone="success" active={tipoFilter === "joiner"} onClick={() => { setTipoFilter(tipoFilter === "joiner" ? "todos" : "joiner"); setPage(1); }} hint="pessoas no período" />
         <StatCard label="Mudanças (mover)" value={counts.mover} icon={ArrowLeftRight} tone="info" active={tipoFilter === "mover"} onClick={() => { setTipoFilter(tipoFilter === "mover" ? "todos" : "mover"); setPage(1); }} hint="pessoas no período" />
@@ -80,6 +79,7 @@ export default function EventosJMLPage() {
         <StatCard label="Suspensões preventivas" value={counts.pre_leaver} icon={ShieldAlert} tone="warning" active={tipoFilter === "pre_leaver"} onClick={() => { setTipoFilter(tipoFilter === "pre_leaver" ? "todos" : "pre_leaver"); setPage(1); }} />
       </div>
 
+      </QueryState>
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[200px] max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -99,14 +99,15 @@ export default function EventosJMLPage() {
             {origens.map((o) => <SelectItem key={o} value={o}>{JML_ORIGEM_LABELS[o] || o}</SelectItem>)}
           </SelectContent>
         </Select>
-        <span className="ml-auto text-xs text-muted-foreground">{filtered.length} evento(s)</span>
+        <span className="ml-auto text-xs text-muted-foreground">{isLoading ? "Carregando…" : error ? "Contagem indisponível" : `${total} evento(s)`}</span>
       </div>
 
+      <QueryState loading={isLoading} error={error} retry={refetch}>
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
             <div className="space-y-3 p-4">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
-          ) : filtered.length === 0 ? (
+          ) : paginatedItems.length === 0 ? (
             <div className="py-10"><EmptyState message="Nenhum evento JML com esses filtros." /></div>
           ) : (
             <table className="w-full text-sm">
@@ -143,7 +144,8 @@ export default function EventosJMLPage() {
           )}
         </CardContent>
       </Card>
-      <TablePagination currentPage={safePage} totalItems={filtered.length} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
+      <TablePagination currentPage={page} totalItems={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
+      </QueryState>
     </div>
   );
 }

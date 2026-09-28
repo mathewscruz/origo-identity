@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Shield, Award, AppWindow, XCircle, FolderOpen } from "lucide-react";
 import TablePagination, { usePagination } from "@/components/TablePagination";
 import EmptyState from "@/components/EmptyState";
+import { isSyncObservation } from "@/lib/syncObservation";
 
 const ACTION_ICONS: Record<string, typeof Shield> = {
   assign_group: Shield,
@@ -30,7 +31,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 const ORIGIN_LABELS: Record<string, string> = {
   manual_individual: "Manual complementar",
-  entra_sync: "Importado do Entra ID",
+  entra_sync: "Sincronizado do Entra ID",
 };
 
 const ORIGIN_COLORS: Record<string, string> = {
@@ -77,7 +78,8 @@ export default function IndividualAccessTabs({ individualQueue, getResourceName,
       <tbody>
         {data.map((item: any) => {
           const Icon = ACTION_ICONS[item.action_type] || Shield;
-          const origem = item.requested_by || "entra_sync";
+          const origem = item.requested_by || "Origem não informada";
+          const observed = isSyncObservation(item);
           const isManual = origem === "manual_individual";
           const payload = item.payload_json || {};
           const isOnPremGroup = item.action_type === "assign_group" && !!payload.onPremisesSync;
@@ -121,12 +123,12 @@ export default function IndividualAccessTabs({ individualQueue, getResourceName,
                 </Badge>
               </td>
               <td className="p-4">
-                <Badge variant="outline" className={STATUS_COLORS[item.status] || ""}>
-                  {STATUS_LABELS[item.status] || item.status}
+                <Badge variant="outline" className={observed ? ORIGIN_COLORS.entra_sync : STATUS_COLORS[item.status] || ""}>
+                  {observed ? "Observado" : STATUS_LABELS[item.status] || item.status}
                 </Badge>
               </td>
               <td className="p-4 text-muted-foreground">
-                {new Date(item.created_at).toLocaleDateString("pt-BR")}
+                {observed && "Observado em "}{new Date(item.created_at).toLocaleDateString("pt-BR")}
               </td>
               <td className="p-4">
                 {isBlockedGroup ? (

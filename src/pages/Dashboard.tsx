@@ -1,7 +1,10 @@
+import QueryState from "@/components/QueryState";
+import { completedQueueLink } from "@/lib/dashboardFilters";
+import PeopleLifecycleChart from "@/components/PeopleLifecycleChart";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
   Activity, AlertTriangle, Bot, CalendarClock, CheckCircle2, ClipboardCheck, Clock, FileCheck, KeyRound,
@@ -36,7 +39,6 @@ const C = {
 };
 
 type Period = 7 | 30 | 90;
-const PERIODS: { value: Period; label: string }[] = [{ value: 7, label: "7 dias" }, { value: 30, label: "30 dias" }, { value: 90, label: "90 dias" }];
 
 function fmtDay(iso: string) { const [, m, d] = iso.split("-"); return `${d}/${m}`; }
 function relTime(iso?: string | null) {
@@ -89,16 +91,16 @@ function SystemStrip({ m, loading }: { m: Row; loading: boolean }) {
     },
     {
       icon: RefreshCw, label: "Ciclo diário (RH → reconciliação)",
-      value: loading ? "…" : !ciclo ? "nunca rodou" : ciclo.status === "running" ? "em andamento" : ciclo.status === "done" ? "concluído" : "falhou",
-      hint: ciclo ? `${relTime(ciclo.updated_at)} · ${String(ciclo.message || "").slice(0, 60)}` : "agendado 06:30 UTC",
-      tone: !ciclo ? "warning" : ciclo.status === "error" ? "destructive" : ciclo.status === "running" ? "info" : "success",
+      value: loading ? "…" : !ciclo ? "nunca rodou" : ciclo.display_status === "paused" ? "pausado por segurança" : ciclo.status === "running" ? "em andamento" : ciclo.status === "done" ? "concluído" : "falhou",
+      hint: ciclo ? `${ciclo.display_status === "paused" ? "Coleta: " : ""}${relTime(ciclo.updated_at)} · ${String(ciclo.message || "").slice(0, 80)}` : "sem execução registrada",
+      tone: !ciclo || ciclo.display_status === "paused" ? "warning" : ciclo.status === "error" ? "destructive" : ciclo.status === "running" ? "info" : "success",
       to: "/configuracoes/integracoes",
     },
     {
       icon: FileSpreadsheet, label: "Última base do RH",
-      value: loading ? "…" : !csv ? "nenhuma" : csv.status === "running" ? "importando" : csv.status === "done" ? `${csv.colab_created ?? 0} novos · ${csv.colab_updated ?? 0} alt.` : "falhou",
-      hint: csv ? `${relTime(csv.updated_at)}${csv.filename ? ` · ${csv.filename}` : ""}` : "SharePoint RH_COLAB",
-      tone: !csv ? "warning" : csv.status === "error" ? "destructive" : "info",
+      value: loading ? "…" : !csv ? "nenhuma" : csv.display_status === "collected_not_imported" ? "coletada; não importada" : csv.status === "running" ? "importando" : csv.status === "done" ? `${csv.colab_created ?? 0} novos · ${csv.colab_updated ?? 0} alt.` : "falhou",
+      hint: csv ? `${csv.filename || "RH_COLAB"} · fonte: ${relTime(csv.source_modified_at || csv.updated_at)}${csv.collected_at ? ` · coleta: ${relTime(csv.collected_at)}` : ""}` : "SharePoint RH_COLAB",
+      tone: !csv || csv.display_status === "collected_not_imported" ? "warning" : csv.status === "error" ? "destructive" : "info",
       to: "/configuracoes/integracoes",
     },
     {
@@ -221,8 +223,8 @@ function GovernanceList({ m, loading }: { m: Row; loading: boolean }) {
 export default function Dashboard() {
   const [period, setPeriod] = useState<Period>(30);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
-  const { data: m, isLoading } = useDashboardMetrics();
-  const { data: series } = useDashboardSeries(period);
+  const { data: m, isLoading, error: metricsError, refetch: retryMetrics } = useDashboardMetrics();
+  const { data: series, isLoading: seriesLoading, error: seriesError, refetch: retrySeries, isPlaceholderData: seriesPlaceholder } = useDashboardSeries(period);
 
   const chartData = useMemo(() => (series ?? []).map((p: DashboardSeriesPoint) => ({ ...p, label: fmtDay(p.dia) })), [series]);
   const totals = useMemo(() => (series ?? []).reduce((acc, p) => ({
@@ -239,7 +241,7 @@ export default function Dashboard() {
   const kpis = [
     { label: "Pessoas ativas", value: pessoas, hint: `${m?.colab_ativos ?? 0} colab. · ${m?.terc_ativos ?? 0} terceiros · ${(m?.colab_ferias ?? 0) + (m?.colab_afastados ?? 0)} afastados/férias`, icon: Users, tone: "primary" as const, to: "/colaboradores" },
     { label: "Aguardando aprovação", value: m?.fila_waiting ?? 0, hint: waitingAge ? `mais antigo há ${waitingAge}` : "nada aguardando", icon: ShieldCheck, tone: (m?.fila_waiting ?? 0) > 0 ? "warning" as const : "success" as const, to: "/fila-provisionamento?tab=aprovacao" },
-    { label: "Para o agente executar", value: (m?.fila_pending ?? 0) + (m?.fila_processing ?? 0), hint: `${m?.fila_processing ?? 0} em execução${pendingAge ? ` · mais antigo há ${pendingAge}` : ""}`, icon: Bot, tone: "info" as const, to: "/fila-provisionamento?status=pending" },
+    { label: "Para o agente executar", value: (m?.fila_pending ?? 0) + (m?.fila_processing ?? 0), hint: `${m?.fila_processing ?? 0} em execução${pendingAge ? ` · mais antigo há ${pendingAge}` : ""}`, icon: Bot, tone: "info" as const, to: "/fila-provisionamento?status=agente" },
     { label: "Falhas na fila", value: m?.fila_failed ?? 0, hint: `${m?.fila_success_24h ?? 0} sucesso(s) nas últimas 24 h`, icon: XCircle, tone: (m?.fila_failed ?? 0) > 0 ? "destructive" as const : "success" as const, to: "/fila-provisionamento?status=failed" },
     { label: "Exceções pendentes", value: m?.excecoes_pendentes ?? 0, hint: `${m?.excecoes_ativas ?? 0} ativa(s) · ${m?.excecoes_vencendo ?? 0} vencendo em 15 d`, icon: FileCheck, tone: (m?.excecoes_pendentes ?? 0) > 0 ? "warning" as const : "success" as const, to: "/excecoes" },
     { label: "Alertas não lidos", value: m?.alertas_nao_lidos ?? 0, hint: `${m?.alertas_criticos ?? 0} crítico(s)`, icon: AlertTriangle, tone: (m?.alertas_criticos ?? 0) > 0 ? "destructive" as const : (m?.alertas_nao_lidos ?? 0) > 0 ? "warning" as const : "success" as const, to: "/alertas" },
@@ -252,14 +254,14 @@ export default function Dashboard() {
     { label: "Inativos", value: m?.colab_inativos ?? 0, color: C.muted, to: "/colaboradores?status=inativo" },
     { label: "Desligados", value: m?.colab_desligados ?? 0, color: C.destructive, to: "/colaboradores?status=desligado" },
     { label: "Terceiros ativos", value: m?.terc_ativos ?? 0, color: C.violet, to: "/terceiros" },
-    { label: "Suspensos (pré-leaver)", value: m?.colab_suspensos ?? 0, color: "hsl(24, 90%, 55%)", to: "/colaboradores?status=ativo" },
+    { label: "Suspensos (pré-leaver)", value: m?.colab_suspensos ?? 0, color: "hsl(24, 90%, 55%)", to: "/colaboradores?suspenso_preventivo=true" },
   ];
   const filaRows = [
     { label: QUEUE_STATUS_META.waiting_approval.label, value: m?.fila_waiting ?? 0, color: C.info, to: "/fila-provisionamento?tab=aprovacao" },
     { label: QUEUE_STATUS_META.pending.label, value: m?.fila_pending ?? 0, color: C.warning, to: "/fila-provisionamento?status=pending" },
     { label: QUEUE_STATUS_META.processing.label, value: m?.fila_processing ?? 0, color: C.violet, to: "/fila-provisionamento?status=processing" },
     { label: QUEUE_STATUS_META.failed.label, value: m?.fila_failed ?? 0, color: C.destructive, to: "/fila-provisionamento?status=failed" },
-    { label: "Concluídos (7 dias)", value: m?.fila_success_7d ?? 0, color: C.success, to: "/fila-provisionamento?status=success" },
+    { label: "Concluídos (7 dias)", value: m?.fila_success_7d ?? 0, color: C.success, to: completedQueueLink(m?.gerado_em) },
   ];
   const acoes: Row[] = m?.fila_por_acao_7d ?? [];
   const falhas: Row[] = m?.fila_falhas_por_codigo ?? [];
@@ -269,9 +271,10 @@ export default function Dashboard() {
       <PageHeader
         title="Dashboard"
         description={<>Visão operacional do IAM/IGA em tempo real{m?.gerado_em ? <span className="text-xs"> · atualizado {relTime(m.gerado_em)}</span> : null}</>}
-        actions={<Badge variant="outline" className="gap-1 text-xs"><Activity className="h-3 w-3 text-success" />Tempo real</Badge>}
+        actions={<Badge variant="outline" className="gap-1 text-xs"><Activity className={`h-3 w-3 ${metricsError || seriesError ? "text-destructive" : "text-success"}`} />{metricsError || seriesError ? "Dados indisponíveis" : isLoading ? "Carregando" : "Tempo real"}</Badge>}
       />
 
+      <QueryState loading={isLoading} error={metricsError || (!isLoading && !m ? new Error("Métricas indisponíveis") : null)} retry={retryMetrics}>
       <SystemStrip m={m} loading={isLoading} />
 
       {/* KPIs */}
@@ -283,50 +286,17 @@ export default function Dashboard() {
         ))}
       </div>
 
+      </QueryState>
       {/* Séries */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
-        <Card data-tour="chart-provisioning" className="xl:col-span-3">
-          <CardHeader className="pb-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <CardTitle className="text-base">Atividade da fila de provisionamento</CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  {totals.concessoes} concessões · {totals.revogacoes} revogações · {totals.falhas} falhas no período{m?.fila_tempo_medio_min ? ` · tempo médio aprovação→execução ${m.fila_tempo_medio_min} min` : ""}
-                </p>
-              </div>
-              <div className="flex gap-1">
-                {PERIODS.map((p) => (
-                  <Button key={p.value} size="sm" variant={period === p.value ? "default" : "ghost"} className="h-7 px-2.5 text-xs" onClick={() => setPeriod(p.value)}>{p.label}</Button>
-                ))}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={260}>
-              <AreaChart data={chartData} margin={{ left: -16, right: 8, top: 8 }}>
-                <defs>
-                  {[["g1", C.success], ["g2", C.destructive], ["g3", C.info], ["g4", C.warning]].map(([id, color]) => (
-                    <linearGradient key={id} id={id} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={color} stopOpacity={0.35} /><stop offset="95%" stopColor={color} stopOpacity={0} /></linearGradient>
-                  ))}
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                <XAxis dataKey="label" interval={tick} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                <Tooltip content={<ChartTooltip />} />
-                <Legend onClick={(e: Row) => toggle(String(e.dataKey))} wrapperStyle={{ fontSize: 12, cursor: "pointer" }} />
-                <Area type="monotone" dataKey="concessoes" name="Concessões" stroke={C.success} fill="url(#g1)" strokeWidth={2} hide={hidden.has("concessoes")} />
-                <Area type="monotone" dataKey="revogacoes" name="Revogações" stroke={C.destructive} fill="url(#g2)" strokeWidth={2} hide={hidden.has("revogacoes")} />
-                <Area type="monotone" dataKey="outros" name="Contas/atributos" stroke={C.info} fill="url(#g3)" strokeWidth={2} hide={hidden.has("outros")} />
-                <Area type="monotone" dataKey="falhas" name="Falhas" stroke={C.warning} fill="url(#g4)" strokeWidth={2} hide={hidden.has("falhas")} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        <PeopleLifecycleChart period={period} onPeriodChange={setPeriod} />
 
-        <Card data-tour="chart-requests" className="xl:col-span-2">
+        <div className="xl:col-span-2"><QueryState loading={seriesLoading || seriesPlaceholder} error={seriesError} retry={retrySeries}>
+        <Card data-tour="chart-requests">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Movimentações de pessoas (JML)</CardTitle>
+            <CardTitle className="text-base">Registros de movimentações (JML)</CardTitle>
             <p className="text-xs text-muted-foreground">{totals.joiners} entradas · {totals.movers} mudanças · {totals.leavers} saídas no período</p>
+            <p className="text-xs text-muted-foreground">Eventos registrados; não confirmam execução de acessos.</p>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={260}>
@@ -343,9 +313,11 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </CardContent>
         </Card>
+        </QueryState></div>
       </div>
 
       {/* Distribuições + governança */}
+      <QueryState loading={isLoading} error={metricsError || (!isLoading && !m ? new Error("Métricas indisponíveis") : null)} retry={retryMetrics}>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
         <BarsPanel title="Pessoas por status" rows={pessoasRows} />
         <BarsPanel title="Fila por status" rows={filaRows} />
@@ -390,11 +362,12 @@ export default function Dashboard() {
         <GovernanceList m={m} loading={isLoading} />
       </div>
 
+      </QueryState>
       {/* Atividade recente — tudo o que aconteceu com pessoas e acessos (auditoria + fila + JML), em tempo real */}
       <Card data-tour="timeline" className="animate-content-in stagger-5">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <div><CardTitle className="text-base">Atividade recente</CardTitle><p className="text-xs text-muted-foreground">Criações, alterações, exclusões, atribuições e execuções — colaboradores e terceiros</p></div>
+            <div><CardTitle className="text-base">Atividade recente</CardTitle><p className="text-xs text-muted-foreground">RH por pessoa, auditoria, fila IAM e JML — confira a fonte e o status de cada ação. Bloqueio/desligamento não é exclusão de conta.</p></div>
             <div className="flex gap-3 text-xs">
               <Link to="/fila-provisionamento" className="text-primary hover:underline">Fila</Link>
               <Link to="/eventos-jml" className="text-primary hover:underline">Eventos JML</Link>

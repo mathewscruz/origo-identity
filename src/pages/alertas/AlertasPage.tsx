@@ -1,3 +1,4 @@
+import QueryState from "@/components/QueryState";
 import { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,7 +25,7 @@ import { cn } from "@/lib/utils";
 type Alerta = any;
 
 export default function AlertasPage() {
-  const { data: alertas, isLoading } = useAlertas();
+  const { data: alertas, isLoading, error, refetch } = useAlertas();
   const qc = useQueryClient();
   const canEdit = useCanEdit();
   const [tab, setTab] = useState<"nao_lidos" | "todos">("nao_lidos");
@@ -61,9 +62,10 @@ export default function AlertasPage() {
         title="Alertas"
         icon={Bell}
         description="Tudo o que o sistema quer que alguém veja: revisões, terceiros, quarentena do RH, falhas do agente, licenças. Trate a causa e marque como lido."
-        actions={naoLidos.length > 0 && canEdit ? <Button variant="outline" onClick={() => marcar(null, "Todos os alertas marcados como lidos")}><CheckCheck className="mr-1.5 h-4 w-4" />Marcar todos como lidos</Button> : undefined}
+        actions={!error && !isLoading && naoLidos.length > 0 && canEdit ? <Button variant="outline" onClick={() => marcar(null, "Todos os alertas marcados como lidos")}><CheckCheck className="mr-1.5 h-4 w-4" />Marcar todos como lidos</Button> : undefined}
       />
 
+      <QueryState loading={isLoading} error={error} retry={refetch}>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatCard label="Não lidos" value={naoLidos.length} icon={Inbox} tone={naoLidos.length ? "warning" : "default"} hint={naoLidos.length ? "aguardando tratamento" : "tudo em dia"} />
         <StatCard label="Críticos" value={criticos} icon={ShieldAlert} tone={criticos ? "destructive" : "default"} hint="não lidos" />
@@ -114,6 +116,7 @@ export default function AlertasPage() {
         )}
       </CardContent></Card>
       <TablePagination totalItems={filtered.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
+      </QueryState>
     </div>
   );
 }

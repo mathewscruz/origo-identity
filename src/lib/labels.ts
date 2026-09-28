@@ -4,6 +4,7 @@
  * como código (`waiting_approval`, `status_status`) na tela.
  */
 const LABELS: Record<string, string> = {
+  rh: "RH",
   // pessoas
   ativo: "Ativo", inativo: "Inativo", ferias: "Férias", afastado: "Afastado", desligado: "Desligado", suspenso: "Suspenso",
   colaborador: "Colaborador", colaboradores: "Colaboradores", terceiro: "Terceiro", terceiros: "Terceiros", gestor: "Gestor", pessoa: "Pessoa",

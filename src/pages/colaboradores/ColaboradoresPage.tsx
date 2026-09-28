@@ -1,3 +1,4 @@
+import { isPreventivelySuspended } from "@/lib/dashboardFilters";
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -166,9 +167,11 @@ export default function ColaboradoresPage() {
     origem: c.origem || "manual",
     gestor_id: c.gestor_id || "",
     entra_id: c.entra_id || null,
+    suspenso_preventivo: c.suspenso_preventivo,
   }));
 
   const filtered = mapped.filter((c) => {
+    if (searchParams.get("suspenso_preventivo") === "true" && !isPreventivelySuspended(c)) return false;
     if (busca && !c.nome.toLowerCase().includes(busca.toLowerCase()) && !c.email.toLowerCase().includes(busca.toLowerCase())) return false;
     if (statusFilter !== "todos" && c.status !== statusFilter) return false;
     if (areaFilter !== "todos" && c.area !== areaFilter) return false;
@@ -328,6 +331,7 @@ export default function ColaboradoresPage() {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Buscar nome ou email..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
         </div>
+        {searchParams.get("suspenso_preventivo") === "true" && <Button variant="outline" onClick={() => { const next = new URLSearchParams(searchParams); next.delete("suspenso_preventivo"); setSearchParams(next); setPage(1); }}>Suspensos preventivamente ×</Button>}
         <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); const n = new URLSearchParams(searchParams); if (v === "todos") n.delete("status"); else n.set("status", v); setSearchParams(n, { replace: true }); }}>
           <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
