@@ -51,11 +51,17 @@ const PLACEHOLDER_EMPRESA_ID = "00000000-0000-0000-0000-000000000000";
 
 // ─── Parsing ─────────────────────────────────────────────────────────────────
 function normalizeHeader(name: string): string {
-  return name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[_\s]+/g, " ").trim();
+  return name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
 }
 function findHeaderMatch(headers: string[], target: string): string | null {
-  const nt = normalizeHeader(target);
-  return headers.find((h) => h === target) || headers.find((h) => normalizeHeader(h) === nt) || headers.find((h) => normalizeHeader(h).includes(nt)) || null;
+  const normalizedTarget = normalizeHeader(target);
+  return headers.find((header) => header === target)
+    || headers.find((header) => normalizeHeader(header) === normalizedTarget)
+    || null;
 }
 function splitCsvLine(line: string, delimiter: string): string[] {
   const fields: string[] = [];
