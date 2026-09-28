@@ -12,10 +12,273 @@
   "mcp": {
     "server": {
       "name": "origo-access-identity-mcp",
-      "version": "0.2.1",
+      "version": "0.4.0",
       "title": "Órigo Access & Identity"
     },
     "tools": [
+      {
+        "name": "get_inbox",
+        "title": "Caixa de entrada do Hermes",
+        "description": "Resumo operacional em uma chamada: fila (por status), aprovações pendentes, falhas, exceções pendentes, revisões abertas/atrasadas, quarentena do RH, terceiros vencendo/para revalidar, alertas críticos não lidos, status do agente e do último ciclo diário. Comece por aqui em todo ciclo.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_iam_queue",
+        "title": "Listar fila IAM",
+        "description": "Lista itens da fila IAM (provisionamento/revogação). Filtra por status, tipo de ação, requester e colaborador.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "status": {
+              "description": "Ex.: ['pending','waiting_approval','processing','success','failed','cancelled']",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "action_type": {
+              "type": "string"
+            },
+            "requested_by": {
+              "type": "string"
+            },
+            "colaborador_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            "offset": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "approve_iam_item",
+        "title": "Decidir item da fila IAM",
+        "description": "Aprova (libera para execução), rejeita ou cancela itens da fila IAM. A decisão é registrada em nome do usuário autenticado; auto-aprovação é recusada pelo banco.",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "idempotentHint": false,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "item_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "item_ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "decision": {
+              "type": "string",
+              "enum": [
+                "approve",
+                "reject",
+                "cancel"
+              ]
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "decision"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "retry_failed_items",
+        "title": "Reprocessar falhas da fila",
+        "description": "Recoloca em 'pending' os itens da fila com status 'failed' (opcionalmente só alguns action_types) para o Órigo Agente tentar de novo. Use depois de corrigir a causa (get_inbox → falhas).",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "action_types": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "decide_exception",
+        "title": "Decidir exceção de acesso",
+        "description": "Aprova ou rejeita uma exceção de acesso pendente (get_inbox → excecoes_pendentes). Aprovar atribui o perfil e enfileira as concessões para o Órigo Agente; a decisão fica em nome do usuário conectado.",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "idempotentHint": false,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "excecao_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "decisao": {
+              "type": "string",
+              "enum": [
+                "aprovada",
+                "rejeitada"
+              ]
+            },
+            "comentario": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "excecao_id",
+            "decisao"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "resolve_quarantine",
+        "title": "Resolver item da quarentena do RH",
+        "description": "Marca uma linha da quarentena da importação do RH como 'resolvido' (o RH corrigiu a base; a próxima importação reavalia) ou 'descartado' (falso positivo). Não altera colaboradores.",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "quarentena_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "resolvido",
+                "descartado"
+              ]
+            },
+            "observacao": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "quarentena_id",
+            "status"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "ack_alerts",
+        "title": "Marcar alertas como lidos",
+        "description": "Marca alertas como lidos (ids específicos ou todos os não lidos quando ids é omitido). Use depois de tratar a causa.",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_alertas",
+        "title": "Listar alertas",
+        "description": "Lista alertas do sistema com filtros por severidade e status (lido/não lido).",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "severidade": {
+              "type": "string"
+            },
+            "lido": {
+              "type": "boolean"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            "offset": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "outputSchema": null
+      },
       {
         "name": "list_colaboradores",
         "title": "Listar colaboradores",
@@ -139,11 +402,12 @@
         "outputSchema": null
       },
       {
-        "name": "list_iam_queue",
-        "title": "Listar fila IAM",
-        "description": "Lista itens da fila IAM (provisionamento/revogação). Filtra por status, tipo de ação, requester e colaborador.",
+        "name": "revalidate_terceiro",
+        "title": "Revalidar terceiro",
+        "description": "Registra a revalidação do acesso de um terceiro pelo responsável (reinicia o prazo de revalidação e fecha os alertas). Opcionalmente renova o contrato (novo_contrato_fim, YYYY-MM-DD) — a expiração da conta no AD acompanha a nova data no próximo ciclo do agente.",
         "annotations": {
-          "readOnlyHint": true,
+          "readOnlyHint": false,
+          "destructiveHint": false,
           "idempotentHint": true,
           "openWorldHint": false
         },
@@ -151,42 +415,30 @@
           "$schema": "http://json-schema.org/draft-07/schema#",
           "type": "object",
           "properties": {
-            "status": {
-              "description": "Ex.: ['pending','waiting_approval','processing','success','failed','cancelled']",
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "action_type": {
-              "type": "string"
-            },
-            "requested_by": {
-              "type": "string"
-            },
-            "colaborador_id": {
+            "terceiro_id": {
               "type": "string",
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             },
-            "limit": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 200
+            "novo_contrato_fim": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
             },
-            "offset": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
+            "motivo": {
+              "description": "Ex.: GLPI #123 — responsável confirmou",
+              "type": "string"
             }
-          }
+          },
+          "required": [
+            "terceiro_id"
+          ]
         },
         "outputSchema": null
       },
       {
-        "name": "approve_iam_item",
-        "title": "Aprovar item da fila IAM",
-        "description": "Aprova (libera para execução) ou cancela um item da fila IAM. Também aceita motivo opcional para auditoria.",
+        "name": "set_terceiro_status",
+        "title": "Desligar ou reativar terceiro",
+        "description": "Desliga (ativo=false: revoga perfis, desabilita contas e enfileira remoções) ou reativa (ativo=true: restaura perfis do último desligamento; reabilitação de contas aguarda aprovação) um terceiro. Tudo executado pelo Órigo Agente.",
         "annotations": {
           "readOnlyHint": false,
           "destructiveHint": true,
@@ -197,25 +449,251 @@
           "$schema": "http://json-schema.org/draft-07/schema#",
           "type": "object",
           "properties": {
-            "item_id": {
+            "terceiro_id": {
               "type": "string",
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             },
-            "decision": {
-              "type": "string",
-              "enum": [
-                "approve",
-                "cancel"
-              ]
+            "ativo": {
+              "type": "boolean"
             },
-            "reason": {
-              "type": "string"
+            "motivo": {
+              "type": "string",
+              "minLength": 3,
+              "description": "Justificativa — ex.: GLPI #123, fim de contrato"
             }
           },
           "required": [
-            "item_id",
-            "decision"
+            "terceiro_id",
+            "ativo",
+            "motivo"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_catalog",
+        "title": "Catálogo de recursos",
+        "description": "Lista o catálogo governado (perfis de acesso, grupos do Entra, licenças, aplicações, sites SharePoint) com busca por nome — use para transformar o texto de um chamado nos ids que request_access exige.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "tipo": {
+              "type": "string",
+              "enum": [
+                "perfil",
+                "grupo",
+                "licenca",
+                "app",
+                "sharepoint",
+                "cargo"
+              ]
+            },
+            "busca": {
+              "description": "Trecho do nome (case-insensitive)",
+              "type": "string"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          "required": [
+            "tipo"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_effective_access",
+        "title": "Acesso efetivo",
+        "description": "Lista o acesso efetivo de um colaborador ou terceiro: recursos concedidos por perfis ativos (cargo, manual, exceção) e concessões individuais, com a origem de cada um. Útil antes de conceder/revogar via request_access.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "colaborador_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "terceiro_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "request_access",
+        "title": "Conceder / revogar acesso",
+        "description": "Concede ou revoga acessos (perfil de acesso, grupo, licença, app ou pasta SharePoint) para um colaborador ou terceiro. Gera itens na fila IAM (aguardando aprovação quando o modo aprovação está ligado) que o Órigo Agente executa. Use para chamados do GLPI. Informe colaborador_id OU terceiro_id e o motivo (número do chamado).",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "colaborador_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "terceiro_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "conceder": {
+              "description": "Recursos/perfis a conceder",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "tipo": {
+                    "type": "string",
+                    "enum": [
+                      "grupo",
+                      "licenca",
+                      "app",
+                      "sharepoint",
+                      "perfil"
+                    ],
+                    "description": "perfil = perfil de acesso; os demais são recursos individuais"
+                  },
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "description": "id do catálogo (entra_grupos.id, entra_licencas.id, aplicacoes.id, sharepoint_sites.id ou perfis_acesso.id) — use list_catalog para resolver nomes"
+                  },
+                  "pasta_id": {
+                    "description": "sharepoint: pasta (sharepoint_pastas.id); omitido = raiz do site",
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "permissao": {
+                    "description": "sharepoint: padrão leitura",
+                    "type": "string",
+                    "enum": [
+                      "leitura",
+                      "edicao"
+                    ]
+                  }
+                },
+                "required": [
+                  "tipo",
+                  "id"
+                ]
+              }
+            },
+            "revogar": {
+              "description": "Recursos/perfis a revogar",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "tipo": {
+                    "type": "string",
+                    "enum": [
+                      "grupo",
+                      "licenca",
+                      "app",
+                      "sharepoint",
+                      "perfil"
+                    ],
+                    "description": "perfil = perfil de acesso; os demais são recursos individuais"
+                  },
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "description": "id do catálogo (entra_grupos.id, entra_licencas.id, aplicacoes.id, sharepoint_sites.id ou perfis_acesso.id) — use list_catalog para resolver nomes"
+                  },
+                  "pasta_id": {
+                    "description": "sharepoint: pasta (sharepoint_pastas.id); omitido = raiz do site",
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "permissao": {
+                    "description": "sharepoint: padrão leitura",
+                    "type": "string",
+                    "enum": [
+                      "leitura",
+                      "edicao"
+                    ]
+                  }
+                },
+                "required": [
+                  "tipo",
+                  "id"
+                ]
+              }
+            },
+            "motivo": {
+              "type": "string",
+              "minLength": 3,
+              "description": "Justificativa — ex.: GLPI #12345"
+            }
+          },
+          "required": [
+            "motivo"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "reset_password",
+        "title": "Resetar senha",
+        "description": "Solicita reset de senha de um colaborador ou terceiro. Entra na fila IAM (sujeito a aprovação) e é executado pelo Órigo Agente; a senha temporária é enviada por e-mail ao usuário conectado. Contas privilegiadas exigem papel admin.",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "idempotentHint": false,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "colaborador_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "terceiro_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "motivo": {
+              "type": "string",
+              "minLength": 3,
+              "description": "Justificativa — ex.: GLPI #12345"
+            }
+          },
+          "required": [
+            "motivo"
           ]
         },
         "outputSchema": null
@@ -223,7 +701,7 @@
       {
         "name": "start_jml_event",
         "title": "Iniciar evento JML",
-        "description": "Inicia um evento JML (Joiner/Mover/Leaver/Pré-Leaver) para um colaborador. Chama a Edge Function start-jml-event, respeitando as regras internas.",
+        "description": "Executa um evento JML para um colaborador via Edge Function start-jml-event: leaver (desligamento: desabilita contas e enfileira remoção de acessos), joiner (reativação/recontratação, reabilitação aguarda aprovação), mover (mudança de cargo — exige novoCargoId), pre_leaver (suspensão preventiva) e pre_leaver_revertido. Informe colaboradorId sempre que possível; nome só funciona quando é único.",
         "annotations": {
           "readOnlyHint": false,
           "destructiveHint": true,
@@ -240,7 +718,8 @@
                 "joiner",
                 "mover",
                 "leaver",
-                "pre_leaver"
+                "pre_leaver",
+                "pre_leaver_revertido"
               ]
             },
             "colaboradorId": {
@@ -261,11 +740,22 @@
             "motivo": {
               "type": "string",
               "minLength": 3
+            },
+            "novoCargoId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "statusFinal": {
+              "type": "string",
+              "enum": [
+                "desligado",
+                "inativo"
+              ]
             }
           },
           "required": [
             "tipo",
-            "colaboradorNome",
             "motivo"
           ]
         },
@@ -306,6 +796,257 @@
               "maximum": 9007199254740991
             }
           }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_reviews",
+        "title": "Listar revisões de acesso",
+        "description": "Lista campanhas de revisão (por aplicação ou por gestor) com status, prazo, progresso e responsável. Use status=em_andamento para o que ainda espera decisão.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "em_andamento",
+                "concluida",
+                "cancelada"
+              ]
+            },
+            "tipo": {
+              "type": "string",
+              "enum": [
+                "aplicacao",
+                "gestor",
+                "terceiros"
+              ]
+            },
+            "atrasadas": {
+              "description": "Somente em andamento com prazo vencido",
+              "type": "boolean"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_review",
+        "title": "Detalhar revisão",
+        "description": "Campanha de revisão com todos os itens (pessoa, acesso, origem, decisão, justificativa, quem decidiu, executado_em) e as ações da fila geradas por ela.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "revisao_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "required": [
+            "revisao_id"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "create_review",
+        "title": "Criar campanha de revisão",
+        "description": "Abre uma campanha de revisão: 'aplicacao' (owner decide quem mantém/perde cada acesso), 'gestor' (gestor revisa a equipe), 'todos_gestores' (uma por gestor), 'terceiros' (responsável — gestor_id = colaborador — revalida ou desliga cada terceiro; prazo = terceiro_revalidacao_prazo_dias e sem resposta os terceiros são desativados) ou 'todos_responsaveis' (uma revalidação por responsável). O responsável recebe o link por e-mail (send-review-email). Se já existir campanha em andamento para o mesmo alvo, devolve existente=true.",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "tipo": {
+              "type": "string",
+              "enum": [
+                "aplicacao",
+                "gestor",
+                "todos_gestores",
+                "terceiros",
+                "todos_responsaveis"
+              ]
+            },
+            "aplicacao_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "gestor_id": {
+              "description": "colaborador_id do gestor (ou do responsável, em tipo=terceiros)",
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "somente_vencidos": {
+              "description": "tipo=todos_responsaveis: só responsáveis com terceiros vencidos (padrão false = todos)",
+              "type": "boolean"
+            },
+            "data_fim": {
+              "description": "Prazo (YYYY-MM-DD); padrão 14 dias",
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            "nome": {
+              "type": "string"
+            },
+            "enviar_email": {
+              "description": "Enviar o link ao responsável (padrão true)",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "tipo"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "decide_review_items",
+        "title": "Registrar decisões de revisão",
+        "description": "Registra decisões (manter|revogar) em itens de uma campanha em andamento, em nome de quem decidiu (o gestor/owner que respondeu no chamado, por exemplo). Não executa nada até close_review.",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "revisao_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "decisoes": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "enum": [
+                  "manter",
+                  "revogar"
+                ]
+              },
+              "description": "{ item_id: 'manter'|'revogar' }"
+            },
+            "justificativas": {
+              "description": "{ item_id: 'motivo' }",
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "decidido_por": {
+              "description": "Quem decidiu (e-mail/nome); padrão: usuário conectado",
+              "type": "string"
+            }
+          },
+          "required": [
+            "revisao_id",
+            "decisoes"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "close_review",
+        "title": "Concluir revisão e executar",
+        "description": "Conclui a campanha: itens 'revogar' perdem o acesso (em tipo=terceiros: o terceiro é desligado) — as ações entram na fila JÁ APROVADAS (a decisão do responsável é a aprovação) e o Órigo Agente executa; itens sem decisão são mantidos, salvo sem_decisao='revogar' (uso do prazo expirado). Devolve mantidos/revogados/ações enfileiradas.",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "idempotentHint": false,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "revisao_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "decidido_por": {
+              "type": "string"
+            },
+            "sem_decisao": {
+              "type": "string",
+              "enum": [
+                "manter",
+                "revogar"
+              ]
+            }
+          },
+          "required": [
+            "revisao_id"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "cancel_review",
+        "title": "Cancelar revisão",
+        "description": "Cancela uma campanha em andamento sem executar nada (ex.: aberta por engano ou sem itens).",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "revisao_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "motivo": {
+              "type": "string",
+              "minLength": 3
+            }
+          },
+          "required": [
+            "revisao_id",
+            "motivo"
+          ]
         },
         "outputSchema": null
       },
@@ -353,42 +1094,9 @@
         "outputSchema": null
       },
       {
-        "name": "list_alertas",
-        "title": "Listar alertas",
-        "description": "Lista alertas do sistema com filtros por severidade e status (lido/não lido).",
-        "annotations": {
-          "readOnlyHint": true,
-          "idempotentHint": true,
-          "openWorldHint": false
-        },
-        "inputSchema": {
-          "$schema": "http://json-schema.org/draft-07/schema#",
-          "type": "object",
-          "properties": {
-            "severidade": {
-              "type": "string"
-            },
-            "lido": {
-              "type": "boolean"
-            },
-            "limit": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 200
-            },
-            "offset": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            }
-          }
-        },
-        "outputSchema": null
-      },
-      {
         "name": "run_admin_sql",
         "title": "Executar SQL admin",
-        "description": "Executa uma consulta SELECT arbitrária no banco Postgres do Órigo, retornando as linhas em JSON. Requer papel admin do usuário conectado. Toda execução é gravada na tabela auditoria automaticamente. Use com cautela — não há sandbox.",
+        "description": "Executa uma consulta SELECT arbitrária no banco Postgres do Órigo, retornando as linhas em JSON. Requer papel platform_admin do usuário conectado. Toda execução é gravada na tabela auditoria automaticamente. Use com cautela — não há sandbox.",
         "annotations": {
           "readOnlyHint": false,
           "destructiveHint": true,
@@ -414,7 +1122,7 @@
       {
         "name": "apply_migration",
         "title": "Aplicar migração (DDL)",
-        "description": "Executa comandos DDL/DML arbitrários (CREATE/ALTER TABLE, políticas RLS, funções, triggers, INSERT/UPDATE/DELETE em qualquer tabela). Requer papel admin. Sempre inclua GRANTs após CREATE TABLE em schema public, ENABLE RLS e CREATE POLICY (padrão obrigatório do projeto). Toda execução é auditada.",
+        "description": "Executa comandos DDL/DML arbitrários (CREATE/ALTER TABLE, políticas RLS, funções, triggers, INSERT/UPDATE/DELETE em qualquer tabela). Requer papel platform_admin. Sempre inclua GRANTs após CREATE TABLE em schema public, ENABLE RLS e CREATE POLICY (padrão obrigatório do projeto). Toda execução é auditada.",
         "annotations": {
           "readOnlyHint": false,
           "destructiveHint": true,
@@ -484,7 +1192,7 @@
       {
         "name": "invoke_edge_function",
         "title": "Invocar Edge Function",
-        "description": "Chama qualquer Edge Function do projeto Órigo (ex.: reconcile-identities, process-iam-queue, sync-entra-groups, start-jml-event, etc.). Encaminha o JWT do usuário conectado — a função-alvo aplica suas próprias regras. Requer papel admin.",
+        "description": "Chama uma Edge Function de sincronização/orquestração do projeto Órigo (reconcile-identities, run-daily-cycle, sync-sharepoint-csv, sync-entra-groups, sync-entra-licencas, sync-entra-apps, sync-entra-roles, sync-sharepoint-sites, expire-access-exceptions, auto-recertification). Nenhuma delas executa ações em diretório — isso é exclusivo do Órigo Agente. Encaminha o JWT do usuário conectado. Requer papel admin.",
         "annotations": {
           "readOnlyHint": false,
           "destructiveHint": true,
