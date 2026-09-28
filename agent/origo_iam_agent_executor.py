@@ -542,8 +542,18 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
             r = requests.post(f"{graph}/users/{user_id}/assignLicense", headers=headers,
                               json={"addLicenses": [{"skuId": sku, "disabledPlans": []}],
                                     "removeLicenses": []}, timeout=30)
+            if r.ok:
+                return {"status": "success", "result_message": f"Licença {payload.get('licenseName') or sku} atribuída."}
+            if r.status_code == 400 and "mutually exclusive" in r.text.lower():
+                return {
+                    "status": "cancelled",
+                    "error_code": "license_mutually_exclusive_policy_conflict",
+                    "result_message": (
+                        f"Licença {payload.get('licenseName') or sku} não atribuída: existe outra suíte "
+                        "Microsoft incompatível. A licença atual foi preservada; troca de suíte exige decisão explícita."
+                    ),
+                }
             r.raise_for_status()
-            return {"status": "success", "result_message": f"Licença {payload.get('licenseName') or sku} atribuída."}
 
         if action == "remove_license":
             sku = payload.get("skuId")
