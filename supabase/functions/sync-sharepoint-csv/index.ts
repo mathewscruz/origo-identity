@@ -42,7 +42,11 @@ Deno.serve(async (req) => {
     const filesRes = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${folder}:/children?$orderby=lastModifiedDateTime desc&$top=200`, { headers });
     if (!filesRes.ok) throw new Error(`Falha ao listar a pasta ${folder} (${filesRes.status})`);
     const files = ((await filesRes.json()).value || [])
-      .filter((f: any) => String(f.name || "").toLowerCase().startsWith(prefix) && String(f.name || "").toLowerCase().endsWith(".csv"))
+      .filter((f: any) => {
+        const n = String(f.name || "").toLowerCase();
+        // Ignora arquivos auxiliares gerados (ex.: *_iam_normalized.csv) — só o original do RH é autoritativo.
+        return n.startsWith(prefix) && n.endsWith(".csv") && !n.endsWith("_iam_normalized.csv");
+      })
       .sort((a: any, b: any) => new Date(b.lastModifiedDateTime).getTime() - new Date(a.lastModifiedDateTime).getTime());
     if (files.length === 0) {
       return new Response(JSON.stringify({ error: `Nenhum CSV com prefixo ${prefix} em ${folder}` }), { status: 404, headers: corsHeaders });
