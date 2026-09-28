@@ -7,30 +7,10 @@ export type Json =
   | Json[]
 
 export type Database = {
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -270,21 +250,21 @@ export type Database = {
       }
       backup_cargo_perfis_20260708: {
         Row: {
-          backup_created_at: string
+          backup_created_at: string | null
           cargo_id: string | null
           created_at: string | null
           id: string | null
           perfil_id: string | null
         }
         Insert: {
-          backup_created_at?: string
+          backup_created_at?: string | null
           cargo_id?: string | null
           created_at?: string | null
           id?: string | null
           perfil_id?: string | null
         }
         Update: {
-          backup_created_at?: string
+          backup_created_at?: string | null
           cargo_id?: string | null
           created_at?: string | null
           id?: string | null
@@ -294,21 +274,21 @@ export type Database = {
       }
       backup_cargo_perfis_regex_fix_20260708: {
         Row: {
-          backup_created_at: string
+          backup_created_at: string | null
           cargo_id: string | null
           created_at: string | null
           id: string | null
           perfil_id: string | null
         }
         Insert: {
-          backup_created_at?: string
+          backup_created_at?: string | null
           cargo_id?: string | null
           created_at?: string | null
           id?: string | null
           perfil_id?: string | null
         }
         Update: {
-          backup_created_at?: string
+          backup_created_at?: string | null
           cargo_id?: string | null
           created_at?: string | null
           id?: string | null
@@ -409,7 +389,7 @@ export type Database = {
       backup_perfil_atribuicoes_20260708: {
         Row: {
           ativo: boolean | null
-          backup_created_at: string
+          backup_created_at: string | null
           colaborador_id: string | null
           created_at: string | null
           data_concessao: string | null
@@ -422,7 +402,7 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean | null
-          backup_created_at?: string
+          backup_created_at?: string | null
           colaborador_id?: string | null
           created_at?: string | null
           data_concessao?: string | null
@@ -435,7 +415,7 @@ export type Database = {
         }
         Update: {
           ativo?: boolean | null
-          backup_created_at?: string
+          backup_created_at?: string | null
           colaborador_id?: string | null
           created_at?: string | null
           data_concessao?: string | null
@@ -450,19 +430,19 @@ export type Database = {
       }
       backup_perfil_licencas_20260708: {
         Row: {
-          backup_created_at: string
+          backup_created_at: string | null
           id: string | null
           licenca_id: string | null
           perfil_id: string | null
         }
         Insert: {
-          backup_created_at?: string
+          backup_created_at?: string | null
           id?: string | null
           licenca_id?: string | null
           perfil_id?: string | null
         }
         Update: {
-          backup_created_at?: string
+          backup_created_at?: string | null
           id?: string | null
           licenca_id?: string | null
           perfil_id?: string | null
@@ -542,48 +522,33 @@ export type Database = {
       }
       colab_quarentena: {
         Row: {
-          colaborador_id: string | null
+          colaborador_id: string
           created_at: string
-          dados: Json | null
           decidido_em: string | null
           decidido_por: string | null
-          detalhe: string | null
-          email: string | null
           id: string
           import_job_id: string
-          matricula: string | null
           motivo: string
-          nome: string | null
           status: string
         }
         Insert: {
-          colaborador_id?: string | null
+          colaborador_id: string
           created_at?: string
-          dados?: Json | null
           decidido_em?: string | null
           decidido_por?: string | null
-          detalhe?: string | null
-          email?: string | null
           id?: string
           import_job_id: string
-          matricula?: string | null
           motivo?: string
-          nome?: string | null
           status?: string
         }
         Update: {
-          colaborador_id?: string | null
+          colaborador_id?: string
           created_at?: string
-          dados?: Json | null
           decidido_em?: string | null
           decidido_por?: string | null
-          detalhe?: string | null
-          email?: string | null
           id?: string
           import_job_id?: string
-          matricula?: string | null
           motivo?: string
-          nome?: string | null
           status?: string
         }
         Relationships: [
@@ -596,6 +561,41 @@ export type Database = {
           },
           {
             foreignKeyName: "colab_quarentena_import_job_id_fkey"
+            columns: ["import_job_id"]
+            isOneToOne: false
+            referencedRelation: "sync_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      colab_snapshots: {
+        Row: {
+          created_at: string
+          dados: Json
+          hash: string
+          id: string
+          import_job_id: string
+          matricula: string
+        }
+        Insert: {
+          created_at?: string
+          dados: Json
+          hash: string
+          id?: string
+          import_job_id: string
+          matricula: string
+        }
+        Update: {
+          created_at?: string
+          dados?: Json
+          hash?: string
+          id?: string
+          import_job_id?: string
+          matricula?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "colab_snapshots_import_job_id_fkey"
             columns: ["import_job_id"]
             isOneToOne: false
             referencedRelation: "sync_jobs"
@@ -948,6 +948,85 @@ export type Database = {
         }
         Relationships: []
       }
+      evento_jml_acoes: {
+        Row: {
+          aplicacao: string | null
+          created_at: string
+          descricao: string
+          evento_id: string
+          executado_em: string | null
+          id: string
+          status: string
+        }
+        Insert: {
+          aplicacao?: string | null
+          created_at?: string
+          descricao: string
+          evento_id: string
+          executado_em?: string | null
+          id?: string
+          status?: string
+        }
+        Update: {
+          aplicacao?: string | null
+          created_at?: string
+          descricao?: string
+          evento_id?: string
+          executado_em?: string | null
+          id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "evento_jml_acoes_evento_id_fkey"
+            columns: ["evento_id"]
+            isOneToOne: false
+            referencedRelation: "eventos_jml"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      evento_jml_aprovacoes: {
+        Row: {
+          aprovador: string | null
+          comentario: string | null
+          created_at: string
+          data_decisao: string | null
+          etapa: number
+          evento_id: string
+          id: string
+          status: string
+        }
+        Insert: {
+          aprovador?: string | null
+          comentario?: string | null
+          created_at?: string
+          data_decisao?: string | null
+          etapa?: number
+          evento_id: string
+          id?: string
+          status?: string
+        }
+        Update: {
+          aprovador?: string | null
+          comentario?: string | null
+          created_at?: string
+          data_decisao?: string | null
+          etapa?: number
+          evento_id?: string
+          id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "evento_jml_aprovacoes_evento_id_fkey"
+            columns: ["evento_id"]
+            isOneToOne: false
+            referencedRelation: "eventos_jml"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       eventos_jml: {
         Row: {
           colaborador_id: string | null
@@ -1116,6 +1195,51 @@ export type Database = {
         }
         Relationships: []
       }
+      iam_change_backups: {
+        Row: {
+          actor: string | null
+          correlation_id: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          new_data: Json | null
+          old_data: Json | null
+          operation: string
+          reason: string | null
+          record_id: string | null
+          source: string
+          table_name: string
+        }
+        Insert: {
+          actor?: string | null
+          correlation_id?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          new_data?: Json | null
+          old_data?: Json | null
+          operation: string
+          reason?: string | null
+          record_id?: string | null
+          source?: string
+          table_name: string
+        }
+        Update: {
+          actor?: string | null
+          correlation_id?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          new_data?: Json | null
+          old_data?: Json | null
+          operation?: string
+          reason?: string | null
+          record_id?: string | null
+          source?: string
+          table_name?: string
+        }
+        Relationships: []
+      }
       iam_queue: {
         Row: {
           action_type: string
@@ -1144,7 +1268,7 @@ export type Database = {
           status: string
           target_identity: string | null
           terceiro_id: string | null
-          updated_at: string
+          updated_at: string | null
         }
         Insert: {
           action_type: string
@@ -1173,7 +1297,7 @@ export type Database = {
           status?: string
           target_identity?: string | null
           terceiro_id?: string | null
-          updated_at?: string
+          updated_at?: string | null
         }
         Update: {
           action_type?: string
@@ -1202,16 +1326,9 @@ export type Database = {
           status?: string
           target_identity?: string | null
           terceiro_id?: string | null
-          updated_at?: string
+          updated_at?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "iam_queue_colaborador_id_fkey"
-            columns: ["colaborador_id"]
-            isOneToOne: false
-            referencedRelation: "colaboradores"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "iam_queue_terceiro_id_fkey"
             columns: ["terceiro_id"]
@@ -1220,6 +1337,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      iam_restore_guardrails: {
+        Row: {
+          active: boolean
+          id: boolean
+          reason: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          id?: boolean
+          reason?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          id?: boolean
+          reason?: string | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       licencas: {
         Row: {
@@ -1668,69 +1806,158 @@ export type Database = {
         }
         Relationships: []
       }
+      regra_condicoes: {
+        Row: {
+          campo: string
+          id: string
+          operador: string
+          ordem: number
+          regra_id: string
+          valor: string
+        }
+        Insert: {
+          campo: string
+          id?: string
+          operador: string
+          ordem?: number
+          regra_id: string
+          valor: string
+        }
+        Update: {
+          campo?: string
+          id?: string
+          operador?: string
+          ordem?: number
+          regra_id?: string
+          valor?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "regra_condicoes_regra_id_fkey"
+            columns: ["regra_id"]
+            isOneToOne: false
+            referencedRelation: "regras"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      regra_resultados: {
+        Row: {
+          detalhe: string | null
+          id: string
+          ordem: number
+          perfil_id: string | null
+          regra_id: string
+          tipo: string
+        }
+        Insert: {
+          detalhe?: string | null
+          id?: string
+          ordem?: number
+          perfil_id?: string | null
+          regra_id: string
+          tipo: string
+        }
+        Update: {
+          detalhe?: string | null
+          id?: string
+          ordem?: number
+          perfil_id?: string | null
+          regra_id?: string
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "regra_resultados_perfil_id_fkey"
+            columns: ["perfil_id"]
+            isOneToOne: false
+            referencedRelation: "perfis_acesso"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "regra_resultados_regra_id_fkey"
+            columns: ["regra_id"]
+            isOneToOne: false
+            referencedRelation: "regras"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      regras: {
+        Row: {
+          atualizado_por: string | null
+          created_at: string
+          criado_por: string | null
+          descricao: string | null
+          id: string
+          nome: string
+          prioridade: number
+          status: Database["public"]["Enums"]["status_regra"]
+          updated_at: string
+        }
+        Insert: {
+          atualizado_por?: string | null
+          created_at?: string
+          criado_por?: string | null
+          descricao?: string | null
+          id?: string
+          nome: string
+          prioridade?: number
+          status?: Database["public"]["Enums"]["status_regra"]
+          updated_at?: string
+        }
+        Update: {
+          atualizado_por?: string | null
+          created_at?: string
+          criado_por?: string | null
+          descricao?: string | null
+          id?: string
+          nome?: string
+          prioridade?: number
+          status?: Database["public"]["Enums"]["status_regra"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       revisao_itens: {
         Row: {
-          area_nome: string | null
-          cargo_nome: string | null
           colaborador_id: string | null
           colaborador_nome: string | null
           created_at: string
           decidido_em: string | null
-          decidido_por: string | null
           decisao: string | null
-          executado_em: string | null
           id: string
           justificativa: string | null
-          origem: string | null
           perfil_id: string | null
           perfil_nome: string | null
-          recurso_nome: string | null
-          resource_key: string | null
           revisao_id: string
           terceiro_id: string | null
-          tipo: string
         }
         Insert: {
-          area_nome?: string | null
-          cargo_nome?: string | null
           colaborador_id?: string | null
           colaborador_nome?: string | null
           created_at?: string
           decidido_em?: string | null
-          decidido_por?: string | null
           decisao?: string | null
-          executado_em?: string | null
           id?: string
           justificativa?: string | null
-          origem?: string | null
           perfil_id?: string | null
           perfil_nome?: string | null
-          recurso_nome?: string | null
-          resource_key?: string | null
           revisao_id: string
           terceiro_id?: string | null
-          tipo?: string
         }
         Update: {
-          area_nome?: string | null
-          cargo_nome?: string | null
           colaborador_id?: string | null
           colaborador_nome?: string | null
           created_at?: string
           decidido_em?: string | null
-          decidido_por?: string | null
           decisao?: string | null
-          executado_em?: string | null
           id?: string
           justificativa?: string | null
-          origem?: string | null
           perfil_id?: string | null
           perfil_nome?: string | null
-          recurso_nome?: string | null
-          resource_key?: string | null
           revisao_id?: string
           terceiro_id?: string | null
-          tipo?: string
         }
         Relationships: [
           {
@@ -1766,92 +1993,133 @@ export type Database = {
       revisoes: {
         Row: {
           aplicacao_id: string | null
-          concluida_em: string | null
-          concluida_por: string | null
           created_at: string
-          criada_por: string | null
           data_fim: string | null
           data_inicio: string | null
           descricao: string | null
-          gestor_id: string | null
           id: string
           itens_revisados: number
-          lembrete_enviado_em: string | null
           nome: string
           owner_email: string | null
           responsavel: string | null
-          resultado: Json | null
           status: Database["public"]["Enums"]["status_revisao"]
           tipo: string | null
           token: string | null
-          token_expires_at: string | null
           total_itens: number
           updated_at: string
         }
         Insert: {
           aplicacao_id?: string | null
-          concluida_em?: string | null
-          concluida_por?: string | null
           created_at?: string
-          criada_por?: string | null
           data_fim?: string | null
           data_inicio?: string | null
           descricao?: string | null
-          gestor_id?: string | null
           id?: string
           itens_revisados?: number
-          lembrete_enviado_em?: string | null
           nome: string
           owner_email?: string | null
           responsavel?: string | null
-          resultado?: Json | null
           status?: Database["public"]["Enums"]["status_revisao"]
           tipo?: string | null
           token?: string | null
-          token_expires_at?: string | null
           total_itens?: number
           updated_at?: string
         }
         Update: {
           aplicacao_id?: string | null
-          concluida_em?: string | null
-          concluida_por?: string | null
           created_at?: string
-          criada_por?: string | null
           data_fim?: string | null
           data_inicio?: string | null
           descricao?: string | null
-          gestor_id?: string | null
           id?: string
           itens_revisados?: number
-          lembrete_enviado_em?: string | null
           nome?: string
           owner_email?: string | null
           responsavel?: string | null
-          resultado?: Json | null
           status?: Database["public"]["Enums"]["status_revisao"]
           tipo?: string | null
           token?: string | null
-          token_expires_at?: string | null
           total_itens?: number
           updated_at?: string
         }
+        Relationships: []
+      }
+      rh_audit_person_snapshots: {
+        Row: {
+          audit_id: string
+          captured_at: string
+          pessoa: string
+          pessoa_id: string
+        }
+        Insert: {
+          audit_id: string
+          captured_at?: string
+          pessoa: string
+          pessoa_id: string
+        }
+        Update: {
+          audit_id?: string
+          captured_at?: string
+          pessoa?: string
+          pessoa_id?: string
+        }
         Relationships: [
           {
-            foreignKeyName: "revisoes_aplicacao_id_fkey"
-            columns: ["aplicacao_id"]
-            isOneToOne: false
-            referencedRelation: "aplicacoes"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "revisoes_gestor_id_fkey"
-            columns: ["gestor_id"]
-            isOneToOne: false
-            referencedRelation: "colaboradores"
+            foreignKeyName: "rh_audit_person_snapshots_audit_id_fkey"
+            columns: ["audit_id"]
+            isOneToOne: true
+            referencedRelation: "auditoria"
             referencedColumns: ["id"]
           },
         ]
+      }
+      rh_collection_runs: {
+        Row: {
+          canonical_rows: number
+          collected_at: string
+          created_at: string
+          cycle_status: string
+          id: string
+          identity_writes: number
+          import_status: string
+          previous_filename: string
+          raw_rows: number
+          source_filename: string
+          source_modified_at: string
+          source_sha256: string
+          summary: Json
+        }
+        Insert: {
+          canonical_rows: number
+          collected_at: string
+          created_at?: string
+          cycle_status?: string
+          id: string
+          identity_writes?: number
+          import_status?: string
+          previous_filename: string
+          raw_rows: number
+          source_filename: string
+          source_modified_at: string
+          source_sha256: string
+          summary: Json
+        }
+        Update: {
+          canonical_rows?: number
+          collected_at?: string
+          created_at?: string
+          cycle_status?: string
+          id?: string
+          identity_writes?: number
+          import_status?: string
+          previous_filename?: string
+          raw_rows?: number
+          source_filename?: string
+          source_modified_at?: string
+          source_sha256?: string
+          summary?: Json
+        }
+        Relationships: []
       }
       sharepoint_pastas: {
         Row: {
@@ -1963,6 +2231,132 @@ export type Database = {
             columns: ["perfil_b_id"]
             isOneToOne: false
             referencedRelation: "perfis_acesso"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      solicitacao_itens: {
+        Row: {
+          created_at: string | null
+          decidido_em: string | null
+          decidido_por: string | null
+          id: string
+          owner_email: string | null
+          recurso_id: string
+          recurso_nome: string | null
+          solicitacao_id: string
+          status: string
+          tipo: string
+        }
+        Insert: {
+          created_at?: string | null
+          decidido_em?: string | null
+          decidido_por?: string | null
+          id?: string
+          owner_email?: string | null
+          recurso_id: string
+          recurso_nome?: string | null
+          solicitacao_id: string
+          status?: string
+          tipo: string
+        }
+        Update: {
+          created_at?: string | null
+          decidido_em?: string | null
+          decidido_por?: string | null
+          id?: string
+          owner_email?: string | null
+          recurso_id?: string
+          recurso_nome?: string | null
+          solicitacao_id?: string
+          status?: string
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "solicitacao_itens_solicitacao_id_fkey"
+            columns: ["solicitacao_id"]
+            isOneToOne: false
+            referencedRelation: "solicitacoes_acesso"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      solicitacoes_acesso: {
+        Row: {
+          aplicacoes_ids: Json
+          aprovador: string | null
+          comentario: string | null
+          created_at: string
+          data_decisao: string | null
+          etapa_atual_ordem: number | null
+          fluxo_id: string | null
+          grupos_ids: Json
+          id: string
+          justificativa: string
+          licencas_ids: Json | null
+          perfil_id: string | null
+          solicitante_id: string
+          status: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          aplicacoes_ids?: Json
+          aprovador?: string | null
+          comentario?: string | null
+          created_at?: string
+          data_decisao?: string | null
+          etapa_atual_ordem?: number | null
+          fluxo_id?: string | null
+          grupos_ids?: Json
+          id?: string
+          justificativa: string
+          licencas_ids?: Json | null
+          perfil_id?: string | null
+          solicitante_id: string
+          status?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          aplicacoes_ids?: Json
+          aprovador?: string | null
+          comentario?: string | null
+          created_at?: string
+          data_decisao?: string | null
+          etapa_atual_ordem?: number | null
+          fluxo_id?: string | null
+          grupos_ids?: Json
+          id?: string
+          justificativa?: string
+          licencas_ids?: Json | null
+          perfil_id?: string | null
+          solicitante_id?: string
+          status?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "solicitacoes_acesso_fluxo_id_fkey"
+            columns: ["fluxo_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_fluxos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "solicitacoes_acesso_perfil_fkey"
+            columns: ["perfil_id"]
+            isOneToOne: false
+            referencedRelation: "perfis_acesso"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "solicitacoes_acesso_solicitante_fkey"
+            columns: ["solicitante_id"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
             referencedColumns: ["id"]
           },
         ]
@@ -2122,6 +2516,193 @@ export type Database = {
         }
         Relationships: []
       }
+      workflow_etapa_aprovadores: {
+        Row: {
+          created_at: string
+          email: string
+          etapa_id: string
+          id: string
+          nome: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          etapa_id: string
+          id?: string
+          nome?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          etapa_id?: string
+          id?: string
+          nome?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_etapa_aprovadores_etapa_id_fkey"
+            columns: ["etapa_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_etapas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workflow_etapas: {
+        Row: {
+          acao_timeout: string | null
+          ativo: boolean
+          created_at: string
+          fluxo_id: string | null
+          id: string
+          modo_aprovacao: string | null
+          nome: string | null
+          ordem: number
+          papel: Database["public"]["Enums"]["app_role"] | null
+          timeout_horas: number
+          tipo_aprovador: string | null
+        }
+        Insert: {
+          acao_timeout?: string | null
+          ativo?: boolean
+          created_at?: string
+          fluxo_id?: string | null
+          id?: string
+          modo_aprovacao?: string | null
+          nome?: string | null
+          ordem?: number
+          papel?: Database["public"]["Enums"]["app_role"] | null
+          timeout_horas?: number
+          tipo_aprovador?: string | null
+        }
+        Update: {
+          acao_timeout?: string | null
+          ativo?: boolean
+          created_at?: string
+          fluxo_id?: string | null
+          id?: string
+          modo_aprovacao?: string | null
+          nome?: string | null
+          ordem?: number
+          papel?: Database["public"]["Enums"]["app_role"] | null
+          timeout_horas?: number
+          tipo_aprovador?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_etapas_fluxo_id_fkey"
+            columns: ["fluxo_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_fluxos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workflow_execucoes: {
+        Row: {
+          aprovador: string | null
+          aprovador_email: string | null
+          comentario: string | null
+          created_at: string
+          data_decisao: string | null
+          entidade_id: string
+          entidade_tipo: string
+          etapa_id: string
+          id: string
+          ordem: number | null
+          solicitacao_id: string | null
+          status: string
+        }
+        Insert: {
+          aprovador?: string | null
+          aprovador_email?: string | null
+          comentario?: string | null
+          created_at?: string
+          data_decisao?: string | null
+          entidade_id: string
+          entidade_tipo?: string
+          etapa_id: string
+          id?: string
+          ordem?: number | null
+          solicitacao_id?: string | null
+          status?: string
+        }
+        Update: {
+          aprovador?: string | null
+          aprovador_email?: string | null
+          comentario?: string | null
+          created_at?: string
+          data_decisao?: string | null
+          entidade_id?: string
+          entidade_tipo?: string
+          etapa_id?: string
+          id?: string
+          ordem?: number | null
+          solicitacao_id?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_execucoes_etapa_fkey"
+            columns: ["etapa_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_etapas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workflow_execucoes_solicitacao_id_fkey"
+            columns: ["solicitacao_id"]
+            isOneToOne: false
+            referencedRelation: "solicitacoes_acesso"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workflow_fluxos: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          descricao: string | null
+          escopo: string
+          filtro_aplicacao_ids: string[]
+          filtro_licenca_ids: string[]
+          filtro_perfil_ids: string[]
+          id: string
+          is_default: boolean
+          nome: string
+          prioridade: number
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          escopo: string
+          filtro_aplicacao_ids?: string[]
+          filtro_licenca_ids?: string[]
+          filtro_perfil_ids?: string[]
+          id?: string
+          is_default?: boolean
+          nome: string
+          prioridade?: number
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          escopo?: string
+          filtro_aplicacao_ids?: string[]
+          filtro_licenca_ids?: string[]
+          filtro_perfil_ids?: string[]
+          id?: string
+          is_default?: boolean
+          nome?: string
+          prioridade?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       licencas_externas_uso: {
@@ -2138,17 +2719,10 @@ export type Database = {
         Returns: string
       }
       admin_exec_sql: { Args: { p_sql: string }; Returns: Json }
-      admin_purge_colaboradores: {
-        Args: { p_ids: string[]; p_motivo: string }
-        Returns: number
-      }
-      admin_usuarios_resumo: { Args: never; Returns: Json }
-      alertas_marcar_lidos: { Args: { p_ids?: string[] }; Returns: number }
       apply_reconcile_updates: {
         Args: { colab_updates?: Json; queue_updates?: Json }
         Returns: Json
       }
-      audit_operador: { Args: never; Returns: string }
       claim_iam_queue_items: {
         Args: {
           p_action_types?: string[]
@@ -2183,7 +2757,7 @@ export type Database = {
           status: string
           target_identity: string | null
           terceiro_id: string | null
-          updated_at: string
+          updated_at: string | null
         }[]
         SetofOptions: {
           from: "*"
@@ -2192,21 +2766,15 @@ export type Database = {
           isSetofReturn: true
         }
       }
-      colaborador_salvar: {
-        Args: { p_dados: Json; p_id: string; p_operador?: string }
-        Returns: Json
-      }
+      cleanup_expired_iam_change_backups: { Args: never; Returns: number }
       complete_iam_queue_item: {
         Args: {
           p_claim_token: string
           p_error_code?: string
           p_id: string
-          p_next_retry_at?: string
           p_processed_by?: string
           p_result_message?: string
-          p_retry_count?: number
           p_status: string
-          p_target_identity?: string
         }
         Returns: {
           action_type: string
@@ -2235,7 +2803,7 @@ export type Database = {
           status: string
           target_identity: string | null
           terceiro_id: string | null
-          updated_at: string
+          updated_at: string | null
         }
         SetofOptions: {
           from: "*"
@@ -2256,12 +2824,9 @@ export type Database = {
       dashboard_metrics: { Args: never; Returns: Json }
       dashboard_people_series: { Args: { p_days?: number }; Returns: Json }
       dashboard_series: { Args: { p_days?: number }; Returns: Json }
-      excecao_decidir: {
-        Args: { p_comentario?: string; p_decisao: string; p_id: string }
-        Returns: Json
-      }
       get_revisao_by_token: { Args: { p_token: string }; Returns: Json }
       get_revisao_itens_by_token: { Args: { p_token: string }; Returns: Json }
+      has_any_app_role: { Args: { _user_id: string }; Returns: boolean }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -2269,7 +2834,6 @@ export type Database = {
         }
         Returns: boolean
       }
-      hermes_inbox: { Args: never; Returns: Json }
       iam_active_perfil_ids: {
         Args: {
           p_colaborador_id: string
@@ -2282,11 +2846,7 @@ export type Database = {
         Args: { p_details?: Json; p_kind: string; p_owner: string }
         Returns: undefined
       }
-      iam_assert_operator: { Args: never; Returns: undefined }
-      iam_cron_invoke: {
-        Args: { p_body?: Json; p_function: string }
-        Returns: number
-      }
+      iam_backup_actor: { Args: never; Returns: string }
       iam_effective_access: {
         Args: { p_colaborador_id?: string; p_terceiro_id?: string }
         Returns: {
@@ -2296,53 +2856,6 @@ export type Database = {
           resource_key: string
           tipo: string
         }[]
-      }
-      iam_enqueue_individual_removals: {
-        Args: {
-          p_colaborador_id: string
-          p_requested_by: string
-          p_status?: string
-          p_terceiro_id: string
-        }
-        Returns: Json
-      }
-      iam_enqueue_profile_actions: {
-        Args: {
-          p_colaborador_id: string
-          p_mode: string
-          p_motivo?: string
-          p_perfil_ids: string[]
-          p_requested_by: string
-          p_status?: string
-          p_terceiro_id: string
-        }
-        Returns: number
-      }
-      iam_enqueue_reset_password: {
-        Args: {
-          p_colaborador_id?: string
-          p_motivo?: string
-          p_terceiro_id?: string
-        }
-        Returns: Json
-      }
-      iam_enqueue_resource_diff: {
-        Args: {
-          p_added?: Json
-          p_check_individual?: boolean
-          p_colaborador_id: string
-          p_exclude_perfil_ids?: string[]
-          p_motivo?: string
-          p_removed?: Json
-          p_requested_by?: string
-          p_status?: string
-          p_terceiro_id: string
-        }
-        Returns: number
-      }
-      iam_identity: {
-        Args: { p_colaborador_id: string; p_terceiro_id: string }
-        Returns: Json
       }
       iam_individual_resources: {
         Args: { p_colaborador_id: string; p_terceiro_id: string }
@@ -2355,10 +2868,6 @@ export type Database = {
           target_identity: string
         }[]
       }
-      iam_param: {
-        Args: { p_chave: string; p_default?: string }
-        Returns: string
-      }
       iam_profile_resources: {
         Args: { p_perfil_ids: string[] }
         Returns: {
@@ -2370,10 +2879,6 @@ export type Database = {
           tipo: string
         }[]
       }
-      iam_queue_decidir: {
-        Args: { p_decisao: string; p_ids: string[]; p_motivo?: string }
-        Returns: Json
-      }
       iam_queue_distinct_actions_origins: {
         Args: { status_filter: string[] }
         Returns: {
@@ -2381,29 +2886,21 @@ export type Database = {
           requested_by: string
         }[]
       }
-      iam_queue_insert: {
+      iam_queue_observation_kind: {
         Args: {
-          p_action: string
-          p_extra?: Json
-          p_identity: Json
-          p_payload: Json
+          p_action_type: string
+          p_processed_by: string
           p_requested_by: string
-          p_resource_key: string
-          p_status?: string
+          p_result_message: string
+          p_status: string
         }
-        Returns: boolean
-      }
-      iam_queue_reprocessar: { Args: { p_ids: string[] }; Returns: number }
-      iam_queue_reprocessar_falhas: {
-        Args: { p_action_types?: string[] }
-        Returns: number
+        Returns: string
       }
       iam_queue_resource_key: {
         Args: { p_action: string; p_payload: Json; p_resource_key: string }
         Returns: string
       }
       iam_queue_stats: { Args: never; Returns: Json }
-      iam_resolve_email: { Args: { p_text: string }; Returns: string }
       iam_resource_template: {
         Args: {
           p_pasta_id?: string
@@ -2420,129 +2917,34 @@ export type Database = {
           tipo: string
         }[]
       }
-      iam_revogar_individual: {
-        Args: {
-          p_colaborador_id: string
-          p_motivo?: string
-          p_resource_key: string
-          p_terceiro_id: string
-        }
-        Returns: Json
+      licencas_catalogo: {
+        Args: never
+        Returns: {
+          aplicacao_id: string
+          id: string
+          nome: string
+          owner: string
+          tipo: string
+        }[]
       }
-      is_platform_admin: { Args: { _user_id: string }; Returns: boolean }
-      jml_alterar_cargo: {
-        Args: {
-          p_atualizar_colaborador?: boolean
-          p_cargo_anterior_id?: string
-          p_colaborador_id: string
-          p_novo_cargo_id: string
-          p_operador: string
-          p_origem?: string
-        }
-        Returns: Json
-      }
-      jml_alterar_status: {
-        Args: {
-          p_colaborador_id: string
-          p_motivo?: string
-          p_novo_status: string
-          p_operador: string
-          p_origem?: string
-          p_skip_status_update?: boolean
-        }
-        Returns: Json
-      }
-      jml_pre_leaver: {
-        Args: { p_colaborador_id: string; p_motivo: string; p_operador: string }
-        Returns: Json
-      }
-      jml_pre_leaver_reverter: {
-        Args: { p_colaborador_id: string; p_motivo: string; p_operador: string }
-        Returns: Json
-      }
-      jml_provisionar_cargo: {
-        Args: {
-          p_cargo_id: string
-          p_colaborador_id: string
-          p_requested_by: string
-          p_status?: string
-        }
-        Returns: Json
-      }
-      quarentena_decidir: {
-        Args: { p_id: string; p_observacao?: string; p_status: string }
-        Returns: Json
-      }
-      revisao_cancelar: {
-        Args: { p_motivo?: string; p_revisao_id: string }
-        Returns: Json
-      }
-      revisao_concluir: {
-        Args: {
-          p_decidido_por?: string
-          p_revisao_id: string
-          p_sem_decisao?: string
-        }
-        Returns: Json
-      }
-      revisao_criar: {
-        Args: {
-          p_aplicacao_id?: string
-          p_data_fim?: string
-          p_gestor_id?: string
-          p_nome?: string
-          p_operador?: string
-          p_responsavel?: string
-          p_tipo: string
-        }
-        Returns: Json
-      }
-      revisao_criar_por_gestores: {
-        Args: { p_data_fim?: string; p_operador?: string }
-        Returns: Json
-      }
-      revisao_criar_por_responsaveis: {
-        Args: {
-          p_data_fim?: string
-          p_operador?: string
-          p_somente_vencidos?: boolean
-        }
-        Returns: Json
-      }
-      revisao_decidir_itens: {
-        Args: {
-          p_decidido_por?: string
-          p_decisoes: Json
-          p_justificativas?: Json
-          p_revisao_id: string
-        }
-        Returns: Json
-      }
-      terceiro_alterar_status: {
-        Args: {
-          p_ativo: boolean
-          p_motivo?: string
-          p_operador: string
-          p_origem?: string
-          p_terceiro_id: string
-        }
-        Returns: Json
-      }
-      terceiro_revalidar: {
-        Args: {
-          p_motivo?: string
-          p_novo_contrato_fim?: string
-          p_terceiro_id: string
-        }
-        Returns: Json
-      }
-      terceiro_salvar: {
-        Args: { p_dados: Json; p_id: string; p_operador?: string }
-        Returns: Json
+      rh_dashboard_events: {
+        Args: never
+        Returns: {
+          ad_ts: string
+          ad_verified: boolean
+          correlation_id: string
+          evidence: Json
+          id: string
+          kind: string
+          pessoa: string
+          pessoa_id: string
+          status: string
+          ts: string
+        }[]
       }
     }
     Enums: {
-      app_role: "admin" | "operador" | "viewer" | "platform_admin"
+      app_role: "admin" | "operador" | "viewer"
       criticidade: "baixa" | "media" | "alta" | "critica"
       sensibilidade_perfil: "baixa" | "media" | "alta" | "critica"
       severidade_alerta: "info" | "aviso" | "critico"
@@ -2560,6 +2962,7 @@ export type Database = {
         | "erro"
         | "cancelado"
       status_excecao: "pendente" | "aprovada" | "rejeitada" | "expirada"
+      status_regra: "ativa" | "inativa" | "rascunho"
       status_revisao: "em_andamento" | "concluida" | "cancelada"
       tipo_evento_jml:
         | "joiner"
@@ -2693,12 +3096,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
-      app_role: ["admin", "operador", "viewer", "platform_admin"],
+      app_role: ["admin", "operador", "viewer"],
       criticidade: ["baixa", "media", "alta", "critica"],
       sensibilidade_perfil: ["baixa", "media", "alta", "critica"],
       severidade_alerta: ["info", "aviso", "critico"],
@@ -2718,6 +3118,7 @@ export const Constants = {
         "cancelado",
       ],
       status_excecao: ["pendente", "aprovada", "rejeitada", "expirada"],
+      status_regra: ["ativa", "inativa", "rascunho"],
       status_revisao: ["em_andamento", "concluida", "cancelada"],
       tipo_evento_jml: [
         "joiner",
@@ -2730,4 +3131,3 @@ export const Constants = {
     },
   },
 } as const
-
