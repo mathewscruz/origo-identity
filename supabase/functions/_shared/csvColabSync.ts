@@ -2,9 +2,8 @@
 // (ciclo diário) e sync-csv-colab (upload manual).
 //
 // Regras:
-//   • Nunca apaga colaborador. Ausente no CSV ⇒ leaver via jml_alterar_status('desligado').
-//   • Rede de proteção: se os ausentes excederem csv_leaver_limite_pct/abs, NÃO aplica
-//     desligamentos, gera alerta crítico e registra os ausentes em colab_quarentena.
+//   • Nunca apaga colaborador. Ausência no CSV é apenas informativa e nunca autoriza
+//     desligar, relinkar ou excluir uma identidade.
 //   • Linhas sem matrícula ou duplicadas no arquivo vão para colab_quarentena
 //     (não viram identidades novas).
 //   • Recontratação: mesma pessoa (CPF) com matrícula nova ⇒ mesma identidade.
@@ -271,12 +270,10 @@ export async function processCsvColab(sb: Sb, csvText: string, opts: SyncOptions
   try {
     // ── parâmetros ──
     const { data: pRows } = await sb.from("parametros").select("chave, valor").in("chave", [
-      "csv_leaver_limite_pct", "csv_leaver_limite_abs", "csv_email_dominio", "csv_gerar_email_corporativo", "ad_upn_dominio",
+      "csv_email_dominio", "csv_gerar_email_corporativo", "ad_upn_dominio",
     ]);
     const P = new Map<string, string>((pRows || []).map((r: any) => [r.chave, r.valor]));
-    const numParam = (key: string, def: number) => { const v = Number(P.get(key)); return Number.isFinite(v) && P.get(key) !== undefined && P.get(key) !== "" ? v : def; };
-    const leaverPct = numParam("csv_leaver_limite_pct", 5);
-    const leaverAbs = numParam("csv_leaver_limite_abs", 50);
+
     const emailDomain = (P.get("csv_email_dominio") || "origoenergia.com.br").replace(/^@/, "").toLowerCase();
     const generateEmails = (P.get("csv_gerar_email_corporativo") ?? "true") !== "false";
     const upnDomain = (P.get("ad_upn_dominio") || "ebessolar.local").replace(/^@/, "");
@@ -440,16 +437,14 @@ export async function processCsvColab(sb: Sb, csvText: string, opts: SyncOptions
       if (overrideIds.has(e.id)) { leaverSkippedOverride++; continue; }
       leavers.push(e);
     }
-    const activeBase = [...existingByMat.values()].filter((e) => e.status !== "desligado").length;
-    // regra percentual só faz sentido com base mínima (evita falso positivo em bases pequenas/de teste)
-    const leaverGuardTriggered = leavers.length > 0 && (leavers.length > leaverAbs || (activeBase >= 20 && (leavers.length / activeBase) * 100 > leaverPct));
+    const leaverGuardTriggered = false;
 
     console.log(`[csv-sync] insert=${toInsert.length} update=${toUpdate.length} unchanged=${unchangedIds.length} leavers=${leavers.length} guard=${leaverGuardTriggered} quarantine=${quarantine.length}`);
 
     if (preview) {
-      await progress({ status: "done", phase: "done", colab_percent: 100, colab_created: toInsert.length, colab_updated: toUpdate.length, colab_inativos: leavers.length, colab_quarentena: quarantine.length,
-        message: `PRÉ-VISUALIZAÇÃO — nada gravado: ${toInsert.length} novos, ${toUpdate.length} atualizados, ${unchangedIds.length} inalterados, ${leavers.length} ausentes${leaverGuardTriggered ? " (LIMITE DE SEGURANÇA seria acionado)" : ""}, ${quarantine.length} em quarentena.` });
-      return { success: true, jobId, created: toInsert.length, updated: toUpdate.length, unchanged: unchangedIds.length, removed: leavers.length, quarantined: quarantine.length, rehired: toUpdate.filter((u) => u.kind === "rehire").length, linkedManual: toUpdate.filter((u) => u.kind === "manual_link").length, leaverGuardTriggered, dryRun: true, total: rows.length, rawTotal };
+      await progress({ status: "done", phase: "done", colab_percent: 100, colab_created: toInsert.length, colab_updated: toUpdate.length, colab_inativos: 0, colab_quarentena: quarantine.length,
+        message: `PRÉ-VISUALIZAÇÃO — nada gravado: ${toInsert.length} novos, ${toUpdate.length} atualizados, ${unchangedIds.length} inalterados, ${leavers.length} ausentes apenas informativos, ${quarantine.length} em quarentena.` });
+      return { success: true, jobId, created: toInsert.length, updated: toUpdate.length, unchanged: unchangedIds.length, removed: 0, quarantined: quarantine.length, rehired: toUpdate.filter((u) => u.kind === "rehire").length, linkedManual: toUpdate.filter((u) => u.kind === "manual_link").length, leaverGuardTriggered, dryRun: true, total: rows.length, rawTotal };
     }
 
     // ── inserts ──
@@ -553,25 +548,15 @@ export async function processCsvColab(sb: Sb, csvText: string, opts: SyncOptions
       }
     }
 
-    // ── leavers (ausentes no CSV) ──
-    let removed = 0;
-    if (leaverGuardTriggered) {
-      await progress({ phase: "leaver_guard", message: `LIMITE DE SEGURANÇA: ${leavers.length} ausentes (> ${leaverAbs} ou > ${leaverPct}% de ${activeBase}). Desligamentos NÃO aplicados.`, colab_percent: 85 });
-      for (const e of leavers) quarantine.push({ matricula: e.matricula, nome: e.nome, email: e.email, motivo: "ausente_no_csv", detalhe: "Limite de segurança de desligamentos acionado — revisar manualmente", dados: null, colaborador_id: e.id });
+    // ── ausentes no CSV: informativo, nunca é autorização de desligamento ──
+    const removed = 0;
+    if (leavers.length > 0) {
+      await progress({ phase: "absence_review", message: `${leavers.length} ausente(s) no arquivo; nenhuma conta será alterada por ausência.`, colab_percent: 85 });
+      for (const e of leavers) quarantine.push({ matricula: e.matricula, nome: e.nome, email: e.email, motivo: "ausente_no_csv", detalhe: "Ausência é informativa; desligamento exige status explícito no RH ou decisão aplicável do GLPI.", dados: null, colaborador_id: e.id });
       await sb.from("alertas").insert({
-        titulo: "Importação RH: limite de desligamentos acionado", severidade: "critico", tipo: "csv_leaver_guard", ref_tipo: "sync_job", ref_id: jobId, ref_url: "/configuracoes/integracoes",
-        mensagem: `${leavers.length} colaborador(es) ausentes no arquivo ${opts.filename} (limite: ${leaverAbs} ou ${leaverPct}% de ${activeBase} ativos). Nenhum desligamento foi aplicado; verifique se o CSV está completo. Os ausentes estão em quarentena.`,
+        titulo: "Importação RH: ausências para análise", severidade: "aviso", tipo: "csv_absence_informational", ref_tipo: "sync_job", ref_id: jobId,
+        mensagem: `${leavers.length} colaborador(es) não constam em ${opts.filename}. Nenhum desligamento foi aplicado; ausência na base não autoriza alteração de identidade.`,
       });
-    } else if (leavers.length > 0) {
-      await progress({ phase: "leavers", message: `Desligando ${leavers.length} ausentes…`, colab_percent: 85 });
-      for (const e of leavers) {
-        const { data: r, error } = await sb.rpc("jml_alterar_status", { p_colaborador_id: e.id, p_novo_status: "desligado", p_operador: operador, p_origem: "importacao_csv", p_motivo: `Ausente no CSV do RH (${opts.filename})` });
-        if (error) { console.warn(`[csv-sync] leaver ${e.id}: ${error.message}`); continue; }
-        if (r && r.ok === false) { quarantine.push({ matricula: e.matricula, nome: e.nome, email: e.email, motivo: "leaver_bloqueado", detalhe: String(r.error), dados: null, colaborador_id: e.id }); continue; }
-        removed++;
-        await sb.from("colaboradores").update({ ultima_importacao_id: jobId }).eq("id", e.id);
-      }
-      await sb.from("alertas").insert({ tipo: "remocao_csv", titulo: `${removed} colaborador(es) desligado(s) pelo RH`, mensagem: `Importação ${opts.filename}: ${removed} colaborador(es) ausentes do arquivo foram desligados (contas desabilitadas e acessos enfileirados para remoção).`, severidade: "info", ref_tipo: "sync_job", ref_id: jobId });
     }
 
     // ── inalterados ──
@@ -585,7 +570,7 @@ export async function processCsvColab(sb: Sb, csvText: string, opts: SyncOptions
       }
     }
 
-    const summary = `Concluído (${opts.source}): ${inserted.length} novos, ${updated} atualizados (${rehired} recontratados, ${linkedManual} vinculados a manuais), ${unchangedIds.length} inalterados, ${removed} desligados${leaverGuardTriggered ? ` — LIMITE DE SEGURANÇA acionado (${leavers.length} ausentes não aplicados)` : ""}, ${leaverSkippedOverride} preservados por exceção, ${quarantine.length} em quarentena.`;
+    const summary = `Concluído (${opts.source}): ${inserted.length} novos, ${updated} atualizados (${rehired} recontratados, ${linkedManual} vinculados a manuais), ${unchangedIds.length} inalterados, ${removed} desligados, ${leavers.length} ausentes informativos, ${leaverSkippedOverride} preservados por exceção, ${quarantine.length} em quarentena.`;
     await progress({ status: "done", phase: "done", colab_percent: 100, colab_created: inserted.length, colab_updated: updated, colab_inativos: removed, colab_quarentena: quarantine.length, message: summary });
     await sb.from("auditoria").insert({ entidade: "importacao_csv", acao: "importar", operador, resumo: summary, detalhes: { filename: opts.filename, source: opts.source, jobId, rawTotal, total: rows.length, created: inserted.length, updated, rehired, linkedManual, unchanged: unchangedIds.length, removed, leavers: leavers.length, leaverGuardTriggered, quarantine: quarantine.length, weakProtected } });
 

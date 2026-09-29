@@ -67,10 +67,30 @@ Deno.serve(async (req) => {
       if (!dl.ok) throw new Error(`Download via content falhou (${dl.status})`);
       bytes = new Uint8Array(await dl.arrayBuffer());
     }
+    const sourceBuffer = bytes.slice().buffer as ArrayBuffer;
+    const sourceSha256 = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", sourceBuffer)))
+      .map((b) => b.toString(16).padStart(2, "0")).join("");
+    const { data: previousHash } = await sb.from("parametros").select("valor")
+      .eq("chave", "sharepoint_rh_last_sha256").maybeSingle();
+    if (!dryRun && previousHash?.valor === sourceSha256) {
+      return new Response(JSON.stringify({
+        success: true, skipped: true, reason: "unchanged", file: latest.name,
+        modified: latest.lastModifiedDateTime, source_sha256: sourceSha256,
+      }), { status: 200, headers: corsHeaders });
+    }
+
     const csvText = new TextDecoder("utf-8").decode(bytes);
 
     const result = await processCsvColab(sb, csvText, { source: "sharepoint", filename: latest.name, operador: auth.email, dryRun });
-    return new Response(JSON.stringify({ ...result, file: latest.name, modified: latest.lastModifiedDateTime }), { status: 200, headers: corsHeaders });
+    if (!dryRun && result.success) {
+      const { error: hashError } = await sb.from("parametros").upsert({
+        chave: "sharepoint_rh_last_sha256", valor: sourceSha256,
+        descricao: "SHA-256 do último CSV RH processado com sucesso pelo Órigo IAM",
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "chave" });
+      if (hashError) throw new Error(`Falha ao persistir hash do CSV processado: ${hashError.message}`);
+    }
+    return new Response(JSON.stringify({ ...result, file: latest.name, modified: latest.lastModifiedDateTime, source_sha256: sourceSha256 }), { status: 200, headers: corsHeaders });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro desconhecido";
     console.error("sync-sharepoint-csv error:", msg);
