@@ -8,7 +8,7 @@ import {
 } from "recharts";
 import {
   Activity, AlertTriangle, Bot, CalendarClock, ClipboardCheck, FileCheck, KeyRound,
-  RefreshCw, ShieldAlert, ShieldCheck, UserCheck, Users, XCircle, Crown, FileSpreadsheet, Hourglass,
+  ShieldAlert, ShieldCheck, UserCheck, Users, XCircle, Crown, FileSpreadsheet, Hourglass,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -75,14 +75,13 @@ function ChartTooltip({ active, payload, label }: Row) {
   );
 }
 
-/* ── status do sistema (agente, ciclo, importação, aprovação) ── */
+/* ── status do sistema (agente, base RH, aprovação) ── */
 function SystemStrip({ m, loading }: { m: Row; loading: boolean }) {
   const approval = useParametro("iam_approval_required", "true") === "true";
   const agent: Row = m?.agente?.[0];
   const agentAge = agent ? (Date.now() - new Date(agent.last_seen_at).getTime()) / 60000 : Infinity;
   const agentOnline = agentAge < 5;
   const agentWarn = !agentOnline && agentAge < 30;
-  const ciclo: Row = m?.ultimo_ciclo;
   const csv: Row = m?.ultimo_csv;
   const items = [
     {
@@ -92,13 +91,7 @@ function SystemStrip({ m, loading }: { m: Row; loading: boolean }) {
       tone: !agent || (!agentOnline && !agentWarn) ? "destructive" : agentWarn ? "warning" : "success",
       to: "/fila-provisionamento",
     },
-    {
-      icon: RefreshCw, label: "Ciclo RH",
-      value: loading ? "…" : !ciclo ? "nunca rodou" : ciclo.display_status === "paused" ? "pausado por segurança" : ciclo.status === "running" ? "em andamento" : ciclo.status === "done" ? "concluído" : "falhou",
-      hint: ciclo ? `${relTime(ciclo.updated_at)}${ciclo.status === "error" ? " · revisar integração" : ""}` : "sem execução",
-      tone: !ciclo || ciclo.display_status === "paused" ? "warning" : ciclo.status === "error" ? "destructive" : ciclo.status === "running" ? "info" : "success",
-      to: "/configuracoes/integracoes",
-    },
+
     {
       icon: FileSpreadsheet, label: "Base do RH",
       value: loading ? "…" : !csv ? "nenhuma" : csv.display_status === "collected_not_imported" ? "coletada; não importada" : csv.status === "running" ? "importando" : csv.status === "done" ? `${csv.colab_created ?? 0} novos · ${csv.colab_updated ?? 0} alt.` : "falhou",
@@ -115,7 +108,7 @@ function SystemStrip({ m, loading }: { m: Row; loading: boolean }) {
     },
   ] as const;
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
       {items.map((it) => (
         <Link key={it.label} to={it.to} className="group">
           <Card className="h-full transition-all hover:-translate-y-0.5 hover:shadow-md">
@@ -290,17 +283,23 @@ export default function Dashboard() {
 
       </QueryState>
       {/* Séries */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
+      <div className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-2">
         <PeopleLifecycleChart period={period} onPeriodChange={setPeriod} />
 
-        <div className="xl:col-span-2"><QueryState loading={seriesLoading || seriesPlaceholder} error={seriesError} retry={retrySeries}>
-        <Card data-tour="chart-requests">
-          <CardHeader className="pb-2">
+        <div className="h-full"><QueryState loading={seriesLoading || seriesPlaceholder} error={seriesError} retry={retrySeries}>
+        <Card data-tour="chart-requests" className="h-full min-h-[390px] flex flex-col">
+          <CardHeader className="pb-3">
             <CardTitle className="text-base">Movimentações JML</CardTitle>
-            <p className="text-xs text-muted-foreground">{totals.joiners} entradas · {totals.movers} mudanças · {totals.leavers} saídas no período</p>
+            <p className="text-xs text-muted-foreground">Eventos do ciclo de vida no período selecionado</p>
           </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={260}>
+          <CardContent className="flex flex-1 flex-col pt-0">
+            <div className="mb-4 grid grid-cols-3 gap-2">
+              <div className="rounded-lg border bg-success/5 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Entradas</p><p className="text-lg font-semibold tabular-nums text-success">{totals.joiners}</p></div>
+              <div className="rounded-lg border bg-info/5 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Mudanças</p><p className="text-lg font-semibold tabular-nums text-info">{totals.movers}</p></div>
+              <div className="rounded-lg border bg-destructive/5 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Saídas</p><p className="text-lg font-semibold tabular-nums text-destructive">{totals.leavers}</p></div>
+            </div>
+            <div className="min-h-[230px] flex-1">
+            <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ left: -16, right: 8, top: 8 }} barCategoryGap={period === 7 ? "30%" : "15%"}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
                 <XAxis dataKey="label" interval={tick} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
@@ -312,6 +311,7 @@ export default function Dashboard() {
                 <Bar dataKey="leavers" name="Leaver" stackId="jml" fill={C.destructive} radius={[3, 3, 0, 0]} hide={hidden.has("leavers")} />
               </BarChart>
             </ResponsiveContainer>
+            </div>
           </CardContent>
         </Card>
         </QueryState></div>
