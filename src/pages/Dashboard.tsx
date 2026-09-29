@@ -134,8 +134,8 @@ function SystemStrip({ m, loading }: { m: Row; loading: boolean }) {
 }
 
 /* ── barras horizontais clicáveis ── */
-function BarsPanel({ title, rows, unit, footer }: { title: string; rows: { label: string; value: number; color: string; to?: string }[]; unit?: string; footer?: React.ReactNode }) {
-  const total = rows.reduce((s, r) => s + r.value, 0);
+function BarsPanel({ title, rows, unit, footer }: { title: string; rows: { label: string; value: number; color: string; to?: string; includeInTotal?: boolean }[]; unit?: string; footer?: React.ReactNode }) {
+  const total = rows.reduce((s, r) => s + (r.includeInTotal === false ? 0 : r.value), 0);
   const max = Math.max(1, ...rows.map((r) => r.value));
   return (
     <Card className="h-full">
@@ -143,7 +143,7 @@ function BarsPanel({ title, rows, unit, footer }: { title: string; rows: { label
       <CardContent className="space-y-3">
         <div className="flex items-baseline justify-between border-b pb-2">
           <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Total</span>
-          <span className="text-xl font-semibold tabular-nums">{total}</span>
+          <span aria-label={`${title}: total`} className="text-xl font-semibold tabular-nums">{total}</span>
         </div>
         {rows.map((r) => {
           const pct = total > 0 ? Math.round((r.value / total) * 100) : 0;
@@ -250,7 +250,8 @@ export default function Dashboard() {
     { label: "Inativos", value: m?.colab_inativos ?? 0, color: C.muted, to: "/colaboradores?status=inativo" },
     { label: "Desligados", value: m?.colab_desligados ?? 0, color: C.destructive, to: "/colaboradores?status=desligado" },
     { label: "Terceiros ativos", value: m?.terc_ativos ?? 0, color: C.violet, to: "/terceiros" },
-    { label: "Suspensos (pré-leaver)", value: m?.colab_suspensos ?? 0, color: "hsl(24, 90%, 55%)", to: "/colaboradores?suspenso_preventivo=true" },
+    { label: "Terceiros inativos", value: m?.terc_inativos ?? 0, color: C.muted, to: "/terceiros" },
+    { label: "Suspensos (pré-leaver)", value: m?.colab_suspensos ?? 0, color: "hsl(24, 90%, 55%)", to: "/colaboradores?suspenso_preventivo=true", includeInTotal: false },
   ];
   const filaRows = [
     { label: QUEUE_STATUS_META.waiting_approval.label, value: m?.fila_waiting ?? 0, color: C.info, to: "/fila-provisionamento?tab=aprovacao" },

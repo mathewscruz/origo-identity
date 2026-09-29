@@ -23,7 +23,7 @@ describe('Dashboard read failures', () => {
   expect(screen.getAllByRole('status').length).toBe(2);
   expect(screen.queryByText('Pessoas ativas')).toBeNull();
   state.metrics.isLoading = false;
-  state.metrics.data = { gerado_em: '2026-09-17T21:00:00Z', colab_ativos: 10, colab_ferias: 2, colab_afastados: 1, terc_ativos: 3, colab_suspensos: 0, fila_success_7d: 0, fila_falhas_por_codigo: [{ codigo: 'codigo_inesperado', total: 2 }] };
+  state.metrics.data = { gerado_em: '2026-09-17T21:00:00Z', colab_ativos: 10, colab_ferias: 2, colab_afastados: 1, colab_inativos: 5, colab_desligados: 7, terc_ativos: 3, terc_inativos: 4, colab_suspensos: 2, fila_success_7d: 0, fila_falhas_por_codigo: [{ codigo: 'codigo_inesperado', total: 2 }] };
   view.rerender(<MemoryRouter><Dashboard /></MemoryRouter>);
   expect(screen.getByText('Pessoas ativas')).toBeTruthy();
   expect(screen.getByText('Fila do agente').closest('a')?.getAttribute('href')).toBe('/fila-provisionamento?status=agente');
@@ -31,6 +31,8 @@ describe('Dashboard read failures', () => {
   expect(screen.getByText('Concluídos (7 dias)').closest('a')?.getAttribute('href')).toContain('processed_from=');
   expect(screen.getByText('Fila atual')).toBeTruthy();
   expect(screen.getByText('Cadastros por status')).toBeTruthy();
+  expect(screen.getByText('Terceiros inativos')).toBeTruthy();
+  expect(screen.getByLabelText('Cadastros por status: total').textContent).toBe('32');
   expect(screen.getByText('10 ativos · 2 férias · 1 afastados · 3 terceiros')).toBeTruthy();
   expect(screen.getByTitle('codigo_inesperado').textContent).toBe('Codigo inesperado · 2');
  });
