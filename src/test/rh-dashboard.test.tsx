@@ -16,12 +16,12 @@ describe('RH dashboard contract fixtures, not production counts', () => {
   const view = render(<MemoryRouter><Dashboard /></MemoryRouter>);
   expect(screen.getByText('pausado por segurança')).toBeTruthy();
   expect(screen.getByText('coletada; não importada')).toBeTruthy();
-  expect(screen.getByText(/1 entradas · 3 saídas no período/)).toBeTruthy();
+  expect(screen.getByText(/1 entrada · 3 saídas/)).toBeTruthy();
   expect(screen.queryByText(/Fila: 8 ações de concessão/)).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '7 dias' }));
   expect(state.period).toHaveBeenLastCalledWith(7);
   state.series = [{ dia: '2026-09-18', concessoes: 0, revogacoes: 0, outros: 0, falhas: 0, joiners: 0, movers: 0, leavers: 0, pre_leavers: 0 }];
   view.rerender(<MemoryRouter><Dashboard /></MemoryRouter>);
-  expect(screen.getByText(/1 entradas · 3 saídas no período/)).toBeTruthy();
+  expect(screen.getByText(/1 entrada · 3 saídas/)).toBeTruthy();
  });
 });

@@ -14,11 +14,12 @@ afterEach(() => { cleanup(); state.error = null; });
 it('renders exactly two actual chart series and toggles only people counts', () => {
  const change = vi.fn();render(<PeopleLifecycleChart period={30} onPeriodChange={change} />);
  expect(screen.getAllByTestId('area').map(e => e.getAttribute('data-key'))).toEqual(['entradas', 'saidas']);
- expect(screen.getByText(/1 entradas · 0 saídas/)).toBeTruthy();
+ expect(screen.getByText(/1 entrada · 0 saídas/)).toBeTruthy();
  fireEvent.click(screen.getByRole('button', { name: 'Entradas' }));
  expect(screen.getAllByTestId('area')[0].getAttribute('data-hidden')).toBe('true');
  fireEvent.click(screen.getByRole('button', { name: '7 dias' }));expect(change).toHaveBeenCalledWith(7);
- expect(screen.getByText(/Bloqueio somente no AD\/IAM não basta/)).toBeTruthy();
+ expect(screen.getByText(/Eventos confirmados/)).toBeTruthy();
+ expect(screen.queryByText(/Licenças, grupos, aplicativos/)).toBeNull();
 });
 it('tooltip names people, full day and timezone', () => {
  render(<PeopleTooltip active label="2026-09-18" payload={[{dataKey:'entradas',name:'Entradas',value:1},{dataKey:'saidas',name:'Saídas',value:2}]} />);

@@ -7,12 +7,11 @@ import {
   Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
-  Activity, AlertTriangle, Bot, CalendarClock, CheckCircle2, ClipboardCheck, Clock, FileCheck, KeyRound,
-  Loader2, RefreshCw, ShieldAlert, ShieldCheck, UserCheck, Users, XCircle, Crown, FileSpreadsheet, Hourglass,
+  Activity, AlertTriangle, Bot, CalendarClock, ClipboardCheck, FileCheck, KeyRound,
+  RefreshCw, ShieldAlert, ShieldCheck, UserCheck, Users, XCircle, Crown, FileSpreadsheet, Hourglass,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
@@ -20,9 +19,7 @@ import StatCard from "@/components/StatCard";
 import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
 import { useDashboardMetrics, useDashboardSeries, useParametro, type DashboardSeriesPoint } from "@/hooks/useOrigoData";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { QUEUE_ACTION_LABELS, QUEUE_STATUS_META } from "@/lib/queueLabels";
+import { actionLabel, QUEUE_STATUS_META } from "@/lib/queueLabels";
 import ActivityFeed from "@/components/ActivityFeed";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -36,6 +33,12 @@ const C = {
   primary: "hsl(176, 74%, 34%)",
   muted: "hsl(215, 16%, 47%)",
   violet: "hsl(262, 52%, 47%)",
+};
+
+const FAILURE_LABELS: Record<string, string> = {
+  unsupported_ad_action: "Ação AD não suportada",
+  ad_ldap_not_configured: "Conexão AD indisponível",
+  graph_http_error: "Erro Microsoft Graph",
 };
 
 type Period = 7 | 30 | 90;
@@ -83,30 +86,30 @@ function SystemStrip({ m, loading }: { m: Row; loading: boolean }) {
   const csv: Row = m?.ultimo_csv;
   const items = [
     {
-      icon: Bot, label: "Órigo Agente (executor)",
+      icon: Bot, label: "Agente executor",
       value: loading ? "…" : !agent ? "nunca visto" : agentOnline ? "online" : agentWarn ? "sem sinal" : "offline",
-      hint: agent ? `${agent.owner}${agent.version ? ` v${agent.version}` : ""} · ${agent.execute_mode === false ? "dry-run" : "executando"} · ${relTime(agent.last_seen_at)}` : "aguardando primeiro heartbeat",
+      hint: agent ? `${agent.execute_mode === false ? "simulação" : "execução ativa"} · ${relTime(agent.last_seen_at)}` : "sem heartbeat",
       tone: !agent || (!agentOnline && !agentWarn) ? "destructive" : agentWarn ? "warning" : "success",
       to: "/fila-provisionamento",
     },
     {
-      icon: RefreshCw, label: "Ciclo diário (RH → reconciliação)",
+      icon: RefreshCw, label: "Ciclo RH",
       value: loading ? "…" : !ciclo ? "nunca rodou" : ciclo.display_status === "paused" ? "pausado por segurança" : ciclo.status === "running" ? "em andamento" : ciclo.status === "done" ? "concluído" : "falhou",
-      hint: ciclo ? `${ciclo.display_status === "paused" ? "Coleta: " : ""}${relTime(ciclo.updated_at)} · ${String(ciclo.message || "").slice(0, 80)}` : "sem execução registrada",
+      hint: ciclo ? `${relTime(ciclo.updated_at)}${ciclo.status === "error" ? " · revisar integração" : ""}` : "sem execução",
       tone: !ciclo || ciclo.display_status === "paused" ? "warning" : ciclo.status === "error" ? "destructive" : ciclo.status === "running" ? "info" : "success",
       to: "/configuracoes/integracoes",
     },
     {
-      icon: FileSpreadsheet, label: "Última base do RH",
+      icon: FileSpreadsheet, label: "Base do RH",
       value: loading ? "…" : !csv ? "nenhuma" : csv.display_status === "collected_not_imported" ? "coletada; não importada" : csv.status === "running" ? "importando" : csv.status === "done" ? `${csv.colab_created ?? 0} novos · ${csv.colab_updated ?? 0} alt.` : "falhou",
-      hint: csv ? `${csv.filename || "RH_COLAB"} · fonte: ${relTime(csv.source_modified_at || csv.updated_at)}${csv.collected_at ? ` · coleta: ${relTime(csv.collected_at)}` : ""}` : "SharePoint RH_COLAB",
+      hint: csv ? `${csv.filename || "RH_COLAB"} · ${relTime(csv.source_modified_at || csv.updated_at)}` : "sem arquivo",
       tone: !csv || csv.display_status === "collected_not_imported" ? "warning" : csv.status === "error" ? "destructive" : "info",
       to: "/configuracoes/integracoes",
     },
     {
-      icon: approval ? ShieldCheck : ShieldAlert, label: "Aprovação obrigatória",
-      value: approval ? "ligada" : "desligada",
-      hint: approval ? "nada vai ao agente sem aprovação" : "itens vão direto para execução",
+      icon: approval ? ShieldCheck : ShieldAlert, label: "Aprovação",
+      value: approval ? "obrigatória" : "direta",
+      hint: approval ? "antes da execução" : "sem etapa de aprovação",
       tone: approval ? "success" : "warning",
       to: "/fila-provisionamento?tab=aprovacao",
     },
@@ -172,20 +175,20 @@ function BarsPanel({ title, rows, unit, footer }: { title: string; rows: { label
 /* ── pendências de governança ── */
 function GovernanceList({ m, loading }: { m: Row; loading: boolean }) {
   const items: { icon: typeof Users; label: string; value: number; to: string; tone: "warning" | "destructive" | "info" | "muted" }[] = [
-    { icon: FileCheck, label: "Exceções pendentes de decisão", value: m?.excecoes_pendentes ?? 0, to: "/excecoes", tone: "warning" },
-    { icon: CalendarClock, label: "Exceções vencendo em 15 dias", value: m?.excecoes_vencendo ?? 0, to: "/excecoes", tone: "info" },
-    { icon: ClipboardCheck, label: "Revisões de acesso em aberto", value: m?.revisoes_abertas ?? 0, to: "/revisoes", tone: "info" },
-    { icon: Hourglass, label: "Revisões com prazo vencido", value: m?.revisoes_atrasadas ?? 0, to: "/revisoes", tone: "destructive" },
-    { icon: UserCheck, label: "Terceiros com contrato vencido", value: m?.terc_vencidos ?? 0, to: "/terceiros", tone: "destructive" },
-    { icon: CalendarClock, label: "Terceiros vencendo em 30 dias", value: m?.terc_vencendo_30d ?? 0, to: "/terceiros", tone: "warning" },
+    { icon: FileCheck, label: "Exceções pendentes", value: m?.excecoes_pendentes ?? 0, to: "/excecoes", tone: "warning" },
+    { icon: CalendarClock, label: "Exceções vencendo", value: m?.excecoes_vencendo ?? 0, to: "/excecoes", tone: "info" },
+    { icon: ClipboardCheck, label: "Revisões abertas", value: m?.revisoes_abertas ?? 0, to: "/revisoes", tone: "info" },
+    { icon: Hourglass, label: "Revisões atrasadas", value: m?.revisoes_atrasadas ?? 0, to: "/revisoes", tone: "destructive" },
+    { icon: UserCheck, label: "Contratos vencidos", value: m?.terc_vencidos ?? 0, to: "/terceiros", tone: "destructive" },
+    { icon: CalendarClock, label: "Contratos vencendo", value: m?.terc_vencendo_30d ?? 0, to: "/terceiros", tone: "warning" },
     { icon: UserCheck, label: "Terceiros a revalidar", value: m?.terc_revalidar ?? 0, to: "/terceiros", tone: "warning" },
-    { icon: ShieldAlert, label: "Violações de SoD (pessoas com perfis conflitantes)", value: m?.sod_violacoes ?? 0, to: "/sod", tone: "destructive" },
-    { icon: KeyRound, label: "Licenças em nível crítico", value: m?.licencas_criticas ?? 0, to: "/licencas", tone: "warning" },
-    { icon: Users, label: "Contas órfãs no Entra aguardando revisão", value: m?.fila_orfaos ?? 0, to: "/fila-provisionamento?tab=aprovacao&action=review_orphan_entra", tone: "warning" },
-    { icon: FileSpreadsheet, label: "Linhas do RH em quarentena", value: m?.quarentena ?? 0, to: "/configuracoes/integracoes", tone: "warning" },
-    { icon: Users, label: "Ativos sem conta vinculada no Entra", value: m?.colab_sem_entra ?? 0, to: "/colaboradores?status=ativo", tone: "info" },
-    { icon: Users, label: "Ativos sem cargo (sem acesso por perfil)", value: m?.colab_sem_cargo ?? 0, to: "/colaboradores?status=ativo", tone: "muted" },
-    { icon: Crown, label: "Pessoas com funções privilegiadas", value: m?.priv_membros ?? 0, to: "/privilegiados", tone: "muted" },
+    { icon: ShieldAlert, label: "Conflitos de acesso (SoD)", value: m?.sod_violacoes ?? 0, to: "/sod", tone: "destructive" },
+    { icon: KeyRound, label: "Licenças críticas", value: m?.licencas_criticas ?? 0, to: "/licencas", tone: "warning" },
+    { icon: Users, label: "Contas órfãs no Entra", value: m?.fila_orfaos ?? 0, to: "/fila-provisionamento?tab=aprovacao&action=review_orphan_entra", tone: "warning" },
+    { icon: FileSpreadsheet, label: "RH em quarentena", value: m?.quarentena ?? 0, to: "/configuracoes/integracoes", tone: "warning" },
+    { icon: Users, label: "Ativos sem conta Entra", value: m?.colab_sem_entra ?? 0, to: "/colaboradores?status=ativo", tone: "info" },
+    { icon: Users, label: "Ativos sem cargo", value: m?.colab_sem_cargo ?? 0, to: "/colaboradores?status=ativo", tone: "muted" },
+    { icon: Crown, label: "Acessos privilegiados", value: m?.priv_membros ?? 0, to: "/privilegiados", tone: "muted" },
   ];
   const open = items.filter((i) => i.value > 0);
   return (
@@ -239,12 +242,12 @@ export default function Dashboard() {
   const pendingAge = ageLabel(m?.fila_oldest_pending);
 
   const kpis = [
-    { label: "Pessoas ativas", value: pessoas, hint: `${m?.colab_ativos ?? 0} colab. · ${m?.terc_ativos ?? 0} terceiros · ${(m?.colab_ferias ?? 0) + (m?.colab_afastados ?? 0)} afastados/férias`, icon: Users, tone: "primary" as const, to: "/colaboradores" },
-    { label: "Aguardando aprovação", value: m?.fila_waiting ?? 0, hint: waitingAge ? `mais antigo há ${waitingAge}` : "nada aguardando", icon: ShieldCheck, tone: (m?.fila_waiting ?? 0) > 0 ? "warning" as const : "success" as const, to: "/fila-provisionamento?tab=aprovacao" },
-    { label: "Para o agente executar", value: (m?.fila_pending ?? 0) + (m?.fila_processing ?? 0), hint: `${m?.fila_processing ?? 0} em execução${pendingAge ? ` · mais antigo há ${pendingAge}` : ""}`, icon: Bot, tone: "info" as const, to: "/fila-provisionamento?status=agente" },
-    { label: "Falhas na fila", value: m?.fila_failed ?? 0, hint: `${m?.fila_success_24h ?? 0} sucesso(s) nas últimas 24 h`, icon: XCircle, tone: (m?.fila_failed ?? 0) > 0 ? "destructive" as const : "success" as const, to: "/fila-provisionamento?status=failed" },
-    { label: "Exceções pendentes", value: m?.excecoes_pendentes ?? 0, hint: `${m?.excecoes_ativas ?? 0} ativa(s) · ${m?.excecoes_vencendo ?? 0} vencendo em 15 d`, icon: FileCheck, tone: (m?.excecoes_pendentes ?? 0) > 0 ? "warning" as const : "success" as const, to: "/excecoes" },
-    { label: "Alertas não lidos", value: m?.alertas_nao_lidos ?? 0, hint: `${m?.alertas_criticos ?? 0} crítico(s)`, icon: AlertTriangle, tone: (m?.alertas_criticos ?? 0) > 0 ? "destructive" as const : (m?.alertas_nao_lidos ?? 0) > 0 ? "warning" as const : "success" as const, to: "/alertas" },
+    { label: "Pessoas ativas", value: pessoas, hint: `${m?.colab_ativos ?? 0} ativos · ${m?.colab_ferias ?? 0} férias · ${m?.colab_afastados ?? 0} afastados · ${m?.terc_ativos ?? 0} terceiros`, icon: Users, tone: "primary" as const, to: "/colaboradores" },
+    { label: "Aguardando aprovação", value: m?.fila_waiting ?? 0, hint: waitingAge ? `mais antigo: ${waitingAge}` : "fila vazia", icon: ShieldCheck, tone: (m?.fila_waiting ?? 0) > 0 ? "warning" as const : "success" as const, to: "/fila-provisionamento?tab=aprovacao" },
+    { label: "Fila do agente", value: (m?.fila_pending ?? 0) + (m?.fila_processing ?? 0), hint: `${m?.fila_processing ?? 0} executando${pendingAge ? ` · espera: ${pendingAge}` : ""}`, icon: Bot, tone: "info" as const, to: "/fila-provisionamento?status=agente" },
+    { label: "Falhas na fila", value: m?.fila_failed ?? 0, hint: `${m?.fila_success_24h ?? 0} concluídos em 24 h`, icon: XCircle, tone: (m?.fila_failed ?? 0) > 0 ? "destructive" as const : "success" as const, to: "/fila-provisionamento?status=failed" },
+    { label: "Exceções pendentes", value: m?.excecoes_pendentes ?? 0, hint: `${m?.excecoes_vencendo ?? 0} vencendo em 15 d`, icon: FileCheck, tone: (m?.excecoes_pendentes ?? 0) > 0 ? "warning" as const : "success" as const, to: "/excecoes" },
+    { label: "Alertas não lidos", value: m?.alertas_nao_lidos ?? 0, hint: `${m?.alertas_criticos ?? 0} críticos`, icon: AlertTriangle, tone: (m?.alertas_criticos ?? 0) > 0 ? "destructive" as const : (m?.alertas_nao_lidos ?? 0) > 0 ? "warning" as const : "success" as const, to: "/alertas" },
   ];
 
   const pessoasRows = [
@@ -261,7 +264,6 @@ export default function Dashboard() {
     { label: QUEUE_STATUS_META.pending.label, value: m?.fila_pending ?? 0, color: C.warning, to: "/fila-provisionamento?status=pending" },
     { label: QUEUE_STATUS_META.processing.label, value: m?.fila_processing ?? 0, color: C.violet, to: "/fila-provisionamento?status=processing" },
     { label: QUEUE_STATUS_META.failed.label, value: m?.fila_failed ?? 0, color: C.destructive, to: "/fila-provisionamento?status=failed" },
-    { label: "Concluídos (7 dias)", value: m?.fila_success_7d ?? 0, color: C.success, to: completedQueueLink(m?.gerado_em) },
   ];
   const acoes: Row[] = m?.fila_por_acao_7d ?? [];
   const falhas: Row[] = m?.fila_falhas_por_codigo ?? [];
@@ -270,7 +272,7 @@ export default function Dashboard() {
     <div className="space-y-5">
       <PageHeader
         title="Dashboard"
-        description={<>Visão operacional do IAM/IGA em tempo real{m?.gerado_em ? <span className="text-xs"> · atualizado {relTime(m.gerado_em)}</span> : null}</>}
+        description={<>Operação IAM em tempo real{m?.gerado_em ? <span className="text-xs"> · atualizado {relTime(m.gerado_em)}</span> : null}</>}
         actions={<Badge variant="outline" className="gap-1 text-xs"><Activity className={`h-3 w-3 ${metricsError || seriesError ? "text-destructive" : "text-success"}`} />{metricsError || seriesError ? "Dados indisponíveis" : isLoading ? "Carregando" : "Tempo real"}</Badge>}
       />
 
@@ -294,9 +296,8 @@ export default function Dashboard() {
         <div className="xl:col-span-2"><QueryState loading={seriesLoading || seriesPlaceholder} error={seriesError} retry={retrySeries}>
         <Card data-tour="chart-requests">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Registros de movimentações (JML)</CardTitle>
+            <CardTitle className="text-base">Movimentações JML</CardTitle>
             <p className="text-xs text-muted-foreground">{totals.joiners} entradas · {totals.movers} mudanças · {totals.leavers} saídas no período</p>
-            <p className="text-xs text-muted-foreground">Eventos registrados; não confirmam execução de acessos.</p>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={260}>
@@ -319,10 +320,15 @@ export default function Dashboard() {
       {/* Distribuições + governança */}
       <QueryState loading={isLoading} error={metricsError || (!isLoading && !m ? new Error("Métricas indisponíveis") : null)} retry={retryMetrics}>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
-        <BarsPanel title="Pessoas por status" rows={pessoasRows} />
-        <BarsPanel title="Fila por status" rows={filaRows} />
+        <BarsPanel title="Cadastros por status" rows={pessoasRows} />
+        <BarsPanel title="Fila atual" rows={filaRows} footer={
+          <Link to={completedQueueLink(m?.gerado_em)} className="flex items-center justify-between rounded-md border-t pt-3 text-sm hover:text-primary">
+            <span>Concluídos (7 dias)</span>
+            <span className="font-semibold tabular-nums">{m?.fila_success_7d ?? 0}</span>
+          </Link>
+        } />
         <Card className="h-full">
-          <CardHeader className="pb-2"><CardTitle className="text-base">Ações dos últimos 7 dias</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-base">Execuções em 7 dias</CardTitle></CardHeader>
           <CardContent className="p-0">
             {acoes.length === 0 ? <div className="py-8"><EmptyState message="Sem ações no período" /></div> : (
               <ul className="divide-y">
@@ -332,7 +338,7 @@ export default function Dashboard() {
                     <li key={a.acao} className="px-4 py-2">
                       <Link to={`/fila-provisionamento?action=${a.acao}`} className="block">
                         <div className="flex items-center justify-between text-sm">
-                          <span className="truncate">{QUEUE_ACTION_LABELS[a.acao] || a.acao}</span>
+                          <span className="truncate text-xs font-medium">{actionLabel(a.acao)}</span>
                           <span className="text-xs text-muted-foreground tabular-nums"><span className="font-semibold text-foreground">{a.total}</span>{a.falha > 0 ? <span className="text-destructive"> · {a.falha} falha(s)</span> : null}</span>
                         </div>
                         <div className="mt-1 flex h-1.5 w-full overflow-hidden rounded-full bg-muted">
@@ -347,11 +353,11 @@ export default function Dashboard() {
             )}
             {falhas.length > 0 && (
               <div className="border-t px-4 py-3">
-                <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Falhas em aberto por causa</p>
+                <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Falhas em aberto</p>
                 <div className="flex flex-wrap gap-1.5">
                   {falhas.map((f) => (
                     <Link key={f.codigo} to="/fila-provisionamento?status=failed">
-                      <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive">{f.codigo} · {f.total}</Badge>
+                      <Badge title={f.codigo} variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive">{FAILURE_LABELS[f.codigo] || actionLabel(f.codigo)} · {f.total}</Badge>
                     </Link>
                   ))}
                 </div>
@@ -363,11 +369,11 @@ export default function Dashboard() {
       </div>
 
       </QueryState>
-      {/* Atividade recente — tudo o que aconteceu com pessoas e acessos (auditoria + fila + JML), em tempo real */}
+      {/* Atividade recente */}
       <Card data-tour="timeline" className="animate-content-in stagger-5">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <div><CardTitle className="text-base">Atividade recente</CardTitle><p className="text-xs text-muted-foreground">RH por pessoa, auditoria, fila IAM e JML — confira a fonte e o status de cada ação. Bloqueio/desligamento não é exclusão de conta.</p></div>
+            <CardTitle className="text-base">Atividade recente</CardTitle>
             <div className="flex gap-3 text-xs">
               <Link to="/fila-provisionamento" className="text-primary hover:underline">Fila</Link>
               <Link to="/eventos-jml" className="text-primary hover:underline">Eventos JML</Link>
