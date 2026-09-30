@@ -256,7 +256,8 @@ export function generateCorporateEmail(displayName: string, domain: string, exis
 // ─── Pré-checagem de existência no Entra (evita create_if_not_exists inútil) ─
 async function preCheckEntraExistence(identities: { email: string | null; sam: string | null }[]): Promise<Map<string, string>> {
   const found = new Map<string, string>();
-  const TENANT = Deno.env.get("AZURE_TENANT_ID"), CLIENT = Deno.env.get("AZURE_CLIENT_ID"), SECRET = Deno.env.get("AZURE_CLIENT_SECRET");
+  const envGet = (k: string): string | undefined => (globalThis as { Deno?: { env: { get(key: string): string | undefined } } }).Deno?.env.get(k);
+  const TENANT = envGet("AZURE_TENANT_ID"), CLIENT = envGet("AZURE_CLIENT_ID"), SECRET = envGet("AZURE_CLIENT_SECRET");
   if (!TENANT || !CLIENT || !SECRET || identities.length === 0) return found;
   let token: string | null = null;
   try {
