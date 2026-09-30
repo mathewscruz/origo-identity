@@ -20,6 +20,9 @@ export interface SyncOptions {
   filename: string;
   operador?: string;
   dryRun?: boolean;
+  sourceSha256?: string | null;
+  sourceItemId?: string | null;
+  sourceModifiedAt?: string | null;
 }
 
 export interface SyncResult {
@@ -137,6 +140,9 @@ function mapStatus(s: string): string { return STATUS_MAP[normStatus(s)] || STAT
 function isActiveStatus(s: string): boolean { return ["ativo", "ferias", "afastado"].includes(mapStatus(s)); }
 function normalizeCpf(v: string): string { return (v || "").replace(/\D/g, "").trim(); }
 function normalizeMail(v: string): string { return (v || "").toLowerCase().trim(); }
+function normalizePersonName(v: string): string {
+  return (v || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+}
 function dedupeKey(row: CsvRow): string {
   const cpf = normalizeCpf(row.Cadastro_Pessoa_Fisica);
   if (cpf) return `cpf:${cpf}`;
@@ -173,6 +179,39 @@ function dedupeRows(rows: CsvRow[]): { canonical: CsvRow[]; removed: { row: CsvR
     canonical.push(keep);
   }
   return { canonical, removed };
+}
+
+function partitionAmbiguousMatriculas(rows: CsvRow[]): {
+  safeRows: CsvRow[];
+  ambiguousGroups: Array<{ matricula: string; rows: CsvRow[] }>;
+} {
+  const byMatricula = new Map<string, CsvRow[]>();
+  for (const row of rows) {
+    const matricula = (row.employID || "").trim();
+    if (!matricula) continue;
+    const group = byMatricula.get(matricula) || [];
+    group.push(row);
+    byMatricula.set(matricula, group);
+  }
+  const ambiguous = new Set<string>();
+  const ambiguousGroups: Array<{ matricula: string; rows: CsvRow[] }> = [];
+  for (const [matricula, group] of byMatricula) {
+    if (group.length < 2) continue;
+    const signatures = new Set(group.map((row) => {
+      const cpf = normalizeCpf(row.Cadastro_Pessoa_Fisica);
+      const name = normalizePersonName(row.displayName);
+      const mail = normalizeMail(row.mail);
+      return cpf ? `cpf:${cpf}|name:${name}` : `name:${name}|mail:${mail}`;
+    }));
+    if (signatures.size > 1) {
+      ambiguous.add(matricula);
+      ambiguousGroups.push({ matricula, rows: group });
+    }
+  }
+  return {
+    safeRows: rows.filter((row) => !ambiguous.has((row.employID || "").trim())),
+    ambiguousGroups,
+  };
 }
 
 // ─── Proteção de identidade fraca (histórico não pode roubar mail/SAM de um ativo) ──
@@ -259,9 +298,36 @@ export async function processCsvColab(sb: Sb, csvText: string, opts: SyncOptions
     .eq("tipo", "csv_colab").eq("status", "running").lt("updated_at", new Date(Date.now() - 10 * 60 * 1000).toISOString());
 
   const { data: job, error: jobErr } = await sb.from("sync_jobs")
-    .insert({ status: "running", tipo: "csv_colab", message: `Iniciando importação (${opts.source})${dryRun ? " — PRÉ-VISUALIZAÇÃO" : ""}…`, phase: "parsing", filename: opts.filename })
+    .insert({
+      status: "running", tipo: "csv_colab",
+      message: `Iniciando importação (${opts.source})${dryRun ? " — PRÉ-VISUALIZAÇÃO" : ""}…`,
+      phase: "parsing", filename: opts.filename,
+      source_sha256: opts.sourceSha256 || null,
+      source_item_id: opts.sourceItemId || null,
+      source_modified_at: opts.sourceModifiedAt || null,
+    })
     .select().single();
-  if (jobErr) throw jobErr;
+  if (jobErr) {
+    if (opts.sourceSha256 && jobErr.code === "23505") {
+      const { data: existing } = await sb.from("sync_jobs")
+        .select("id,status,colab_total,colab_created,colab_updated,colab_quarentena,colab_inativos")
+        .eq("tipo", "csv_colab")
+        .eq("source_sha256", opts.sourceSha256)
+        .in("status", ["running", "done"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (existing) return {
+        success: existing.status === "done", jobId: existing.id,
+        created: existing.colab_created || 0, updated: existing.colab_updated || 0,
+        unchanged: 0, removed: existing.colab_inativos || 0,
+        quarantined: existing.colab_quarentena || 0, rehired: 0, linkedManual: 0,
+        leaverGuardTriggered: false, dryRun, total: existing.colab_total || 0,
+        rawTotal: existing.colab_total || 0,
+      };
+    }
+    throw jobErr;
+  }
   const jobId: string = job.id;
   const progress = (patch: Record<string, unknown>) => sb.from("sync_jobs").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", jobId);
 
@@ -283,7 +349,16 @@ export async function processCsvColab(sb: Sb, csvText: string, opts: SyncOptions
     const parsed = parseCsv(csvText);
     for (const inv of parsed.invalid) quarantine.push({ matricula: (inv.row.employID || "").trim() || null, nome: inv.row.displayName || null, email: inv.row.mail || null, motivo: inv.motivo, detalhe: inv.detalhe, dados: inv.row });
     const rawTotal = parsed.rows.length + parsed.invalid.length;
-    const dedupe = dedupeRows(parsed.rows);
+    const matriculaPartition = partitionAmbiguousMatriculas(parsed.rows);
+    for (const group of matriculaPartition.ambiguousGroups) {
+      for (const row of group.rows) quarantine.push({
+        matricula: group.matricula, nome: row.displayName || null, email: row.mail || null,
+        motivo: "matricula_ambigua",
+        detalhe: `Matrícula ${group.matricula} associada a identidades fortes distintas; grupo completo mantido em quarentena`,
+        dados: row,
+      });
+    }
+    const dedupe = dedupeRows(matriculaPartition.safeRows);
     for (const d of dedupe.removed) quarantine.push({ matricula: (d.row.employID || "").trim(), nome: d.row.displayName, email: d.row.mail || null, motivo: "duplicado_no_csv", detalhe: `Duplicado (${d.key}); mantida a matrícula ${d.keptMatricula}`, dados: d.row });
     const rows = dedupe.canonical;
     const weakProtected = applyWeakIdentityProtection(rows);

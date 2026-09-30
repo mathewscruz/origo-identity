@@ -70,6 +70,25 @@ Deno.serve(async (req) => {
     const sourceBuffer = bytes.slice().buffer as ArrayBuffer;
     const sourceSha256 = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", sourceBuffer)))
       .map((b) => b.toString(16).padStart(2, "0")).join("");
+    if (!dryRun) {
+      const { data: existingJob } = await sb.from("sync_jobs")
+        .select("id,status,phase,filename,source_sha256,colab_total,colab_created,colab_updated,colab_quarentena,colab_inativos,message,error,created_at,updated_at")
+        .eq("tipo", "csv_colab")
+        .eq("source_sha256", sourceSha256)
+        .in("status", ["running", "done"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (existingJob) {
+        return new Response(JSON.stringify({
+          success: existingJob.status === "done", skipped: true,
+          in_progress: existingJob.status === "running",
+          reason: "source_hash_reused", jobId: existingJob.id,
+          file: latest.name, modified: latest.lastModifiedDateTime,
+          source_sha256: sourceSha256, job: existingJob,
+        }), { status: 200, headers: corsHeaders });
+      }
+    }
     const { data: previousHash } = await sb.from("parametros").select("valor")
       .eq("chave", "sharepoint_rh_last_sha256").maybeSingle();
     if (!dryRun && previousHash?.valor === sourceSha256) {
@@ -81,7 +100,12 @@ Deno.serve(async (req) => {
 
     const csvText = new TextDecoder("utf-8").decode(bytes);
 
-    const result = await processCsvColab(sb, csvText, { source: "sharepoint", filename: latest.name, operador: auth.email, dryRun });
+    const result = await processCsvColab(sb, csvText, {
+      source: "sharepoint", filename: latest.name, operador: auth.email, dryRun,
+      sourceSha256,
+      sourceItemId: latest.id,
+      sourceModifiedAt: latest.lastModifiedDateTime,
+    });
     if (!dryRun && result.success) {
       const { error: hashError } = await sb.from("parametros").upsert({
         chave: "sharepoint_rh_last_sha256", valor: sourceSha256,
