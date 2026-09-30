@@ -12,7 +12,7 @@
 //
 // Autenticação: Bearer IAM_AGENT_TOKEN (agente) ou JWT de usuário admin/operador.
 // Heartbeat: cada chamada do agente atualiza iam_agent_status (dashboard mostra online/offline).
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { requireRole, serviceAuthHeader } from "../_shared/auth.ts";
 
 const corsHeaders = {
@@ -44,7 +44,8 @@ export const AGENT_ACTION_TYPES = [
 const DEFAULT_LEASE_SECONDS = 300;
 const MAX_BATCH = 50;
 
-type Sb = ReturnType<typeof createClient>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sb = SupabaseClient<any, any, any>;
 
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
@@ -102,11 +103,11 @@ async function enrichIdentity(supabase: Sb, items: Record<string, unknown>[]) {
   const tercs = new Map<string, Record<string, unknown>>();
   if (colabIds.length) {
     const { data } = await supabase.from("colaboradores").select("id, nome, email, sam_account_name, entra_id, status").in("id", colabIds);
-    for (const c of data || []) colabs.set(c.id, c);
+    for (const c of (data || []) as Record<string, unknown>[]) colabs.set(c.id as string, c);
   }
   if (tercIds.length) {
     const { data } = await supabase.from("terceiros").select("id, nome, email, sam_account_name, ativo").in("id", tercIds);
-    for (const t of data || []) tercs.set(t.id, t);
+    for (const t of (data || []) as Record<string, unknown>[]) tercs.set(t.id as string, t);
   }
   return items.map((item) => {
     const payload = (item.payload_json || {}) as Record<string, unknown>;
