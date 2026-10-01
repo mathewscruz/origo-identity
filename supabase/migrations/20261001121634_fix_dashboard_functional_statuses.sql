@@ -37,12 +37,12 @@ WITH expected(email, target_status) AS (
     ('francesca.ferreira@origoenergia.com.br', 'afastado')
 ), updated AS (
   UPDATE public.colaboradores c
-     SET status = e.target_status,
+     SET status = e.target_status::public.status_colaborador,
          updated_at = now()
     FROM expected e
    WHERE lower(c.email) = e.email
      AND c.origem = 'csv'
-     AND c.status IS DISTINCT FROM e.target_status
+     AND c.status::text IS DISTINCT FROM e.target_status
   RETURNING c.id
 )
 SELECT count(*) FROM updated;
@@ -86,7 +86,7 @@ BEGIN
     FROM expected e
     LEFT JOIN public.colaboradores c
       ON lower(c.email) = e.email AND c.origem = 'csv'
-   WHERE c.id IS NULL OR c.status IS DISTINCT FROM e.target_status;
+   WHERE c.id IS NULL OR c.status::text IS DISTINCT FROM e.target_status;
 
   IF v_invalid <> 0 THEN
     RAISE EXCEPTION 'Status funcional não aplicado em % identidades', v_invalid;
