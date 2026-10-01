@@ -45,9 +45,8 @@ const REQUIRED_HEADERS = ["displayName", "employID", "mail", "company", "title",
 
 const STATUS_MAP: Record<string, string> = {
   ativo: "ativo", demitido: "desligado", desligado: "desligado", afastado: "afastado",
-  "férias": "ferias", ferias: "ferias", inativo: "inativo", suspenso: "afastado",
-  licenca: "afastado", "licença": "afastado", aposentado: "desligado", transferido: "ativo",
-  "afast aux doenca": "afastado", "afast aux maternidade": "afastado", "atestado medico": "afastado", "licenca maternidade": "afastado",
+  ferias: "ferias", inativo: "inativo", suspenso: "afastado",
+  licenca: "afastado", aposentado: "desligado", transferido: "ativo",
 };
 const PLACEHOLDER_EMPRESA_ID = "00000000-0000-0000-0000-000000000000";
 
@@ -135,8 +134,28 @@ function buildFingerprint(row: CsvRow): string {
 }
 
 // ─── Dedupe canônico (CPF → mail → sam → matrícula) ──────────────────────────
-function normStatus(s: string): string { return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim(); }
-function mapStatus(s: string): string { return STATUS_MAP[normStatus(s)] || STATUS_MAP[(s || "").toLowerCase()] || "ativo"; }
+function normStatus(s: string): string {
+  return (s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+export function mapStatus(s: string): string {
+  const normalized = normStatus(s);
+  const exact = STATUS_MAP[normalized];
+  if (exact) return exact;
+  if (normalized.startsWith("ferias")) return "ferias";
+  if (
+    normalized.startsWith("afast") ||
+    normalized.startsWith("atestado") ||
+    normalized.startsWith("licenca") ||
+    normalized.startsWith("suspens")
+  ) return "afastado";
+  return "ativo";
+}
 function isActiveStatus(s: string): boolean { return ["ativo", "ferias", "afastado"].includes(mapStatus(s)); }
 function normalizeCpf(v: string): string { return (v || "").replace(/\D/g, "").trim(); }
 function normalizeMail(v: string): string { return (v || "").toLowerCase().trim(); }
