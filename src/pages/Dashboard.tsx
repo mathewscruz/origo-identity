@@ -9,7 +9,7 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
-  Activity, AlertTriangle, CalendarClock, ClipboardCheck, FileCheck, KeyRound,
+  AlertTriangle, CalendarClock, ClipboardCheck, FileCheck, KeyRound,
   ShieldAlert, ShieldCheck, UserCheck, Users, XCircle, Crown, FileSpreadsheet, Hourglass,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -291,7 +291,7 @@ export default function Dashboard() {
       <PageHeader
         title="Início"
         description={<>Operação IAM em tempo real{m?.gerado_em ? <span className="text-xs"> · atualizado {relTime(m.gerado_em)}</span> : null}</>}
-        actions={<><Button asChild variant="outline" size="sm"><Link to="/relatorios">Relatórios</Link></Button><Badge variant="outline" className="gap-1 text-xs"><Activity className={`h-3 w-3 ${metricsError || seriesError ? "text-destructive" : "text-success"}`} />{metricsError || seriesError ? "Dados indisponíveis" : isLoading ? "Carregando" : "Tempo real"}</Badge></>}
+        actions={<Button asChild variant="outline" size="sm"><Link to="/relatorios">Relatórios</Link></Button>}
       />
 
       <QueryState loading={isLoading} error={metricsError || (!isLoading && !m ? new Error("Métricas indisponíveis") : null)} retry={retryMetrics}>
