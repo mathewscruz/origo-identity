@@ -98,6 +98,44 @@ export type Database = {
         }
         Relationships: []
       }
+      aplicacao_chat_mensagens: {
+        Row: {
+          aplicacao_id: string
+          autor: string | null
+          created_at: string
+          id: string
+          message: Json
+          msg_id: string
+          role: string
+        }
+        Insert: {
+          aplicacao_id: string
+          autor?: string | null
+          created_at?: string
+          id?: string
+          message: Json
+          msg_id: string
+          role: string
+        }
+        Update: {
+          aplicacao_id?: string
+          autor?: string | null
+          created_at?: string
+          id?: string
+          message?: Json
+          msg_id?: string
+          role?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aplicacao_chat_mensagens_aplicacao_id_fkey"
+            columns: ["aplicacao_id"]
+            isOneToOne: false
+            referencedRelation: "aplicacoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       aplicacao_connectors: {
         Row: {
           aplicacao_id: string
@@ -172,12 +210,22 @@ export type Database = {
           created_at: string
           criticidade: Database["public"]["Enums"]["criticidade"]
           default_app_role_id: string
+          descricao: string | null
           entra_id: string | null
+          grupo_id: string | null
           id: string
+          instrucoes_acesso: string | null
+          instrucoes_revogacao: string | null
           integracao_ativa: boolean
+          modo_acesso: string
           nome: string
           origem: string
           owner: string | null
+          owner_colaborador_id: string | null
+          revisor_colaborador_id: string | null
+          teste_detalhe: string | null
+          teste_em: string | null
+          teste_status: string | null
           tipo_auth: string | null
           updated_at: string
           url: string | null
@@ -188,12 +236,22 @@ export type Database = {
           created_at?: string
           criticidade?: Database["public"]["Enums"]["criticidade"]
           default_app_role_id?: string
+          descricao?: string | null
           entra_id?: string | null
+          grupo_id?: string | null
           id?: string
+          instrucoes_acesso?: string | null
+          instrucoes_revogacao?: string | null
           integracao_ativa?: boolean
+          modo_acesso?: string
           nome: string
           origem?: string
           owner?: string | null
+          owner_colaborador_id?: string | null
+          revisor_colaborador_id?: string | null
+          teste_detalhe?: string | null
+          teste_em?: string | null
+          teste_status?: string | null
           tipo_auth?: string | null
           updated_at?: string
           url?: string | null
@@ -204,17 +262,49 @@ export type Database = {
           created_at?: string
           criticidade?: Database["public"]["Enums"]["criticidade"]
           default_app_role_id?: string
+          descricao?: string | null
           entra_id?: string | null
+          grupo_id?: string | null
           id?: string
+          instrucoes_acesso?: string | null
+          instrucoes_revogacao?: string | null
           integracao_ativa?: boolean
+          modo_acesso?: string
           nome?: string
           origem?: string
           owner?: string | null
+          owner_colaborador_id?: string | null
+          revisor_colaborador_id?: string | null
+          teste_detalhe?: string | null
+          teste_em?: string | null
+          teste_status?: string | null
           tipo_auth?: string | null
           updated_at?: string
           url?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "aplicacoes_grupo_id_fkey"
+            columns: ["grupo_id"]
+            isOneToOne: false
+            referencedRelation: "entra_grupos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aplicacoes_owner_colaborador_id_fkey"
+            columns: ["owner_colaborador_id"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aplicacoes_revisor_colaborador_id_fkey"
+            columns: ["revisor_colaborador_id"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       areas: {
         Row: {
@@ -2303,6 +2393,10 @@ export type Database = {
       }
       agent_task_solicitar: { Args: { p_task: string }; Returns: string }
       alertas_marcar_lidos: { Args: { p_ids?: string[] }; Returns: number }
+      aplicacao_responsavel_revisao: {
+        Args: { p_aplicacao_id: string }
+        Returns: string
+      }
       apply_reconcile_updates: {
         Args: { colab_updates?: Json; queue_updates?: Json }
         Returns: Json
@@ -2508,6 +2602,10 @@ export type Database = {
           resource_key: string
           target_identity: string
         }[]
+      }
+      iam_manual_task_concluir: {
+        Args: { p_id: string; p_observacao?: string }
+        Returns: Json
       }
       iam_param: {
         Args: { p_chave: string; p_default?: string }

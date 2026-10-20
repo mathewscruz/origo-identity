@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import PageHeader from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import { useCancelQueueItem, useReprocessQueueItem } from "@/hooks/mutations/useQueueActions";
 import { useCanEdit } from "@/hooks/useRole";
 import { useResourceNameResolver } from "@/lib/resourceNames";
@@ -61,6 +62,11 @@ export default function SolicitacaoDetalhePage() {
         actions={
           <>
             <Badge variant="outline" className={st?.className}>{item.status === "processing" && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}{statusLabel(item.status)}</Badge>
+            {canEdit && item.status === "pending" && (item.action_type === "manual_access_task" || item.action_type === "manual_revoke_task") && <Button size="sm" onClick={async () => {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const { data, error } = await (supabase.rpc as any)("iam_manual_task_concluir", { p_id: item.id, p_observacao: null });
+              if (error || !data?.ok) toast.error("Não foi possível confirmar", { description: error?.message ?? data?.error }); else { toast.success("Acesso manual confirmado"); window.location.reload(); }
+            }}>Confirmar que foi feito</Button>}
             {canEdit && item.status === "failed" && <Button variant="outline" size="sm" disabled={reprocess.isPending} onClick={() => reprocess.mutate(item.id)}><RotateCcw className="mr-1 h-4 w-4" />Reenviar ao agente</Button>}
             {canEdit && item.status === "waiting_approval" && <Button size="sm" asChild><Link to={`/fila-provisionamento?tab=aprovacao&q=${encodeURIComponent(item.target_identity || "")}`}><ShieldCheck className="mr-1 h-4 w-4" />Decidir</Link></Button>}
             {canEdit && ["pending", "waiting_approval"].includes(item.status) && <Button variant="outline" size="sm" className="text-destructive" onClick={() => cancel.mutate({ queueId: item.id, motivo: "Cancelado no detalhe" })}><Ban className="mr-1 h-4 w-4" />Cancelar</Button>}

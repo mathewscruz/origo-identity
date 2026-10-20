@@ -16,6 +16,7 @@ import EventoJMLDetalhePage from "./pages/eventos-jml/EventoJMLDetalhePage";
 import EventosJMLPage from "./pages/eventos-jml/EventosJMLPage";
 import AplicacoesPage from "./pages/aplicacoes/AplicacoesPage";
 import AplicacaoDetalhePage from "./pages/aplicacoes/AplicacaoDetalhePage";
+import ConectarSistemaPage, { NovoSistemaRedirect } from "./pages/aplicacoes/ConectarSistemaPage";
 import PerfisAcessoPage from "./pages/perfis-acesso/PerfisAcessoPage";
 import PerfilAcessoDetalhePage from "./pages/perfis-acesso/PerfilAcessoDetalhePage";
 import ExcecoesPage from "./pages/excecoes/ExcecoesPage";
@@ -88,6 +89,8 @@ const App = () => (
               </Route>
               <Route path="/eventos-jml/:id" element={<EventoJMLDetalhePage />} />
               <Route path="/aplicacoes" element={<AplicacoesPage />} />
+              <Route path="/aplicacoes/conectar" element={<NovoSistemaRedirect />} />
+              <Route path="/aplicacoes/:id/conectar" element={<ConectarSistemaPage />} />
               <Route path="/aplicacoes/:id" element={<AplicacaoDetalhePage />} />
               <Route path="/perfis-acesso" element={<PerfisAcessoPage />} />
               <Route path="/perfis-acesso/:id" element={<PerfilAcessoDetalhePage />} />

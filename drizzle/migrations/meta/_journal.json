@@ -29,6 +29,27 @@
       "when": 1792499415438,
       "tag": "0003_alertas_notificado_hermes",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792499848251,
+      "tag": "0004_conectar_sistemas",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792499875042,
+      "tag": "0005_revisao_usa_revisor",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792499891040,
+      "tag": "0006_responsavel_revisao_email",
+      "breakpoints": true
     }
   ]
 }

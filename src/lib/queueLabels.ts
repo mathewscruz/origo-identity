@@ -31,6 +31,8 @@ export const QUEUE_ACTION_LABELS: Record<string, string> = {
   disable_user_app: "Desabilitar em app externo",
   delete_user_app: "Excluir em app externo",
   review_orphan_entra: "Revisar conta órfã (Entra)",
+  manual_access_task: "Dar acesso manual",
+  manual_revoke_task: "Retirar acesso manual",
 };
 
 export function actionLabel(action: string): string {
