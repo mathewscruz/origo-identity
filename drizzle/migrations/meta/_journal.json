@@ -50,6 +50,13 @@
       "when": 1792499891040,
       "tag": "0006_responsavel_revisao_email",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792500455986,
+      "tag": "0007_deprecar_backups_legados_julho",
+      "breakpoints": true
     }
   ]
 }
