@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, FileSpreadsheet, Save, ShieldCheck, SlidersHorizontal, Bot } from "lucide-react";
+import { CalendarClock, FileSpreadsheet, Save, ShieldCheck, AtSign, ChevronDown, AlertTriangle, History, Undo2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,7 +23,7 @@ interface Group { title: string; description: string; icon: typeof ShieldCheck; 
 
 const GROUPS: Group[] = [
   {
-    title: "Aprovação e execução", description: "Regras de quem aprova e como o Órigo Agente (único executor) recebe as ações.", icon: ShieldCheck,
+    title: "Aprovação e execução", description: "Quem aprova e como o Hermes recebe as ações.", icon: ShieldCheck,
     fields: [
       { key: "iam_approval_required", label: "Aprovação obrigatória", help: "Toda ação (criação, alteração, remoção, grupos, licenças, apps, reset de senha) aguarda aprovação de um administrador antes de ir para o agente.", type: "switch" },
       { key: "iam_enable_requires_approval", label: "Reabilitação exige aprovação", help: "Retorno de férias/afastamento, reversão de pré-leaver e recontratação sempre passam por aprovação, mesmo com a aprovação obrigatória desligada.", type: "switch" },
@@ -31,40 +31,38 @@ const GROUPS: Group[] = [
     ],
   },
   {
-    title: "Base do RH (SharePoint / CSV)", description: "Fonte autoritativa de colaboradores. Os limites evitam desligamento em massa por arquivo incompleto.", icon: FileSpreadsheet,
+    title: "Base do RH", description: "De onde vem a lista de colaboradores. Os limites evitam desligamentos em massa por arquivo incompleto.", icon: FileSpreadsheet,
     fields: [
-      { key: "sharepoint_rh_site", label: "Site SharePoint", help: "Formato host:/sites/nome (Graph).", type: "text", wide: true },
+      { key: "sharepoint_rh_site", label: "Site SharePoint", help: "Endereço do site, ex.: empresa.sharepoint.com:/sites/RH", type: "text", wide: true },
       { key: "sharepoint_rh_pasta", label: "Pasta", help: "Dentro de Documentos.", type: "text" },
       { key: "sharepoint_rh_prefixo", label: "Prefixo do arquivo", help: "O arquivo mais recente com esse prefixo é importado.", type: "text" },
       { key: "csv_leaver_limite_pct", label: "Limite de desligamentos (%)", help: "Percentual de ativos ausentes no arquivo a partir do qual nada é desligado (base ≥ 20 ativos).", type: "number", min: 0, max: 100, suffix: "%" },
       { key: "csv_leaver_limite_abs", label: "Limite de desligamentos (absoluto)", help: "Número máximo de desligamentos por arquivo.", type: "number", min: 0 },
+    ],
+  },
+  {
+    title: "Identidade e e-mail", description: "Como os e-mails e as contas das pessoas são gerados.", icon: AtSign,
+    fields: [
       { key: "csv_gerar_email_corporativo", label: "Gerar e-mail corporativo", help: "Quando o RH não informa e-mail do domínio, gera nome.sobrenome@domínio na criação (nunca regenera).", type: "switch" },
       { key: "csv_email_dominio", label: "Domínio do e-mail corporativo", help: "Usado para colaboradores.", type: "text" },
       { key: "terceiro_email_dominio", label: "Domínio do e-mail de terceiros", help: "Usado no cadastro de terceiros.", type: "text" },
-      { key: "ad_upn_dominio", label: "Domínio UPN do AD", help: "UPN das contas criadas no Active Directory pelo agente.", type: "text" },
+      { key: "ad_upn_dominio", label: "Domínio de login da rede", help: "Domínio do login das contas criadas na rede (AD).", type: "text" },
     ],
   },
   {
     title: "Governança periódica", description: "Revisões, revalidação de terceiros, detecção de órfãos e limiares de alerta.", icon: CalendarClock,
     fields: [
-      { key: "revisao_periodicidade_dias", label: "Revisões por aplicação", help: "Dias entre campanhas automáticas por aplicação (o owner decide quem mantém/perde; o agente executa).", type: "number", min: 7, suffix: "dias" },
+      { key: "revisao_periodicidade_dias", label: "Revisões por aplicação", help: "Dias entre campanhas automáticas por aplicação (o dono decide quem mantém ou perde; o Hermes executa).", type: "number", min: 7, suffix: "dias" },
       { key: "revisao_gestor_periodicidade_dias", label: "Revisões por gestor", help: "Dias entre campanhas em que cada gestor revisa os acessos da própria equipe. 0 desliga.", type: "number", min: 0, suffix: "dias" },
       { key: "terceiro_revalidacao_dias", label: "Revalidação de terceiros a cada", help: "Periodicidade: o responsável recebe por e-mail um link para manter ou desligar cada terceiro.", type: "number", min: 7, suffix: "dias" },
       { key: "terceiro_revalidacao_prazo_dias", label: "Prazo para revalidar terceiros", help: "Dias que o responsável tem para responder. Sem resposta até o prazo, os terceiros da campanha são desativados automaticamente (contas e acessos removidos pelo agente).", type: "number", min: 1, suffix: "dias" },
       { key: "licenca_critico_pct", label: "Licença crítica a partir de", help: "Percentual de uso que marca a licença como crítica.", type: "number", min: 1, max: 100, suffix: "%" },
-      { key: "priv_role_max_membros", label: "Máx. membros por role privilegiada", help: "Acima disso a sincronização de roles gera alerta crítico.", type: "number", min: 1 },
-      { key: "iam_orphan_ignore_prefixes", label: "Prefixos ignorados (órfãos)", help: "UPNs com esses prefixos (separados por vírgula) não entram na revisão de contas órfãs.", type: "text", wide: true },
+      { key: "priv_role_max_membros", label: "Máx. pessoas por função privilegiada", help: "Acima disso o sistema gera um alerta crítico.", type: "number", min: 1 },
+      { key: "iam_orphan_ignore_prefixes", label: "Prefixos ignorados (órfãos)", help: "Contas que começam com esses textos (separados por vírgula) não entram na revisão de contas órfãs.", type: "text", wide: true },
     ],
   },
 ];
 
-const CRON = [
-  { fn: "sync-sharepoint-csv", label: "Ciclo diário do RH (importação)", when: "06:30 UTC (03:30 BRT)", desc: "SharePoint → base de colaboradores" },
-  { fn: "reconcile-identities", label: "Ciclo diário do RH (reconciliação)", when: "após a importação", desc: "Base × Entra → fila para aprovação" },
-  { fn: "expire-access-exceptions", label: "Expiração de exceções", when: "05:00 UTC", desc: "Exceções vencidas → remoção pelo acesso efetivo" },
-  { fn: "auto-recertification", label: "Recertificação e terceiros", when: "05:15 UTC", desc: "Revisões por aplicação, expiração/revalidação de terceiros" },
-  { fn: "audit-reconciliation", label: "Auditoria da reconciliação", when: "domingo 04:00 UTC", desc: "Amostragem base × Entra" },
-];
 
 export default function ParametrosPage() {
   const { data: parametros, isLoading } = useParametros();
@@ -79,15 +77,6 @@ export default function ParametrosPage() {
   useEffect(() => { setValues(stored); }, [stored]);
   const dirty = useMemo(() => Object.keys(values).filter((k) => values[k] !== stored[k]), [values, stored]);
 
-  const { data: cronRuns } = useQuery({
-    queryKey: ["auditoria_cron"],
-    queryFn: async () => {
-      const { data } = await (supabase as Row).from("auditoria").select("timestamp, resumo").eq("acao", "agent_task").order("timestamp", { ascending: false }).limit(100);
-      const last: Record<string, string> = {};
-      for (const r of (data ?? []) as Row[]) { const fn = String(r.resumo || "").replace("Hermes disparou ", ""); if (!last[fn]) last[fn] = r.timestamp; }
-      return last;
-    },
-  });
 
   const set = (k: string, v: string) => setValues((s) => ({ ...s, [k]: v }));
 
