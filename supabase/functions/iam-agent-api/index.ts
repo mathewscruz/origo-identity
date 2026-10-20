@@ -219,7 +219,7 @@ Deno.serve(async (req) => {
     // pedidos reservados há mais de 30 min sem resposta voltam a pendente (nunca apaga)
     await supabase.from("agent_tasks").update({ status: "pending", started_at: null, owner: null })
       .eq("status", "running").lt("started_at", new Date(Date.now() - 30 * 60000).toISOString());
-    const { data: pendingTasks } = await supabase.from("agent_tasks").select("id, task").eq("status", "pending").order("created_at").limit(5);
+    const { data: pendingTasks } = await supabase.from("agent_tasks").select("id, task").eq("status", "pending").neq("task", "analyze-app-docs").order("created_at").limit(5);
     const tasks: { id: string; task: string }[] = [];
     for (const t of (pendingTasks || []) as { id: string; task: string }[]) {
       const { data: got } = await supabase.from("agent_tasks").update({ status: "running", started_at: new Date().toISOString(), owner })
