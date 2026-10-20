@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import QueryState from "@/components/QueryState";
 import { completedQueueLink } from "@/lib/dashboardFilters";
 import PeopleLifecycleChart from "@/components/PeopleLifecycleChart";

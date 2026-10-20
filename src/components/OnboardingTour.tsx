@@ -109,7 +109,7 @@ export default function OnboardingTour({ pageKey, steps, delay = 800 }: Onboardi
     }
     const timer = setTimeout(() => {
       // Double-check right before showing (in case another instance marked it)
-      if (!localStorage.getItem(key) && !localStorage.getItem(globalKey) && !dismissedRef.current) {
+      if (pageKey === "dashboard" && !localStorage.getItem(key) && !localStorage.getItem(globalKey) && !dismissedRef.current) {
         setVisible(true);
       }
     }, delay);
