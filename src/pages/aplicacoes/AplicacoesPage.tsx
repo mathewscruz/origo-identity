@@ -132,7 +132,7 @@ export default function AplicacoesPage() {
         actions={<>
           <div className="flex items-center gap-3">
             <AutoUpdatedHint tasks={["sync-entra-apps", "sync-app-profiles"]} />
-            {canEdit && <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Aplicação</Button>}
+            {canEdit && <Button onClick={() => navigate("/aplicacoes/conectar")}><Plus className="mr-1 h-4 w-4" />Conectar sistema</Button>}
           </div>
         </>}
       />
@@ -191,7 +191,7 @@ export default function AplicacoesPage() {
             <EmptyState message="Nenhuma aplicação encontrada" size="lg" />
             <p className="text-sm text-muted-foreground mt-1">As aplicações do Azure chegam automaticamente; você também pode criar uma manualmente</p>
             <div className="mt-4 flex gap-2 justify-center">
-              {canEdit && <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Aplicação</Button>}
+              {canEdit && <Button onClick={() => navigate("/aplicacoes/conectar")}><Plus className="mr-1 h-4 w-4" />Conectar sistema</Button>}
             </div>
           </div>
         ) : (
