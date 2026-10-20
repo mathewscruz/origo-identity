@@ -122,3 +122,15 @@ export function activitySentence(item: ActivityLike): string {
   const fn = AUD[item.acao];
   return fn ? fn(item.pessoa) : "";
 }
+
+/**
+ * Quem registrou a atividade foi o próprio Órigo Agente (Hermes)?
+ * Aceita as formas usadas hoje no registro: "origo-agente", "hermes-agent",
+ * "hermes-agent@origoenergia.com.br", "Origo agent" e variações com hífen, espaço ou undercore.
+ */
+export function isHermesActor(ator: string | null | undefined): boolean {
+  if (!ator) return false;
+  const a = ator.trim().toLowerCase().replace(/[\s_]+/g, "-");
+  return /^(hermes|origo-agent|origo-agent)/.test(a);
+}
+
