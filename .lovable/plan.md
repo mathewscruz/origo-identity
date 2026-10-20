@@ -1,17 +1,17 @@
 # Painel 100% operacional, atividade recente clara e dashboard moderno
 
-## 1. O que falta para operar tudo pelo painel (sem ir ao Hermes)
+## 1. Sistema automático, sem botões de sincronização
 
-Lacunas confirmadas hoje:
+Princípio: o usuário só aprova, decide e consulta. Sincronizar, verificar base e reconciliar acontecem sozinhos.
 
-- **Quarentena do RH sem tela**: 3.312 pendências abertas e nenhuma página para revisar. Criar a tela "RH em quarentena" (em Pessoas) com busca, filtros por motivo, paginação e decisão auditada (resolver / descartar). Evitar nova pendência repetida de "ausente no CSV" para a mesma pessoa (plano já aprovado).
-- **Acompanhamento da importação do RH**: painel somente leitura em Integrações (arquivo, horário, situação, progresso, quantidades, erro completo). Links do Início passam a chegar nele.
-- **Importação RH travada como "Ignorado"**: aplicar a correção já aprovada (reserva de execução com recuperação de travas expiradas; permitir voltar a um arquivo anterior).
-- **Rotinas pelo painel**: "Executar agora" existe, mas o agente do servidor ainda não atende pedidos. Mostrar na aba Hermes Agent o estado de cada pedido (aguardando / em execução / concluído / erro com mensagem) e um aviso claro enquanto o agente não estiver na versão nova. Adicionar campo "Versão esperada do agente" em Parâmetros.
-- **Ligar/desligar a agenda pelo painel**: interruptor "Agenda automática" (parâmetro lido pelo agente a cada ciclo), em vez de depender de `--schedule` no servidor. Exige atualizar o agente uma vez.
-- **Fila**: ações em lote já existem; acrescentar "Reprocessar falhas por tipo" e "Cancelar selecionados" com motivo, ambos auditados, só para administradores.
-- **Alerta de agente sem sinal**: alerta no sino quando o agente fica mais de 10 min sem contato.
-- **Fora do escopo** (depende de integração de cada aplicação): criar/alterar usuários dentro de aplicações externas.
+- **Remover botões e chaves** de sincronização, verificação de base, "Executar agora", ligar/desligar agenda e similares em todas as telas (Integrações, Pessoas, Aplicações, Licenças, Grupos, Hermes Agent). Fica apenas o botão de emergência "Pausar agente" (admin).
+- **Automático ao acessar ou alterar**: ao abrir uma página (ex.: Aplicações, Licenças, Privilegiados) ou ao salvar uma alteração (perfil, cargo, pessoa), o painel registra um pedido de atualização para o Hermes, com limite de frequência (ex.: no máximo um por rotina a cada 15 min) para não sobrecarregar. A tela mostra discretamente "Atualizado há X min".
+- **Agenda sempre ligada**: o agente roda as rotinas diárias por padrão (sem `--schedule`), respeitando só a pausa de emergência.
+- **Quarentena e pendências → Hermes**: as 3.312 pendências da quarentena do RH e itens sem decisão clara são entregues ao Hermes, que resolve os casos com regra óbvia (ex.: ausência repetida da mesma pessoa, matrícula já resolvida) e registra cada decisão na auditoria. O que ele não conseguir decidir fica numa lista "Precisa de você" em Pessoas, só leitura + decisão.
+- **Avisos por Telegram**: quando o Hermes precisar de um parâmetro ou decisão sua (ex.: valor faltando, regra ambígua, agente com erro, versão diferente), envia mensagem no Telegram com o que falta e o link da tela. Requer conectar um bot do Telegram e informar o chat de destino.
+- **Acompanhamento do RH** (somente leitura) em Integrações e correção da importação travada como "Ignorado" (plano já aprovado).
+- **Alerta de agente sem sinal**: no sino e no Telegram após 10 min sem contato.
+- **Fora do escopo**: criar/alterar usuários dentro de aplicações externas (depende de integração de cada aplicação).
 
 ## 2. Atividade recente com linguagem de negócio
 
@@ -49,8 +49,10 @@ Importação do RH concluída: 16 readmitidos, 7 desligados
 
 ## Detalhes técnicos
 
-- Nova migration: RPC `dashboard_kpis(p_days)` com variações; `quarentena_decidir` revisada/auditada; parâmetros `agent_schedule_enabled`; alerta `agent_offline` gerado em `iam-agent-api` (sem pg_cron, conforme AGENTS.md).
+- Nova migration: RPC `dashboard_kpis(p_days)` com variações; RPC `agent_refresh_request(p_task)` com throttle por rotina (usado ao abrir páginas e via triggers em alterações, gravando em `agent_tasks` — sem pg_cron, o Hermes continua o único executor, conforme AGENTS.md); novas tasks `quarantine_triage` e `pending_triage` na allowlist; `quarentena_decidir` auditada; alerta `agent_offline` em `iam-agent-api`.
+- Hook `useAutoRefresh(task)` nas páginas; remoção dos botões/switches de sync e do "Executar agora".
+- Telegram: conector Telegram + Edge Function `notify-telegram` (chamada pelo Hermes via `iam-agent-api` e por alertas críticos); parâmetro `telegram_chat_id`. Atualizar `AGENTS.md` e `roadmap.md`.
 - `dashboard_activity`: devolver ação normalizada e filtrar ações técnicas; textos montados em `src/lib/activityLabels.ts` com teste unitário.
-- Executor Python: ler `agent_schedule_enabled`; precisa ser levado ao servidor.
+- Executor Python: agenda ligada por padrão, tasks de triagem com regras determinísticas e envio de "preciso de parâmetro" ao Telegram; precisa ser levado ao servidor.
 - Componentes: `KpiCard` com sparkline (recharts), novos gráficos no `Dashboard.tsx`, página de quarentena reutilizando padrões de tabela existentes.
 - Sem importação RH real, sem reconcile-identities, sem reprocessar fila, sem alterar identidades durante a implementação.
