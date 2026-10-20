@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Plus, AlertTriangle, Pencil, Trash2, RefreshCw, Search, Monitor, Globe } from "lucide-react";
+import { AutoUpdatedHint } from "@/components/AutoUpdatedHint";
 import { Progress } from "@/components/ui/progress";
 import { useLicencas, useAplicacoes, useEntraLicencas, useLicencasExternasUso, useParametros } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -199,9 +200,7 @@ export default function LicencasPage() {
         description="Inventário de licenças Microsoft e externas"
         actions={<>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" onClick={handleSync} disabled={syncing} title="Sincronizar licenças Microsoft">
-              <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-            </Button>
+            <AutoUpdatedHint tasks="sync-entra-licencas" />
             {canEdit && <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Licença Externa</Button>}
           </div>
         </>}

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Search, CheckCircle, Pencil, Trash2, RefreshCw, Globe, Cloud, AlertTriangle, Users } from "lucide-react";
+import { AutoUpdatedHint } from "@/components/AutoUpdatedHint";
 import { useAplicacoes } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
 import TablePagination, { usePagination } from "@/components/TablePagination";
@@ -129,15 +130,8 @@ export default function AplicacoesPage() {
         title="Aplicações"
         description="Catálogo corporativo de aplicações"
         actions={<>
-          <div className="flex gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="icon" onClick={handleSync} disabled={syncing}>
-                  <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Sincronizar apps do Azure</TooltipContent>
-            </Tooltip>
+          <div className="flex items-center gap-3">
+            <AutoUpdatedHint tasks={["sync-entra-apps", "sync-app-profiles"]} />
             {canEdit && <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Aplicação</Button>}
           </div>
         </>}
@@ -195,11 +189,8 @@ export default function AplicacoesPage() {
         ) : paginatedItems.length === 0 ? (
           <div className="p-12 text-center">
             <EmptyState message="Nenhuma aplicação encontrada" size="lg" />
-            <p className="text-sm text-muted-foreground mt-1">Sincronize com o Azure ou crie uma aplicação manualmente</p>
+            <p className="text-sm text-muted-foreground mt-1">As aplicações do Azure chegam automaticamente; você também pode criar uma manualmente</p>
             <div className="mt-4 flex gap-2 justify-center">
-              <Button variant="outline" onClick={handleSync} disabled={syncing}>
-                <RefreshCw className={`mr-1 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />Sincronizar Azure
-              </Button>
               {canEdit && <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Aplicação</Button>}
             </div>
           </div>

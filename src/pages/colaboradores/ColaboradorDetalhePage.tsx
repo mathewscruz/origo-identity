@@ -254,19 +254,6 @@ export default function ColaboradorDetalhePage() {
     setRevertOpen(false); setPreLeaverMotivo(""); invalidatePessoa();
   }
 
-  const handleSync = async () => {
-    setSyncing(true);
-    const res = await syncSingleUserAccess(id!);
-    setSyncing(false);
-    if (res.success) {
-      toast({ title: "Acessos sincronizados com o Entra ID", description: res.message || `Grupos: ${res.groups}, licenças: ${res.licenses}, apps: ${res.apps} — ${res.queued} importados`, variant: "success" });
-      await Promise.all([queryClient.invalidateQueries({ queryKey: ["colab_individual_queue", id] }), queryClient.invalidateQueries({ queryKey: ["iam_queue"] }), queryClient.invalidateQueries({ queryKey: ["colaborador", id] })]);
-      await queryClient.refetchQueries({ queryKey: ["colab_individual_queue", id] });
-    } else {
-      toast({ title: "Erro na sincronização", description: res.message, variant: "destructive" });
-    }
-  };
-
   const onStatusChange = async (newStatus: string) => {
     const oldStatus = pessoa.status;
     if (newStatus === oldStatus) return;
@@ -333,7 +320,7 @@ export default function ColaboradorDetalhePage() {
                 {suspenso && <Badge variant="outline" className="gap-1 border-destructive/30 bg-destructive/15 text-destructive"><ShieldAlert className="h-3 w-3" />Suspensão preventiva{p.suspenso_em ? ` desde ${new Date(p.suspenso_em).toLocaleDateString("pt-BR")}` : ""}</Badge>}
                 {p.desligado_manual && <Tooltip><TooltipTrigger asChild><span className="inline-flex"><Badge variant="outline" className="gap-1 border-amber-500/30 bg-amber-500/15 text-amber-700"><ShieldAlert className="h-3 w-3" />Desligado manualmente</Badge></span></TooltipTrigger><TooltipContent>A base do RH não reativa esta pessoa até refletir o desligamento.</TooltipContent></Tooltip>}
                 {p.entra_id ? <Tooltip><TooltipTrigger asChild><span className="inline-flex"><Badge variant="outline" className="gap-1 border-info/30 bg-info/10 text-info"><Cloud className="h-3 w-3" />Entra ID</Badge></span></TooltipTrigger><TooltipContent>Conta vinculada no Entra ID</TooltipContent></Tooltip>
-                  : <Tooltip><TooltipTrigger asChild><span className="inline-flex"><Badge variant="outline" className="gap-1 border-warning/30 bg-warning/10 text-warning"><CloudOff className="h-3 w-3" />Sem conta no Entra</Badge></span></TooltipTrigger><TooltipContent>Nenhuma conta vinculada — o agente cria/vincula no próximo ciclo ou use "Sincronizar com o Entra".</TooltipContent></Tooltip>}
+                  : <Tooltip><TooltipTrigger asChild><span className="inline-flex"><Badge variant="outline" className="gap-1 border-warning/30 bg-warning/10 text-warning"><CloudOff className="h-3 w-3" />Sem conta no Entra</Badge></span></TooltipTrigger><TooltipContent>Nenhuma conta vinculada — o agente cria/vincula no próximo ciclo </TooltipContent></Tooltip>}
               </div>
               <p className="mt-0.5 text-sm text-muted-foreground">{cargo} · {area} · {empresa}</p>
               {suspenso && p.suspenso_motivo && <p className="mt-1 text-xs text-destructive">Motivo da suspensão: {p.suspenso_motivo}</p>}
@@ -348,7 +335,6 @@ export default function ColaboradorDetalhePage() {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild><Button variant="outline" size="sm" aria-label="Mais ações"><MoreHorizontal className="h-4 w-4" /><span className="ml-1 hidden sm:inline">Mais</span></Button></DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-64">
-                    <DropdownMenuItem onClick={handleSync} disabled={syncing}><RefreshCw className={cn("mr-2 h-4 w-4", syncing && "animate-spin")} />Sincronizar com o Entra ID</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => { setResetResult(null); setResetMotivo(""); setResetDialogOpen(true); }}><KeyRound className="mr-2 h-4 w-4" />Resetar senha (pelo agente)</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setStartJmlOpen(true)}><Workflow className="mr-2 h-4 w-4" />Iniciar evento JML</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => navigate(`/colaboradores?edit=${id}`)}><Pencil className="mr-2 h-4 w-4" />Editar cadastro</DropdownMenuItem>
@@ -421,7 +407,7 @@ export default function ColaboradorDetalhePage() {
                   <li className="flex items-center justify-between gap-2"><span className="text-muted-foreground">Última importação do RH</span><span className="text-xs">{p.ultima_importacao_id ? "vinda do CSV" : "manual"}</span></li>
                   <li className="flex items-center justify-between gap-2"><span className="text-muted-foreground">Cadastro atualizado</span><span className="text-xs">{p.updated_at ? new Date(p.updated_at).toLocaleString("pt-BR") : "—"}</span></li>
                 </ul>
-                {canEdit && <Button variant="outline" size="sm" className="mt-4 w-full" onClick={handleSync} disabled={syncing}><RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", syncing && "animate-spin")} />{syncing ? "Sincronizando…" : "Sincronizar acessos com o Entra ID"}</Button>}
+                {syncing && <p className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground"><RefreshCw className="h-3 w-3 animate-spin" />Atualizando acessos do Entra ID…</p>}
               </CardContent>
             </Card>
           </div>

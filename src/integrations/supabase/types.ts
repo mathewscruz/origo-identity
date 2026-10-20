@@ -2293,6 +2293,11 @@ export type Database = {
         Returns: number
       }
       admin_usuarios_resumo: { Args: never; Returns: Json }
+      agent_offline_check: { Args: never; Returns: undefined }
+      agent_refresh_request: {
+        Args: { p_min_interval_min?: number; p_task: string }
+        Returns: Json
+      }
       agent_task_solicitar: { Args: { p_task: string }; Returns: string }
       alertas_marcar_lidos: { Args: { p_ids?: string[] }; Returns: number }
       apply_reconcile_updates: {
@@ -2401,6 +2406,7 @@ export type Database = {
         }
         Returns: Json
       }
+      dashboard_kpis: { Args: { p_days?: number }; Returns: Json }
       dashboard_metrics: { Args: never; Returns: Json }
       dashboard_people_series: { Args: { p_days?: number }; Returns: Json }
       dashboard_series: { Args: { p_days?: number }; Returns: Json }
@@ -2628,6 +2634,7 @@ export type Database = {
         Args: { p_id: string; p_observacao?: string; p_status: string }
         Returns: Json
       }
+      quarentena_triagem: { Args: never; Returns: Json }
       revisao_cancelar: {
         Args: { p_motivo?: string; p_revisao_id: string }
         Returns: Json

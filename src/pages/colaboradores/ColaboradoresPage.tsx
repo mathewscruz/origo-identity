@@ -311,17 +311,7 @@ export default function ColaboradoresPage() {
         title="Colaboradores"
         description={`${mapped.filter((c) => c.status === "ativo").length} ativos · ${mapped.length} no total · origem RH (SharePoint) ou cadastro manual`}
         actions={<div data-tour="actions" className="flex flex-wrap gap-2">
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="icon" disabled={syncing} onClick={handleSyncAll}>
-                  <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Sincronizar acessos do Entra ID</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <Button variant="outline" onClick={() => navigate("/configuracoes/integracoes")}><Upload className="mr-1 h-4 w-4" />Importar Base</Button>
+          <Button variant="outline" onClick={() => navigate("/colaboradores/quarentena")}><AlertTriangle className="mr-1 h-4 w-4" />Precisa de você</Button>
           <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Colaborador</Button>
         </div>}
       />

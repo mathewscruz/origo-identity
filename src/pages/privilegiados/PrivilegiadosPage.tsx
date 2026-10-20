@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Crown, RefreshCw, Search, Shield, ShieldAlert, Users, Link as LinkIcon, Plus, Trash2, KeyRound } from "lucide-react";
+import { AutoUpdatedHint } from "@/components/AutoUpdatedHint";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import TablePagination from "@/components/TablePagination";
@@ -172,14 +173,11 @@ export default function PrivilegiadosPage() {
       <PageHeader
         title="Acessos Privilegiados"
         icon={Crown}
-        description={<>Funções administrativas do Microsoft Entra ID, atribuições permanentes e PIM.<span className={`ml-2 font-medium ${freshnessColor(lastSync)}`}>• Última sincronização: {relativeTime(lastSync)}</span></>}
+        description={<>Funções administrativas do Microsoft Entra ID, atribuições permanentes e PIM.<span className={`ml-2 font-medium ${freshnessColor(lastSync)}`}>• Atualizado automaticamente {relativeTime(lastSync)}</span></>}
         actions={<>
+          <AutoUpdatedHint tasks="sync-entra-roles" />
           <Button variant="outline" onClick={() => setAdminOpen(true)}>
             <KeyRound className="h-4 w-4 mr-2" /> Contas administrativas
-          </Button>
-          <Button onClick={handleSync} disabled={syncing}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Sincronizando..." : "Sincronizar com Entra ID"}
           </Button>
         </>}
       />
@@ -229,7 +227,7 @@ export default function PrivilegiadosPage() {
                 <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
               ) : paginated.length === 0 ? (
                 <TableRow><TableCell colSpan={5}>
-                  <EmptyState message={totalRoles === 0 ? 'Nenhuma role sincronizada. Clique em "Sincronizar com Entra ID".' : "Nenhuma role encontrada com os filtros aplicados."} />
+                  <EmptyState message={totalRoles === 0 ? "As roles do Entra ID chegam automaticamente em alguns minutos." : "Nenhuma role encontrada com os filtros aplicados."} />
                 </TableCell></TableRow>
               ) : paginated.map((role: any) => {
                 const count = memberCountMap.get(role.id) || 0;

@@ -6,7 +6,7 @@ import PeopleLifecycleChart from "@/components/PeopleLifecycleChart";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
   Activity, AlertTriangle, Bot, CalendarClock, ClipboardCheck, FileCheck, KeyRound,
@@ -23,6 +23,78 @@ import { tourSteps } from "@/lib/tourSteps";
 import { useDashboardMetrics, useDashboardSeries, useParametro, type DashboardSeriesPoint } from "@/hooks/useOrigoData";
 import { actionLabel, QUEUE_STATUS_META } from "@/lib/queueLabels";
 import ActivityFeed from "@/components/ActivityFeed";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { TrendingDown, TrendingUp } from "lucide-react";
+
+function useDashboardKpis(days: number) {
+  return useQuery({
+    queryKey: ["dashboard_kpis", days],
+    queryFn: async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase.rpc as any)("dashboard_kpis", { p_days: days });
+      if (error) throw error;
+      return data as Row;
+    },
+    staleTime: 15_000,
+  });
+}
+
+/* ── cartão de indicador com variação e mini-gráfico ── */
+function KpiCard({ label, value, prev, spark, color, to, hint, invert }: { label: string; value: number; prev?: number; spark?: number[]; color: string; to: string; hint?: string; invert?: boolean }) {
+  const delta = prev === undefined ? null : prev === 0 ? (value > 0 ? 100 : 0) : Math.round(((value - prev) / prev) * 100);
+  const good = delta === null ? true : invert ? delta <= 0 : delta >= 0;
+  const data = (spark ?? []).map((v, i) => ({ i, v }));
+  return (
+    <Link to={to} className="group">
+      <Card className="h-full overflow-hidden transition-all hover:-translate-y-0.5 hover:border-primary/40">
+        <CardContent className="p-4">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
+          <div className="mt-1 flex items-end justify-between gap-2">
+            <span className="text-3xl font-semibold tabular-nums">{value.toLocaleString("pt-BR")}</span>
+            {delta !== null && (
+              <span className={`flex items-center gap-0.5 text-xs font-medium ${good ? "text-success" : "text-destructive"}`}>
+                {delta >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}{delta > 0 ? "+" : ""}{delta}%
+              </span>
+            )}
+          </div>
+          {hint && <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{hint}</p>}
+          {data.length > 1 && (
+            <div className="-mx-4 -mb-4 mt-2 h-10">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={data} margin={{ top: 2, bottom: 0, left: 0, right: 0 }}>
+                  <defs><linearGradient id={`g-${label}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity={0.35} /><stop offset="100%" stopColor={color} stopOpacity={0} /></linearGradient></defs>
+                  <Area type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} fill={`url(#g-${label})`} isAnimationActive={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </Link>
+  );
+}
+
+/* ── uso de licenças ── */
+function LicensesPanel({ rows }: { rows: { nome: string; total: number; em_uso: number }[] }) {
+  return (
+    <Card className="h-full">
+      <CardHeader className="pb-2"><div className="flex items-center justify-between"><CardTitle className="text-base">Licenças em uso</CardTitle><Link to="/licencas" className="text-xs text-primary hover:underline">Ver todas</Link></div></CardHeader>
+      <CardContent className="space-y-3">
+        {rows.length === 0 ? <EmptyState message="Sem licenças sincronizadas." /> : rows.map((r) => {
+          const pct = r.total > 0 ? Math.round((r.em_uso / r.total) * 100) : 0;
+          const tone = pct >= 90 ? "bg-destructive" : pct >= 75 ? "bg-warning" : "bg-primary";
+          return (
+            <div key={r.nome} className="space-y-1">
+              <div className="flex items-center justify-between gap-3 text-sm"><span className="truncate" title={r.nome}>{r.nome}</span><span className="shrink-0 text-xs text-muted-foreground"><span className="font-semibold text-foreground tabular-nums">{r.em_uso}</span>/{r.total} · {pct}%</span></div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-muted"><div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.min(100, pct)}%` }} /></div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = any;
@@ -176,7 +248,7 @@ function GovernanceList({ m, loading }: { m: Row; loading: boolean }) {
     { icon: ShieldAlert, label: "Conflitos de acesso (SoD)", value: m?.sod_violacoes ?? 0, to: "/sod", tone: "destructive" },
     { icon: KeyRound, label: "Licenças críticas", value: m?.licencas_criticas ?? 0, to: "/licencas", tone: "warning" },
     { icon: Users, label: "Contas órfãs no Entra", value: m?.fila_orfaos ?? 0, to: "/fila-provisionamento?tab=aprovacao&action=review_orphan_entra", tone: "warning" },
-    { icon: FileSpreadsheet, label: "RH em quarentena", value: m?.quarentena ?? 0, to: "/configuracoes/integracoes", tone: "warning" },
+    { icon: FileSpreadsheet, label: "RH: precisa de você", value: m?.quarentena ?? 0, to: "/colaboradores/quarentena", tone: "warning" },
     { icon: Users, label: "Ativos sem conta Entra", value: m?.colab_sem_entra ?? 0, to: "/colaboradores?status=ativo", tone: "info" },
     { icon: Users, label: "Ativos sem cargo", value: m?.colab_sem_cargo ?? 0, to: "/colaboradores?status=ativo", tone: "muted" },
     { icon: Crown, label: "Acessos privilegiados", value: m?.priv_membros ?? 0, to: "/privilegiados", tone: "muted" },
@@ -228,6 +300,7 @@ export default function Dashboard() {
   const toggle = (key: string) => setHidden((h) => { const n = new Set(h); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const tick = period === 7 ? 0 : period === 30 ? 4 : 14;
 
+  const { data: k } = useDashboardKpis(period);
   const pessoas = (m?.colab_ativos ?? 0) + (m?.colab_ferias ?? 0) + (m?.colab_afastados ?? 0) + (m?.terc_ativos ?? 0);
   const waitingAge = ageLabel(m?.fila_oldest_waiting);
   const pendingAge = ageLabel(m?.fila_oldest_pending);
@@ -252,17 +325,26 @@ export default function Dashboard() {
 
       {/* KPIs */}
       <div data-tour="kpi-cards" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {kpis.map((k, i) => (
-          <div key={k.label} className={`animate-content-in stagger-${i + 1}`}>
-            <StatCard label={k.label} value={k.value} hint={k.hint} icon={k.icon} tone={k.tone} to={k.to} loading={isLoading} />
-          </div>
+        <KpiCard label="Pessoas ativas" value={k?.pessoas_ativas ?? pessoas} color={C.primary} to="/colaboradores?status=ativo" hint={`${k?.admissoes ?? 0} admissões · ${k?.desligamentos ?? 0} desligamentos em ${period} d`} spark={(series ?? []).map((p) => p.joiners - p.leavers)} />
+        <KpiCard label={`Execuções em ${period} d`} value={k?.execucoes ?? 0} prev={k?.execucoes_prev} color={C.success} to="/fila-provisionamento?status=success" hint="vs período anterior" spark={(series ?? []).map((p) => p.concessoes + p.revogacoes)} />
+        <KpiCard label="Aguardando aprovação" value={k?.aguardando ?? m?.fila_waiting ?? 0} color={C.warning} to="/fila-provisionamento?tab=aprovacao" hint={waitingAge ? `mais antigo: ${waitingAge}` : "nada pendente"} />
+        <KpiCard label="Falhas em 24 h" value={k?.falhas_24h ?? 0} prev={k?.falhas_prev} invert color={C.destructive} to="/fila-provisionamento?status=failed" hint="vs 24 h anteriores" spark={(series ?? []).map((p) => p.falhas)} />
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          { l: "Revisões abertas", v: k?.revisoes_abertas ?? 0, to: "/revisoes", icon: ClipboardCheck },
+          { l: "Exceções vencendo (7 d)", v: k?.excecoes_vencendo ?? 0, to: "/excecoes", icon: CalendarClock },
+          { l: "Terceiros vencidos", v: k?.terceiros_vencidos ?? 0, to: "/terceiros", icon: UserCheck },
+          { l: "RH: precisa de você", v: k?.quarentena ?? 0, to: "/colaboradores/quarentena", icon: FileSpreadsheet },
+        ].map((x) => (
+          <Link key={x.l} to={x.to}><Card className="transition-colors hover:border-primary/40"><CardContent className="flex items-center gap-3 p-3"><x.icon className={`h-4 w-4 ${x.v > 0 ? "text-warning" : "text-muted-foreground"}`} /><span className="flex-1 truncate text-sm">{x.l}</span><span className="text-lg font-semibold tabular-nums">{x.v}</span></CardContent></Card></Link>
         ))}
       </div>
 
       </QueryState>
       {/* Séries */}
-      <div>
-
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
         <div className="h-full"><QueryState loading={seriesLoading || seriesPlaceholder} error={seriesError} retry={retrySeries}>
         <Card data-tour="chart-requests" className="min-h-[360px] flex flex-col">
           <CardHeader className="pb-3">
@@ -276,7 +358,7 @@ export default function Dashboard() {
               <div className="rounded-lg border bg-muted/40 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Revogações</p><p className="text-lg font-semibold tabular-nums">{totals.revogacoes}</p></div>
               <div className="rounded-lg border bg-muted/40 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Falhas</p><p className="text-lg font-semibold tabular-nums text-destructive">{totals.falhas}</p></div>
             </div>
-            <div className="min-h-[230px] flex-1">
+            <div className="h-[240px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ left: -16, right: 8, top: 8 }} barCategoryGap={period === 7 ? "30%" : "15%"}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
@@ -293,10 +375,41 @@ export default function Dashboard() {
           </CardContent>
         </Card>
         </QueryState></div>
+        </div>
+        <BarsPanel title="Pessoas por situação" unit="pessoas" rows={[
+          { label: "Ativos", value: m?.colab_ativos ?? 0, color: C.success, to: "/colaboradores?status=ativo" },
+          { label: "Férias", value: m?.colab_ferias ?? 0, color: C.info, to: "/colaboradores?status=ferias" },
+          { label: "Afastados", value: m?.colab_afastados ?? 0, color: C.warning, to: "/colaboradores?status=afastado" },
+          { label: "Terceiros ativos", value: m?.terc_ativos ?? 0, color: C.violet, to: "/terceiros" },
+        ]} />
       </div>
 
+      {/* Movimentações e licenças */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader className="pb-2"><CardTitle className="text-base">Movimentações de pessoas</CardTitle><p className="text-xs text-muted-foreground">Admissões, mudanças e desligamentos por dia ({totals.joiners} · {totals.movers} · {totals.leavers})</p></CardHeader>
+          <CardContent className="h-[240px] pt-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ left: -16, right: 8, top: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
+                <XAxis dataKey="label" interval={tick} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip content={<ChartTooltip />} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Area type="monotone" dataKey="joiners" name="Admissões" stroke={C.success} fill={C.success} fillOpacity={0.15} />
+                <Area type="monotone" dataKey="movers" name="Mudanças" stroke={C.info} fill={C.info} fillOpacity={0.15} />
+                <Area type="monotone" dataKey="leavers" name="Desligamentos" stroke={C.destructive} fill={C.destructive} fillOpacity={0.15} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+        <LicensesPanel rows={k?.licencas ?? []} />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <GovernanceList m={m} loading={isLoading} />
       {/* Atividade recente */}
-      <Card data-tour="timeline" className="animate-content-in stagger-5">
+      <Card data-tour="timeline" className="animate-content-in stagger-5 lg:col-span-2">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">Atividade recente</CardTitle>
@@ -311,6 +424,7 @@ export default function Dashboard() {
           <ActivityFeed limit={10} />
         </CardContent>
       </Card>
+      </div>
       <OnboardingTour pageKey="dashboard" steps={tourSteps.dashboard} />
     </div>
   );

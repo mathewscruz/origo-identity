@@ -170,7 +170,7 @@ def run_task(api_url: str, token: str, task: str, execute: bool = False) -> Dict
 SCHEDULE = [
     {"name": "expire", "hour": 5, "minute": 0, "weekday": None, "tasks": ["expire-access-exceptions"]},
     {"name": "recert", "hour": 5, "minute": 15, "weekday": None, "tasks": ["auto-recertification"]},
-    {"name": "ciclo_rh", "hour": 6, "minute": 30, "weekday": None, "tasks": ["sync-sharepoint-csv", "reconcile-identities"]},
+    {"name": "ciclo_rh", "hour": 6, "minute": 30, "weekday": None, "tasks": ["sync-sharepoint-csv", "reconcile-identities", "quarantine-triage"]},
     {"name": "auditoria", "hour": 4, "minute": 0, "weekday": 6, "tasks": ["audit-reconciliation"]},
 ]
 
@@ -821,8 +821,8 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=10, help="Itens reservados por poll")
     parser.add_argument("--lease", type=int, default=600, help="Lease (s) da reserva de cada item")
     parser.add_argument("--owner", default=os.environ.get("IAM_AGENT_OWNER", "origo-agent"), help="Identificação deste executor")
-    parser.add_argument("--schedule", action="store_true", default=os.environ.get("IAM_AGENT_SCHEDULE") == "1",
-                        help="Liga a agenda local (exceções, recertificação, ciclo RH, auditoria). Default: desligada")
+    parser.add_argument("--schedule", action="store_true", default=os.environ.get("IAM_AGENT_SCHEDULE", "1") != "0",
+                        help="Agenda local (exceções, recertificação, ciclo RH, triagem, auditoria). Default: ligada; IAM_AGENT_SCHEDULE=0 desliga")
     args = parser.parse_args()
     schedule_done: Dict[str, str] = {}
 

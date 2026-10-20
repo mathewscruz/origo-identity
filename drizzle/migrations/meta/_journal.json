@@ -8,6 +8,20 @@
       "when": 1792498381320,
       "tag": "0000_hermes_agent_tasks",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792498932297,
+      "tag": "0001_automacao_painel_hermes",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792498979221,
+      "tag": "0002_agent_offline_alert",
+      "breakpoints": true
     }
   ]
 }

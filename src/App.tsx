@@ -9,6 +9,7 @@ import AppLayout from "./components/AppLayout";
 import Dashboard from "./pages/Dashboard";
 import ColaboradoresPage from "./pages/colaboradores/ColaboradoresPage";
 import ColaboradorDetalhePage from "./pages/colaboradores/ColaboradorDetalhePage";
+import QuarentenaPage from "./pages/colaboradores/QuarentenaPage";
 import TerceirosPage from "./pages/terceiros/TerceirosPage";
 import TerceiroDetalhePage from "./pages/terceiros/TerceiroDetalhePage";
 import EventoJMLDetalhePage from "./pages/eventos-jml/EventoJMLDetalhePage";
@@ -77,6 +78,7 @@ const App = () => (
               <Route path="/fila-provisionamento/:id" element={<SolicitacaoDetalhePage />} />
               <Route element={<SectionTabs tabs={[{ title: "Colaboradores", url: "/colaboradores" }, { title: "Terceiros", url: "/terceiros" }]} />}>
                 <Route path="/colaboradores" element={<ColaboradoresPage />} />
+                <Route path="/colaboradores/quarentena" element={<QuarentenaPage />} />
                 <Route path="/colaboradores/:id" element={<ColaboradorDetalhePage />} />
                 <Route path="/terceiros" element={<TerceirosPage />} />
                 <Route path="/terceiros/:id" element={<TerceiroDetalhePage />} />
