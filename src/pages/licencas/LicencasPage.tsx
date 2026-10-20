@@ -289,6 +289,7 @@ export default function LicencasPage() {
                       {excedido && <Badge className="bg-destructive text-destructive-foreground border-0">Excedido</Badge>}
                       {l.is_trial && <Badge variant="outline" className="text-muted-foreground">Trial/Free</Badge>}
                       {l.capability_status === "Warning" && <Badge variant="outline" className="border-warning/40 text-warning">Em graça</Badge>}
+                      {l.capability_status === "Suspended" && <Badge variant="outline" className="border-destructive/40 text-destructive">Suspensa</Badge>}
                     </div>
                     {l.display_name !== l.nome && (
                       <p className="text-[11px] text-muted-foreground font-mono mt-0.5">{l.nome}</p>

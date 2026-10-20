@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { requireRole } from "../_shared/auth.ts";
-import { friendlyName, isTrialSku } from "../_shared/m365SkuNames.ts";
+import { isTrialSku, loadOfficialSkuNames, resolveFriendlyName } from "../_shared/m365SkuNames.ts";
 
 
 const corsHeaders = {
@@ -67,6 +67,7 @@ Deno.serve(async (req) => {
     const skus = json.value || [];
     console.log(`[sync-entra-licencas] Fetched ${skus.length} SKUs from Microsoft`);
 
+    const official = await loadOfficialSkuNames();
     // Get existing licenses from DB
     const { data: existing } = await supabase.from("entra_licencas").select("id, sku_id");
     const existingBySkuId = new Map((existing || []).map((l: any) => [l.sku_id, l.id]));
@@ -84,7 +85,7 @@ Deno.serve(async (req) => {
       const emUso = sku.consumedUnits || 0;
       const skuId = sku.skuId;
       const nome = sku.skuPartNumber || sku.skuId;
-      const friendly = friendlyName(nome);
+      const friendly = resolveFriendlyName(nome, skuId, official);
       const capability = sku.capabilityStatus || "Enabled";
       const isTrial = isTrialSku(nome, enabled, emUso);
 
@@ -139,7 +140,9 @@ Deno.serve(async (req) => {
       return (u / t) >= 0.9;
     });
     for (const sku of criticalSkus) {
-      const nome = friendlyName(sku.skuPartNumber || sku.skuId);
+      const nome = resolveFriendlyName(sku.skuPartNumber || sku.skuId, sku.skuId, official);
+      const { count: aberto } = await supabase.from("alertas").select("id", { count: "exact", head: true }).eq("tipo", "licenca_critica").eq("lido", false).eq("titulo", `Licença crítica: ${nome}`);
+      if ((aberto ?? 0) > 0) continue;
       const t = (sku.prepaidUnits?.enabled || 0) + (sku.prepaidUnits?.warning || 0);
       const u = sku.consumedUnits || 0;
       await supabase.from("alertas").insert({
