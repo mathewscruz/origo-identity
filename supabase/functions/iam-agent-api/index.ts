@@ -89,6 +89,24 @@ async function readParams(supabase: Sb) {
   return { enableRequiresApproval: (map.get("iam_enable_requires_approval") ?? "true") !== "false" };
 }
 
+/** Pausa de emergência + alerta de itens reservados há mais de 1 h (best-effort, sem cron). */
+async function opsCheck(supabase: Sb): Promise<{ paused: boolean }> {
+  const { data: p } = await supabase.from("parametros").select("valor").eq("chave", "agent_paused").maybeSingle();
+  const paused = String(p?.valor ?? "false") === "true";
+  try {
+    const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { count } = await supabase.from("iam_queue").select("id", { count: "exact", head: true }).eq("status", "processing").lt("claimed_at", cutoff);
+    if ((count ?? 0) > 0) {
+      const { data: open } = await supabase.from("alertas").select("id").eq("tipo", "agent_stuck_claims").eq("lido", false).limit(1);
+      if (!open?.length) {
+        await supabase.from("alertas").insert({ tipo: "agent_stuck_claims", severidade: "aviso", titulo: "Itens presos no Hermes",
+          mensagem: `${count} item(ns) reservado(s) pelo agente há mais de 1 h sem resposta.`, ref_url: "/fila-provisionamento?status=processing" });
+      }
+    }
+  } catch (e) { console.warn("[iam-agent-api] opsCheck:", e); }
+  return { paused };
+}
+
 /** Registra o heartbeat do agente (best-effort). */
 async function heartbeat(supabase: Sb, req: Request, owner: string, kind: "poll" | "claim" | "result", details: Record<string, unknown> = {}) {
   const version = req.headers.get("x-agent-version");
@@ -179,17 +197,31 @@ Deno.serve(async (req) => {
   if (req.method === "GET" && path === "health") {
     const { enableRequiresApproval } = await readParams(supabase);
     const { data: stats } = await supabase.rpc("iam_queue_stats");
+    const { paused } = await opsCheck(supabase);
     const { data: agents } = await supabase.from("iam_agent_status").select("*").order("last_seen_at", { ascending: false });
     if (isAgent) await heartbeat(supabase, req, owner, "poll");
     return jsonResponse({
       ok: true, auth: authResult.method, executor: "origo-agent", action_types: AGENT_ACTION_TYPES,
-      enable_requires_approval: enableRequiresApproval, queue: stats, agents: agents || [],
+      enable_requires_approval: enableRequiresApproval, agent_paused: paused, queue: stats, agents: agents || [],
     });
   }
 
   // ─── GET /pending → claim ───
   if (req.method === "GET" && path === "pending") {
     const { enableRequiresApproval } = await readParams(supabase);
+    const { paused } = await opsCheck(supabase);
+    if (paused) {
+      if (isAgent) await heartbeat(supabase, req, owner, "poll");
+      return jsonResponse({ success: true, count: 0, data: [], tasks: [], agent_paused: true, action_types: AGENT_ACTION_TYPES, owner, enable_requires_approval: enableRequiresApproval });
+    }
+    // tarefas pedidas pela tela ("Executar agora"): reservadas para este agente
+    const { data: pendingTasks } = await supabase.from("agent_tasks").select("id, task").eq("status", "pending").order("created_at").limit(5);
+    const tasks: { id: string; task: string }[] = [];
+    for (const t of (pendingTasks || []) as { id: string; task: string }[]) {
+      const { data: got } = await supabase.from("agent_tasks").update({ status: "running", started_at: new Date().toISOString(), owner })
+        .eq("id", t.id).eq("status", "pending").select("id").maybeSingle();
+      if (got) tasks.push(t);
+    }
     const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") || "10", 10) || 10, 1), MAX_BATCH);
     const lease = Math.max(parseInt(url.searchParams.get("lease") || String(DEFAULT_LEASE_SECONDS), 10) || DEFAULT_LEASE_SECONDS, 30);
 
@@ -202,7 +234,7 @@ Deno.serve(async (req) => {
     return jsonResponse({
       success: true, count: items.length, data: items,
       action_types: AGENT_ACTION_TYPES, lease_seconds: lease, owner,
-      enable_requires_approval: enableRequiresApproval,
+      enable_requires_approval: enableRequiresApproval, tasks, agent_paused: false,
     });
   }
 
@@ -226,6 +258,19 @@ Deno.serve(async (req) => {
     });
     if (isAgent) await heartbeat(supabase, req, owner, "poll");
     return jsonResponse({ success: res.ok || res.status === 202, task, http_status: res.status, data: parsed }, res.ok || res.status === 202 ? 200 : 502);
+  }
+
+  // ─── POST /task_result → resultado de uma tarefa pedida pela tela ───
+  if (req.method === "POST" && path === "task_result") {
+    const body = await req.json().catch(() => null) as { id?: string; status?: string; http_status?: number; result?: string } | null;
+    if (!body?.id || !["done", "error"].includes(body.status || "")) return jsonResponse({ error: "id e status (done|error) são obrigatórios" }, 400);
+    const { data, error } = await supabase.from("agent_tasks").update({
+      status: body.status, http_status: body.http_status ?? null, result: (body.result || "").slice(0, 2000), finished_at: new Date().toISOString(),
+    }).eq("id", body.id).eq("status", "running").select("id, task").maybeSingle();
+    if (error) return jsonResponse({ error: error.message }, 500);
+    if (!data) return jsonResponse({ error: "tarefa não encontrada ou já concluída" }, 409);
+    if (isAgent) await heartbeat(supabase, req, owner, "result", { result: `${data.task}: ${body.status}` });
+    return jsonResponse({ success: true, data });
   }
 
   // ─── POST /release ───

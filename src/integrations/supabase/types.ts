@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_tasks: {
+        Row: {
+          created_at: string
+          finished_at: string | null
+          http_status: number | null
+          id: string
+          owner: string | null
+          requested_by: string | null
+          result: string | null
+          started_at: string | null
+          status: string
+          task: string
+        }
+        Insert: {
+          created_at?: string
+          finished_at?: string | null
+          http_status?: number | null
+          id?: string
+          owner?: string | null
+          requested_by?: string | null
+          result?: string | null
+          started_at?: string | null
+          status?: string
+          task: string
+        }
+        Update: {
+          created_at?: string
+          finished_at?: string | null
+          http_status?: number | null
+          id?: string
+          owner?: string | null
+          requested_by?: string | null
+          result?: string | null
+          started_at?: string | null
+          status?: string
+          task?: string
+        }
+        Relationships: []
+      }
       alertas: {
         Row: {
           created_at: string
@@ -2254,6 +2293,7 @@ export type Database = {
         Returns: number
       }
       admin_usuarios_resumo: { Args: never; Returns: Json }
+      agent_task_solicitar: { Args: { p_task: string }; Returns: string }
       alertas_marcar_lidos: { Args: { p_ids?: string[] }; Returns: number }
       apply_reconcile_updates: {
         Args: { colab_updates?: Json; queue_updates?: Json }

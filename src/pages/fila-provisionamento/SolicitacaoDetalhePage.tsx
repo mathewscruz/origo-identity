@@ -1,3 +1,4 @@
+import { queueErrorLabel } from "@/lib/queueErrorLabels";
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Ban, RotateCcw, ShieldCheck, Loader2 } from "lucide-react";
@@ -98,7 +99,7 @@ export default function SolicitacaoDetalhePage() {
               <p className="mb-1 text-xs text-muted-foreground">Resultado</p>
               {item.result_message || item.error_code ? (
                 <div className={`rounded-md p-3 text-sm ${item.status === "failed" ? "bg-destructive/10 text-destructive" : item.status === "success" ? "bg-success/10 text-success" : "bg-muted"}`}>
-                  {item.error_code && <span className="mr-2 font-mono text-xs">[{item.error_code}]</span>}{item.result_message}
+                  {item.error_code && <span className="mr-2 text-xs font-medium" title={item.error_code}>{queueErrorLabel(item.error_code)} ·</span>}{item.result_message}
                 </div>
               ) : <p className="text-muted-foreground">Sem resultado ainda.</p>}
             </div>

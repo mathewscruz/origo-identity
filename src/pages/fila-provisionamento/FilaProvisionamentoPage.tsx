@@ -1,3 +1,4 @@
+import { queueErrorLabel } from "@/lib/queueErrorLabels";
 import { completedQueueLink, queueStatuses } from "@/lib/dashboardFilters";
 import QueryState from "@/components/QueryState";
 import { useEffect, useMemo, useState } from "react";
@@ -236,7 +237,7 @@ export default function FilaProvisionamentoPage() {
                         <td className="p-3 hidden md:table-cell text-xs text-muted-foreground">{item.requested_by || "—"}</td>
                         <td className="p-3 hidden md:table-cell text-xs text-muted-foreground" title={new Date(item.created_at).toLocaleString("pt-BR")}>{relTime(item.created_at)}</td>
                         <td className="p-3 hidden xl:table-cell max-w-[280px] truncate text-xs text-muted-foreground" title={item.result_message || ""}>
-                          {item.error_code && <span className="mr-1 font-mono text-destructive">{item.error_code}</span>}{item.result_message || "—"}
+                          {item.error_code && <span className="mr-1 font-medium text-foreground" title={item.error_code}>{queueErrorLabel(item.error_code)} ·</span>}{item.result_message || "—"}
                         </td>
                         <td className="p-3">
                           <div className="flex justify-end gap-1">
