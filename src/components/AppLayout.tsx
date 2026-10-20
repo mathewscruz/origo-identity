@@ -1,4 +1,4 @@
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Outlet, useLocation, Link, useNavigate } from "react-router-dom";
 import PageTransition from "@/components/PageTransition";
@@ -96,8 +96,6 @@ export default function AppLayout() {
         <AppSidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-card/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-card/80 md:px-4">
-            <SidebarTrigger className="text-muted-foreground" />
-            <div className="hidden h-5 w-px bg-border sm:block" />
             <AppBreadcrumb />
             <div className="ml-auto flex items-center gap-1.5">
               {!canEdit && (
