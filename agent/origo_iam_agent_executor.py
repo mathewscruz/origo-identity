@@ -106,11 +106,13 @@ SUPPORTED_ACTIONS = {
 
 # Ações ainda não suportadas nativamente por este executor.
 BLOCKED_ACTIONS = {
-    "create_user_app",
     "update_user_app",
-    "disable_user_app",
     "delete_user_app",
 }
+
+# Sistemas conectados por API: a chamada é feita pela ponte (a credencial nunca sai do painel).
+APP_API_ACTIONS = {"create_user_app", "disable_user_app"}
+_APP_API = {"url": "", "token": ""}
 
 
 def env(name: str, required: bool = True) -> str:
@@ -159,9 +161,9 @@ def post_release(api_url: str, token: str, item: Dict[str, Any], reason: str, ex
     r.raise_for_status()
 
 
-def run_task(api_url: str, token: str, task: str, execute: bool = False) -> Dict[str, Any]:
+def run_task(api_url: str, token: str, task: str, execute: bool = False, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Dispara uma rotina de manutenção pela ponte (o Hermes é o único agendador)."""
-    r = requests.post(f"{api_url}/run_task", headers=agent_headers(token, execute), json={"task": task}, timeout=900)
+    r = requests.post(f"{api_url}/run_task", headers=agent_headers(token, execute), json={"task": task, "payload": payload or {}}, timeout=900)
     return {"status": r.status_code, "body": r.text[:300]}
 
 
@@ -171,6 +173,7 @@ SCHEDULE = [
     {"name": "expire", "hour": 5, "minute": 0, "weekday": None, "tasks": ["expire-access-exceptions"]},
     {"name": "recert", "hour": 5, "minute": 15, "weekday": None, "tasks": ["auto-recertification"]},
     {"name": "ciclo_rh", "hour": 6, "minute": 30, "weekday": None, "tasks": ["sync-sharepoint-csv", "reconcile-identities", "quarantine-triage"]},
+    {"name": "saude_sistemas", "hour": 7, "minute": 0, "weekday": None, "tasks": ["test-app-connection"], "payload": {"modo": "todos"}},
     {"name": "auditoria", "hour": 4, "minute": 0, "weekday": 6, "tasks": ["audit-reconciliation"]},
 ]
 
@@ -187,7 +190,7 @@ def run_due_schedule(api_url: str, token: str, done: Dict[str, str], execute: bo
         done[s["name"]] = key
         for task in s["tasks"]:
             try:
-                res = run_task(api_url, token, task, execute=execute)
+                res = run_task(api_url, token, task, execute=execute, payload=s.get("payload"))
                 print(f"[origo-agent] agenda {task}: HTTP {res['status']}")
                 if res["status"] >= 400:
                     break  # não segue a sequência se uma etapa falhou
@@ -513,6 +516,18 @@ def call_ad_bridge(action: str, payload: Dict[str, Any], execute: bool) -> Dict[
 def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[str, Any]:
     action = item["action_type"]
     payload = item.get("payload_json") or {}
+
+    if action in APP_API_ACTIONS:
+        try:
+            r = requests.post(f"{_APP_API['url']}/app_api_execute", headers=agent_headers(_APP_API["token"], execute),
+                              json={"id": item["id"], "claim_token": item.get("claim_token")}, timeout=60)
+            data = r.json() if r.content else {}
+            if r.status_code >= 400 and "status" not in data:
+                return {"status": "failed", "error_code": "app_api_bridge", "result_message": str(data.get("error") or r.text)[:300]}
+            return {"status": data.get("status", "failed"), "error_code": data.get("error_code"),
+                    "result_message": data.get("result_message", "")}
+        except Exception as e:  # noqa: BLE001
+            return {"status": "failed", "error_code": "app_api_exception", "result_message": str(e)[:300]}
 
     if action in BLOCKED_ACTIONS:
         return {"status": "failed", "error_code": "handler_not_implemented",

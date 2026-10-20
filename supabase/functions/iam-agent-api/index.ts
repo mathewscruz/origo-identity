@@ -14,6 +14,7 @@
 // Heartbeat: cada chamada do agente atualiza iam_agent_status (dashboard mostra online/offline).
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { requireRole, serviceAuthHeader } from "../_shared/auth.ts";
+import { runAppAction } from "../_shared/appApi.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -317,7 +318,7 @@ Deno.serve(async (req) => {
     const pr = pessoa as any;
     const vars = { nome: pr?.nome ?? null, email: pr?.email ?? null, matricula: pr?.matricula ?? null, login: pr?.sam_account_name ?? null, perfil_externo: perfil };
     try {
-      const r = await runAppAction(conn?.config, kind, vars, req.headers.get("x-agent-execute") === "1" || req.headers.get("x-execute") === "1" || true);
+      const r = await runAppAction(conn?.config, kind, vars, req.headers.get("x-agent-execute") === "1");
       return jsonResponse(r);
     } catch (e) {
       return jsonResponse({ status: "failed", error_code: "app_api_exception", result_message: (e as Error).message.slice(0, 300) });
