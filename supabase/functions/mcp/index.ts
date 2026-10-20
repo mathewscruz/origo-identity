@@ -1039,8 +1039,7 @@ async function runOne(ctx, t) {
     const res = await fetch(`${supabaseUrl}/functions/v1/${t.task}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${ctx.getToken()}`, apikey: supabasePublishableKey },
-      body: JSON.stringify({ trigger: "hermes", agent_task_id: t.id }),
-      signal: ctx.signal
+      body: JSON.stringify({ trigger: "hermes", agent_task_id: t.id })
     });
     status = res.status;
     text = await res.text();
@@ -1075,7 +1074,6 @@ var runAgentTasksTool = defineTool22({
     }
     const executed = [];
     for (const t of r.tasks) {
-      await ctx.progress?.({ progress: executed.length, total: r.tasks.length, message: t.task });
       executed.push(await runOne(ctx, t));
     }
     const out = { agent_paused: false, executed };
