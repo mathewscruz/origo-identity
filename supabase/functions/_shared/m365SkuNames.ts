@@ -12,6 +12,14 @@ export const M365_SKU_FRIENDLY: Record<string, string> = {
   STANDARDPACK: "Office 365 E1",
   DESKLESSPACK: "Office 365 F3",
   SPE_E3: "Microsoft 365 E3",
+  Dynamics_365_Customer_Insights_Journeys_T3_Interacted_People: "Dynamics 365 Customer Insights Journeys T3 Interacted People",
+  D365_CUSTOMER_SERVICE_PRO_ATTACH: "Dynamics 365 Customer Service Professional Attach",
+  Dynamics_365_Customer_Insights: "Dynamics 365 Customer Insights",
+  VISIO_PLAN2_DEPT: "Visio Plan 2 (for Departments)",
+  MICROSOFT_365_COPILOT_BUSINESS_DEPT: "Microsoft 365 Copilot Business (for Departments)",
+  POWERAPPS_PER_USER: "Power Apps Premium",
+  MICROSOFT_365_COPILOT_FOR_BUSINESS: "Microsoft 365 Copilot Business",
+  INFORMATION_PROTECTION_COMPLIANCE: "Microsoft 365 E5 Compliance",
   SPE_E5: "Microsoft 365 E5",
   // SPE_F1 is the partNumber of Microsoft 365 F3 (renamed by Microsoft in April 2020).
   // The legacy F1 plan uses partNumber M365_F1.
@@ -121,4 +129,31 @@ export function isTrialSku(skuPartNumber: string, enabled: number, consumed: num
 
 export function friendlyName(skuPartNumber: string): string {
   return M365_SKU_FRIENDLY[skuPartNumber] ?? skuPartNumber;
+}
+
+const MS_CSV = "https://download.microsoft.com/download/e/3/e/e3e9faf2-f28b-490a-9ada-c6089a1fc5b0/Product%20names%20and%20service%20plan%20identifiers%20for%20licensing.csv";
+
+/** Official Microsoft names keyed by SKU GUID and by String_Id. Empty map on failure (fallback = static list). */
+export async function loadOfficialSkuNames(): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  try {
+    const res = await fetch(MS_CSV);
+    if (!res.ok) return map;
+    const text = (await res.text()).replace(/^\uFEFF/, "");
+    for (const line of text.split(/\r?\n/).slice(1)) {
+      const cols: string[] = []; let cur = "", q = false;
+      for (const ch of line) { if (ch === '"') q = !q; else if (ch === "," && !q) { cols.push(cur); cur = ""; } else cur += ch; if (cols.length >= 3) break; }
+      if (cols.length < 3) cols.push(cur);
+      const [name, stringId, guid] = cols;
+      if (!name || !stringId) continue;
+      if (!map.has(stringId)) map.set(stringId, name);
+      if (guid && !map.has(guid.toLowerCase())) map.set(guid.toLowerCase(), name);
+    }
+  } catch { /* fallback */ }
+  return map;
+}
+
+/** Static curated name first (handles variants like "for Departments"), then Microsoft's official list. */
+export function resolveFriendlyName(part: string, skuId: string, official: Map<string, string>): string {
+  return M365_SKU_FRIENDLY[part] ?? official.get(skuId?.toLowerCase()) ?? official.get(part) ?? part;
 }
