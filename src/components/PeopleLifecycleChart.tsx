@@ -20,7 +20,7 @@ export default function PeopleLifecycleChart({ period, onPeriodChange }: { perio
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const totals = data?.reduce((a, p) => ({ entradas: a.entradas + p.entradas, saidas: a.saidas + p.saidas }), { entradas: 0, saidas: 0 });
 
-  return <Card data-tour="chart-provisioning" className="h-full min-h-[390px] flex flex-col">
+  return <Card className="h-full min-h-[390px] flex flex-col">
     <CardHeader className="pb-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>

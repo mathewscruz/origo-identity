@@ -26,7 +26,6 @@ vi.mock('@/hooks/useOrigoData', () => ({
 }));
 vi.mock('@/components/ActivityFeed', () => ({ default: () => null }));
 vi.mock('@/hooks/usePeopleSeries', () => ({ usePeopleSeries: () => ({ data: [{ dia: '2026-09-18', entradas: 1, saidas: 3 }], isLoading: false, error: null, refetch: vi.fn() }) }));
-vi.mock('@/components/OnboardingTour', () => ({ default: () => null }));
 vi.mock('recharts', () => ({
   ResponsiveContainer: () => <div>Chart fixture</div>, Area: () => null, AreaChart: () => null, Bar: () => null,
   BarChart: () => null, CartesianGrid: () => null, Legend: () => null, Tooltip: () => null, XAxis: () => null, YAxis: () => null,

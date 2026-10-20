@@ -22,8 +22,6 @@ import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import EmptyState from "@/components/EmptyState";
 import SortableHeader, { SortDirection, useSortableData } from "@/components/SortableHeader";
-import OnboardingTour from "@/components/OnboardingTour";
-import { tourSteps } from "@/lib/tourSteps";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import ColaboradorPicker from "@/components/ColaboradorPicker";
@@ -159,7 +157,7 @@ export default function TerceirosPage() {
       <PageHeader
         title="Terceiros"
         description="Prestadores com contrato: conta expira no fim do contrato; o responsável revalida periodicamente por e-mail (Manter ou Desligar) e, sem resposta no prazo, o terceiro é desativado. Contrato vencido = desligamento automático."
-        actions={<div data-tour="actions"><Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Terceiro</Button></div>}
+        actions={<div><Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Terceiro</Button></div>}
       />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -169,12 +167,12 @@ export default function TerceirosPage() {
         <StatCard label="Críticos" value={list.filter((t: any) => t.ativo && t.criticidade === "critica").length} icon={ShieldAlert} tone="info" />
       </div>
 
-      <div data-tour="search-filter" className="relative flex-1 min-w-[200px] max-w-sm">
+      <div className="relative flex-1 min-w-[200px] max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input placeholder="Buscar terceiros..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
       </div>
 
-      <Card data-tour="table"><CardContent className="p-0">
+      <Card><CardContent className="p-0">
         {isLoading ? <div className="p-4 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div> : (
           <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left text-muted-foreground text-xs uppercase tracking-wider">
             <th className="p-4"><SortableHeader label="Nome" field="nome" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th><th className="p-4 hidden md:table-cell"><SortableHeader label="Empresa" field="empresa_terceira" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th><th className="p-4 font-medium hidden lg:table-cell">Responsável</th>
@@ -260,7 +258,6 @@ export default function TerceirosPage() {
           <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Desligar</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <OnboardingTour pageKey="terceiros" steps={tourSteps.terceiros} />
     </div>
   );
 }
