@@ -1,6 +1,7 @@
 // Testa as conexões de sistemas marcadas como "pendente" (disparado pelo Hermes via /run_task).
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { requireRoleOrService } from "../_shared/auth.ts";
+import { authHeaders, runAppAction } from "../_shared/appApi.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,23 +9,24 @@ const corsHeaders = {
   "Content-Type": "application/json",
 };
 
-// deno-lint-ignore no-explicit-any
-function authHeaders(c: any): Record<string, string> {
-  const h: Record<string, string> = { Accept: "application/json" };
-  if (c.auth_type === "bearer" && c.api_token) h.Authorization = `Bearer ${c.api_token}`;
-  if (c.auth_type === "basic") h.Authorization = `Basic ${btoa(`${c.username || ""}:${c.password || ""}`)}`;
-  if (c.auth_type === "api_key" && c.api_key_header && c.api_key_value) h[c.api_key_header] = c.api_key_value;
-  if (c.auth_type === "app_token") { if (c.app_token) h["App-Token"] = c.app_token; if (c.session_token) h["Session-Token"] = c.session_token; }
-  return h;
-}
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   const auth = await requireRoleOrService(req, ["admin", "operador"]);
   if (auth instanceof Response) return auth;
   const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  const { data: apps, error } = await sb.from("aplicacoes").select("id, nome, modo_acesso, grupo_id, instrucoes_acesso")
-    .eq("teste_status", "pendente").in("modo_acesso", ["grupo", "api", "manual"]).limit(50);
+  // modo "todos" (agenda diária do Hermes): retesta todos os sistemas já ativados; padrão: só os pendentes.
+  // aplicacao_id + email_teste: só consulta o usuário de teste no sistema (nada é criado).
+  const body = await req.json().catch(() => ({})) as { modo?: string; aplicacao_id?: string; email_teste?: string };
+  if (body.aplicacao_id && body.email_teste) {
+    const { data: c } = await sb.from("aplicacao_connectors").select("config").eq("aplicacao_id", body.aplicacao_id).maybeSingle();
+    try {
+      const r = await runAppAction(c?.config, "lookup", { email: body.email_teste, login: body.email_teste.split("@")[0] }, true);
+      return new Response(JSON.stringify({ success: r.status === "success", ...r }), { headers: corsHeaders });
+    } catch (e) { return new Response(JSON.stringify({ success: false, result_message: `Falha ao consultar: ${(e as Error).message}` }), { headers: corsHeaders }); }
+  }
+  let q = sb.from("aplicacoes").select("id, nome, modo_acesso, grupo_id, instrucoes_acesso").in("modo_acesso", ["grupo", "api", "manual"]).limit(200);
+  q = body.modo === "todos" ? q.in("teste_status", ["ok", "erro", "pendente"]) : q.eq("teste_status", "pendente");
+  const { data: apps, error } = await q;
   if (error) return new Response(JSON.stringify({ success: false, error: error.message }), { status: 500, headers: corsHeaders });
 
   const out: { app: string; status: string; detalhe: string }[] = [];
@@ -46,7 +48,8 @@ Deno.serve(async (req) => {
           await r.body?.cancel();
           if (r.status === 401 || r.status === 403) { status = "erro"; detalhe = `A API recusou a credencial (HTTP ${r.status})`; }
           else if (r.status >= 500) { status = "erro"; detalhe = `A API respondeu com erro (HTTP ${r.status})`; }
-          else detalhe = `API respondeu (HTTP ${r.status})`;
+          else if (!cfg.actions?.create?.path || !cfg.actions?.disable?.path) { status = "erro"; detalhe = "A API responde, mas falta dizer como criar e desativar o usuário"; }
+          else detalhe = `API respondeu (HTTP ${r.status}); criação e desativação configuradas`;
         }
       }
     } catch (e) { status = "erro"; detalhe = `Falha ao testar: ${(e as Error).message}`; }

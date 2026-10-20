@@ -18,7 +18,8 @@ import { Conversation, ConversationContent, ConversationEmptyState, Conversation
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
 import { PromptInput, PromptInputFooter, PromptInputSubmit, PromptInputTextarea } from "@/components/ai-elements/prompt-input";
 import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput } from "@/components/ai-elements/tool";
-import { MODOS_ACESSO, fichaPendencias, type ModoAcesso } from "@/lib/appConnect";
+import { MODELOS_SISTEMA, MODOS_ACESSO, fichaPendencias, type ModoAcesso } from "@/lib/appConnect";
+import { invokeFunction } from "@/lib/invokeFunction";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = any;
@@ -83,7 +84,7 @@ function ConectarSistema({ id, initial }: { id: string; initial: UIMessage[] }) 
   const { messages, sendMessage, status, stop } = useChat({
     id, messages: initial, transport,
     onError: (e) => toast.error("O assistente não respondeu", { description: e.message.includes("402") ? "Créditos de IA esgotados." : e.message.includes("429") ? "Muitas mensagens seguidas; aguarde um pouco." : e.message }),
-    onFinish: () => { refetch(); qc.invalidateQueries({ queryKey: ["aplicacao_perfis_internos", id] }); },
+    onFinish: () => { refetch(); refetchLigados(); qc.invalidateQueries({ queryKey: ["aplicacao_perfis_internos", id] }); },
   });
   const busy = status === "submitted" || status === "streaming";
 
@@ -100,7 +101,23 @@ function ConectarSistema({ id, initial }: { id: string; initial: UIMessage[] }) 
     else toast.success("Ficha salva. O Hermes vai testar a conexão no próximo ciclo.");
   };
 
-  const pend = app ? fichaPendencias({ ...app, api_base_url: app.connector?.config?.base_url ?? app.connector?.[0]?.config?.base_url }) : [];
+  const cfg = app?.connector?.config ?? app?.connector?.[0]?.config ?? {};
+  const pend = app ? fichaPendencias({ ...app, api_base_url: cfg.base_url, api_actions: cfg.actions }) : [];
+  const { data: ligados, refetch: refetchLigados } = useQuery({
+    queryKey: ["aplicacao_perfis_ligados", id],
+    queryFn: async () => (await supabase.from("perfil_aplicacoes").select("perfil_id, perfis_acesso(nome)").eq("aplicacao_id", id)).data ?? [],
+  });
+  const [emailTeste, setEmailTeste] = useState("");
+  const [testando, setTestando] = useState(false);
+  const testarUsuario = async () => {
+    if (!emailTeste.includes("@")) { toast.error("Informe um e-mail de teste"); return; }
+    setTestando(true);
+    const { data, error } = await invokeFunction("test-app-connection", { aplicacao_id: id, email_teste: emailTeste });
+    setTestando(false);
+    if (error) toast.error("Não foi possível testar", { description: error });
+    else if (data?.success) toast.success(data.result_message ?? "Consulta funcionou");
+    else toast.error("A consulta falhou", { description: data?.result_message });
+  };
   const modo = (app?.modo_acesso ?? "manual") as ModoAcesso;
 
   return (
@@ -116,7 +133,12 @@ function ConectarSistema({ id, initial }: { id: string; initial: UIMessage[] }) 
           <Conversation className="flex-1">
             <ConversationContent>
               {messages.length === 0 ? (
-                <ConversationEmptyState icon={<Cable className="h-8 w-8" />} title="Qual sistema você quer conectar?" description='Ex.: "GLPI — o acesso é pelo grupo GLPI-Usuarios do AD" ou cole o link da documentação da API.' />
+                <div className="space-y-4">
+                  <ConversationEmptyState icon={<Cable className="h-8 w-8" />} title="Qual sistema você quer conectar?" description='Ex.: "GLPI — o acesso é pelo grupo GLPI-Usuarios do AD" ou cole o link da documentação da API.' />
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {MODELOS_SISTEMA.map((m) => <Button key={m.label} variant="outline" size="sm" disabled={busy} onClick={() => sendMessage({ text: m.texto })}>{m.label}</Button>)}
+                  </div>
+                </div>
               ) : messages.map((m) => (
                 <Message key={m.id} from={m.role}>
                   <MessageContent>
@@ -124,7 +146,7 @@ function ConectarSistema({ id, initial }: { id: string; initial: UIMessage[] }) 
                       if (p.type === "text") return <MessageResponse key={i}>{p.text}</MessageResponse>;
                       if (typeof p.type === "string" && p.type.startsWith("tool-")) {
                         const nome = p.type.replace("tool-", "");
-                        const titulo = nome === "atualizar_ficha" ? "Atualizou a ficha" : nome === "buscar_grupo" ? "Buscou grupos" : nome === "buscar_colaborador" ? "Buscou colaboradores" : nome;
+                        const titulo = nome === "atualizar_ficha" ? "Atualizou a ficha" : nome === "buscar_grupo" ? "Buscou grupos" : nome === "buscar_colaborador" ? "Buscou colaboradores" : nome === "atualizar_acoes_api" ? "Registrou uma ação da API" : nome === "buscar_perfil_acesso" ? "Buscou perfis de acesso" : nome === "ligar_perfis" ? "Ligou a perfis de acesso" : nome;
                         return (
                           <Tool key={i} defaultOpen={false}>
                             <ToolHeader type={p.type} state={p.state} title={titulo} />
@@ -183,7 +205,20 @@ function ConectarSistema({ id, initial }: { id: string; initial: UIMessage[] }) 
                 {modo === "grupo" && <Campo label="Grupo que dá acesso"><p className="text-sm">{app.grupo?.nome ?? <span className="text-muted-foreground">Diga ao assistente o nome do grupo</span>}</p></Campo>}
                 {modo === "api" && (
                   <Campo label="API">
-                    <p className="text-sm">{app.connector?.config?.base_url ?? app.connector?.[0]?.config?.base_url ?? <span className="text-muted-foreground">Informe o endereço ao assistente</span>}</p>
+                    <p className="text-sm">{cfg.base_url ?? <span className="text-muted-foreground">Informe o endereço ao assistente</span>}</p>
+                    <ul className="mt-2 space-y-0.5 text-xs">
+                      {([["create", "Criar usuário"], ["disable", "Desativar usuário"], ["lookup", "Consultar usuário"]] as const).map(([k, l]) => (
+                        <li key={k} className={cfg.actions?.[k] ? "text-foreground" : "text-muted-foreground"}>
+                          {l}: {cfg.actions?.[k] ? <span className="font-mono">{cfg.actions[k].method} {cfg.actions[k].path}</span> : "não informado"}
+                        </li>
+                      ))}
+                    </ul>
+                    {cfg.actions?.lookup && (
+                      <div className="mt-2 flex gap-2">
+                        <Input className="h-8 text-xs" placeholder="e-mail de um usuário de teste" value={emailTeste} onChange={(e) => setEmailTeste(e.target.value)} />
+                        <Button size="sm" variant="outline" disabled={testando} onClick={testarUsuario}>{testando ? <Loader2 className="h-3 w-3 animate-spin" /> : "Testar"}</Button>
+                      </div>
+                    )}
                     <Button asChild variant="outline" size="sm" className="mt-2"><Link to={`/aplicacoes/${id}?tab=conector`}><KeyRound className="mr-1 h-4 w-4" />Credencial (campo protegido)</Link></Button>
                   </Campo>
                 )}
@@ -196,12 +231,15 @@ function ConectarSistema({ id, initial }: { id: string; initial: UIMessage[] }) 
                 <Campo label="Perfis internos">
                   <div className="flex flex-wrap gap-1">{(perfis ?? []).length ? (perfis ?? []).map((p: Row) => <Badge key={p.id} variant="secondary">{p.nome_externo}</Badge>) : <span className="text-xs text-muted-foreground">Nenhum (acesso único)</span>}</div>
                 </Campo>
+                <Campo label="Perfis de acesso que recebem o sistema">
+                  <div className="flex flex-wrap gap-1">{(ligados ?? []).length ? (ligados ?? []).map((l: Row) => <Badge key={l.perfil_id} variant="outline">{l.perfis_acesso?.nome}</Badge>) : <span className="text-xs text-muted-foreground">Nenhum ainda — diga ao assistente quais cargos/perfis recebem</span>}</div>
+                </Campo>
                 {pend.length > 0 && <ul className="list-disc space-y-0.5 pl-4 text-xs text-warning">{pend.map((p) => <li key={p}>{p}</li>)}</ul>}
                 <div className="flex gap-2 pt-1">
                   <Button className="flex-1" disabled={pend.length > 0 || busy} onClick={ativar}>Salvar e ativar</Button>
                   <Button variant="outline" asChild><Link to={`/aplicacoes/${id}`}>Abrir aplicação</Link></Button>
                 </div>
-                <p className="text-[11px] text-muted-foreground">Depois de ativo, ligue o sistema a um Perfil de Acesso para que os cargos recebam o acesso automaticamente.</p>
+                <p className="text-[11px] text-muted-foreground">O Hermes retesta os sistemas conectados todo dia; se falhar, você recebe um aviso.</p>
               </>
             )}
           </CardContent>
