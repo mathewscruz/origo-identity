@@ -20,10 +20,11 @@ const ROTINAS = [
   { fn: "expire-access-exceptions", label: "Expiração de exceções", when: "05:00 UTC" },
   { fn: "auto-recertification", label: "Recertificação e terceiros", when: "05:15 UTC" },
   { fn: "audit-reconciliation", label: "Auditoria da reconciliação", when: "domingo 04:00 UTC" },
-  { fn: "sync-entra-groups", label: "Sincronizar grupos do Entra", when: "sob demanda" },
-  { fn: "sync-entra-apps", label: "Sincronizar aplicações do Entra", when: "sob demanda" },
-  { fn: "sync-entra-licencas", label: "Sincronizar licenças do Entra", when: "sob demanda" },
-  { fn: "sync-entra-roles", label: "Sincronizar roles privilegiadas", when: "sob demanda" },
+  { fn: "quarantine-triage", label: "Triagem da quarentena do RH", when: "ao abrir Pessoas" },
+  { fn: "sync-entra-groups", label: "Sincronizar grupos do Entra", when: "ao abrir a página" },
+  { fn: "sync-entra-apps", label: "Sincronizar aplicações do Entra", when: "ao abrir a página" },
+  { fn: "sync-entra-licencas", label: "Sincronizar licenças do Entra", when: "ao abrir a página" },
+  { fn: "sync-entra-roles", label: "Sincronizar roles privilegiadas", when: "ao abrir a página" },
 ];
 const STATUS: Record<string, { label: string; cls: string }> = {
   pending: { label: "Aguardando agente", cls: "border-warning/30 bg-warning/10 text-warning" },
@@ -122,10 +123,10 @@ export default function AgentePage() {
       </Card>
 
       <Card>
-        <CardHeader className="pb-3"><CardTitle className="text-base">Rotinas</CardTitle><CardDescription>A agenda roda no servidor do Hermes. "Executar agora" envia um pedido que o agente atende no próximo ciclo.</CardDescription></CardHeader>
+        <CardHeader className="pb-3"><CardTitle className="text-base">Rotinas</CardTitle><CardDescription>Tudo roda automaticamente: rotinas diárias pela agenda do Hermes e atualizações sempre que uma página é aberta ou um dado é alterado.</CardDescription></CardHeader>
         <CardContent className="p-0">
           <table className="w-full text-sm">
-            <thead><tr className="border-b text-left text-xs uppercase tracking-wider text-muted-foreground"><th className="p-3 font-medium">Rotina</th><th className="p-3 font-medium">Horário</th><th className="p-3 font-medium">Último disparo</th><th className="p-3" /></tr></thead>
+            <thead><tr className="border-b text-left text-xs uppercase tracking-wider text-muted-foreground"><th className="p-3 font-medium">Rotina</th><th className="p-3 font-medium">Horário</th><th className="p-3 font-medium">Último disparo</th><th className="p-3 font-medium">Situação</th></tr></thead>
             <tbody>
               {ROTINAS.map((r) => {
                 const last = lastRuns?.[r.fn];
@@ -136,7 +137,7 @@ export default function AgentePage() {
                     <td className="p-3">{r.label}<div className="font-mono text-[10px] text-muted-foreground">{r.fn}</div></td>
                     <td className="p-3 text-xs">{r.when}</td>
                     <td className="p-3 text-xs">{last ? new Date(last).toLocaleString("pt-BR") : "—"}{late && <Badge variant="outline" className="ml-2 border-destructive/30 bg-destructive/10 text-destructive">atrasada</Badge>}</td>
-                    <td className="p-3 text-right">{canEdit && <Button size="sm" variant="ghost" disabled={open || busy === r.fn || paused} onClick={() => executar(r.fn)}>{busy === r.fn ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <PlayCircle className="mr-1 h-4 w-4" />}{open ? "Em andamento" : "Executar agora"}</Button>}</td>
+                    <td className="p-3 text-xs">{open ? <Badge variant="outline" className={STATUS.running.cls}>Em andamento</Badge> : paused ? "Pausado" : "Automático"}</td>
                   </tr>
                 );
               })}
