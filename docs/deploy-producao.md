@@ -10,7 +10,7 @@ projeto) e depois clicar em **Publish**. Este roteiro cobre tudo o que esta vers
   (só cria objetos que já existem em produção — no-op lá).
 - Edge functions: **novas/alteradas** `admin-users`, `auto-recertification`, `save-external-review`,
   `send-review-email`, `send-notification-email`, `iam-agent-api`, `reconcile-identities`, `mcp`,
-  `run-daily-cycle`, `sync-*`, `_shared/*`; **removidas** `process-iam-queue`, `reset-entra-password`,
+  `sync-*`, `_shared/*`; **removidas** `process-iam-queue`, `reset-entra-password`, `run-daily-cycle`,
   `admin-create-user`.
 - Agente `agent/origo_iam_agent_executor.py` v2.0.0 (executor único; heartbeat; reset de senha).
 - Módulos removidos: Solicitações / Workflow / Portal (tabelas `solicitacoes_acesso`, `solicitacao_itens`,
@@ -108,3 +108,6 @@ Lovable → **Publish** (atualiza a URL de produção com o novo frontend).
 - Frontend: Lovable → histórico → "Restore" da versão anterior + Publish.
 - Banco: restaurar o export do passo 1 (Cloud → Advanced settings) — as migrations não são reversíveis
   individualmente (removem os módulos Solicitações/Workflow).
+
+## Agenda
+Não há agenda no banco. O Hermes Agent dispara as rotinas (`--schedule` ou `IAM_AGENT_SCHEDULE=1`) via `POST iam-agent-api/run_task`.
