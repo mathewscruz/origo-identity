@@ -23,6 +23,7 @@ export default function ConfiguracoesLayout() {
   const { role } = useAuth();
   const isAdmin = role === "admin" || role === "platform_admin";
   const subNav = ALL_NAV.filter((i) => !i.admin || isAdmin);
+  if (role && !isAdmin) return <div className="py-16 text-center"><h2 className="text-lg font-semibold">Acesso restrito</h2><p className="text-sm text-muted-foreground">Configurações são exclusivas do perfil Super Admin.</p></div>;
 
   return (
     <div className="space-y-6">

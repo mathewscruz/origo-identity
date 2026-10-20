@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useCanEdit } from "@/hooks/useRole";
+import { useIsSuperAdmin } from "@/hooks/useRole";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,7 +36,7 @@ const criticidadeColors: Record<string, string> = {
 };
 
 export default function AplicacoesPage() {
-  const canEdit = useCanEdit();
+  const canEdit = useIsSuperAdmin();
   const { data: apps, isLoading } = useAplicacoes();
   const navigate = useNavigate();
 

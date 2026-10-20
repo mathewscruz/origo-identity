@@ -8,7 +8,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { supabase } from "@/integrations/supabase/client";
 import { useAgentStatus, useParametro } from "@/hooks/useOrigoData";
 import { useAuth } from "@/contexts/AuthContext";
-import { useCanEdit } from "@/hooks/useRole";
+import { useIsSuperAdmin } from "@/hooks/useRole";
 import { useToast } from "@/hooks/use-toast";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -41,7 +41,7 @@ function rel(iso?: string | null) {
 
 export default function AgentePage() {
   const { role, profile } = useAuth();
-  const canEdit = useCanEdit();
+  const canEdit = useIsSuperAdmin();
   const isAdmin = role === "admin" || role === "platform_admin";
   const { toast } = useToast();
   const qc = useQueryClient();

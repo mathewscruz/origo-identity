@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useCanEdit } from "@/hooks/useRole";
+import { useIsSuperAdmin } from "@/hooks/useRole";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +20,7 @@ import { logAuditoria } from "@/lib/auditLogger";
 import EmptyState from "@/components/EmptyState";
 
 export default function AreasPage() {
-  const canEdit = useCanEdit();
+  const canEdit = useIsSuperAdmin();
   const { data: areas, isLoading } = useAreas();
   const { data: empresas } = useEmpresas();
   const [page, setPage] = useState(1);
