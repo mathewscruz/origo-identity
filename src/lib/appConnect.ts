@@ -20,6 +20,7 @@ export function acoesPorModo(modo: ModoAcesso): { conceder: string; revogar: str
 export function fichaPendencias(a: {
   nome?: string | null; owner_colaborador_id?: string | null; revisor_colaborador_id?: string | null;
   modo_acesso?: string | null; grupo_id?: string | null; instrucoes_acesso?: string | null; api_base_url?: string | null;
+  api_actions?: { create?: unknown; disable?: unknown } | null;
 }): string[] {
   const p: string[] = [];
   if (!a.nome?.trim() || a.nome === "Novo sistema") p.push("Dar um nome ao sistema");
@@ -27,6 +28,23 @@ export function fichaPendencias(a: {
   if (!a.revisor_colaborador_id) p.push("Escolher o revisor");
   if (a.modo_acesso === "grupo" && !a.grupo_id) p.push("Informar o grupo que dá acesso");
   if (a.modo_acesso === "api" && !a.api_base_url) p.push("Informar o endereço da API");
+  if (a.modo_acesso === "api" && !a.api_actions?.create) p.push("Explicar como criar o usuário pela API");
+  if (a.modo_acesso === "api" && !a.api_actions?.disable) p.push("Explicar como desativar o usuário pela API");
   if (a.modo_acesso === "manual" && !a.instrucoes_acesso?.trim()) p.push("Explicar como dar acesso");
   return p;
 }
+
+/** Situação do sistema na lista de Aplicações. */
+export function situacaoSistema(a: { teste_status?: string | null; integracao_ativa?: boolean | null }): "conectado" | "falhou" | "aguardando" | "rascunho" {
+  if (a.teste_status === "erro") return "falhou";
+  if (a.teste_status === "ok") return "conectado";
+  if (a.teste_status === "pendente") return "aguardando";
+  return "rascunho";
+}
+
+/** Modelos para começar a conversa. */
+export const MODELOS_SISTEMA: { label: string; texto: string }[] = [
+  { label: "Login Microsoft (grupo)", texto: "Quero conectar um sistema com login Microsoft em que o acesso vem de estar num grupo do AD/Entra." },
+  { label: "Sistema com API REST", texto: "Quero conectar um sistema que tem API REST para criar e desativar usuários." },
+  { label: "Sem integração (manual)", texto: "Quero conectar um sistema sem integração: o dono dá e retira o acesso manualmente." },
+];
