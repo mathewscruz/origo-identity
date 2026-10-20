@@ -22,6 +22,13 @@
       "when": 1792498979221,
       "tag": "0002_agent_offline_alert",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792499415438,
+      "tag": "0003_alertas_notificado_hermes",
+      "breakpoints": true
     }
   ]
 }

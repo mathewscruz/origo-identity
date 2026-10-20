@@ -2,7 +2,6 @@
 // Regras determinísticas no banco (quarentena_triagem); o que sobrar vira aviso no sino e no Telegram.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { requireRoleOrService } from "../_shared/auth.ts";
-import { notifyTelegram } from "../_shared/telegram.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -27,8 +26,7 @@ Deno.serve(async (req) => {
           tipo: "quarentena_decisao", severidade: "aviso", titulo: "Quarentena do RH precisa de você",
           mensagem: `${r.restantes} pendência(s) que o Hermes não conseguiu decidir sozinho.`, ref_url: "/colaboradores/quarentena",
         });
-        telegram = await notifyTelegram(supabase,
-          `<b>Órigo IAM</b>\nO Hermes revisou a quarentena do RH: ${r.repeticoes} repetições descartadas, ${r.desligados} resolvidas.\n${r.restantes} precisam de decisão sua: https://iam.origoenergia.com.br/colaboradores/quarentena`);
+        telegram = "enviado ao Hermes (alerta)";
       }
     }
     return new Response(JSON.stringify({ success: true, ...r, telegram }), { headers: corsHeaders });
