@@ -1,45 +1,50 @@
-# Corrigir bloqueio da sincronização e acompanhamento do RH
+# Hermes Agent como executor único: inventário e limpeza dos gatilhos internos
 
-## Verificação
+## O que foi encontrado (leitura no banco de produção e no código)
 
-- **Apontamento 1 confirmado:** a verificação antecipada de hashes impede que o watchdog alcance um job `running` abandonado. O índice existente também bloqueia permanentemente conteúdos antigos concluídos, inclusive quando o RH retorna a uma versão anterior. A consulta somente leitura encontrou 13 jobs com hash, todos `done`; não há job com hash atualmente travado em `running`.
-- **Apontamento 2 parcialmente confirmado:** os links “Base do RH” e “RH em quarentena” continuam levando a uma página sem acompanhamento do RH. A remoção dos comandos manuais foi intencional e está protegida por um teste; não restaurar importação, reconciliação ou ciclo diário como resposta automática ao apontamento. O motor ainda insere ausências informativas na quarentena a cada importação real.
-- A última compilação registrada da prévia, em 20/10/2026 às 11:58:02 UTC, está sem erros.
+Agenda automática do banco (pg_cron):
 
-## 1. Recuperação segura da sincronização
+| Job | Horário (UTC) | Chama | Estado |
+|---|---|---|---|
+| origo-expire-exceptions | 05:00 diário | expire-access-exceptions | ATIVO |
+| origo-auto-recertification | 05:15 diário | auto-recertification | ATIVO |
+| origo-daily-cycle | 06:30 diário | run-daily-cycle (SharePoint -> reconcile -> fila) | ATIVO |
+| origo-audit-reconciliation | 04:00 domingo | audit-reconciliation | ATIVO |
+| sync-sharepoint-csv-daily | 11:00 diário | sync-sharepoint-csv (chave anon embutida) | inativo |
 
-- Permitir nova tentativa depois de uma execução interrompida, sem aceitar duas importações concorrentes.
-- Ignorar conteúdo apenas quando corresponde à última importação real concluída, não a qualquer versão histórica. Uma sequência A → B → A deverá importar A novamente.
-- Preservar os jobs concluídos como histórico, com seus hashes e metadados originais.
-- Manter o tratamento de conflito `23505`, distinguindo concorrência válida de execução abandonada, sem apresentar um job antigo como resultado de uma nova importação.
-- Separar pré-visualizações das importações reais: uma pré-visualização não poderá bloquear uma importação nem alterar pessoas, fila ou marcador da última importação.
+Nenhum gatilho de tabela chama funções externas. Os 4 jobs ativos contrariam a regra do projeto "sem sincronizações automáticas" e rodam por fora do Hermes, inclusive o ciclo diário que dispara reconcile-identities sozinho.
 
-## 2. Acompanhamento do RH em Integrações
+## Classificação das funções
 
-- Acrescentar acompanhamento somente leitura da coleta/importação: arquivo, horário, situação, progresso, quantidades e erro integral quando houver.
-- Exibir a quarentena com busca e paginação, incluindo motivo, pessoa, matrícula e execução de origem; fazer os links existentes do dashboard chegarem ao acompanhamento correspondente.
-- Não restaurar os botões removidos de importação manual, ciclo diário ou reconciliação.
-- Auditar a decisão de quarentena existente antes de expor qualquer comando. Permitir encerramento de pendências apenas se a operação não modificar identidades nem disparar provisionamento; caso contrário, manter somente leitura e apresentar o bloqueio.
-- Evitar novas pendências repetidas de ausência para a mesma pessoa enquanto já houver uma pendência aberta. Não excluir nem encerrar automaticamente registros existentes; ausência continuará sem autorizar desligamento.
+Ficam (são a ponte ou ações da tela):
+- iam-agent-api — canal único do Hermes (buscar fila, reportar resultado, heartbeat)
+- admin-users, save-external-review, start-jml-event, send-notification-email, send-review-email — acionadas por pessoas na tela
+
+Passam a ser disparadas só pelo Hermes (deixam de ter agenda no banco):
+- expire-access-exceptions, auto-recertification, audit-reconciliation
+- reconcile-identities, sync-sharepoint-csv, sync-csv-colab
+- sync-entra-groups/apps/licencas/roles, sync-sharepoint-sites, sync-app-profiles, sync-user-access
+
+Deixam de ser necessárias:
+- run-daily-cycle — é só um orquestrador interno; o Hermes passa a fazer essa sequência
+- Função de banco iam_cron_invoke e os segredos que ela usa (origo_functions_url / origo_service_role_key) — só existem para o cron
+- Job sync-sharepoint-csv-daily (inativo, com chave exposta)
+
+## O que será feito
+
+1. Remover os 5 jobs da agenda do banco (migration, idempotente).
+2. Remover a função de banco iam_cron_invoke.
+3. Excluir a função publicada run-daily-cycle e a pasta dela.
+4. Na iam-agent-api, adicionar a ação "run_task" para o Hermes disparar, com a própria credencial dele, as funções de manutenção acima (lista fechada, cada disparo registrado na auditoria). Nada muda no conteúdo das funções.
+5. No executor do Hermes (agent/origo_iam_agent_executor.py), adicionar o agendamento local equivalente (exceções 05:00, recertificação 05:15, ciclo RH 06:30, auditoria domingo 04:00) — desligado por padrão, ligado por configuração no servidor do agente.
+6. Atualizar a documentação de deploy e a regra do projeto.
+
+## Fora do escopo / proteções
+- Não executar reconcile-identities, importação RH nem reprocessar a fila nesta mudança.
+- Não alterar identidades, iam_queue, colaboradores nem iam_change_backups.
+- Funções sync-* e reconcile-identities não são apagadas: o Hermes ainda precisa delas.
 
 ## Detalhes técnicos
-
-- Criar uma **nova migration**, sem editar nem reaplicar `20260930203000_sharepoint_sync_source_idempotency.sql`, para substituir a unicidade histórica `running/done` por uma reserva transacional de execução ativa.
-- Centralizar a reserva e recuperação no caminho compartilhado de `processCsvColab`, também utilizado pelo upload. A reserva deve serializar importações RH, verificar heartbeat e recuperar apenas leases expirados de forma atômica. Vincular atualizações de progresso/conclusão à propriedade da reserva para impedir que uma execução antiga continue gravando após perder seu lease.
-- Preservar hashes dos jobs históricos. Atualizar o marcador da última importação real junto à conclusão, evitando a janela entre job `done` e gravação do marcador.
-- Reutilizar consultas e componentes existentes para o acompanhamento, com atualização automática e restrições de acesso vigentes. Não ampliar permissões.
-- Registrar as decisões estruturais em `AGENTS.md` durante a implementação.
-
-## Validação
-
-- Testar comportamento com armazenamento isolado: job ativo recente, lease expirado, concorrência pelo mesmo hash e por hashes diferentes, sequência A → B → A, repetição imediata de A, corrida `23505` e pré-visualização seguida de importação.
-- Testar que ausências não alteram status nem criam ações de desligamento, e que uma ausência já pendente não gera outra pendência.
-- Testar o acompanhamento com estados de progresso, erro e quarentena, preservando a ausência de comandos manuais proibidos.
-- Validar a navegação do dashboard até o acompanhamento em uma sessão autenticada, sem executar importação ou decisão em produção.
-- Após os testes e a verificação da compilação, publicar somente as funções afetadas e registrar o resultado dos apontamentos.
-
-## Proteções
-
-Esta aprovação autoriza somente a nova migration necessária à correção de idempotência e a publicação das funções afetadas. Não autoriza migrations antigas pendentes, importação RH real, execução de `reconcile-identities`, reprocessamento da fila, alterações de identidades nem limpeza de histórico. Se a proteção transacional depender de requisitos incompatíveis com o banco atual, parar e apresentar o impedimento antes de executar alterações.
-
-Nenhum código da aplicação, dado de produção, migration ou função publicada foi alterado nesta verificação.
+- Migration: `cron.unschedule` por jobname em loop, `DROP FUNCTION IF EXISTS public.iam_cron_invoke(text, jsonb)`.
+- `run_task` usa allowlist e chama via fetch interno com a service key do ambiente da função.
+- Remoção de run-daily-cycle via delete de edge function após o deploy.
