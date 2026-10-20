@@ -2392,10 +2392,6 @@ export type Database = {
       }
       iam_assert_operator: { Args: never; Returns: undefined }
       iam_backup_actor: { Args: never; Returns: string }
-      iam_cron_invoke: {
-        Args: { p_body?: Json; p_function: string }
-        Returns: number
-      }
       iam_effective_access: {
         Args: { p_colaborador_id?: string; p_terceiro_id?: string }
         Returns: {
