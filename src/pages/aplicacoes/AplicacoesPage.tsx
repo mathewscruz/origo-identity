@@ -105,22 +105,6 @@ export default function AplicacoesPage() {
     setDeleteId(null);
   };
 
-  const handleSync = async () => {
-    setSyncing(true);
-    try {
-      const { data, error } = await invokeFunction("sync-entra-apps");
-      if (error) throw new Error(error);
-      toast({
-        title: "Sincronização concluída",
-        description: `${data.total} apps encontrados — ${data.created} novos, ${data.updated} atualizados`,
-      });
-      qc.invalidateQueries({ queryKey: ["aplicacoes"] });
-    } catch (err: any) {
-      toast({ title: "Erro na sincronização", description: err.message, variant: "destructive" });
-    } finally {
-      setSyncing(false);
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -129,21 +113,17 @@ export default function AplicacoesPage() {
         description="Catálogo corporativo de aplicações"
         actions={<>
           <div className="flex items-center gap-3">
-            <AutoUpdatedHint tasks={["sync-entra-apps", "sync-app-profiles"]} />
+            <AutoUpdatedHint tasks="sync-app-profiles" />
             {canEdit && <Button onClick={() => navigate("/aplicacoes/conectar")}><Plus className="mr-1 h-4 w-4" />Conectar sistema</Button>}
           </div>
         </>}
       />
 
       {/* Counters */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card><CardContent className="p-4 flex items-center gap-3">
           <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center"><Globe className="h-5 w-5 text-primary" /></div>
           <div><p className="text-2xl font-bold">{totalApps}</p><p className="text-xs text-muted-foreground">Total</p></div>
-        </CardContent></Card>
-        <Card><CardContent className="p-4 flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-info/10 flex items-center justify-center"><Cloud className="h-5 w-5 text-info" /></div>
-          <div><p className="text-2xl font-bold">{azureApps}</p><p className="text-xs text-muted-foreground">Azure SSO</p></div>
         </CardContent></Card>
         <Card><CardContent className="p-4 flex items-center gap-3">
           <div className="h-10 w-10 rounded-lg bg-destructive/10 flex items-center justify-center"><AlertTriangle className="h-5 w-5 text-destructive" /></div>
@@ -161,14 +141,6 @@ export default function AplicacoesPage() {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Buscar aplicações..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
         </div>
-        <Select value={filtroOrigem} onValueChange={(v) => { setFiltroOrigem(v); setPage(1); }}>
-          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Origem" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todas">Todas origens</SelectItem>
-            <SelectItem value="azure">Azure SSO</SelectItem>
-            <SelectItem value="manual">Manual/Externa</SelectItem>
-          </SelectContent>
-        </Select>
         <Select value={filtroCriticidade} onValueChange={(v) => { setFiltroCriticidade(v); setPage(1); }}>
           <SelectTrigger className="w-[160px]"><SelectValue placeholder="Criticidade" /></SelectTrigger>
           <SelectContent>
@@ -187,7 +159,7 @@ export default function AplicacoesPage() {
         ) : paginatedItems.length === 0 ? (
           <div className="p-12 text-center">
             <EmptyState message="Nenhuma aplicação encontrada" size="lg" />
-            <p className="text-sm text-muted-foreground mt-1">As aplicações do Azure chegam automaticamente; você também pode criar uma manualmente</p>
+            <p className="text-sm text-muted-foreground mt-1">Cadastre os sistemas da empresa pelo botão "Conectar sistema"</p>
             <div className="mt-4 flex gap-2 justify-center">
               {canEdit && <Button onClick={() => navigate("/aplicacoes/conectar")}><Plus className="mr-1 h-4 w-4" />Conectar sistema</Button>}
             </div>

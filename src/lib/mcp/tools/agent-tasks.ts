@@ -4,7 +4,7 @@ import { sb, getSupabaseConfig } from "../supabase-client";
 
 /** Rotinas que o painel pede ao Hermes; mesma lista fechada de agent_refresh_request. */
 export const MCP_AGENT_TASKS = [
-  "sync-entra-groups", "sync-entra-apps", "sync-entra-licencas", "sync-entra-roles",
+  "sync-entra-groups", "sync-entra-licencas", "sync-entra-roles",
   "sync-sharepoint-sites", "sync-app-profiles", "quarantine-triage", "audit-reconciliation", "test-app-connection",
 ] as const;
 

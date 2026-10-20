@@ -1013,7 +1013,6 @@ import { defineTool as defineTool22 } from "npm:@lovable.dev/mcp-js@0.20.0";
 import { z as z20 } from "npm:zod@^4.4.3";
 var MCP_AGENT_TASKS = [
   "sync-entra-groups",
-  "sync-entra-apps",
   "sync-entra-licencas",
   "sync-entra-roles",
   "sync-sharepoint-sites",
