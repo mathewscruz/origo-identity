@@ -10,7 +10,7 @@ import {
 } from "recharts";
 import {
   Activity, AlertTriangle, CalendarClock, ClipboardCheck, FileCheck, KeyRound,
-  ShieldAlert, UserCheck, Users, XCircle, Crown, FileSpreadsheet, Hourglass,
+  ShieldAlert, ShieldCheck, UserCheck, Users, XCircle, Crown, FileSpreadsheet, Hourglass,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
