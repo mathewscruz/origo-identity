@@ -159,6 +159,43 @@ def post_release(api_url: str, token: str, item: Dict[str, Any], reason: str, ex
     r.raise_for_status()
 
 
+def run_task(api_url: str, token: str, task: str, execute: bool = False) -> Dict[str, Any]:
+    """Dispara uma rotina de manutenção pela ponte (o Hermes é o único agendador)."""
+    r = requests.post(f"{api_url}/run_task", headers=agent_headers(token, execute), json={"task": task}, timeout=900)
+    return {"status": r.status_code, "body": r.text[:300]}
+
+
+# Agenda local do Hermes (UTC). weekday: 0=segunda … 6=domingo; None = todo dia.
+# O ciclo RH é sequencial: importação SharePoint e depois reconciliação.
+SCHEDULE = [
+    {"name": "expire", "hour": 5, "minute": 0, "weekday": None, "tasks": ["expire-access-exceptions"]},
+    {"name": "recert", "hour": 5, "minute": 15, "weekday": None, "tasks": ["auto-recertification"]},
+    {"name": "ciclo_rh", "hour": 6, "minute": 30, "weekday": None, "tasks": ["sync-sharepoint-csv", "reconcile-identities"]},
+    {"name": "auditoria", "hour": 4, "minute": 0, "weekday": 6, "tasks": ["audit-reconciliation"]},
+]
+
+
+def run_due_schedule(api_url: str, token: str, done: Dict[str, str], execute: bool) -> None:
+    now = datetime.now(timezone.utc)
+    for s in SCHEDULE:
+        if s["weekday"] is not None and now.weekday() != s["weekday"]:
+            continue
+        due = now.replace(hour=s["hour"], minute=s["minute"], second=0, microsecond=0)
+        key = f"{s['name']}:{now.date().isoformat()}"
+        if now < due or done.get(s["name"]) == key:
+            continue
+        done[s["name"]] = key
+        for task in s["tasks"]:
+            try:
+                res = run_task(api_url, token, task, execute=execute)
+                print(f"[origo-agent] agenda {task}: HTTP {res['status']}")
+                if res["status"] >= 400:
+                    break  # não segue a sequência se uma etapa falhou
+            except Exception as e:  # noqa: BLE001
+                print(f"[origo-agent] agenda {task} falhou: {e}", file=sys.stderr)
+                break
+
+
 def post_update(api_url: str, token: str, body: Dict[str, Any], execute: bool = False) -> None:
     r = requests.post(
         f"{api_url}/update",
@@ -778,7 +815,10 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=10, help="Itens reservados por poll")
     parser.add_argument("--lease", type=int, default=600, help="Lease (s) da reserva de cada item")
     parser.add_argument("--owner", default=os.environ.get("IAM_AGENT_OWNER", "origo-agent"), help="Identificação deste executor")
+    parser.add_argument("--schedule", action="store_true", default=os.environ.get("IAM_AGENT_SCHEDULE") == "1",
+                        help="Liga a agenda local (exceções, recertificação, ciclo RH, auditoria). Default: desligada")
     args = parser.parse_args()
+    schedule_done: Dict[str, str] = {}
 
     api_url = env("IAM_AGENT_API_URL").rstrip("/")
     api_token = env("IAM_AGENT_TOKEN")
@@ -793,6 +833,9 @@ def main() -> int:
             if time.time() - graph_token_at > 45 * 60:
                 graph_token = get_azure_token()
                 graph_token_at = time.time()
+
+            if args.schedule:
+                run_due_schedule(api_url, api_token, schedule_done, execute=args.execute)
 
             body = fetch_pending(api_url, api_token, owner=args.owner, limit=args.limit, lease=args.lease, execute=args.execute)
             items = body.get("data", []) or []

@@ -31,6 +31,13 @@ const RETRYABLE_ERRORS = new Set([
 const IDENTITY_ERRORS = new Set(["user_not_found", "not_found_in_entra", "user_not_synced"]);
 
 // Tudo o que o agente executa (nenhuma outra função escreve em AD/Entra/apps)
+// Rotinas que somente o Hermes dispara (não há mais agenda no banco).
+export const AGENT_TASKS = [
+  "sync-sharepoint-csv", "reconcile-identities", "expire-access-exceptions", "auto-recertification",
+  "audit-reconciliation", "sync-entra-groups", "sync-entra-apps", "sync-entra-licencas", "sync-entra-roles",
+  "sync-sharepoint-sites", "sync-app-profiles", "sync-user-access",
+];
+
 export const AGENT_ACTION_TYPES = [
   "create", "create_if_not_exists", "update", "disable", "reset_password",
   "assign_group", "remove_group",
@@ -197,6 +204,28 @@ Deno.serve(async (req) => {
       action_types: AGENT_ACTION_TYPES, lease_seconds: lease, owner,
       enable_requires_approval: enableRequiresApproval,
     });
+  }
+
+  // ─── POST /run_task → Hermes dispara rotinas de manutenção (lista fechada) ───
+  if (req.method === "POST" && path === "run_task") {
+    const body = await req.json().catch(() => null) as { task?: string; payload?: Record<string, unknown> } | null;
+    const task = body?.task || "";
+    if (!AGENT_TASKS.includes(task)) return jsonResponse({ error: `task inválida. Permitidas: ${AGENT_TASKS.join(", ")}` }, 400);
+    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const res = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/${task}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}`, apikey: key },
+      body: JSON.stringify({ ...(body?.payload || {}), trigger: "hermes" }),
+    });
+    const text = await res.text();
+    let parsed: unknown = text;
+    try { parsed = JSON.parse(text); } catch { /* texto */ }
+    await supabase.from("auditoria").insert({
+      acao: "agent_task", entidade: "scheduler", operador: owner,
+      resumo: `Hermes disparou ${task}`, detalhes: { task, http_status: res.status },
+    });
+    if (isAgent) await heartbeat(supabase, req, owner, "poll");
+    return jsonResponse({ success: res.ok || res.status === 202, task, http_status: res.status, data: parsed }, res.ok || res.status === 202 ? 200 : 502);
   }
 
   // ─── POST /release ───

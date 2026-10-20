@@ -17,7 +17,6 @@ const CHECKS = [
   ["iam_effective_access", { p_colaborador_id: "00000000-0000-0000-0000-000000000000", p_terceiro_id: null }, "20260917120100"],
   ["jml_alterar_status", { p_colaborador_id: "00000000-0000-0000-0000-000000000000", p_novo_status: "ativo", p_operador: "x" }, "20260917120200"],
   ["is_platform_admin", { _user_id: "00000000-0000-0000-0000-000000000000" }, "20260917120300"],
-  ["iam_cron_invoke", { p_function: "x" }, "20260917120600"],
   ["iam_param", { p_chave: "x", p_default: "y" }, "20260917120700"],
   ["dashboard_metrics", {}, "20260918100000"],
   ["iam_queue_stats", {}, "20260918100000"],
