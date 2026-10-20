@@ -1,3 +1,4 @@
+import { QUEUE_ERROR_LABELS } from "@/lib/queueErrorLabels";
 import { Button } from "@/components/ui/button";
 import QueryState from "@/components/QueryState";
 import { completedQueueLink } from "@/lib/dashboardFilters";
@@ -36,11 +37,7 @@ const C = {
   violet: "hsl(262, 52%, 47%)",
 };
 
-const FAILURE_LABELS: Record<string, string> = {
-  unsupported_ad_action: "Ação AD não suportada",
-  ad_ldap_not_configured: "Conexão AD indisponível",
-  graph_http_error: "Erro Microsoft Graph",
-};
+const FAILURE_LABELS = QUEUE_ERROR_LABELS;
 
 type Period = 7 | 30 | 90;
 
