@@ -9,8 +9,8 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
-  Activity, AlertTriangle, Bot, CalendarClock, ClipboardCheck, FileCheck, KeyRound,
-  ShieldAlert, ShieldCheck, UserCheck, Users, XCircle, Crown, FileSpreadsheet, Hourglass,
+  Activity, AlertTriangle, CalendarClock, ClipboardCheck, FileCheck, KeyRound,
+  ShieldAlert, UserCheck, Users, XCircle, Crown, FileSpreadsheet, Hourglass,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +20,7 @@ import PageHeader from "@/components/PageHeader";
 import StatCard from "@/components/StatCard";
 import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
-import { useDashboardMetrics, useDashboardSeries, useParametro, type DashboardSeriesPoint } from "@/hooks/useOrigoData";
+import { useDashboardMetrics, useDashboardSeries, type DashboardSeriesPoint } from "@/hooks/useOrigoData";
 import { actionLabel, QUEUE_STATUS_META } from "@/lib/queueLabels";
 import ActivityFeed from "@/components/ActivityFeed";
 import { useQuery } from "@tanstack/react-query";
