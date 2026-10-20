@@ -96,3 +96,6 @@ Fluxo completo, do cérebro ao executor:
   (migrações `20260918100000_hermes_unico_executor.sql`, `20260918120000_revisoes_completas.sql`,
   `20260918130000_terceiros_revalidacao_atividade.sql`)
 - Testes: `db/tests/iga_smoke.sql` (cenários T19–T22 cobrem revisões, inbox, quarentena, revalidação de terceiros por responsável)
+
+## Análise de documentação de sistemas (`analyze-app-docs`)
+`run_agent_tasks` devolve `analises_para_voce` com `url` e/ou `arquivo_url` (link assinado de 1 h). Leia o material você mesmo, decida a forma de conexão (grupo, API ou manual) e responda com `submit_app_analysis` (ações da API com {{nome}}, {{email}}, {{matricula}}, {{login}}, {{perfil_externo}}; perfis internos; lacunas). Nunca devolva senhas, tokens ou chaves. Página com login: responda com `erro` pedindo o arquivo.

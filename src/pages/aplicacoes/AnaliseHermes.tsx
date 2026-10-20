@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { HermesIcon } from "@/components/icons/HermesIcon";
+import HermesIcon from "@/components/icons/HermesIcon";
 import { diagnosticoParaFicha, sanitizarDiagnostico, type ItemAplicavel } from "@/lib/appAnalysis";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
