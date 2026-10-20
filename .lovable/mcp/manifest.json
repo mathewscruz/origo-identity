@@ -12,7 +12,7 @@
   "mcp": {
     "server": {
       "name": "origo-access-identity-mcp",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "title": "Órigo Access & Identity"
     },
     "tools": [
@@ -98,6 +98,299 @@
           },
           "required": [
             "ids"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "submit_app_analysis",
+        "title": "Entregar análise de um sistema",
+        "description": "Entrega o diagnóstico de um pedido de analises_para_voce (run_agent_tasks). Você leu o link/arquivo e diz a melhor forma de conectar: 'grupo' (acesso por grupo AD/Entra), 'api' (com endereço, autenticação e como criar/desativar/consultar usuário, usando {{nome}}, {{email}}, {{matricula}}, {{login}}, {{perfil_externo}}) ou 'manual' (com instruções). Liste perfis internos e lacunas. NUNCA inclua senhas, tokens ou chaves. Se não conseguiu ler (login exigido etc.), envie erro.",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "erro": {
+              "description": "Preencha só se não conseguiu analisar.",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modo_sugerido": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "grupo",
+                    "api",
+                    "manual"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "motivo": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 1500
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "grupo_nome": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "api_base_url": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "auth_type": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "bearer",
+                    "api_key",
+                    "basic",
+                    "oauth2_client_credentials",
+                    "app_token"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "actions": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "create": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "method": {
+                              "type": "string",
+                              "enum": [
+                                "GET",
+                                "POST",
+                                "PUT",
+                                "PATCH",
+                                "DELETE"
+                              ]
+                            },
+                            "path": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 300
+                            },
+                            "body_template": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 2000
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "method",
+                            "path"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "disable": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "method": {
+                              "type": "string",
+                              "enum": [
+                                "GET",
+                                "POST",
+                                "PUT",
+                                "PATCH",
+                                "DELETE"
+                              ]
+                            },
+                            "path": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 300
+                            },
+                            "body_template": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 2000
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "method",
+                            "path"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "lookup": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "method": {
+                              "type": "string",
+                              "enum": [
+                                "GET",
+                                "POST",
+                                "PUT",
+                                "PATCH",
+                                "DELETE"
+                              ]
+                            },
+                            "path": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 300
+                            },
+                            "body_template": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 2000
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "method",
+                            "path"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "perfis": {
+              "anyOf": [
+                {
+                  "maxItems": 50,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 120
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "instrucoes_acesso": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 3000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "instrucoes_revogacao": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 3000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lacunas": {
+              "anyOf": [
+                {
+                  "maxItems": 20,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id"
           ]
         },
         "outputSchema": null
