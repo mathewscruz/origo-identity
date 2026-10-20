@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, type ComponentType } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity, AppWindow, ArrowUpRight, Bot, Briefcase, CheckCircle2, ClipboardCheck, Clock, Key, Loader2, Settings, Shield,
-  UserCheck, UserMinus, UserPlus, Users, XCircle, AlertTriangle, ScrollText, Upload, Pencil, Trash2, RefreshCw, type LucideIcon,
+  UserCheck, UserMinus, UserPlus, Users, XCircle, AlertTriangle, ScrollText, Upload, Pencil, Trash2, RefreshCw,
 } from "lucide-react";
+import HermesIcon from "@/components/icons/HermesIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,7 +15,7 @@ import { actionLabel, QUEUE_STATUS_META, statusLabel, JML_TIPO_META } from "@/li
 import { humanize } from "@/lib/labels";
 import { tempoRelativo } from "@/lib/alertLabels";
 import { cn } from "@/lib/utils";
-import { activitySentence, isActivityNoise } from "@/lib/activityLabels";
+import { activitySentence, isActivityNoise, isHermesActor } from "@/lib/activityLabels";
 
 export interface ActivityItem {
   fonte: "fila" | "jml" | "auditoria";
