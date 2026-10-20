@@ -196,6 +196,37 @@ def run_due_schedule(api_url: str, token: str, done: Dict[str, str], execute: bo
                 break
 
 
+def relay_notifications(api_url: str, token: str, execute: bool) -> None:
+    """Repassa os alertas do painel para o Telegram do Hermes (canal que o Hermes já tem com o responsável).
+
+    O envio usa o comando/rotina do próprio Hermes: defina HERMES_NOTIFY_CMD (ex.: "hermes telegram send")
+    — o texto vai pela entrada padrão. Sem ele, apenas registra no log e não confirma o envio.
+    """
+    try:
+        r = requests.get(f"{api_url}/notifications", headers=agent_headers(token, execute), timeout=30)
+        r.raise_for_status()
+        items = r.json().get("notifications", [])
+    except Exception as e:  # noqa: BLE001
+        print(f"[origo-agent] notifications: {e}", file=sys.stderr)
+        return
+    cmd = os.environ.get("HERMES_NOTIFY_CMD", "").strip()
+    sent = []
+    for a in items:
+        icon = "🔴" if a.get("severidade") == "critico" else "🟡"
+        text = f"{icon} Órigo IAM — {a.get('titulo')}\n{a.get('mensagem') or ''}\n{a.get('link')}"
+        if not cmd:
+            print(f"[origo-agent] aviso (sem HERMES_NOTIFY_CMD): {text}")
+            continue
+        try:
+            import subprocess
+            subprocess.run(cmd, shell=True, input=text.encode("utf-8"), check=True, timeout=60)
+            sent.append(a["id"])
+        except Exception as e:  # noqa: BLE001
+            print(f"[origo-agent] falha ao enviar aviso {a.get('id')}: {e}", file=sys.stderr)
+    if sent:
+        requests.post(f"{api_url}/ack", headers=agent_headers(token, execute), json={"ids": sent}, timeout=30)
+
+
 def post_task_result(api_url: str, token: str, task_id: str, status: str, http_status: int, result: str, execute: bool = False) -> None:
     r = requests.post(f"{api_url}/task_result", headers=agent_headers(token, execute),
                       json={"id": task_id, "status": status, "http_status": http_status, "result": result[:2000]}, timeout=30)
@@ -842,6 +873,7 @@ def main() -> int:
 
             if args.schedule:
                 run_due_schedule(api_url, api_token, schedule_done, execute=args.execute)
+            relay_notifications(api_url, api_token, execute=args.execute)
 
             body = fetch_pending(api_url, api_token, owner=args.owner, limit=args.limit, lease=args.lease, execute=args.execute)
             if body.get("agent_paused"):
