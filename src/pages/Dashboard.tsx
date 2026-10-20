@@ -9,7 +9,7 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
-  Activity, AlertTriangle, CalendarClock, ClipboardCheck, FileCheck, KeyRound,
+  AlertTriangle, CalendarClock, ClipboardCheck, FileCheck, KeyRound,
   ShieldAlert, ShieldCheck, UserCheck, Users, XCircle, Crown, FileSpreadsheet, Hourglass,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
