@@ -18,7 +18,7 @@ const OPEN_EVENT = "origo:command-palette";
 export function openCommandPalette() { window.dispatchEvent(new Event(OPEN_EVENT)); }
 
 const PAGES = [
-  { label: "Dashboard", url: "/", icon: LayoutDashboard, group: "Operação" },
+  { label: "Início", url: "/", icon: LayoutDashboard, group: "Operação" },
   { label: "Fila de Provisionamento", url: "/fila-provisionamento", icon: ListOrdered, group: "Operação", keywords: "aprovação agente hermes" },
   { label: "Aguardando aprovação", url: "/fila-provisionamento?tab=aprovacao", icon: CheckSquare, group: "Operação", keywords: "aprovar fila" },
   { label: "Eventos JML", url: "/eventos-jml", icon: Activity, group: "Operação", keywords: "joiner mover leaver" },

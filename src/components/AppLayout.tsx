@@ -16,7 +16,7 @@ import { Home, Search, LogOut, Bot, Bell, Eye, Pencil } from "lucide-react";
 import { useCanEdit } from "@/hooks/useRole";
 
 const routeLabels: Record<string, string> = {
-  "/": "Dashboard",
+  "/": "Início",
   "/colaboradores": "Colaboradores",
   "/terceiros": "Terceiros",
   "/eventos-jml": "Eventos JML",

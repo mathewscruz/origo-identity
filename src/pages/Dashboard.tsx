@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import QueryState from "@/components/QueryState";
 import { completedQueueLink } from "@/lib/dashboardFilters";
 import PeopleLifecycleChart from "@/components/PeopleLifecycleChart";
@@ -235,46 +236,25 @@ export default function Dashboard() {
   const pendingAge = ageLabel(m?.fila_oldest_pending);
 
   const kpis = [
-    { label: "Pessoas ativas", value: pessoas, hint: `${m?.colab_ativos ?? 0} ativos · ${m?.colab_ferias ?? 0} férias · ${m?.colab_afastados ?? 0} afastados · ${m?.terc_ativos ?? 0} terceiros`, icon: Users, tone: "primary" as const, to: "/colaboradores" },
-    { label: "Aguardando aprovação", value: m?.fila_waiting ?? 0, hint: waitingAge ? `mais antigo: ${waitingAge}` : "fila vazia", icon: ShieldCheck, tone: (m?.fila_waiting ?? 0) > 0 ? "warning" as const : "success" as const, to: "/fila-provisionamento?tab=aprovacao" },
-    { label: "Fila do agente", value: (m?.fila_pending ?? 0) + (m?.fila_processing ?? 0), hint: `${m?.fila_processing ?? 0} executando${pendingAge ? ` · espera: ${pendingAge}` : ""}`, icon: Bot, tone: "info" as const, to: "/fila-provisionamento?status=agente" },
-    { label: "Falhas na fila", value: m?.fila_failed ?? 0, hint: `${m?.fila_success_24h ?? 0} concluídos em 24 h`, icon: XCircle, tone: (m?.fila_failed ?? 0) > 0 ? "destructive" as const : "success" as const, to: "/fila-provisionamento?status=failed" },
-    { label: "Exceções pendentes", value: m?.excecoes_pendentes ?? 0, hint: `${m?.excecoes_vencendo ?? 0} vencendo em 15 d`, icon: FileCheck, tone: (m?.excecoes_pendentes ?? 0) > 0 ? "warning" as const : "success" as const, to: "/excecoes" },
-    { label: "Alertas não lidos", value: m?.alertas_nao_lidos ?? 0, hint: `${m?.alertas_criticos ?? 0} críticos`, icon: AlertTriangle, tone: (m?.alertas_criticos ?? 0) > 0 ? "destructive" as const : (m?.alertas_nao_lidos ?? 0) > 0 ? "warning" as const : "success" as const, to: "/alertas" },
+    { label: "Aguardando aprovação", value: m?.fila_waiting ?? 0, hint: waitingAge ? `mais antigo: ${waitingAge}` : "nada pendente", icon: ShieldCheck, tone: (m?.fila_waiting ?? 0) > 0 ? "warning" as const : "success" as const, to: "/fila-provisionamento?tab=aprovacao" },
+    { label: "Falhas do agente", value: m?.fila_failed ?? 0, hint: `${m?.fila_success_24h ?? 0} concluídos em 24 h${pendingAge ? ` · espera: ${pendingAge}` : ""}`, icon: XCircle, tone: (m?.fila_failed ?? 0) > 0 ? "destructive" as const : "success" as const, to: "/fila-provisionamento?status=failed" },
+    { label: "Revisões abertas", value: m?.revisoes_abertas ?? 0, hint: `${pessoas} pessoas ativas`, icon: Users, tone: "primary" as const, to: "/revisoes" },
+    { label: "Terceiros vencidos", value: m?.terc_vencidos ?? 0, hint: `${m?.excecoes_pendentes ?? 0} exceções pendentes`, icon: FileCheck, tone: (m?.terc_vencidos ?? 0) > 0 ? "destructive" as const : "success" as const, to: "/terceiros" },
   ];
-
-  const pessoasRows = [
-    { label: "Ativos", value: m?.colab_ativos ?? 0, color: C.success, to: "/colaboradores?status=ativo" },
-    { label: "Férias", value: m?.colab_ferias ?? 0, color: C.info, to: "/colaboradores?status=ferias" },
-    { label: "Afastados", value: m?.colab_afastados ?? 0, color: C.warning, to: "/colaboradores?status=afastado" },
-    { label: "Inativos", value: m?.colab_inativos ?? 0, color: C.muted, to: "/colaboradores?status=inativo" },
-    { label: "Desligados", value: m?.colab_desligados ?? 0, color: C.destructive, to: "/colaboradores?status=desligado" },
-    { label: "Terceiros ativos", value: m?.terc_ativos ?? 0, color: C.violet, to: "/terceiros" },
-    { label: "Terceiros inativos", value: m?.terc_inativos ?? 0, color: C.muted, to: "/terceiros" },
-    { label: "Suspensos (pré-leaver)", value: m?.colab_suspensos ?? 0, color: "hsl(24, 90%, 55%)", to: "/colaboradores?suspenso_preventivo=true", includeInTotal: false },
-  ];
-  const filaRows = [
-    { label: QUEUE_STATUS_META.waiting_approval.label, value: m?.fila_waiting ?? 0, color: C.info, to: "/fila-provisionamento?tab=aprovacao" },
-    { label: QUEUE_STATUS_META.pending.label, value: m?.fila_pending ?? 0, color: C.warning, to: "/fila-provisionamento?status=pending" },
-    { label: QUEUE_STATUS_META.processing.label, value: m?.fila_processing ?? 0, color: C.violet, to: "/fila-provisionamento?status=processing" },
-    { label: QUEUE_STATUS_META.failed.label, value: m?.fila_failed ?? 0, color: C.destructive, to: "/fila-provisionamento?status=failed" },
-  ];
-  const acoes: Row[] = m?.fila_por_acao_7d ?? [];
-  const falhas: Row[] = m?.fila_falhas_por_codigo ?? [];
 
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Dashboard"
+        title="Início"
         description={<>Operação IAM em tempo real{m?.gerado_em ? <span className="text-xs"> · atualizado {relTime(m.gerado_em)}</span> : null}</>}
-        actions={<Badge variant="outline" className="gap-1 text-xs"><Activity className={`h-3 w-3 ${metricsError || seriesError ? "text-destructive" : "text-success"}`} />{metricsError || seriesError ? "Dados indisponíveis" : isLoading ? "Carregando" : "Tempo real"}</Badge>}
+        actions={<><Button asChild variant="outline" size="sm"><Link to="/relatorios">Relatórios</Link></Button><Badge variant="outline" className="gap-1 text-xs"><Activity className={`h-3 w-3 ${metricsError || seriesError ? "text-destructive" : "text-success"}`} />{metricsError || seriesError ? "Dados indisponíveis" : isLoading ? "Carregando" : "Tempo real"}</Badge></>}
       />
 
       <QueryState loading={isLoading} error={metricsError || (!isLoading && !m ? new Error("Métricas indisponíveis") : null)} retry={retryMetrics}>
       <SystemStrip m={m} loading={isLoading} />
 
       {/* KPIs */}
-      <div data-tour="kpi-cards" className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-6">
+      <div data-tour="kpi-cards" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {kpis.map((k, i) => (
           <div key={k.label} className={`animate-content-in stagger-${i + 1}`}>
             <StatCard label={k.label} value={k.value} hint={k.hint} icon={k.icon} tone={k.tone} to={k.to} loading={isLoading} />
@@ -284,20 +264,20 @@ export default function Dashboard() {
 
       </QueryState>
       {/* Séries */}
-      <div className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-2">
-        <PeopleLifecycleChart period={period} onPeriodChange={setPeriod} />
+      <div>
 
         <div className="h-full"><QueryState loading={seriesLoading || seriesPlaceholder} error={seriesError} retry={retrySeries}>
-        <Card data-tour="chart-requests" className="h-full min-h-[390px] flex flex-col">
+        <Card data-tour="chart-requests" className="min-h-[360px] flex flex-col">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Movimentações JML</CardTitle>
-            <p className="text-xs text-muted-foreground">Eventos do ciclo de vida no período selecionado</p>
+            <div className="flex items-center justify-between gap-3"><div><CardTitle className="text-base">Execuções por dia</CardTitle>
+            <p className="text-xs text-muted-foreground">Concessões, revogações e falhas executadas pelo agente</p></div>
+            <div className="flex gap-1">{([7, 30, 90] as Period[]).map((d) => <Button key={d} size="sm" variant={period === d ? "secondary" : "ghost"} className="h-7 px-2 text-xs" onClick={() => setPeriod(d)}>{d} d</Button>)}</div></div>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col pt-0">
             <div className="mb-4 grid grid-cols-3 gap-2">
-              <div className="rounded-lg border bg-success/5 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Entradas</p><p className="text-lg font-semibold tabular-nums text-success">{totals.joiners}</p></div>
-              <div className="rounded-lg border bg-info/5 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Mudanças</p><p className="text-lg font-semibold tabular-nums text-info">{totals.movers}</p></div>
-              <div className="rounded-lg border bg-destructive/5 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Saídas</p><p className="text-lg font-semibold tabular-nums text-destructive">{totals.leavers}</p></div>
+              <div className="rounded-lg border bg-muted/40 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Concessões</p><p className="text-lg font-semibold tabular-nums text-success">{totals.concessoes}</p></div>
+              <div className="rounded-lg border bg-muted/40 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Revogações</p><p className="text-lg font-semibold tabular-nums">{totals.revogacoes}</p></div>
+              <div className="rounded-lg border bg-muted/40 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Falhas</p><p className="text-lg font-semibold tabular-nums text-destructive">{totals.falhas}</p></div>
             </div>
             <div className="min-h-[230px] flex-1">
             <ResponsiveContainer width="100%" height="100%">
@@ -307,9 +287,9 @@ export default function Dashboard() {
                 <YAxis tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
                 <Tooltip content={<ChartTooltip />} />
                 <Legend onClick={(e: Row) => toggle(String(e.dataKey))} wrapperStyle={{ fontSize: 12, cursor: "pointer" }} />
-                <Bar dataKey="joiners" name="Joiner" stackId="jml" fill={C.success} hide={hidden.has("joiners")} />
-                <Bar dataKey="movers" name="Mover" stackId="jml" fill={C.info} hide={hidden.has("movers")} />
-                <Bar dataKey="leavers" name="Leaver" stackId="jml" fill={C.destructive} radius={[3, 3, 0, 0]} hide={hidden.has("leavers")} />
+                <Bar dataKey="concessoes" name="Concessões" stackId="x" fill={C.success} hide={hidden.has("concessoes")} />
+                <Bar dataKey="revogacoes" name="Revogações" stackId="x" fill={C.muted} hide={hidden.has("revogacoes")} />
+                <Bar dataKey="falhas" name="Falhas" stackId="x" fill={C.destructive} radius={[3, 3, 0, 0]} hide={hidden.has("falhas")} />
               </BarChart>
             </ResponsiveContainer>
             </div>
@@ -318,58 +298,6 @@ export default function Dashboard() {
         </QueryState></div>
       </div>
 
-      {/* Distribuições + governança */}
-      <QueryState loading={isLoading} error={metricsError || (!isLoading && !m ? new Error("Métricas indisponíveis") : null)} retry={retryMetrics}>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
-        <BarsPanel title="Cadastros por status" rows={pessoasRows} />
-        <BarsPanel title="Fila atual" rows={filaRows} footer={
-          <Link to={completedQueueLink(m?.gerado_em)} className="flex items-center justify-between rounded-md border-t pt-3 text-sm hover:text-primary">
-            <span>Concluídos (7 dias)</span>
-            <span className="font-semibold tabular-nums">{m?.fila_success_7d ?? 0}</span>
-          </Link>
-        } />
-        <Card className="h-full">
-          <CardHeader className="pb-2"><CardTitle className="text-base">Execuções em 7 dias</CardTitle></CardHeader>
-          <CardContent className="p-0">
-            {acoes.length === 0 ? <div className="py-8"><EmptyState message="Sem ações no período" /></div> : (
-              <ul className="divide-y">
-                {acoes.map((a) => {
-                  const okPct = a.total > 0 ? Math.round((a.sucesso / a.total) * 100) : 0;
-                  return (
-                    <li key={a.acao} className="px-4 py-2">
-                      <Link to={`/fila-provisionamento?action=${a.acao}`} className="block">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="truncate text-xs font-medium">{actionLabel(a.acao)}</span>
-                          <span className="text-xs text-muted-foreground tabular-nums"><span className="font-semibold text-foreground">{a.total}</span>{a.falha > 0 ? <span className="text-destructive"> · {a.falha} falha(s)</span> : null}</span>
-                        </div>
-                        <div className="mt-1 flex h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                          <div className="h-full bg-success" style={{ width: `${okPct}%` }} />
-                          <div className="h-full bg-destructive" style={{ width: `${a.total > 0 ? Math.round((a.falha / a.total) * 100) : 0}%` }} />
-                        </div>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            {falhas.length > 0 && (
-              <div className="border-t px-4 py-3">
-                <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Falhas em aberto</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {falhas.map((f) => (
-                    <Link key={f.codigo} to="/fila-provisionamento?status=failed">
-                      <Badge title={f.codigo} variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive">{FAILURE_LABELS[f.codigo] || actionLabel(f.codigo)} · {f.total}</Badge>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-        <GovernanceList m={m} loading={isLoading} />
-      </div>
-
-      </QueryState>
       {/* Atividade recente */}
       <Card data-tour="timeline" className="animate-content-in stagger-5">
         <CardHeader className="pb-2">
@@ -383,7 +311,7 @@ export default function Dashboard() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <ActivityFeed limit={15} />
+          <ActivityFeed limit={10} />
         </CardContent>
       </Card>
       <OnboardingTour pageKey="dashboard" steps={tourSteps.dashboard} />

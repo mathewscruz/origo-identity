@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes, Navigate, useLocation } from "react-route
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
+import SectionTabs from "@/components/SectionTabs";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "./components/AppLayout";
 import Dashboard from "./pages/Dashboard";
@@ -68,14 +69,20 @@ const App = () => (
             <Route path="/revisao-externa/:token" element={<RevisaoExternaPage />} />
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               <Route path="/" element={<Dashboard />} />
-              <Route path="/fila-provisionamento" element={<FilaProvisionamentoPage />} />
+              <Route element={<SectionTabs tabs={[{ title: "Fila e aprovações", url: "/fila-provisionamento" }, { title: "Eventos JML", url: "/eventos-jml" }]} />}>
+                <Route path="/fila-provisionamento" element={<FilaProvisionamentoPage />} />
+              </Route>
               <Route path="/aprovacao-iam" element={<AprovacaoRedirect />} />
               <Route path="/fila-provisionamento/:id" element={<SolicitacaoDetalhePage />} />
-              <Route path="/colaboradores" element={<ColaboradoresPage />} />
-              <Route path="/colaboradores/:id" element={<ColaboradorDetalhePage />} />
-              <Route path="/terceiros" element={<TerceirosPage />} />
-              <Route path="/terceiros/:id" element={<TerceiroDetalhePage />} />
-              <Route path="/eventos-jml" element={<EventosJMLPage />} />
+              <Route element={<SectionTabs tabs={[{ title: "Colaboradores", url: "/colaboradores" }, { title: "Terceiros", url: "/terceiros" }]} />}>
+                <Route path="/colaboradores" element={<ColaboradoresPage />} />
+                <Route path="/colaboradores/:id" element={<ColaboradorDetalhePage />} />
+                <Route path="/terceiros" element={<TerceirosPage />} />
+                <Route path="/terceiros/:id" element={<TerceiroDetalhePage />} />
+              </Route>
+              <Route element={<SectionTabs tabs={[{ title: "Fila e aprovações", url: "/fila-provisionamento" }, { title: "Eventos JML", url: "/eventos-jml" }]} />}>
+                <Route path="/eventos-jml" element={<EventosJMLPage />} />
+              </Route>
               <Route path="/eventos-jml/:id" element={<EventoJMLDetalhePage />} />
               <Route path="/aplicacoes" element={<AplicacoesPage />} />
               <Route path="/aplicacoes/:id" element={<AplicacaoDetalhePage />} />
@@ -86,16 +93,20 @@ const App = () => (
               <Route path="/revisoes" element={<RevisoesPage />} />
               <Route path="/revisoes/:id" element={<RevisaoDetalhePage />} />
               
-              <Route path="/licencas" element={<LicencasPage />} />
-              <Route path="/licencas/:id" element={<LicencasPage />} />
-              <Route path="/sod" element={<SoDPage />} />
-              <Route path="/privilegiados" element={<PrivilegiadosPage />} />
-              <Route path="/relatorios" element={<RelatoriosPage />} />
-              <Route path="/auditoria" element={<AuditoriaPage />} />
-              <Route path="/alertas" element={<AlertasPage />} />
-              <Route path="/admin/usuarios" element={<UsuariosPage />} />
+              <Route element={<SectionTabs tabs={[{ title: "SoD / Conflitos", url: "/sod" }, { title: "Privilegiados", url: "/privilegiados" }, { title: "Licenças", url: "/licencas" }]} />}>
+                <Route path="/licencas" element={<LicencasPage />} />
+                <Route path="/licencas/:id" element={<LicencasPage />} />
+                <Route path="/sod" element={<SoDPage />} />
+                <Route path="/privilegiados" element={<PrivilegiadosPage />} />
+              </Route>
+              <Route element={<SectionTabs tabs={[{ title: "Auditoria", url: "/auditoria" }, { title: "Alertas", url: "/alertas" }, { title: "Relatórios", url: "/relatorios" }]} />}>
+                <Route path="/relatorios" element={<RelatoriosPage />} />
+                <Route path="/auditoria" element={<AuditoriaPage />} />
+                <Route path="/alertas" element={<AlertasPage />} />
+              </Route>
+              <Route path="/admin/usuarios" element={<Navigate to="/configuracoes/usuarios" replace />} />
               <Route path="/configuracoes" element={<ConfiguracoesLayout />}>
-                <Route index element={<Navigate to="/configuracoes/cargos" replace />} />
+                <Route index element={<Navigate to="/configuracoes/parametros" replace />} />
                 <Route path="cargos" element={<CargosPage />} />
                 <Route path="areas" element={<AreasPage />} />
                 <Route path="empresas" element={<EmpresasPage />} />
@@ -103,6 +114,7 @@ const App = () => (
                 
                 <Route path="parametros" element={<ParametrosPage />} />
                 <Route path="integracoes" element={<IntegracoesPage />} />
+                <Route path="usuarios" element={<UsuariosPage />} />
                 <Route path="auditoria" element={<Navigate to="/auditoria" replace />} />
                 <Route path="alertas" element={<Navigate to="/alertas" replace />} />
               </Route>
