@@ -32,13 +32,10 @@ import RelatoriosPage from "./pages/relatorios/RelatoriosPage";
 import AlertasPage from "./pages/alertas/AlertasPage";
 import ConfiguracoesLayout from "./pages/configuracoes/ConfiguracoesLayout";
 import CargosPage from "./pages/configuracoes/CargosPage";
-import AreasPage from "./pages/configuracoes/AreasPage";
-import EmpresasPage from "./pages/configuracoes/EmpresasPage";
-import LocalidadesPage from "./pages/configuracoes/LocalidadesPage";
 
+import HermesConexoesPage from "./pages/configuracoes/HermesConexoesPage";
+import EstruturaPage from "./pages/configuracoes/EstruturaPage";
 import ParametrosPage from "./pages/configuracoes/ParametrosPage";
-import IntegracoesPage from "./pages/configuracoes/IntegracoesPage";
-import AgentePage from "./pages/configuracoes/AgentePage";
 import UsuariosPage from "./pages/admin/UsuariosPage";
 import LoginPage from "./pages/auth/LoginPage";
 import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
@@ -112,16 +109,18 @@ const App = () => (
               </Route>
               <Route path="/admin/usuarios" element={<Navigate to="/configuracoes/usuarios" replace />} />
               <Route path="/configuracoes" element={<ConfiguracoesLayout />}>
-                <Route index element={<Navigate to="/configuracoes/parametros" replace />} />
-                <Route path="cargos" element={<CargosPage />} />
-                <Route path="areas" element={<AreasPage />} />
-                <Route path="empresas" element={<EmpresasPage />} />
-                <Route path="localidades" element={<LocalidadesPage />} />
-                
-                <Route path="parametros" element={<ParametrosPage />} />
-                <Route path="integracoes" element={<IntegracoesPage />} />
+                <Route index element={<Navigate to="/configuracoes/geral" replace />} />
+                <Route path="geral" element={<ParametrosPage />} />
+                <Route path="hermes" element={<HermesConexoesPage />} />
                 <Route path="usuarios" element={<UsuariosPage />} />
-                <Route path="agente" element={<AgentePage />} />
+                <Route path="cargos" element={<CargosPage />} />
+                <Route path="estrutura" element={<EstruturaPage />} />
+                <Route path="parametros" element={<Navigate to="/configuracoes/geral" replace />} />
+                <Route path="agente" element={<Navigate to="/configuracoes/hermes" replace />} />
+                <Route path="integracoes" element={<Navigate to="/configuracoes/hermes" replace />} />
+                <Route path="areas" element={<Navigate to="/configuracoes/estrutura?aba=areas" replace />} />
+                <Route path="empresas" element={<Navigate to="/configuracoes/estrutura?aba=empresas" replace />} />
+                <Route path="localidades" element={<Navigate to="/configuracoes/estrutura?aba=localidades" replace />} />
                 <Route path="auditoria" element={<Navigate to="/auditoria" replace />} />
                 <Route path="alertas" element={<Navigate to="/alertas" replace />} />
               </Route>
