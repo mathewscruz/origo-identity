@@ -106,11 +106,11 @@ export function AppSidebar() {
                 <PopoverTrigger asChild>
                   <button type="button" className={cell(active)}>{inner(it, active, count)}</button>
                 </PopoverTrigger>
-                <PopoverContent side="right" align="start" sideOffset={10} className="w-56 p-1.5">
-                  <p className="px-2 pb-1 pt-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{it.title}</p>
+                <PopoverContent side="right" align="start" sideOffset={10} className="w-56 border-sidebar-border bg-sidebar p-1.5 text-sidebar-foreground shadow-xl">
+                  <p className="px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-sidebar-foreground/50">{it.title}</p>
                   {it.children.map((c) => (
                     <Link key={c.url} to={c.url} onClick={() => setOpenMenu(null)}
-                      className={cn("flex items-center justify-between rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted", matches(c.url) && "bg-muted font-medium text-primary")}>
+                      className={cn("flex items-center justify-between rounded-md px-2 py-1.5 text-[13px] text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground", matches(c.url) && "bg-sidebar-accent font-medium text-sidebar-primary")}>
                       {c.title}<ChevronRight className="h-3.5 w-3.5 opacity-50" />
                     </Link>
                   ))}
