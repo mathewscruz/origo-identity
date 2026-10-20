@@ -15,6 +15,13 @@
       "when": 1792498932297,
       "tag": "0001_automacao_painel_hermes",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792498979221,
+      "tag": "0002_agent_offline_alert",
+      "breakpoints": true
     }
   ]
 }

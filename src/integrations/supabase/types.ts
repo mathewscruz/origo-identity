@@ -2293,6 +2293,7 @@ export type Database = {
         Returns: number
       }
       admin_usuarios_resumo: { Args: never; Returns: Json }
+      agent_offline_check: { Args: never; Returns: undefined }
       agent_refresh_request: {
         Args: { p_min_interval_min?: number; p_task: string }
         Returns: Json
