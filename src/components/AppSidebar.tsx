@@ -47,7 +47,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
   ]},
   { label: "Controle", items: [
     { title: "Auditoria", url: "/auditoria", icon: ScrollText, match: ["/relatorios", "/alertas"] },
-    { title: "Configurações", url: "/configuracoes", icon: Settings, match: ["/admin/usuarios"] },
+    { title: "Configurações", url: "/configuracoes", icon: Settings, match: ["/admin/usuarios"], roles: ["platform_admin", "admin"] },
   ]},
 ];
 
@@ -186,7 +186,7 @@ export function AppSidebar() {
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => navigate("/alertas")}><Bell className="mr-2 h-4 w-4" />Alertas{(metrics?.alertas_nao_lidos ?? 0) > 0 && <span className="ml-auto text-xs text-muted-foreground">{metrics.alertas_nao_lidos}</span>}</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate("/configuracoes/integracoes")}><Bot className="mr-2 h-4 w-4" />Órigo Agente & integrações</DropdownMenuItem>
+              {(role === "admin" || role === "platform_admin") && <DropdownMenuItem onClick={() => navigate("/configuracoes/integracoes")}><Bot className="mr-2 h-4 w-4" />Órigo Agente & integrações</DropdownMenuItem>}
               {(role === "admin" || role === "platform_admin") && <DropdownMenuItem onClick={() => navigate("/admin/usuarios")}><UsersRound className="mr-2 h-4 w-4" />Usuários do painel</DropdownMenuItem>}
               <DropdownMenuSeparator />
               <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setLogoutOpen(true)}><LogOut className="mr-2 h-4 w-4" />Sair</DropdownMenuItem>
