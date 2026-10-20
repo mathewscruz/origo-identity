@@ -1,8 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe as _d } from "vitest";
-void _d;
 
 const integrationsPage = readFileSync(
   resolve(process.cwd(), "src/pages/configuracoes/IntegracoesPage.tsx"),
