@@ -1,7 +1,14 @@
 import { useAuth } from "@/contexts/AuthContext";
+import { canOperate, isSuperAdmin } from "@/lib/roles";
 
-/** Pode criar/editar/operar (admin, platform_admin ou operador). */
+/** Pode operar o dia a dia (Super Admin ou Suporte). */
 export function useCanEdit() {
   const { role } = useAuth();
-  return role === "admin" || role === "platform_admin" || role === "operador";
+  return canOperate(role);
+}
+
+/** Pode configurar o sistema (só Super Admin). */
+export function useIsSuperAdmin() {
+  const { role } = useAuth();
+  return isSuperAdmin(role);
 }

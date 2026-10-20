@@ -19,9 +19,9 @@ const BASE_URL = (Deno.env.get("SITE_URL") || "https://origo-identity.lovable.ap
 const LOGO_URL = "https://iam.origoenergia.com.br/email/logo-origo.png";
 const BRAND_COLOR = "#16968D";
 const BRAND_DARK = "#0d8276";
-const ROLES = ["admin", "operador", "viewer", "platform_admin"] as const;
+const ROLES = ["platform_admin", "operador", "viewer"] as const;
 type Role = typeof ROLES[number];
-const roleLabels: Record<string, string> = { admin: "Administrador", operador: "Operador", viewer: "Somente leitura", platform_admin: "Platform admin" };
+const roleLabels: Record<string, string> = { platform_admin: "Super Admin", admin: "Super Admin", operador: "Suporte", viewer: "Leitor" };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = any;
@@ -123,7 +123,7 @@ Deno.serve(async (req) => {
     const roleOf = async (userId: string): Promise<Role> => {
       const { data } = await admin.from("user_roles").select("role").eq("user_id", userId);
       const roles = ((data ?? []) as Row[]).map((r) => r.role as Role);
-      return (["platform_admin", "admin", "operador", "viewer"] as Role[]).find((r) => roles.includes(r)) ?? "viewer";
+      return (["platform_admin", "operador", "viewer"] as Role[]).find((r) => roles.includes(r)) ?? "viewer";
     };
     const activeAdmins = async (excluding: string): Promise<number> => {
       const { data } = await admin.from("user_roles").select("user_id, role").in("role", ["admin", "platform_admin"]);

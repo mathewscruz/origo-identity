@@ -31,10 +31,9 @@ import { cn } from "@/lib/utils";
 type Usuario = any;
 
 const ROLES: { value: string; label: string; short: string; desc: string; icon: typeof Crown; badge: string; platformOnly?: boolean }[] = [
-  { value: "platform_admin", label: "Platform admin", short: "Platform", desc: "Tudo do administrador + SQL/DDL e purgas via Hermes (MCP).", icon: Crown, badge: "bg-violet-500/15 text-violet-700 border-violet-500/30", platformOnly: true },
-  { value: "admin", label: "Administrador", short: "Admin", desc: "Gerencia usuários, aprova a fila, configura parâmetros e integrações.", icon: ShieldCheck, badge: "bg-primary/15 text-primary border-primary/30" },
-  { value: "operador", label: "Operador", short: "Operador", desc: "Opera o dia a dia: pessoas, acessos, fila, revisões e exceções.", icon: Wrench, badge: "bg-info/15 text-info border-info/30" },
-  { value: "viewer", label: "Somente leitura", short: "Leitura", desc: "Consulta tudo, não altera nada.", icon: Eye, badge: "bg-muted text-muted-foreground" },
+  { value: "platform_admin", label: "Super Admin", short: "Super Admin", desc: "Acesso total: configurações, usuários do painel, cargos, perfis, aplicações e Hermes.", icon: Crown, badge: "bg-primary/15 text-primary border-primary/30" },
+  { value: "operador", label: "Suporte", short: "Suporte", desc: "Cria colaboradores e terceiros, atribui grupos, licenças e perfis, desativa e reativa. Sem configurações nem usuários do painel.", icon: Wrench, badge: "bg-info/15 text-info border-info/30" },
+  { value: "viewer", label: "Leitor", short: "Leitor", desc: "Vê números, listas e detalhes. Nenhuma ação.", icon: Eye, badge: "bg-muted text-muted-foreground" },
 ];
 const roleMeta = (r: string) => ROLES.find((x) => x.value === r) ?? ROLES[3];
 
@@ -226,7 +225,7 @@ export default function UsuariosPage() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <StatCard label="Usuários" value={list.length} icon={Users} tone="primary" active={statusFilter === "todos" && roleFilter === "todos"} onClick={() => { setStatusFilter("todos"); setRoleFilter("todos"); setPage(1); }} />
         <StatCard label="Ativos" value={ativos} icon={UserCheck} tone="success" active={statusFilter === "ativos"} onClick={() => { setStatusFilter(statusFilter === "ativos" ? "todos" : "ativos"); setPage(1); }} hint={`${list.length - ativos} inativo(s)`} />
-        <StatCard label="Administradores" value={admins} icon={ShieldCheck} tone={admins <= 1 ? "warning" : "info"} hint={admins <= 1 ? "só um admin ativo — cadastre outro" : "ativos"} active={roleFilter === "admin"} onClick={() => { setRoleFilter(roleFilter === "admin" ? "todos" : "admin"); setPage(1); }} />
+        <StatCard label="Super Admins" value={admins} icon={ShieldCheck} tone={admins <= 1 ? "warning" : "info"} hint={admins <= 1 ? "só um Super Admin ativo — cadastre outro" : "ativos"} active={roleFilter === "admin"} onClick={() => { setRoleFilter(roleFilter === "admin" ? "todos" : "admin"); setPage(1); }} />
         <StatCard label="Senha temporária" value={senhaTemp} icon={KeyRound} tone={senhaTemp ? "warning" : "default"} hint="ainda não trocaram" active={statusFilter === "senha_temp"} onClick={() => { setStatusFilter(statusFilter === "senha_temp" ? "todos" : "senha_temp"); setPage(1); }} />
         <StatCard label="Sem acesso há 30 d" value={semAcesso30d} icon={Clock} tone={semAcesso30d ? "warning" : "default"} hint="ativos que não entram" />
       </div>
