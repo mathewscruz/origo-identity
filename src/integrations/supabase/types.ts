@@ -2406,6 +2406,7 @@ export type Database = {
       }
       agent_task_solicitar: { Args: { p_task: string }; Returns: string }
       alertas_marcar_lidos: { Args: { p_ids?: string[] }; Returns: number }
+      alertas_marcar_notificados: { Args: { p_ids: string[] }; Returns: number }
       aplicacao_responsavel_revisao: {
         Args: { p_aplicacao_id: string }
         Returns: string
