@@ -78,12 +78,12 @@ export function AnaliseHermesCard({ id, app, cfg, onApplied }: { id: string; app
 
   const d = sanitizarDiagnostico(t.result_json);
   const disponiveis: { k: ItemAplicavel; label: string; ok: boolean }[] = [
-    { k: "modo", label: `Forma de acesso: ${d.modo_sugerido ? MODO_LABEL[d.modo_sugerido] : "—"}`, ok: !!d.modo_sugerido },
+    { k: "modo" as ItemAplicavel, label: `Forma de acesso: ${d.modo_sugerido ? MODO_LABEL[d.modo_sugerido] : "—"}`, ok: !!d.modo_sugerido },
     { k: "api", label: `API: ${d.api_base_url ?? "—"}${d.auth_type ? ` (${d.auth_type})` : ""}`, ok: !!(d.api_base_url || d.auth_type) },
     { k: "acoes", label: `Ações: ${(["create", "disable", "lookup"] as const).filter((x) => d.actions?.[x]).map((x) => ({ create: "criar", disable: "desativar", lookup: "consultar" })[x]).join(", ") || "—"}`, ok: !!d.actions && Object.values(d.actions).some(Boolean) },
     { k: "perfis", label: `Perfis internos: ${(d.perfis ?? []).join(", ") || "—"}`, ok: (d.perfis ?? []).length > 0 },
     { k: "instrucoes", label: "Instruções de dar/retirar acesso", ok: !!(d.instrucoes_acesso || d.instrucoes_revogacao) },
-  ].filter((x) => x.ok);
+  ].filter((x) => x.ok) as { k: ItemAplicavel; label: string; ok: boolean }[];
   const sel = marcados ?? disponiveis.map((x) => x.k);
   const jaAplicado = t.payload?.aplicado_em;
 
