@@ -908,7 +908,7 @@ import { z as z19 } from "npm:zod@^4.4.3";
 var invoke_edge_function_default = defineTool20({
   name: "invoke_edge_function",
   title: "Invocar Edge Function",
-  description: "Chama uma Edge Function de sincroniza\xE7\xE3o/orquestra\xE7\xE3o do projeto \xD3rigo (reconcile-identities, run-daily-cycle, sync-sharepoint-csv, sync-entra-groups, sync-entra-licencas, sync-entra-apps, sync-entra-roles, sync-sharepoint-sites, expire-access-exceptions, auto-recertification). Nenhuma delas executa a\xE7\xF5es em diret\xF3rio \u2014 isso \xE9 exclusivo do \xD3rigo Agente. Encaminha o JWT do usu\xE1rio conectado. Requer papel admin.",
+  description: "Chama uma Edge Function de sincroniza\xE7\xE3o/orquestra\xE7\xE3o do projeto \xD3rigo (reconcile-identities, sync-sharepoint-csv, sync-entra-groups, sync-entra-licencas, sync-entra-apps, sync-entra-roles, sync-sharepoint-sites, expire-access-exceptions, auto-recertification). Nenhuma delas executa a\xE7\xF5es em diret\xF3rio \u2014 isso \xE9 exclusivo do \xD3rigo Agente. Encaminha o JWT do usu\xE1rio conectado. Requer papel admin.",
   inputSchema: {
     name: z19.string().min(1).describe("Nome da edge function (sem prefixo)."),
     payload: z19.any().optional().describe("Corpo JSON opcional a enviar."),

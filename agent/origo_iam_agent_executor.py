@@ -815,7 +815,10 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=10, help="Itens reservados por poll")
     parser.add_argument("--lease", type=int, default=600, help="Lease (s) da reserva de cada item")
     parser.add_argument("--owner", default=os.environ.get("IAM_AGENT_OWNER", "origo-agent"), help="Identificação deste executor")
+    parser.add_argument("--schedule", action="store_true", default=os.environ.get("IAM_AGENT_SCHEDULE") == "1",
+                        help="Liga a agenda local (exceções, recertificação, ciclo RH, auditoria). Default: desligada")
     args = parser.parse_args()
+    schedule_done: Dict[str, str] = {}
 
     api_url = env("IAM_AGENT_API_URL").rstrip("/")
     api_token = env("IAM_AGENT_TOKEN")
@@ -830,6 +833,9 @@ def main() -> int:
             if time.time() - graph_token_at > 45 * 60:
                 graph_token = get_azure_token()
                 graph_token_at = time.time()
+
+            if args.schedule:
+                run_due_schedule(api_url, api_token, schedule_done, execute=args.execute)
 
             body = fetch_pending(api_url, api_token, owner=args.owner, limit=args.limit, lease=args.lease, execute=args.execute)
             items = body.get("data", []) or []

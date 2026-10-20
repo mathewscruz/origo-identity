@@ -7,7 +7,7 @@ export default defineTool({
   name: "invoke_edge_function",
   title: "Invocar Edge Function",
   description:
-    "Chama uma Edge Function de sincronização/orquestração do projeto Órigo (reconcile-identities, run-daily-cycle, sync-sharepoint-csv, sync-entra-groups, sync-entra-licencas, sync-entra-apps, sync-entra-roles, sync-sharepoint-sites, expire-access-exceptions, auto-recertification). Nenhuma delas executa ações em diretório — isso é exclusivo do Órigo Agente. Encaminha o JWT do usuário conectado. Requer papel admin.",
+    "Chama uma Edge Function de sincronização/orquestração do projeto Órigo (reconcile-identities, sync-sharepoint-csv, sync-entra-groups, sync-entra-licencas, sync-entra-apps, sync-entra-roles, sync-sharepoint-sites, expire-access-exceptions, auto-recertification). Nenhuma delas executa ações em diretório — isso é exclusivo do Órigo Agente. Encaminha o JWT do usuário conectado. Requer papel admin.",
   inputSchema: {
     name: z.string().min(1).describe("Nome da edge function (sem prefixo)."),
     payload: z.any().optional().describe("Corpo JSON opcional a enviar."),
