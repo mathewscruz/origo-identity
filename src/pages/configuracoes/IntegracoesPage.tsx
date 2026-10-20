@@ -94,11 +94,11 @@ export default function IntegracoesPage() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card className="border-primary/20">
           <CardHeader><div className="flex items-center gap-3"><Shield className="h-5 w-5 text-primary" /><div><CardTitle className="text-base">Grupos do Entra ID</CardTitle><CardDescription>Catálogo de grupos (cloud e on-premises) usado nos perfis de acesso. Somente leitura do Graph.</CardDescription></div></div></CardHeader>
-          <CardContent><Button onClick={() => run("groups", "sync-entra-groups", {}, (b) => `${b.total ?? 0} grupos (${b.cloudOnly ?? 0} cloud, ${b.onPremises ?? 0} on-prem)`)} disabled={busy.groups}><RefreshCw className={`mr-2 h-4 w-4 ${busy.groups ? "animate-spin" : ""}`} />Sincronizar grupos</Button></CardContent>
+          <CardContent><AutoUpdatedHint tasks="sync-entra-groups" /></CardContent>
         </Card>
         <Card className="border-primary/20">
           <CardHeader><div className="flex items-center gap-3"><FolderOpen className="h-5 w-5 text-primary" /><div><CardTitle className="text-base">Sites do SharePoint</CardTitle><CardDescription>Sites e pastas (2 níveis) para os perfis de acesso. Somente leitura do Graph.</CardDescription></div></div></CardHeader>
-          <CardContent><Button onClick={() => run("sites", "sync-sharepoint-sites", {}, (b) => `${b.sites ?? 0} sites importados`)} disabled={busy.sites}><RefreshCw className={`mr-2 h-4 w-4 ${busy.sites ? "animate-spin" : ""}`} />Sincronizar sites</Button></CardContent>
+          <CardContent><AutoUpdatedHint tasks="sync-sharepoint-sites" /></CardContent>
         </Card>
       </div>
 

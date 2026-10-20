@@ -201,9 +201,6 @@ export default function LicencasPage() {
         actions={<>
           <div className="flex items-center gap-2">
             <AutoUpdatedHint tasks="sync-entra-licencas" />
-            {false && <Button variant="outline" size="icon" onClick={handleSync} disabled={syncing}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
             {canEdit && <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Nova Licença Externa</Button>}
           </div>
         </>}

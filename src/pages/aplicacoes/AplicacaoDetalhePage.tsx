@@ -646,12 +646,7 @@ export default function AplicacaoDetalhePage() {
                   <CardDescription>Roles/perfis disponíveis dentro desta aplicação (ex: Técnico, Admin, Leitura)</CardDescription>
                 </div>
                 <div className="flex gap-2">
-                  {hasConnector && (
-                    <Button variant="outline" size="sm" onClick={handleSyncProfiles} disabled={syncingProfiles}>
-                      <RefreshCw className={`mr-1 h-3 w-3 ${syncingProfiles ? "animate-spin" : ""}`} />
-                      {syncingProfiles ? "Sincronizando..." : "Sincronizar da API"}
-                    </Button>
-                  )}
+                  {hasConnector && <AutoUpdatedHint tasks="sync-app-profiles" />}
                   <Button size="sm" onClick={() => { setNewProfile({ nome_externo: "", external_id: "", descricao: "" }); setAddProfileOpen(true); }}>
                     <Plus className="mr-1 h-3 w-3" />Adicionar Manual
                   </Button>
