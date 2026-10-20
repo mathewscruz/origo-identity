@@ -28,35 +28,26 @@ type Item = {
   /** contador em tempo real (dashboard_metrics) e tom do badge */
   badge?: (m: Metrics) => number; tone?: "warning" | "destructive" | "info";
   roles?: string[];
+  /** outros endereços que pertencem a este item (abas) */
+  match?: string[];
 };
 
 const GROUPS: { label: string; items: Item[] }[] = [
   { label: "Operação", items: [
-    { title: "Dashboard", url: "/", icon: LayoutDashboard },
-    { title: "Fila de Provisionamento", url: "/fila-provisionamento", icon: ListOrdered, badge: (m) => (m?.fila_waiting ?? 0) + (m?.fila_failed ?? 0), tone: "warning" },
-    { title: "Eventos JML", url: "/eventos-jml", icon: Activity },
-  ]},
-  { label: "Identidades", items: [
-    { title: "Colaboradores", url: "/colaboradores", icon: Users },
-    { title: "Terceiros", url: "/terceiros", icon: UserCheck, badge: (m) => m?.terc_vencidos ?? 0, tone: "destructive" },
+    { title: "Início", url: "/", icon: LayoutDashboard },
+    { title: "Aprovações e Fila", url: "/fila-provisionamento", icon: ListOrdered, badge: (m) => (m?.fila_waiting ?? 0) + (m?.fila_failed ?? 0), tone: "warning", match: ["/eventos-jml", "/aprovacao-iam"] },
+    { title: "Pessoas", url: "/colaboradores", icon: Users, badge: (m) => m?.terc_vencidos ?? 0, tone: "destructive", match: ["/terceiros"] },
   ]},
   { label: "Governança", items: [
     { title: "Aplicações", url: "/aplicacoes", icon: AppWindow },
     { title: "Perfis de Acesso", url: "/perfis-acesso", icon: Shield },
-    { title: "Exceções", url: "/excecoes", icon: AlertTriangle, badge: (m) => m?.excecoes_pendentes ?? 0, tone: "warning" },
     { title: "Revisões", url: "/revisoes", icon: ClipboardCheck, badge: (m) => m?.revisoes_abertas ?? 0, tone: "info" },
-    { title: "SoD / Conflitos", url: "/sod", icon: ShieldAlert },
-    { title: "Privilegiados", url: "/privilegiados", icon: Crown },
+    { title: "Exceções", url: "/excecoes", icon: AlertTriangle, badge: (m) => m?.excecoes_pendentes ?? 0, tone: "warning" },
+    { title: "Riscos", url: "/sod", icon: ShieldAlert, match: ["/privilegiados", "/licencas"] },
   ]},
   { label: "Controle", items: [
-    { title: "Licenças", url: "/licencas", icon: Key },
-    { title: "Relatórios", url: "/relatorios", icon: BarChart3 },
-    { title: "Auditoria", url: "/auditoria", icon: ScrollText },
-    { title: "Alertas", url: "/alertas", icon: Bell, badge: (m) => m?.alertas_nao_lidos ?? 0, tone: "destructive" },
-  ]},
-  { label: "Administração", items: [
-    { title: "Configurações", url: "/configuracoes", icon: Settings },
-    { title: "Usuários", url: "/admin/usuarios", icon: UsersRound, roles: ["admin", "platform_admin"] },
+    { title: "Auditoria", url: "/auditoria", icon: ScrollText, match: ["/relatorios", "/alertas"] },
+    { title: "Configurações", url: "/configuracoes", icon: Settings, match: ["/admin/usuarios"] },
   ]},
 ];
 
