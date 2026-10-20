@@ -199,6 +199,28 @@ Deno.serve(async (req) => {
     });
   }
 
+  // ─── POST /run_task → Hermes dispara rotinas de manutenção (lista fechada) ───
+  if (req.method === "POST" && path === "run_task") {
+    const body = await req.json().catch(() => null) as { task?: string; payload?: Record<string, unknown> } | null;
+    const task = body?.task || "";
+    if (!AGENT_TASKS.includes(task)) return jsonResponse({ error: `task inválida. Permitidas: ${AGENT_TASKS.join(", ")}` }, 400);
+    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const res = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/${task}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}`, apikey: key },
+      body: JSON.stringify({ ...(body?.payload || {}), trigger: "hermes" }),
+    });
+    const text = await res.text();
+    let parsed: unknown = text;
+    try { parsed = JSON.parse(text); } catch { /* texto */ }
+    await supabase.from("auditoria").insert({
+      acao: "agent_task", entidade: "scheduler", operador: owner,
+      resumo: `Hermes disparou ${task}`, detalhes: { task, http_status: res.status },
+    });
+    if (isAgent) await heartbeat(supabase, req, owner, "poll");
+    return jsonResponse({ success: res.ok || res.status === 202, task, http_status: res.status, data: parsed }, res.ok || res.status === 202 ? 200 : 502);
+  }
+
   // ─── POST /release ───
   if (req.method === "POST" && path === "release") {
     const body = await req.json().catch(() => null) as { id?: string; claim_token?: string; reason?: string } | null;
