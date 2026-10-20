@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useCanEdit } from "@/hooks/useRole";
+import { useIsSuperAdmin } from "@/hooks/useRole";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +23,7 @@ import EmptyState from "@/components/EmptyState";
 import { formatAreaName } from "@/lib/formatters";
 
 export default function CargosPage() {
-  const canEdit = useCanEdit();
+  const canEdit = useIsSuperAdmin();
   const { data: cargos, isLoading } = useCargos();
   const { data: areas } = useAreas();
   const { data: perfisAcesso } = usePerfisAcesso();

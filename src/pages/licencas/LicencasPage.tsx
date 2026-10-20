@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useCanEdit } from "@/hooks/useRole";
+import { useIsSuperAdmin } from "@/hooks/useRole";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,7 +46,7 @@ type UnifiedLicense = {
 };
 
 export default function LicencasPage() {
-  const canEdit = useCanEdit();
+  const canEdit = useIsSuperAdmin();
   const { data: licencas, isLoading: loadingLicencas } = useLicencas();
   const { data: entraLicencas, isLoading: loadingEntra } = useEntraLicencas();
   const { data: aplicacoes } = useAplicacoes();
