@@ -1,12 +1,17 @@
 import { defineTool, type ToolContext } from "@lovable.dev/mcp-js";
 import { z } from "zod";
 import { sb, getSupabaseConfig } from "../supabase-client";
+import { sanitizarDiagnostico } from "../../appAnalysis";
 
 /** Rotinas que o painel pede ao Hermes; mesma lista fechada de agent_refresh_request. */
 export const MCP_AGENT_TASKS = [
   "sync-entra-groups", "sync-entra-licencas", "sync-entra-roles",
   "sync-sharepoint-sites", "sync-app-profiles", "quarantine-triage", "audit-reconciliation", "test-app-connection",
+  "analyze-app-docs",
 ] as const;
+
+/** Tarefas que o próprio Hermes resolve (não são rotinas do backend). */
+export const HERMES_SELF_TASKS = ["analyze-app-docs"] as const;
 
 export function isAllowedAgentTask(task: string): boolean {
   return (MCP_AGENT_TASKS as readonly string[]).includes(task);
@@ -52,17 +57,63 @@ export const runAgentTasksTool = defineTool({
     if (!ctx.isAuthenticated()) return err("Não autenticado");
     const { data, error } = await sb(ctx).rpc("agent_task_claim", { p_owner: "hermes-mcp", p_limit: limit ?? 5 });
     if (error) return err(error.message);
-    const r = data as { agent_paused: boolean; tasks: { id: string; task: string }[] };
+    const r = data as { agent_paused: boolean; tasks: { id: string; task: string; payload?: Record<string, unknown> | null }[] };
     if (r.agent_paused) {
       const out = { agent_paused: true, executed: [] as { id: string; task: string; status: string; http_status: number }[] };
       return { content: [{ type: "text", text: "Agente pausado no painel; nada executado." }], structuredContent: out };
     }
     const executed = [];
+    const analises_para_voce = [];
     for (const t of r.tasks) {
+      if (t.task === "analyze-app-docs") {
+        const p = t.payload ?? {};
+        let arquivo_url: string | null = null;
+        if (typeof p.arquivo_path === "string") {
+          const { data: s } = await sb(ctx).storage.from("app-docs").createSignedUrl(p.arquivo_path, 3600);
+          arquivo_url = s?.signedUrl ?? null;
+        }
+        analises_para_voce.push({ id: t.id, aplicacao_id: p.aplicacao_id, url: p.url ?? null, arquivo_nome: p.arquivo_nome ?? null, arquivo_url, observacao: p.observacao ?? null });
+        continue;
+      }
       executed.push(await runOne(ctx, t));
     }
-    const out = { agent_paused: false, executed };
+    const out = {
+      agent_paused: false, executed, analises_para_voce,
+      ...(analises_para_voce.length ? { instrucao: "Para cada item de analises_para_voce: abra o link/arquivo VOCÊ MESMO, descubra como o sistema dá acesso e responda com submit_app_analysis. Nunca devolva senhas, tokens ou chaves." } : {}),
+    };
     return { content: [{ type: "text", text: JSON.stringify(out) }], structuredContent: out };
+  },
+});
+
+const acao = z.object({ method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]), path: z.string().min(1).max(300), body_template: z.string().max(2000).nullable().optional() }).nullable().optional();
+
+export const submitAppAnalysisTool = defineTool({
+  name: "submit_app_analysis",
+  title: "Entregar análise de um sistema",
+  description:
+    "Entrega o diagnóstico de um pedido de analises_para_voce (run_agent_tasks). Você leu o link/arquivo e diz a melhor forma de conectar: 'grupo' (acesso por grupo AD/Entra), 'api' (com endereço, autenticação e como criar/desativar/consultar usuário, usando {{nome}}, {{email}}, {{matricula}}, {{login}}, {{perfil_externo}}) ou 'manual' (com instruções). Liste perfis internos e lacunas. NUNCA inclua senhas, tokens ou chaves. Se não conseguiu ler (login exigido etc.), envie erro.",
+  inputSchema: {
+    id: z.string().uuid(),
+    erro: z.string().max(1000).nullable().optional().describe("Preencha só se não conseguiu analisar."),
+    modo_sugerido: z.enum(["grupo", "api", "manual"]).nullable().optional(),
+    motivo: z.string().max(1500).nullable().optional(),
+    grupo_nome: z.string().max(200).nullable().optional(),
+    api_base_url: z.string().max(500).nullable().optional(),
+    auth_type: z.enum(["bearer", "api_key", "basic", "oauth2_client_credentials", "app_token"]).nullable().optional(),
+    actions: z.object({ create: acao, disable: acao, lookup: acao }).nullable().optional(),
+    perfis: z.array(z.string().max(120)).max(50).nullable().optional(),
+    instrucoes_acesso: z.string().max(3000).nullable().optional(),
+    instrucoes_revogacao: z.string().max(3000).nullable().optional(),
+    lacunas: z.array(z.string().max(300)).max(20).nullable().optional(),
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  handler: async ({ id, erro, ...diag }, ctx) => {
+    if (!ctx.isAuthenticated()) return err("Não autenticado");
+    const limpo = sanitizarDiagnostico(diag);
+    const { data, error } = await sb(ctx).rpc("app_analise_concluir", { p_id: id, p_diagnostico: limpo, p_erro: erro ?? null });
+    if (error) return err(error.message);
+    const r = { entregue: !!data, segredos_removidos: limpo.segredos_removidos ?? 0 };
+    return { content: [{ type: "text", text: JSON.stringify(r) }], structuredContent: r };
   },
 });
 
