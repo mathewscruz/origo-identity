@@ -874,6 +874,7 @@ def main() -> int:
 
     api_url = env("IAM_AGENT_API_URL").rstrip("/")
     api_token = env("IAM_AGENT_TOKEN")
+    _APP_API.update(url=api_url, token=api_token)
     graph_token = get_azure_token()
     graph_token_at = time.time()
 
