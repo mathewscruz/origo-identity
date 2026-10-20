@@ -43,6 +43,13 @@
       "when": 1792499875042,
       "tag": "0005_revisao_usa_revisor",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792499891040,
+      "tag": "0006_responsavel_revisao_email",
+      "breakpoints": true
     }
   ]
 }
