@@ -22,7 +22,6 @@ const ROTINAS = [
   { fn: "audit-reconciliation", label: "Auditoria da reconciliação", when: "domingo, 01:00" },
   { fn: "quarantine-triage", label: "Triagem da quarentena do RH", when: "ao abrir Pessoas" },
   { fn: "sync-entra-groups", label: "Sincronizar grupos do Entra", when: "ao abrir a página" },
-  { fn: "sync-entra-apps", label: "Sincronizar aplicações do Entra", when: "ao abrir a página" },
   { fn: "sync-entra-licencas", label: "Sincronizar licenças do Entra", when: "ao abrir a página" },
   { fn: "sync-entra-roles", label: "Sincronizar roles privilegiadas", when: "ao abrir a página" },
 ];

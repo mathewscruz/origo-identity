@@ -34,7 +34,7 @@ const IDENTITY_ERRORS = new Set(["user_not_found", "not_found_in_entra", "user_n
 // Rotinas que somente o Hermes dispara (não há mais agenda no banco).
 export const AGENT_TASKS = [
   "sync-sharepoint-csv", "reconcile-identities", "expire-access-exceptions", "auto-recertification",
-  "audit-reconciliation", "sync-entra-groups", "sync-entra-apps", "sync-entra-licencas", "sync-entra-roles",
+  "audit-reconciliation", "sync-entra-groups", "sync-entra-licencas", "sync-entra-roles",
   "sync-sharepoint-sites", "sync-app-profiles", "sync-user-access", "quarantine-triage", "test-app-connection",
 ];
 
