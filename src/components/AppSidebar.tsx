@@ -123,7 +123,7 @@ export function AppSidebar() {
         <div className="mt-2 flex w-full flex-col items-center gap-1 border-t border-sidebar-border px-2 pt-2">
           <Tooltip>
             <TooltipTrigger asChild>
-              <button type="button" onClick={() => navigate("/configuracoes/integracoes")} className="relative rounded-lg p-2 text-sidebar-foreground/70 hover:bg-sidebar-accent/60">
+              <button type="button" onClick={() => navigate("/configuracoes/hermes")} className="relative rounded-lg p-2 text-sidebar-foreground/70 hover:bg-sidebar-accent/60">
                 <Bot className="h-5 w-5" strokeWidth={1.75} />
                 <span className={cn("absolute bottom-1.5 right-1.5 h-2 w-2 rounded-full ring-2 ring-sidebar", agentMeta.dot)} />
               </button>

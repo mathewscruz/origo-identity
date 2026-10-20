@@ -167,7 +167,7 @@ function SystemStrip({ m, loading }: { m: Row; loading: boolean }) {
     <div className="-mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
       {part(agentBad, !agent ? "Hermes nunca conectado" : agentBad ? `Hermes sem sinal ${relTime(agent.last_seen_at)}` : `Hermes online ${relTime(agent.last_seen_at)}`, "/configuracoes/hermes")}
       <span aria-hidden>·</span>
-      {part(csvBad, csvText, "/configuracoes/integracoes")}
+      {part(csvBad, csvText, "/configuracoes/hermes")}
     </div>
   );
 }
