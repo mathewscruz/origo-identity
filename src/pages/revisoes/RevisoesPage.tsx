@@ -15,8 +15,6 @@ import TablePagination, { usePagination } from "@/components/TablePagination";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
 import StatCard from "@/components/StatCard";
-import OnboardingTour from "@/components/OnboardingTour";
-import { tourSteps } from "@/lib/tourSteps";
 import { useAplicacoes, useColaboradores, useRevisoes, useTerceiros, useParametro } from "@/hooks/useOrigoData";
 import { supabase } from "@/integrations/supabase/client";
 import { invokeFunction } from "@/lib/invokeFunction";
@@ -163,7 +161,7 @@ export default function RevisoesPage() {
         title="Revisões de Acesso"
         icon={ClipboardCheck}
         description="Recertificação: o owner da aplicação ou o gestor da equipe decide quem mantém e quem perde cada acesso; o responsável por terceiros revalida ou desliga cada um. Tudo o que for decidido entra na fila já aprovado e o Órigo Agente executa."
-        actions={canEdit && <div data-tour="actions"><Button onClick={() => setDialogOpen(true)}><Plus className="mr-1 h-4 w-4" />Nova campanha</Button></div>}
+        actions={canEdit && <div><Button onClick={() => setDialogOpen(true)}><Plus className="mr-1 h-4 w-4" />Nova campanha</Button></div>}
       />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -185,7 +183,7 @@ export default function RevisoesPage() {
         <span className="ml-auto text-xs text-muted-foreground">{filtered.length} campanha(s)</span>
       </div>
 
-      <Card data-tour="table"><CardContent className="p-0">
+      <Card><CardContent className="p-0">
         {isLoading ? (
           <div className="space-y-3 p-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
         ) : paginatedItems.length === 0 ? (
@@ -294,7 +292,6 @@ export default function RevisoesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <OnboardingTour pageKey="revisoes" steps={tourSteps.revisoes} />
     </div>
   );
 }

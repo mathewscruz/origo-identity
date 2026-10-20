@@ -26,8 +26,6 @@ import { findAffectedCollaborators, generateEntraQueueForDiff, queueFullProfileA
 import { logAuditoria } from "@/lib/auditLogger";
 import EmptyState from "@/components/EmptyState";
 import SortableHeader, { SortDirection, useSortableData } from "@/components/SortableHeader";
-import OnboardingTour from "@/components/OnboardingTour";
-import { tourSteps } from "@/lib/tourSteps";
 import PageHeader from "@/components/PageHeader";
 import { humanize } from "@/lib/labels";
 
@@ -285,7 +283,7 @@ export default function PerfisAcessoPage() {
         title="Perfis de Acesso"
         description="Perfis baseados em cargo com múltiplas aplicações vinculadas"
         actions={<>
-          <div data-tour="actions"><Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Perfil</Button></div>
+          <div><Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Perfil</Button></div>
         </>}
       />
 
@@ -306,7 +304,7 @@ export default function PerfisAcessoPage() {
       </div>
 
       {/* Filters */}
-      <div data-tour="search-filter" className="flex gap-2 flex-wrap">
+      <div className="flex gap-2 flex-wrap">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Buscar perfis..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
@@ -330,7 +328,7 @@ export default function PerfisAcessoPage() {
         </Select>
       </div>
 
-      <Card data-tour="table">
+      <Card>
         <CardContent className="p-0">
           {isLoading ? (
             <div className="p-4 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
@@ -517,7 +515,6 @@ export default function PerfisAcessoPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <OnboardingTour pageKey="perfis_acesso" steps={tourSteps.perfis_acesso} />
     </div>
   );
 }

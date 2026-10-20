@@ -19,8 +19,6 @@ import TablePagination from "@/components/TablePagination";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
 import StatCard from "@/components/StatCard";
-import OnboardingTour from "@/components/OnboardingTour";
-import { tourSteps } from "@/lib/tourSteps";
 import { useAgentStatus, useQueueDistinctActions, useQueuePage, useQueueStats } from "@/hooks/useOrigoData";
 import { useCancelQueueItem, useReprocessQueueItem } from "@/hooks/mutations/useQueueActions";
 import { useCanEdit } from "@/hooks/useRole";
@@ -162,7 +160,7 @@ export default function FilaProvisionamentoPage() {
 
       {tab === "aprovacao" ? <AprovacaoTab /> : (<>
       {processedFrom && <div className="text-sm">Concluídos desde {new Date(processedFrom).toLocaleString("pt-BR")} <Button variant="ghost" onClick={() => { const next = new URLSearchParams(params); next.delete("processed_from"); setParams(next); }}>Limpar período</Button></div>}
-      <div data-tour="search-filter" className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2">
         <div className="relative min-w-[220px] max-w-md flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Nome, e-mail, login, origem ou correlation ID…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
@@ -188,7 +186,7 @@ export default function FilaProvisionamentoPage() {
       </div>
 
       <QueryState loading={isLoading || isPlaceholderData} error={pageError} retry={retryPage}>
-      <Card data-tour="table">
+      <Card>
         <CardContent className="p-0">
           {isLoading && rows.length === 0 ? (
             <div className="space-y-3 p-4">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
@@ -294,7 +292,6 @@ export default function FilaProvisionamentoPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <OnboardingTour pageKey="fila_provisionamento" steps={tourSteps.fila_provisionamento} />
     </div>
   );
 }

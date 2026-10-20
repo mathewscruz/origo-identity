@@ -18,8 +18,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
 import StatCard from "@/components/StatCard";
-import OnboardingTour from "@/components/OnboardingTour";
-import { tourSteps } from "@/lib/tourSteps";
 import { useDashboardMetrics, useDashboardSeries, type DashboardSeriesPoint } from "@/hooks/useOrigoData";
 import { actionLabel, QUEUE_STATUS_META } from "@/lib/queueLabels";
 import ActivityFeed from "@/components/ActivityFeed";
@@ -298,7 +296,7 @@ export default function Dashboard() {
       <SystemStrip m={m} loading={isLoading} />
 
       {/* KPIs */}
-      <div data-tour="kpi-cards" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiCard label="Pessoas ativas" value={k?.pessoas_ativas ?? pessoas} color={C.primary} to="/colaboradores?status=ativo" hint={`${k?.admissoes ?? 0} admissões · ${k?.desligamentos ?? 0} desligamentos em ${period} d`} spark={(series ?? []).map((p) => p.joiners - p.leavers)} />
         <KpiCard label={`Execuções em ${period} d`} value={ppl.total} prev={ppl.prevTotal} color={C.success} to="/auditoria" hint={`${ppl.entradas} entradas · ${ppl.saidas} saídas`} spark={ppl.cur.map((p) => p.entradas + p.saidas)} />
         <KpiCard label="Aguardando aprovação" value={k?.aguardando ?? m?.fila_waiting ?? 0} color={C.warning} to="/fila-provisionamento?tab=aprovacao" hint={waitingAge ? `mais antigo: ${waitingAge}` : "nada pendente"} />
@@ -320,7 +318,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
         <div className="h-full"><QueryState loading={people.isLoading} error={people.error} retry={people.refetch}>
-        <Card data-tour="chart-requests" className="min-h-[360px] flex flex-col">
+        <Card className="min-h-[360px] flex flex-col">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-3"><div><CardTitle className="text-base">Entradas e saídas por dia</CardTitle>
             <p className="text-xs text-muted-foreground">Pessoas que entraram e saíram (cada pessoa conta uma vez por dia)</p></div>
@@ -381,7 +379,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <GovernanceList m={m} loading={isLoading || !!metricsError} />
       {/* Atividade recente */}
-      <Card data-tour="timeline" className="animate-content-in stagger-5 lg:col-span-2">
+      <Card className="animate-content-in stagger-5 lg:col-span-2">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">Atividade recente</CardTitle>
@@ -397,7 +395,6 @@ export default function Dashboard() {
         </CardContent>
       </Card>
       </div>
-      <OnboardingTour pageKey="dashboard" steps={tourSteps.dashboard} />
     </div>
   );
 }
