@@ -358,7 +358,7 @@ export default function Dashboard() {
               <div className="rounded-lg border bg-muted/40 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Revogações</p><p className="text-lg font-semibold tabular-nums">{totals.revogacoes}</p></div>
               <div className="rounded-lg border bg-muted/40 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Falhas</p><p className="text-lg font-semibold tabular-nums text-destructive">{totals.falhas}</p></div>
             </div>
-            <div className="min-h-[230px] flex-1">
+            <div className="h-[240px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ left: -16, right: 8, top: 8 }} barCategoryGap={period === 7 ? "30%" : "15%"}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />

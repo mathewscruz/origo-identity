@@ -86,6 +86,7 @@ const AUD: Record<string, (p: string | null) => string> = {
   reset_senha_solicitado: (p) => `Pediu a redefinição de senha de ${P(p)}`,
   criar_aplicacao: () => "Cadastrou uma aplicação", criar_perfil: () => "Criou um perfil de acesso", editar_perfil: () => "Editou um perfil de acesso",
   criar_usuario: () => "Criou um usuário do painel",
+  glpi_access_ticket_auto_processed: () => "Hermes atendeu um chamado de acesso do GLPI",
 };
 
 /** Ações técnicas que não aparecem na atividade recente (ficam só na Auditoria). */
