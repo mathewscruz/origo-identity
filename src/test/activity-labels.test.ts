@@ -16,3 +16,12 @@ describe("atividade recente em linguagem de negócio", () => {
     expect(isActivityNoise({ fonte: "auditoria", acao: "criar_colaborador" })).toBe(false);
   });
 });
+
+import { acaoIcon } from "@/components/ActivityFeed";
+describe("ícones da atividade", () => {
+  it("ações distintas têm ícones distintos", () => {
+    const mk = (acao: string) => acaoIcon({ fonte: "auditoria", acao, ator: null } as any).icon;
+    const icons = ["terceiro_cadastro_criado", "atribuir_perfil", "revogar_perfil", "admin_exec_sql", "glpi_access_ticket_auto_processed"].map(mk);
+    expect(new Set(icons).size).toBe(5);
+  });
+});

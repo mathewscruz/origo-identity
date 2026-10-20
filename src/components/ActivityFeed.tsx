@@ -4,6 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Activity, AppWindow, ArrowUpRight, Briefcase, CheckCircle2, ClipboardCheck, Clock, Key, Loader2, Settings, Shield,
   UserCheck, UserMinus, UserPlus, Users, XCircle, AlertTriangle, ScrollText, Upload, Pencil, Trash2, RefreshCw,
+  IdCard, Ticket, ShieldAlert, ShieldPlus, ShieldMinus, ToggleRight, ArrowLeftRight, Link2, LockKeyhole, CloudUpload,
+  Gavel, RotateCcw, Terminal,
 } from "lucide-react";
 import HermesIcon from "@/components/icons/HermesIcon";
 import { Badge } from "@/components/ui/badge";
@@ -81,40 +83,103 @@ const ACAO_LABELS: Record<string, string> = {
   limpeza_dados_demo: "Limpeza de dados de demonstração", cron_invoke: "Job agendado", enviar_email: "E-mail enviado",
 };
 
-export function acaoIcon(item: ActivityItem): { icon: ComponentType<{ className?: string }>; tone: string } {
+type IconTone = { icon: ComponentType<{ className?: string }>; tone: string };
+const T = {
+  ok: "bg-success/10 text-success", bad: "bg-destructive/10 text-destructive", warn: "bg-warning/10 text-warning",
+  info: "bg-info/10 text-info", brand: "bg-primary/10 text-primary", mute: "bg-muted text-muted-foreground",
+};
+
+/** Ícone próprio por ação exata; regras por prefixo ficam como reserva. */
+export const ACAO_ICON: Record<string, IconTone> = {
+  criar_usuario: { icon: UserPlus, tone: T.ok },
+  glpi_joiner_iam_created: { icon: UserPlus, tone: T.ok },
+  telegram_joiner_iam_created: { icon: UserPlus, tone: T.ok },
+  terceiro_cadastro_criado: { icon: IdCard, tone: T.ok },
+  criar_terceiro_glpi: { icon: IdCard, tone: T.ok },
+  criar_terceiro_glpi_lote: { icon: IdCard, tone: T.ok },
+  criar_terceiro_glpi_lote_manual: { icon: IdCard, tone: T.ok },
+  criar_terceiro_glpi_alias_aprovado: { icon: IdCard, tone: T.ok },
+  finalizar_onboarding_terceiro_glpi: { icon: IdCard, tone: T.ok },
+  corrigir_nome_civil_terceiro: { icon: Pencil, tone: T.info },
+  glpi_access_ticket_auto_processed: { icon: Ticket, tone: T.brand },
+  desligamento_completo_telegram: { icon: UserMinus, tone: T.bad },
+  jml_leaver_iniciado: { icon: UserMinus, tone: T.bad },
+  bloquear_desligamento_por_ausencia_csv: { icon: ShieldAlert, tone: T.warn },
+  corrigir_falso_desligamento_csv: { icon: ShieldAlert, tone: T.warn },
+  alterar_status_colaborador: { icon: ToggleRight, tone: T.info },
+  jml_mover: { icon: ArrowLeftRight, tone: T.info },
+  iniciar_evento_jml: { icon: Activity, tone: T.info },
+  atribuir_perfil: { icon: ShieldPlus, tone: T.ok },
+  revogar_perfil: { icon: ShieldMinus, tone: T.bad },
+  mapear_cargo_perfil: { icon: Link2, tone: T.info },
+  provisionar_pos_replicacao_entra: { icon: Users, tone: T.info },
+  resetar_senha: { icon: LockKeyhole, tone: T.warn },
+  reset_senha_solicitado: { icon: LockKeyhole, tone: T.warn },
+  criar_revisao: { icon: ClipboardCheck, tone: T.brand },
+  excluir_revisao: { icon: ClipboardCheck, tone: T.bad },
+  email_revisao: { icon: ClipboardCheck, tone: T.brand },
+  importar: { icon: CloudUpload, tone: T.info },
+  equalizar_status_rh: { icon: CloudUpload, tone: T.info },
+  sync: { icon: RefreshCw, tone: T.info },
+  decidir_iam_queue: { icon: Gavel, tone: T.ok },
+  recusar: { icon: XCircle, tone: T.bad },
+  reprocessar_falhas: { icon: RotateCcw, tone: T.info },
+  iam_failed_backlog_reconciled: { icon: RotateCcw, tone: T.info },
+  admin_exec_sql: { icon: Terminal, tone: T.mute },
+  admin_exec_ddl: { icon: Terminal, tone: T.mute },
+  invoke_edge_function: { icon: Terminal, tone: T.mute },
+  excluir_usuario: { icon: Trash2, tone: T.bad },
+  excluir_aplicacao: { icon: AppWindow, tone: T.bad },
+  editar_cargo: { icon: Pencil, tone: T.info },
+};
+
+function recursoIcon(a: string): ComponentType<{ className?: string }> {
+  if (a.includes("licen")) return Key;
+  if (a.includes("group") || a.includes("grupo")) return Users;
+  if (a.includes("app")) return AppWindow;
+  if (a.includes("password") || a.includes("senha")) return LockKeyhole;
+  if (a.includes("disable") || a.includes("leaver")) return UserMinus;
+  if (a.includes("create") || a.includes("criar")) return UserPlus;
+  return CheckCircle2;
+}
+
+export function acaoIcon(item: ActivityItem): IconTone {
   const a = item.acao || "";
   if (item.origem === "rh") {
-    if (item.status === "partial") return { icon: AlertTriangle, tone: "bg-warning/10 text-warning" };
-    if (item.status === "failed") return { icon: XCircle, tone: "bg-destructive/10 text-destructive" };
-    if (item.status === "pending") return { icon: Clock, tone: "bg-warning/10 text-warning" };
-    return { icon: a === "rh_cadastral_incremental" ? Pencil : a === "rh_entrada" ? UserPlus : UserMinus, tone: "bg-info/10 text-info" };
+    if (item.status === "partial") return { icon: AlertTriangle, tone: T.warn };
+    if (item.status === "failed") return { icon: XCircle, tone: T.bad };
+    if (item.status === "pending") return { icon: Clock, tone: T.warn };
+    return { icon: a === "rh_cadastral_incremental" ? Pencil : a === "rh_entrada" ? UserPlus : UserMinus, tone: T.info };
   }
   if (item.fonte === "fila") {
-    if (item.status === "success") return { icon: CheckCircle2, tone: "bg-success/10 text-success" };
-    if (item.status === "failed") return { icon: XCircle, tone: "bg-destructive/10 text-destructive" };
-    if (item.status === "processing") return { icon: Loader2, tone: "bg-info/10 text-info" };
-    if (item.status === "waiting_approval") return { icon: Clock, tone: "bg-warning/10 text-warning" };
-    if (item.status === "cancelled" || item.status === "rejected") return { icon: XCircle, tone: "bg-muted text-muted-foreground" };
-    return { icon: HermesIcon, tone: "bg-primary/10 text-primary" };
+    if (item.status === "success") return { icon: recursoIcon(a.toLowerCase()), tone: T.ok };
+    if (item.status === "failed") return { icon: XCircle, tone: T.bad };
+    if (item.status === "processing") return { icon: Loader2, tone: T.info };
+    if (item.status === "waiting_approval") return { icon: Clock, tone: T.warn };
+    if (item.status === "cancelled" || item.status === "rejected") return { icon: XCircle, tone: T.mute };
+    return { icon: HermesIcon, tone: T.brand };
   }
   if (item.fonte === "jml") {
     const t = a.replace("jml_", "");
-    return { icon: t === "joiner" ? UserPlus : t === "leaver" ? UserMinus : t === "mover" ? RefreshCw : Activity, tone: t === "leaver" ? "bg-destructive/10 text-destructive" : t === "joiner" ? "bg-success/10 text-success" : "bg-info/10 text-info" };
+    return { icon: t === "joiner" ? UserPlus : t === "leaver" ? UserMinus : t === "mover" ? ArrowLeftRight : Activity, tone: t === "leaver" ? T.bad : t === "joiner" ? T.ok : T.info };
   }
-  if (/^(criar|atribuir)/.test(a)) return { icon: a.includes("perfil") || a.includes("individual") ? Shield : UserPlus, tone: "bg-success/10 text-success" };
-  if (/^(excluir|revogar|desligar|purgar|rejeitar|desativar)/.test(a)) return { icon: a.includes("perfil") ? Shield : a.startsWith("excluir") ? Trash2 : UserMinus, tone: "bg-destructive/10 text-destructive" };
-  if (/^editar|^alterar/.test(a)) return { icon: Pencil, tone: "bg-info/10 text-info" };
-  if (a.includes("revisao")) return { icon: ClipboardCheck, tone: "bg-primary/10 text-primary" };
-  if (a.includes("excecao")) return { icon: AlertTriangle, tone: "bg-warning/10 text-warning" };
-  if (a.includes("terceiro")) return { icon: UserCheck, tone: "bg-info/10 text-info" };
-  if (a.includes("importar") || a.includes("quarentena")) return { icon: Upload, tone: "bg-info/10 text-info" };
-  if (a.includes("aplicacao")) return { icon: AppWindow, tone: "bg-muted text-muted-foreground" };
-  if (a.includes("licenca")) return { icon: Key, tone: "bg-muted text-muted-foreground" };
-  if (a.includes("cargo") || a.includes("area") || a.includes("empresa") || a.includes("localidade")) return { icon: Briefcase, tone: "bg-muted text-muted-foreground" };
-  if (a.includes("usuario")) return { icon: Users, tone: "bg-muted text-muted-foreground" };
-  if (a.startsWith("admin") || a.includes("cron") || a.includes("sql")) return { icon: Settings, tone: "bg-muted text-muted-foreground" };
-  if (isHermesActor(item.ator)) return { icon: HermesIcon, tone: "bg-primary/10 text-primary" };
-  return { icon: ScrollText, tone: "bg-muted text-muted-foreground" };
+  if (ACAO_ICON[a]) return ACAO_ICON[a];
+  if (a.includes("excecao")) return { icon: AlertTriangle, tone: T.warn };
+  if (a.includes("revisao")) return { icon: ClipboardCheck, tone: T.brand };
+  if (a.includes("aplicacao")) return { icon: AppWindow, tone: /^excluir/.test(a) ? T.bad : T.info };
+  if (a.includes("licenca")) return { icon: Key, tone: T.info };
+  if (a.includes("grupo")) return { icon: Users, tone: T.info };
+  if (a.includes("senha")) return { icon: LockKeyhole, tone: T.warn };
+  if (/^(criar|atribuir)/.test(a)) return { icon: a.includes("perfil") ? ShieldPlus : a.includes("terceiro") ? IdCard : UserPlus, tone: T.ok };
+  if (/^(excluir|revogar|desligar|purgar|rejeitar|desativar)/.test(a)) return { icon: a.includes("perfil") ? ShieldMinus : a.startsWith("excluir") ? Trash2 : UserMinus, tone: T.bad };
+  if (/^editar|^alterar/.test(a)) return { icon: Pencil, tone: T.info };
+  if (a.includes("terceiro")) return { icon: IdCard, tone: T.info };
+  if (a.includes("importar") || a.includes("quarentena")) return { icon: Upload, tone: T.info };
+  if (a.includes("cargo") || a.includes("area") || a.includes("empresa") || a.includes("localidade")) return { icon: Briefcase, tone: T.mute };
+  if (a.includes("usuario")) return { icon: Users, tone: T.mute };
+  if (a.startsWith("admin") || a.includes("cron") || a.includes("sql")) return { icon: Terminal, tone: T.mute };
+  if (isHermesActor(item.ator)) return { icon: HermesIcon, tone: T.brand };
+  return { icon: ScrollText, tone: T.mute };
 }
 
 function titulo(item: ActivityItem): string {
