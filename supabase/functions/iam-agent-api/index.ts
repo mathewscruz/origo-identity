@@ -31,6 +31,13 @@ const RETRYABLE_ERRORS = new Set([
 const IDENTITY_ERRORS = new Set(["user_not_found", "not_found_in_entra", "user_not_synced"]);
 
 // Tudo o que o agente executa (nenhuma outra função escreve em AD/Entra/apps)
+// Rotinas que somente o Hermes dispara (não há mais agenda no banco).
+export const AGENT_TASKS = [
+  "sync-sharepoint-csv", "reconcile-identities", "expire-access-exceptions", "auto-recertification",
+  "audit-reconciliation", "sync-entra-groups", "sync-entra-apps", "sync-entra-licencas", "sync-entra-roles",
+  "sync-sharepoint-sites", "sync-app-profiles", "sync-user-access",
+];
+
 export const AGENT_ACTION_TYPES = [
   "create", "create_if_not_exists", "update", "disable", "reset_password",
   "assign_group", "remove_group",
