@@ -105,22 +105,6 @@ export default function AplicacoesPage() {
     setDeleteId(null);
   };
 
-  const handleSync = async () => {
-    setSyncing(true);
-    try {
-      const { data, error } = await invokeFunction("sync-entra-apps");
-      if (error) throw new Error(error);
-      toast({
-        title: "Sincronização concluída",
-        description: `${data.total} apps encontrados — ${data.created} novos, ${data.updated} atualizados`,
-      });
-      qc.invalidateQueries({ queryKey: ["aplicacoes"] });
-    } catch (err: any) {
-      toast({ title: "Erro na sincronização", description: err.message, variant: "destructive" });
-    } finally {
-      setSyncing(false);
-    }
-  };
 
   return (
     <div className="space-y-6">
