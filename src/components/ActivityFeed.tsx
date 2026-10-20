@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, type ComponentType } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Activity, AppWindow, ArrowUpRight, Bot, Briefcase, CheckCircle2, ClipboardCheck, Clock, Key, Loader2, Settings, Shield,
-  UserCheck, UserMinus, UserPlus, Users, XCircle, AlertTriangle, ScrollText, Upload, Pencil, Trash2, RefreshCw, type LucideIcon,
+  Activity, AppWindow, ArrowUpRight, Briefcase, CheckCircle2, ClipboardCheck, Clock, Key, Loader2, Settings, Shield,
+  UserCheck, UserMinus, UserPlus, Users, XCircle, AlertTriangle, ScrollText, Upload, Pencil, Trash2, RefreshCw,
 } from "lucide-react";
+import HermesIcon from "@/components/icons/HermesIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,7 +15,7 @@ import { actionLabel, QUEUE_STATUS_META, statusLabel, JML_TIPO_META } from "@/li
 import { humanize } from "@/lib/labels";
 import { tempoRelativo } from "@/lib/alertLabels";
 import { cn } from "@/lib/utils";
-import { activitySentence, isActivityNoise } from "@/lib/activityLabels";
+import { activitySentence, isActivityNoise, isHermesActor } from "@/lib/activityLabels";
 
 export interface ActivityItem {
   fonte: "fila" | "jml" | "auditoria";
@@ -80,7 +81,7 @@ const ACAO_LABELS: Record<string, string> = {
   limpeza_dados_demo: "Limpeza de dados de demonstração", cron_invoke: "Job agendado", enviar_email: "E-mail enviado",
 };
 
-function acaoIcon(item: ActivityItem): { icon: LucideIcon; tone: string } {
+export function acaoIcon(item: ActivityItem): { icon: ComponentType<{ className?: string }>; tone: string } {
   const a = item.acao || "";
   if (item.origem === "rh") {
     if (item.status === "partial") return { icon: AlertTriangle, tone: "bg-warning/10 text-warning" };
@@ -94,7 +95,7 @@ function acaoIcon(item: ActivityItem): { icon: LucideIcon; tone: string } {
     if (item.status === "processing") return { icon: Loader2, tone: "bg-info/10 text-info" };
     if (item.status === "waiting_approval") return { icon: Clock, tone: "bg-warning/10 text-warning" };
     if (item.status === "cancelled" || item.status === "rejected") return { icon: XCircle, tone: "bg-muted text-muted-foreground" };
-    return { icon: Bot, tone: "bg-primary/10 text-primary" };
+    return { icon: HermesIcon, tone: "bg-primary/10 text-primary" };
   }
   if (item.fonte === "jml") {
     const t = a.replace("jml_", "");
@@ -112,6 +113,7 @@ function acaoIcon(item: ActivityItem): { icon: LucideIcon; tone: string } {
   if (a.includes("cargo") || a.includes("area") || a.includes("empresa") || a.includes("localidade")) return { icon: Briefcase, tone: "bg-muted text-muted-foreground" };
   if (a.includes("usuario")) return { icon: Users, tone: "bg-muted text-muted-foreground" };
   if (a.startsWith("admin") || a.includes("cron") || a.includes("sql")) return { icon: Settings, tone: "bg-muted text-muted-foreground" };
+  if (isHermesActor(item.ator)) return { icon: HermesIcon, tone: "bg-primary/10 text-primary" };
   return { icon: ScrollText, tone: "bg-muted text-muted-foreground" };
 }
 

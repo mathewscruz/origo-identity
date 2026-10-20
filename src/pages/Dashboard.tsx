@@ -379,7 +379,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      <GovernanceList m={m} loading={isLoading} />
+      <GovernanceList m={m} loading={isLoading || !!metricsError} />
       {/* Atividade recente */}
       <Card data-tour="timeline" className="animate-content-in stagger-5 lg:col-span-2">
         <CardHeader className="pb-2">

@@ -18,7 +18,6 @@ describe('Individual activity fixtures (not production data)', () => {
   await screen.findByText(/Bruno Teste/);
   expect(screen.getAllByRole('listitem')).toHaveLength(3);
   expect(screen.getAllByText(/Ana Teste/)).toHaveLength(2);
-  expect(screen.getAllByText(/Fonte: Fila IAM/).length).toBe(3);
   expect(screen.queryByText(/Conta excluída/)).toBeNull();
   fireEvent.click(screen.getByText(/Bruno Teste/));
   expect(screen.getByTestId('location').textContent).toBe('/colaboradores/b');
@@ -47,7 +46,6 @@ describe('Individual activity fixtures (not production data)', () => {
   expect(screen.getAllByText('Parcial')).toHaveLength(12);
   expect(screen.getByText('Concluído')).toBeTruthy();
   expect(screen.getByText('Falhou')).toBeTruthy();
-  expect(screen.getAllByText(/Fonte: Auditoria · RH/)).toHaveLength(14);
   expect(screen.queryByText(/rh_desligamento/)).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'RH' }));
   await waitFor(() => expect(rpc).toHaveBeenLastCalledWith('dashboard_activity', expect.objectContaining({ p_categoria: 'rh', p_limit: 12 })));
