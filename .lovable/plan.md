@@ -49,8 +49,10 @@ Importação do RH concluída: 16 readmitidos, 7 desligados
 
 ## Detalhes técnicos
 
-- Nova migration: RPC `dashboard_kpis(p_days)` com variações; `quarentena_decidir` revisada/auditada; parâmetros `agent_schedule_enabled`; alerta `agent_offline` gerado em `iam-agent-api` (sem pg_cron, conforme AGENTS.md).
+- Nova migration: RPC `dashboard_kpis(p_days)` com variações; RPC `agent_refresh_request(p_task)` com throttle por rotina (usado ao abrir páginas e via triggers em alterações, gravando em `agent_tasks` — sem pg_cron, o Hermes continua o único executor, conforme AGENTS.md); novas tasks `quarantine_triage` e `pending_triage` na allowlist; `quarentena_decidir` auditada; alerta `agent_offline` em `iam-agent-api`.
+- Hook `useAutoRefresh(task)` nas páginas; remoção dos botões/switches de sync e do "Executar agora".
+- Telegram: conector Telegram + Edge Function `notify-telegram` (chamada pelo Hermes via `iam-agent-api` e por alertas críticos); parâmetro `telegram_chat_id`. Atualizar `AGENTS.md` e `roadmap.md`.
 - `dashboard_activity`: devolver ação normalizada e filtrar ações técnicas; textos montados em `src/lib/activityLabels.ts` com teste unitário.
-- Executor Python: ler `agent_schedule_enabled`; precisa ser levado ao servidor.
+- Executor Python: agenda ligada por padrão, tasks de triagem com regras determinísticas e envio de "preciso de parâmetro" ao Telegram; precisa ser levado ao servidor.
 - Componentes: `KpiCard` com sparkline (recharts), novos gráficos no `Dashboard.tsx`, página de quarentena reutilizando padrões de tabela existentes.
 - Sem importação RH real, sem reconcile-identities, sem reprocessar fila, sem alterar identidades durante a implementação.
