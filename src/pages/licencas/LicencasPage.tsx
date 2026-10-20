@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Plus, AlertTriangle, Pencil, Trash2, RefreshCw, Search, Monitor, Globe } from "lucide-react";
+import { AutoUpdatedHint } from "@/components/AutoUpdatedHint";
 import { Progress } from "@/components/ui/progress";
 import { useLicencas, useAplicacoes, useEntraLicencas, useLicencasExternasUso, useParametros } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";

@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Crown, RefreshCw, Search, Shield, ShieldAlert, Users, Link as LinkIcon, Plus, Trash2, KeyRound } from "lucide-react";
+import { AutoUpdatedHint } from "@/components/AutoUpdatedHint";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import TablePagination from "@/components/TablePagination";
@@ -172,14 +173,11 @@ export default function PrivilegiadosPage() {
       <PageHeader
         title="Acessos Privilegiados"
         icon={Crown}
-        description={<>Funções administrativas do Microsoft Entra ID, atribuições permanentes e PIM.<span className={`ml-2 font-medium ${freshnessColor(lastSync)}`}>• Última sincronização: {relativeTime(lastSync)}</span></>}
+        description={<>Funções administrativas do Microsoft Entra ID, atribuições permanentes e PIM.<span className={`ml-2 font-medium ${freshnessColor(lastSync)}`}>• Atualizado automaticamente {relativeTime(lastSync)}</span></>}
         actions={<>
+          <AutoUpdatedHint tasks="sync-entra-roles" />
           <Button variant="outline" onClick={() => setAdminOpen(true)}>
             <KeyRound className="h-4 w-4 mr-2" /> Contas administrativas
-          </Button>
-          <Button onClick={handleSync} disabled={syncing}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Sincronizando..." : "Sincronizar com Entra ID"}
           </Button>
         </>}
       />
