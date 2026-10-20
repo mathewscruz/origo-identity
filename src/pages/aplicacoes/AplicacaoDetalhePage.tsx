@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
 import { ArrowLeft, CheckCircle, ExternalLink, Globe, Cloud, Users, Shield, Layers, Settings, Key, RefreshCw, Plus, Trash2, TestTube, ChevronsUpDown, Check } from "lucide-react";
+import { AutoUpdatedHint } from "@/components/AutoUpdatedHint";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
@@ -655,7 +656,7 @@ export default function AplicacaoDetalhePage() {
             </CardHeader>
             <CardContent className="p-0">
               {(perfisInternos || []).length === 0 ? (
-                <EmptyState message={`Nenhum perfil interno cadastrado. ${hasConnector ? "Clique em 'Sincronizar da API' ou adicione manualmente." : "Adicione manualmente."}`} size="lg" />
+                <EmptyState message={`Nenhum perfil interno cadastrado. ${hasConnector ? "Eles chegam automaticamente da API ou podem ser adicionados manualmente." : "Adicione manualmente."}`} size="lg" />
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
