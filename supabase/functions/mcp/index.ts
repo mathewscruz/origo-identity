@@ -1008,13 +1008,122 @@ var health_check_default = defineTool21({
   }
 });
 
+// src/lib/mcp/tools/agent-tasks.ts
+import { defineTool as defineTool22 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z20 } from "npm:zod@^4.4.3";
+var MCP_AGENT_TASKS = [
+  "sync-entra-groups",
+  "sync-entra-apps",
+  "sync-entra-licencas",
+  "sync-entra-roles",
+  "sync-sharepoint-sites",
+  "sync-app-profiles",
+  "quarantine-triage",
+  "audit-reconciliation",
+  "test-app-connection"
+];
+function isAllowedAgentTask(task) {
+  return MCP_AGENT_TASKS.includes(task);
+}
+var err = (text) => ({ content: [{ type: "text", text }], isError: true });
+async function runOne(ctx, t) {
+  const client = sb(ctx);
+  if (!isAllowedAgentTask(t.task)) {
+    await client.rpc("agent_task_finish", { p_id: t.id, p_status: "error", p_http_status: 400, p_result: "tarefa fora da lista permitida" });
+    return { id: t.id, task: t.task, status: "error", http_status: 400 };
+  }
+  const { supabaseUrl, supabasePublishableKey } = getSupabaseConfig();
+  let status = 0;
+  let text = "";
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/${t.task}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ctx.getToken()}`, apikey: supabasePublishableKey },
+      body: JSON.stringify({ trigger: "hermes", agent_task_id: t.id })
+    });
+    status = res.status;
+    text = await res.text();
+  } catch (e) {
+    text = e instanceof Error ? e.message : String(e);
+  }
+  const ok = status >= 200 && status < 300;
+  await client.rpc("agent_task_finish", { p_id: t.id, p_status: ok ? "done" : "error", p_http_status: status || null, p_result: text.slice(0, 2e3) });
+  await client.from("auditoria").insert({
+    acao: "agent_task",
+    entidade: "scheduler",
+    operador: ctx.getUserEmail() ?? "hermes-agent",
+    resumo: `Hermes atendeu ${t.task}`,
+    detalhes: { task: t.task, http_status: status, via: "mcp" }
+  });
+  return { id: t.id, task: t.task, status: ok ? "done" : "error", http_status: status };
+}
+var runAgentTasksTool = defineTool22({
+  name: "run_agent_tasks",
+  title: "Atender pedidos de atualiza\xE7\xE3o do painel",
+  description: "Chame em todo ciclo (junto com get_inbox). Reserva os pedidos de atualiza\xE7\xE3o feitos pelas telas do painel (licen\xE7as, aplica\xE7\xF5es, grupos, sites, perfis, triagem da quarentena, auditoria), executa cada um e grava o resultado. Respeita a pausa do agente. N\xE3o toca identidades.",
+  inputSchema: { limit: z20.number().int().min(1).max(10).optional().describe("M\xE1ximo de pedidos neste ciclo (padr\xE3o 5).") },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  handler: async ({ limit }, ctx) => {
+    if (!ctx.isAuthenticated()) return err("N\xE3o autenticado");
+    const { data, error } = await sb(ctx).rpc("agent_task_claim", { p_owner: "hermes-mcp", p_limit: limit ?? 5 });
+    if (error) return err(error.message);
+    const r = data;
+    if (r.agent_paused) {
+      const out2 = { agent_paused: true, executed: [] };
+      return { content: [{ type: "text", text: "Agente pausado no painel; nada executado." }], structuredContent: out2 };
+    }
+    const executed = [];
+    for (const t of r.tasks) {
+      executed.push(await runOne(ctx, t));
+    }
+    const out = { agent_paused: false, executed };
+    return { content: [{ type: "text", text: JSON.stringify(out) }], structuredContent: out };
+  }
+});
+var listPendingNotificationsTool = defineTool22({
+  name: "list_pending_notifications",
+  title: "Avisos para enviar no Telegram",
+  description: "Chame em todo ciclo. Lista avisos e alertas cr\xEDticos do painel ainda n\xE3o enviados. Envie cada um pelo seu Telegram e depois chame mark_notifications_sent com os ids.",
+  inputSchema: {},
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async (_i, ctx) => {
+    if (!ctx.isAuthenticated()) return err("N\xE3o autenticado");
+    const since = new Date(Date.now() - 2 * 864e5).toISOString();
+    const { data, error } = await sb(ctx).from("alertas").select("id, severidade, titulo, mensagem, ref_url, created_at").is("notificado_em", null).eq("lido", false).in("severidade", ["aviso", "critico"]).gte("created_at", since).order("created_at").limit(50);
+    if (error) return err(error.message);
+    const alertas = (data ?? []).map((a) => ({
+      id: a.id,
+      severidade: String(a.severidade),
+      titulo: a.titulo,
+      mensagem: a.mensagem ?? null,
+      link: a.ref_url ?? null,
+      criado_em: a.created_at
+    }));
+    return { content: [{ type: "text", text: JSON.stringify(alertas) }], structuredContent: { alertas } };
+  }
+});
+var markNotificationsSentTool = defineTool22({
+  name: "mark_notifications_sent",
+  title: "Marcar avisos como enviados",
+  description: "Marca avisos como j\xE1 enviados pelo Telegram, para n\xE3o repetir.",
+  inputSchema: { ids: z20.array(z20.string().uuid()).min(1) },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  handler: async ({ ids }, ctx) => {
+    if (!ctx.isAuthenticated()) return err("N\xE3o autenticado");
+    const { data, error } = await sb(ctx).rpc("alertas_marcar_notificados", { p_ids: ids });
+    if (error) return err(error.message);
+    const r = { marcados: Number(data ?? 0) };
+    return { content: [{ type: "text", text: JSON.stringify(r) }], structuredContent: r };
+  }
+});
+
 // src/lib/mcp/index.ts
 var projectRef = "jobopjhhxgcfanlhzlkc";
 var mcp_default = defineMcp({
   name: "origo-access-identity-mcp",
   title: "\xD3rigo Access & Identity",
-  version: "0.4.0",
-  instructions: "Servidor MCP do \xD3rigo Access & Identity (IGA da \xD3rigo Energia). Voc\xEA \xE9 o Hermes, o c\xE9rebro operacional do sistema: decide, orquestra e explica; o \xD3rigo Agente (executor) \xE9 o \xDANICO que toca AD/Entra/SharePoint/apps, sempre a partir da fila IAM. Nunca insira na fila nem altere dados de identidade via SQL \u2014 use as ferramentas, que passam por RPCs auditadas e respeitam pap\xE9is/RLS do usu\xE1rio OAuth conectado.\n\nCICLO OPERACIONAL (a cada turno ou chamado): 1) get_inbox \u2192 veja aprova\xE7\xF5es pendentes, falhas, exce\xE7\xF5es, revis\xF5es abertas/atrasadas, quarentena do RH, terceiros a vencer/revalidar, alertas cr\xEDticos e se o agente est\xE1 online. 2) Trate cada fila: approve_iam_item (aprovar/rejeitar itens em nome do usu\xE1rio \u2014 auto-aprova\xE7\xE3o \xE9 recusada), retry_failed_items depois de corrigir a causa, decide_exception, resolve_quarantine, revalidate_terceiro / set_terceiro_status, ack_alerts s\xF3 depois de tratar. 3) Revis\xF5es: create_review (por aplica\xE7\xE3o, por gestor ou todos os gestores) envia o link ao respons\xE1vel; quando o gestor/owner responder pelo chamado, decide_review_items e close_review \u2014 as revoga\xE7\xF5es entram na fila j\xE1 aprovadas e o agente executa; acompanhe com get_review (bloco execucao). 4) Registre no chamado o que foi feito e o que ficou aguardando (aprova\xE7\xE3o, agente offline, e-mail sem destinat\xE1rio).\n\nCHAMADOS (GLPI): identifique a pessoa (list_colaboradores/get_colaborador/list_terceiros), o recurso (list_catalog), confira get_effective_access antes de conceder/revogar, e use request_access, reset_password ou start_jml_event (joiner/mover/leaver/pr\xE9-leaver). Acesso fora do perfil do cargo \xE9 exce\xE7\xE3o com justificativa e validade. A\xE7\xF5es destrutivas (leaver, revoga\xE7\xE3o em massa, desligar terceiro) exigem confirma\xE7\xE3o expl\xEDcita do solicitante no chamado.\n\nFerramentas admin (run_admin_sql, apply_migration, introspect_schema, invoke_edge_function) exigem papel admin/platform_admin, s\xE3o auditadas e servem para diagn\xF3stico/manuten\xE7\xE3o \u2014 nunca para provisionar.",
+  version: "0.5.0",
+  instructions: "Servidor MCP do \xD3rigo Access & Identity (IGA da \xD3rigo Energia). Voc\xEA \xE9 o Hermes, o c\xE9rebro operacional do sistema: decide, orquestra e explica; o \xD3rigo Agente (executor) \xE9 o \xDANICO que toca AD/Entra/SharePoint/apps, sempre a partir da fila IAM. Nunca insira na fila nem altere dados de identidade via SQL \u2014 use as ferramentas, que passam por RPCs auditadas e respeitam pap\xE9is/RLS do usu\xE1rio OAuth conectado.\n\nCICLO OPERACIONAL (a cada turno ou chamado): 0) run_agent_tasks (atende os pedidos de atualiza\xE7\xE3o das telas) e list_pending_notifications \u2192 envie pelo seu Telegram \u2192 mark_notifications_sent. 1) get_inbox \u2192 veja aprova\xE7\xF5es pendentes, falhas, exce\xE7\xF5es, revis\xF5es abertas/atrasadas, quarentena do RH, terceiros a vencer/revalidar, alertas cr\xEDticos e se o agente est\xE1 online. 2) Trate cada fila: approve_iam_item (aprovar/rejeitar itens em nome do usu\xE1rio \u2014 auto-aprova\xE7\xE3o \xE9 recusada), retry_failed_items depois de corrigir a causa, decide_exception, resolve_quarantine, revalidate_terceiro / set_terceiro_status, ack_alerts s\xF3 depois de tratar. 3) Revis\xF5es: create_review (por aplica\xE7\xE3o, por gestor ou todos os gestores) envia o link ao respons\xE1vel; quando o gestor/owner responder pelo chamado, decide_review_items e close_review \u2014 as revoga\xE7\xF5es entram na fila j\xE1 aprovadas e o agente executa; acompanhe com get_review (bloco execucao). 4) Registre no chamado o que foi feito e o que ficou aguardando (aprova\xE7\xE3o, agente offline, e-mail sem destinat\xE1rio).\n\nCHAMADOS (GLPI): identifique a pessoa (list_colaboradores/get_colaborador/list_terceiros), o recurso (list_catalog), confira get_effective_access antes de conceder/revogar, e use request_access, reset_password ou start_jml_event (joiner/mover/leaver/pr\xE9-leaver). Acesso fora do perfil do cargo \xE9 exce\xE7\xE3o com justificativa e validade. A\xE7\xF5es destrutivas (leaver, revoga\xE7\xE3o em massa, desligar terceiro) exigem confirma\xE7\xE3o expl\xEDcita do solicitante no chamado.\n\nFerramentas admin (run_admin_sql, apply_migration, introspect_schema, invoke_edge_function) exigem papel admin/platform_admin, s\xE3o auditadas e servem para diagn\xF3stico/manuten\xE7\xE3o \u2014 nunca para provisionar.",
   auth: auth.oauth.issuer({
     issuer: `https://${projectRef}.supabase.co/auth/v1`,
     acceptedAudiences: "authenticated"
@@ -1022,6 +1131,9 @@ var mcp_default = defineMcp({
   tools: [
     // Ciclo operacional
     get_inbox_default,
+    runAgentTasksTool,
+    listPendingNotificationsTool,
+    markNotificationsSentTool,
     list_iam_queue_default,
     approve_iam_item_default,
     retryFailedTool,

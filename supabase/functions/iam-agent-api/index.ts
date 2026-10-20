@@ -215,6 +215,9 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: true, count: 0, data: [], tasks: [], agent_paused: true, action_types: AGENT_ACTION_TYPES, owner, enable_requires_approval: enableRequiresApproval });
     }
     // tarefas pedidas pela tela ("Executar agora"): reservadas para este agente
+    // pedidos reservados há mais de 30 min sem resposta voltam a pendente (nunca apaga)
+    await supabase.from("agent_tasks").update({ status: "pending", started_at: null, owner: null })
+      .eq("status", "running").lt("started_at", new Date(Date.now() - 30 * 60000).toISOString());
     const { data: pendingTasks } = await supabase.from("agent_tasks").select("id, task").eq("status", "pending").order("created_at").limit(5);
     const tasks: { id: string; task: string }[] = [];
     for (const t of (pendingTasks || []) as { id: string; task: string }[]) {

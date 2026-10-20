@@ -71,6 +71,20 @@
       "when": 1792501053158,
       "tag": "0009_dashboard_entradas_saidas_reais",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792504707623,
+      "tag": "0010_migration",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792504727214,
+      "tag": "0011_migration",
+      "breakpoints": true
     }
   ]
 }

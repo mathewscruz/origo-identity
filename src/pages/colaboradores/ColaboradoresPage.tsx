@@ -1,3 +1,4 @@
+import { AutoUpdatedHint } from "@/components/AutoUpdatedHint";
 import { isPreventivelySuspended } from "@/lib/dashboardFilters";
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -307,7 +308,7 @@ export default function ColaboradoresPage() {
     <div className="space-y-6">
       <PageHeader
         title="Colaboradores"
-        description={`${mapped.filter((c) => c.status === "ativo").length} ativos · ${mapped.length} no total · origem RH (SharePoint) ou cadastro manual`}
+        description={<>{`${mapped.filter((c) => c.status === "ativo").length} ativos · ${mapped.length} no total · origem RH (SharePoint) ou cadastro manual`} · <AutoUpdatedHint tasks="sync-entra-groups" /></>}
         actions={<div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => navigate("/colaboradores/quarentena")}><AlertTriangle className="mr-1 h-4 w-4" />Precisa de você</Button>
           <Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Colaborador</Button>
