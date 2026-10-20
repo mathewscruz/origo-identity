@@ -14,6 +14,7 @@ import { actionLabel, QUEUE_STATUS_META, statusLabel, JML_TIPO_META } from "@/li
 import { humanize } from "@/lib/labels";
 import { tempoRelativo } from "@/lib/alertLabels";
 import { cn } from "@/lib/utils";
+import { activitySentence, isActivityNoise } from "@/lib/activityLabels";
 
 export interface ActivityItem {
   fonte: "fila" | "jml" | "auditoria";
@@ -133,7 +134,16 @@ export default function ActivityFeed({ limit = 12, showFilters = true, className
   const { data, isLoading, error, refetch, isPlaceholderData } = useActivityFeed(expanded ? Math.min(limit * 4, 200) : limit, categoria, colaboradorId, terceiroId);
   const pessoaFixa = !!(colaboradorId || terceiroId);
   // Only dedupe the same immutable record; never merge different people/actions.
-  const items = Array.from(new Map((data ?? []).map((item) => [`${item.fonte}:${item.id}`, item])).values());
+  const unique = Array.from(new Map((data ?? []).map((item) => [`${item.fonte}:${item.id}`, item])).values()).filter((i) => !isActivityNoise(i));
+  // Agrupa itens consecutivos da fila com a mesma pessoa, ação e situação ("+N semelhantes").
+  const items: (ActivityItem & { extra: number; recursos: string[] })[] = [];
+  for (const it of unique) {
+    const last = items[items.length - 1];
+    if (last && it.fonte === "fila" && last.fonte === "fila" && last.pessoa === it.pessoa && last.acao === it.acao && last.status === it.status) {
+      last.extra += 1; if (it.recurso) last.recursos.push(it.recurso); continue;
+    }
+    items.push({ ...it, extra: 0, recursos: it.recurso ? [it.recurso] : [] });
+  }
 
   return (
     <div className={className}>
@@ -157,12 +167,13 @@ export default function ActivityFeed({ limit = 12, showFilters = true, className
                 <span className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", tone)}><Icon className={cn("h-4 w-4", item.status === "processing" && "animate-spin")} /></span>
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                    <span className="break-words text-[13px] font-medium">{item.pessoa && !pessoaFixa ? <>{item.pessoa}<span className="text-muted-foreground"> · </span></> : null}{titulo(item)}</span>
+                    <span className="break-words text-[13px] font-medium">{activitySentence(item) || <>{item.pessoa && !pessoaFixa ? <>{item.pessoa}<span className="text-muted-foreground"> · </span></> : null}{titulo(item)}</>}</span>
+                    {item.extra > 0 && <Badge variant="secondary" className="px-1.5 text-[10px]" title={item.recursos.join(", ")}>+{item.extra} semelhante{item.extra > 1 ? "s" : ""}</Badge>}
                     {item.pessoa_tipo && !pessoaFixa && <Badge variant="outline" className="h-4 px-1 text-[9px] uppercase tracking-wide text-muted-foreground">{item.pessoa_tipo === "terceiro" || item.pessoa_tipo === "terceiros" ? "Terceiro" : "Colaborador"}</Badge>}
                     {item.status && <Badge variant="outline" className={cn("px-1.5 text-[10px]", QUEUE_STATUS_META[item.status]?.className, item.status === "partial" && "border-warning/30 text-warning")}>{item.fonte === "fila" ? statusLabel(item.status) : humanize(item.status)}</Badge>}
                   </span>
                   {item.detalhe && <span className="mt-0.5 block break-words text-xs leading-snug text-muted-foreground">{item.detalhe}</span>}
-                  <span className="mt-0.5 block text-[11px] text-muted-foreground">Fonte: {item.fonte === "fila" ? "Fila IAM" : item.fonte === "jml" ? "Eventos JML" : "Auditoria"}{item.origem ? ` · ${humanize(item.origem)}` : ""} · {ator(item)} · <span title={new Date(item.ts).toLocaleString("pt-BR")}>{tempoRelativo(item.ts)}</span></span>
+                  <span className="mt-0.5 block text-[11px] text-muted-foreground">{ator(item)} · <span title={new Date(item.ts).toLocaleString("pt-BR")}>{tempoRelativo(item.ts)}</span></span>
                 </span>
                 {item.link && <ArrowUpRight className="mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground/50 opacity-0 transition-opacity group-hover:opacity-100" />}
               </>
