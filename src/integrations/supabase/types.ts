@@ -2391,6 +2391,19 @@ export type Database = {
         Args: { p_min_interval_min?: number; p_task: string }
         Returns: Json
       }
+      agent_task_claim: {
+        Args: { p_limit?: number; p_owner: string }
+        Returns: Json
+      }
+      agent_task_finish: {
+        Args: {
+          p_http_status: number
+          p_id: string
+          p_result: string
+          p_status: string
+        }
+        Returns: boolean
+      }
       agent_task_solicitar: { Args: { p_task: string }; Returns: string }
       alertas_marcar_lidos: { Args: { p_ids?: string[] }; Returns: number }
       aplicacao_responsavel_revisao: {
