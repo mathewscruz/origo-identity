@@ -29,6 +29,13 @@
       "when": 1792499415438,
       "tag": "0003_alertas_notificado_hermes",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792499848251,
+      "tag": "0004_conectar_sistemas",
+      "breakpoints": true
     }
   ]
 }
