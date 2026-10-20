@@ -4,7 +4,6 @@ import { Outlet, useLocation, Link, useNavigate } from "react-router-dom";
 import PageTransition from "@/components/PageTransition";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { NotificacoesBell } from "@/components/NotificacoesBell";
-import CommandPalette, { openCommandPalette } from "@/components/CommandPalette";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAvatarUrl } from "@/lib/avatarUrl";
 import ForcePasswordChangeDialog from "@/components/ForcePasswordChangeDialog";
@@ -104,14 +103,6 @@ export default function AppLayout() {
               {!canEdit && (
                 <Tooltip><TooltipTrigger asChild><span className="mr-1 hidden items-center gap-1 rounded-full border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground md:inline-flex"><Eye className="h-3 w-3" />Somente leitura</span></TooltipTrigger><TooltipContent>Seu papel permite consultar, não operar.</TooltipContent></Tooltip>
               )}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-8 gap-2 text-muted-foreground md:min-w-[220px] md:justify-start" onClick={openCommandPalette}>
-                    <Search className="h-3.5 w-3.5" /><span className="hidden md:inline">Buscar pessoa, app, perfil…</span>
-                    <kbd className="ml-auto hidden rounded border bg-muted px-1.5 font-mono text-[10px] md:inline">Ctrl K</kbd>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Buscar e navegar (Ctrl K)</TooltipContent>
               </Tooltip>
               <NotificacoesBell />
               <DropdownMenu>
@@ -143,7 +134,6 @@ export default function AppLayout() {
           </main>
         </div>
       </div>
-      <CommandPalette />
       <ForcePasswordChangeDialog open={mustChangePassword} onComplete={refreshProfile} />
     </SidebarProvider>
   );

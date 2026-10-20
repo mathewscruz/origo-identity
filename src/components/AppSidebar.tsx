@@ -18,7 +18,6 @@ import logoImg from "@/assets/logo.png";
 import { toast } from "sonner";
 import { useDashboardMetrics, useAgentStatus } from "@/hooks/useOrigoData";
 import { cn } from "@/lib/utils";
-import { openCommandPalette } from "@/components/CommandPalette";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Metrics = any;
@@ -108,12 +107,6 @@ export function AppSidebar() {
               </div>
             )}
           </button>
-          {!collapsed && (
-            <button type="button" onClick={openCommandPalette} className="mt-2 flex w-full items-center gap-2 rounded-md border border-sidebar-border bg-sidebar-accent/40 px-2.5 py-1.5 text-left text-[11px] text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground">
-              <Search className="h-3.5 w-3.5" /><span className="flex-1">Buscar ou navegar…</span>
-              <kbd className="rounded border border-sidebar-border bg-sidebar px-1 font-mono text-[9px] text-sidebar-foreground/50">Ctrl K</kbd>
-            </button>
-          )}
         </SidebarHeader>
 
         <SidebarContent className="overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
