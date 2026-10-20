@@ -72,7 +72,7 @@ export function AppSidebar() {
   };
 
   const cell = (active: boolean) => cn(
-    "relative flex w-full flex-col items-center gap-1 rounded-lg px-1 py-2 text-[10.5px] leading-tight transition-colors",
+    "relative flex w-full flex-col items-center gap-1 rounded-lg px-0.5 py-2 text-[10px] leading-tight transition-colors",
     active ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
   );
 
@@ -89,7 +89,7 @@ export function AppSidebar() {
 
   return (
     <>
-      <aside className="sticky top-0 flex h-screen w-[84px] shrink-0 flex-col items-center border-r border-sidebar-border bg-sidebar py-3">
+      <aside className="sticky top-0 flex h-screen w-[92px] shrink-0 flex-col items-center border-r border-sidebar-border bg-sidebar py-3">
         <button type="button" onClick={() => navigate("/")} className="mb-3 rounded-lg p-1" title="Início">
           <img src={logoImg} alt="Órigo" className="h-9 w-9 rounded-lg object-contain" />
         </button>
