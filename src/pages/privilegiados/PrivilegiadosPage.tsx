@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { invokeFunction } from "@/lib/invokeFunction";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Crown, RefreshCw, Search, Shield, ShieldAlert, Users, Link as LinkIcon, Plus, Trash2, KeyRound } from "lucide-react";
+import { Crown, Search, Shield, ShieldAlert, Users, Link as LinkIcon, Plus, Trash2, KeyRound } from "lucide-react";
 import { AutoUpdatedHint } from "@/components/AutoUpdatedHint";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
@@ -47,7 +46,6 @@ export default function PrivilegiadosPage() {
   const [search, setSearch] = useState("");
   const [onlyPrivileged, setOnlyPrivileged] = useState(false);
   const [typeFilter, setTypeFilter] = useState<string>("todos");
-  const [syncing, setSyncing] = useState(false);
   const [selectedRole, setSelectedRole] = useState<any>(null);
   const [page, setPage] = useState(1);
   const [adminOpen, setAdminOpen] = useState(false);
@@ -101,21 +99,25 @@ export default function PrivilegiadosPage() {
 
   const knownSet = new Set((knownAdmins || []).map((a: any) => a.entra_id));
 
-  const handleSync = async () => {
-    setSyncing(true);
-    try {
-      const { data, error } = await invokeFunction("sync-entra-roles");
-      if (error) throw new Error(error);
-      toast.success(`Sincronização concluída: ${data.roles} roles, ${data.members} atribuições${data.eligible ? `, ${data.eligible} elegíveis PIM` : ""}`);
+  // Quando o Hermes concluir a atualização, recarrega as listas sem recarregar a tela
+  const { data: lastRolesRun } = useQuery({
+    queryKey: ["agent-task-last", "sync-entra-roles"],
+    queryFn: async () => {
+      const { data } = await supabase.from("agent_tasks" as any).select("finished_at").eq("task", "sync-entra-roles").eq("status", "done").order("finished_at", { ascending: false }).limit(1);
+      return ((data as any)?.[0]?.finished_at as string | undefined) ?? null;
+    },
+    refetchInterval: 30000,
+  });
+  const seenRun = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (lastRolesRun === undefined) return;
+    if (seenRun.current !== undefined && lastRolesRun && lastRolesRun !== seenRun.current) {
       qc.invalidateQueries({ queryKey: ["entra-roles"] });
       qc.invalidateQueries({ queryKey: ["entra-role-members-all"] });
       qc.invalidateQueries({ queryKey: ["entra-roles-last-sync"] });
-    } catch (err: any) {
-      toast.error("Erro na sincronização: " + (err.message || "Erro desconhecido"));
-    } finally {
-      setSyncing(false);
     }
-  };
+    seenRun.current = lastRolesRun;
+  }, [lastRolesRun, qc]);
 
   const handleAddAdmin = async () => {
     if (!newAdmin.entra_id || !newAdmin.motivo) {
