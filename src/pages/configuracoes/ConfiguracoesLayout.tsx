@@ -1,23 +1,28 @@
 import { Outlet } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
-import { Briefcase, Building2, MapPin, Network, Sliders, Cloud, UsersRound, Bot } from "lucide-react";
+import { Briefcase, Network, Sliders, UsersRound, Bot } from "lucide-react";
+import { useLocation } from "react-router-dom";
+import { useParametros } from "@/hooks/useOrigoData";
+import { ESSENCIAIS } from "./ParametrosPage";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
 const ALL_NAV = [
-  { title: "Parâmetros", url: "/configuracoes/parametros", icon: Sliders },
-  { title: "Hermes Agent", url: "/configuracoes/agente", icon: Bot },
-  { title: "Integrações", url: "/configuracoes/integracoes", icon: Cloud },
-  { title: "Usuários", url: "/configuracoes/usuarios", icon: UsersRound, admin: true },
-  { title: "Cargos", url: "/configuracoes/cargos", icon: Briefcase },
-  { title: "Áreas", url: "/configuracoes/areas", icon: Network },
-  { title: "Empresas", url: "/configuracoes/empresas", icon: Building2 },
-  { title: "Localidades", url: "/configuracoes/localidades", icon: MapPin },
+  { title: "Geral", url: "/configuracoes/geral", icon: Sliders, desc: "Regras de aprovação, base do RH, e-mails e governança." },
+  { title: "Hermes e conexões", url: "/configuracoes/hermes", icon: Bot, desc: "Estado do agente, rotinas e sistemas conectados." },
+  { title: "Usuários do painel", url: "/configuracoes/usuarios", icon: UsersRound, admin: true, desc: "Quem opera o sistema e com qual perfil." },
+  { title: "Cargos", url: "/configuracoes/cargos", icon: Briefcase, desc: "Cargos e os perfis de acesso que cada um recebe." },
+  { title: "Estrutura", url: "/configuracoes/estrutura", icon: Network, desc: "Áreas, empresas e localidades." },
 ];
 
 export default function ConfiguracoesLayout() {
   const isMobile = useIsMobile();
+  const { pathname } = useLocation();
+  const { data: parametros } = useParametros();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const faltando = ESSENCIAIS.filter((e) => !String(((parametros ?? []) as any[]).find((p) => p.chave === e.key)?.valor ?? "").trim()).length;
   const { role } = useAuth();
   const isAdmin = role === "admin" || role === "platform_admin";
   const subNav = ALL_NAV.filter((i) => !i.admin || isAdmin);
@@ -27,7 +32,7 @@ export default function ConfiguracoesLayout() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
-        <p className="text-sm text-muted-foreground">Parâmetros, integrações, usuários do sistema e cadastros de apoio.</p>
+        <p className="text-sm text-muted-foreground">{subNav.find((i) => pathname.startsWith(i.url))?.desc ?? "Regras, agente, usuários e cadastros de apoio."}</p>
       </div>
 
       {isMobile ? (
@@ -56,16 +61,17 @@ export default function ConfiguracoesLayout() {
       ) : (
         /* Desktop: sidebar layout */
         <div className="flex gap-6">
-          <nav className="flex w-48 shrink-0 flex-col gap-1">
+          <nav className="flex w-52 shrink-0 flex-col gap-0.5 self-start rounded-lg border bg-card p-1.5">
             {subNav.map((item) => (
               <NavLink
                 key={item.url}
                 to={item.url}
-                className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-                activeClassName="bg-accent text-accent-foreground font-medium"
+                className="relative flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                activeClassName="bg-primary/10 text-primary font-medium before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-0.5 before:rounded-full before:bg-primary"
               >
                 <item.icon className="h-4 w-4" />
-                {item.title}
+                <span className="flex-1">{item.title}</span>
+                {item.url.endsWith("/geral") && faltando > 0 && <span className={cn("h-2 w-2 rounded-full bg-warning")} title="Configuração faltando" />}
               </NavLink>
             ))}
           </nav>

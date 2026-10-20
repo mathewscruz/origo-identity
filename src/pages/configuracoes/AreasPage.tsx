@@ -17,6 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { logAuditoria } from "@/lib/auditLogger";
+import { useUsoCadastro } from "@/hooks/useUsoCadastro";
 import EmptyState from "@/components/EmptyState";
 
 export default function AreasPage() {
@@ -31,6 +32,7 @@ export default function AreasPage() {
   const [busca, setBusca] = useState("");
   const qc = useQueryClient();
   const { toast } = useToast();
+  const uso = useUsoCadastro("area_id");
 
   const list = ((areas ?? []) as any[]).filter((a: any) => !busca || a.nome.toLowerCase().includes(busca.toLowerCase()));
   const { paginatedItems, safePage } = usePagination(list, page, 25);
@@ -58,6 +60,7 @@ export default function AreasPage() {
 
   const handleDelete = async () => {
     if (!deleteId) return;
+    if ((uso[deleteId] ?? 0) > 0) { toast({ title: "Cadastro em uso", description: `${uso[deleteId]} pessoa(s) usam este cadastro. Desative em vez de excluir.`, variant: "destructive" }); setDeleteId(null); return; }
     const { error } = await supabase.from("areas").delete().eq("id", deleteId);
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
     await logAuditoria({ acao: "excluir_area", entidade: "areas", entidade_id: deleteId });
@@ -90,12 +93,12 @@ export default function AreasPage() {
                   {paginatedItems.length === 0 && <tr><td colSpan={4}><EmptyState message="Nenhuma área encontrada." /></td></tr>}
                   {paginatedItems.map((area: any) => (
                     <tr key={area.id} className="border-b last:border-0 hover:bg-muted/50">
-                      <td className="py-3 font-medium">{area.nome}</td>
+                      <td className="py-3 font-medium">{area.nome}<span className="ml-2 text-xs font-normal text-muted-foreground">{uso[area.id] ?? 0} pessoa(s)</span></td>
                       <td className="py-3 text-muted-foreground">{area.empresas?.nome || "—"}</td>
                       <td className="py-3"><Badge variant={area.ativo ? "default" : "secondary"}>{area.ativo ? "Ativo" : "Inativo"}</Badge></td>
                       <td className="py-3"><div className="flex gap-1">
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(area)}><Pencil className="h-3 w-3" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(area.id)}><Trash2 className="h-3 w-3" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" disabled={(uso[area.id] ?? 0) > 0} title={(uso[area.id] ?? 0) > 0 ? "Em uso — desative em vez de excluir" : "Excluir"} onClick={() => setDeleteId(area.id)}><Trash2 className="h-3 w-3" /></Button>
                       </div></td>
                     </tr>
                   ))}

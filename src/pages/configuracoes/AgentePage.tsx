@@ -15,11 +15,11 @@ import { useToast } from "@/hooks/use-toast";
 type Row = any;
 
 const ROTINAS = [
-  { fn: "sync-sharepoint-csv", label: "Importação da base do RH", when: "06:30 UTC" },
+  { fn: "sync-sharepoint-csv", label: "Importação da base do RH", when: "todo dia, 03:30", daily: true },
   { fn: "reconcile-identities", label: "Reconciliação base × Entra", when: "após a importação" },
-  { fn: "expire-access-exceptions", label: "Expiração de exceções", when: "05:00 UTC" },
-  { fn: "auto-recertification", label: "Recertificação e terceiros", when: "05:15 UTC" },
-  { fn: "audit-reconciliation", label: "Auditoria da reconciliação", when: "domingo 04:00 UTC" },
+  { fn: "expire-access-exceptions", label: "Expiração de exceções", when: "todo dia, 02:00", daily: true },
+  { fn: "auto-recertification", label: "Recertificação e terceiros", when: "todo dia, 02:15", daily: true },
+  { fn: "audit-reconciliation", label: "Auditoria da reconciliação", when: "domingo, 01:00" },
   { fn: "quarantine-triage", label: "Triagem da quarentena do RH", when: "ao abrir Pessoas" },
   { fn: "sync-entra-groups", label: "Sincronizar grupos do Entra", when: "ao abrir a página" },
   { fn: "sync-entra-apps", label: "Sincronizar aplicações do Entra", when: "ao abrir a página" },
@@ -130,7 +130,7 @@ export default function AgentePage() {
             <tbody>
               {ROTINAS.map((r) => {
                 const last = lastRuns?.[r.fn];
-                const late = r.when.includes("UTC") && !r.when.includes("domingo") && (!last || Date.now() - new Date(last).getTime() > 26 * 3600000);
+                const late = (r as { daily?: boolean }).daily && (!last || Date.now() - new Date(last).getTime() > 26 * 3600000);
                 const open = (tasks ?? []).some((t) => t.task === r.fn && (t.status === "pending" || t.status === "running"));
                 return (
                   <tr key={r.fn} className="border-b last:border-0">

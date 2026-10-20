@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, FileSpreadsheet, Save, ShieldCheck, SlidersHorizontal, Bot } from "lucide-react";
+import { CalendarClock, FileSpreadsheet, Save, ShieldCheck, AtSign, ChevronDown, AlertTriangle, History, Undo2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,7 +23,7 @@ interface Group { title: string; description: string; icon: typeof ShieldCheck; 
 
 const GROUPS: Group[] = [
   {
-    title: "Aprovação e execução", description: "Regras de quem aprova e como o Órigo Agente (único executor) recebe as ações.", icon: ShieldCheck,
+    title: "Aprovação e execução", description: "Quem aprova e como o Hermes recebe as ações.", icon: ShieldCheck,
     fields: [
       { key: "iam_approval_required", label: "Aprovação obrigatória", help: "Toda ação (criação, alteração, remoção, grupos, licenças, apps, reset de senha) aguarda aprovação de um administrador antes de ir para o agente.", type: "switch" },
       { key: "iam_enable_requires_approval", label: "Reabilitação exige aprovação", help: "Retorno de férias/afastamento, reversão de pré-leaver e recontratação sempre passam por aprovação, mesmo com a aprovação obrigatória desligada.", type: "switch" },
@@ -31,39 +31,42 @@ const GROUPS: Group[] = [
     ],
   },
   {
-    title: "Base do RH (SharePoint / CSV)", description: "Fonte autoritativa de colaboradores. Os limites evitam desligamento em massa por arquivo incompleto.", icon: FileSpreadsheet,
+    title: "Base do RH", description: "De onde vem a lista de colaboradores. Os limites evitam desligamentos em massa por arquivo incompleto.", icon: FileSpreadsheet,
     fields: [
-      { key: "sharepoint_rh_site", label: "Site SharePoint", help: "Formato host:/sites/nome (Graph).", type: "text", wide: true },
+      { key: "sharepoint_rh_site", label: "Site SharePoint", help: "Endereço do site, ex.: empresa.sharepoint.com:/sites/RH", type: "text", wide: true },
       { key: "sharepoint_rh_pasta", label: "Pasta", help: "Dentro de Documentos.", type: "text" },
       { key: "sharepoint_rh_prefixo", label: "Prefixo do arquivo", help: "O arquivo mais recente com esse prefixo é importado.", type: "text" },
       { key: "csv_leaver_limite_pct", label: "Limite de desligamentos (%)", help: "Percentual de ativos ausentes no arquivo a partir do qual nada é desligado (base ≥ 20 ativos).", type: "number", min: 0, max: 100, suffix: "%" },
       { key: "csv_leaver_limite_abs", label: "Limite de desligamentos (absoluto)", help: "Número máximo de desligamentos por arquivo.", type: "number", min: 0 },
+    ],
+  },
+  {
+    title: "Identidade e e-mail", description: "Como os e-mails e as contas das pessoas são gerados.", icon: AtSign,
+    fields: [
       { key: "csv_gerar_email_corporativo", label: "Gerar e-mail corporativo", help: "Quando o RH não informa e-mail do domínio, gera nome.sobrenome@domínio na criação (nunca regenera).", type: "switch" },
       { key: "csv_email_dominio", label: "Domínio do e-mail corporativo", help: "Usado para colaboradores.", type: "text" },
       { key: "terceiro_email_dominio", label: "Domínio do e-mail de terceiros", help: "Usado no cadastro de terceiros.", type: "text" },
-      { key: "ad_upn_dominio", label: "Domínio UPN do AD", help: "UPN das contas criadas no Active Directory pelo agente.", type: "text" },
+      { key: "ad_upn_dominio", label: "Domínio de login da rede", help: "Domínio do login das contas criadas na rede (AD).", type: "text" },
     ],
   },
   {
     title: "Governança periódica", description: "Revisões, revalidação de terceiros, detecção de órfãos e limiares de alerta.", icon: CalendarClock,
     fields: [
-      { key: "revisao_periodicidade_dias", label: "Revisões por aplicação", help: "Dias entre campanhas automáticas por aplicação (o owner decide quem mantém/perde; o agente executa).", type: "number", min: 7, suffix: "dias" },
+      { key: "revisao_periodicidade_dias", label: "Revisões por aplicação", help: "Dias entre campanhas automáticas por aplicação (o dono decide quem mantém ou perde; o Hermes executa).", type: "number", min: 7, suffix: "dias" },
       { key: "revisao_gestor_periodicidade_dias", label: "Revisões por gestor", help: "Dias entre campanhas em que cada gestor revisa os acessos da própria equipe. 0 desliga.", type: "number", min: 0, suffix: "dias" },
       { key: "terceiro_revalidacao_dias", label: "Revalidação de terceiros a cada", help: "Periodicidade: o responsável recebe por e-mail um link para manter ou desligar cada terceiro.", type: "number", min: 7, suffix: "dias" },
       { key: "terceiro_revalidacao_prazo_dias", label: "Prazo para revalidar terceiros", help: "Dias que o responsável tem para responder. Sem resposta até o prazo, os terceiros da campanha são desativados automaticamente (contas e acessos removidos pelo agente).", type: "number", min: 1, suffix: "dias" },
       { key: "licenca_critico_pct", label: "Licença crítica a partir de", help: "Percentual de uso que marca a licença como crítica.", type: "number", min: 1, max: 100, suffix: "%" },
-      { key: "priv_role_max_membros", label: "Máx. membros por role privilegiada", help: "Acima disso a sincronização de roles gera alerta crítico.", type: "number", min: 1 },
-      { key: "iam_orphan_ignore_prefixes", label: "Prefixos ignorados (órfãos)", help: "UPNs com esses prefixos (separados por vírgula) não entram na revisão de contas órfãs.", type: "text", wide: true },
+      { key: "priv_role_max_membros", label: "Máx. pessoas por função privilegiada", help: "Acima disso o sistema gera um alerta crítico.", type: "number", min: 1 },
+      { key: "iam_orphan_ignore_prefixes", label: "Prefixos ignorados (órfãos)", help: "Contas que começam com esses textos (separados por vírgula) não entram na revisão de contas órfãs.", type: "text", wide: true },
     ],
   },
 ];
 
-const CRON = [
-  { fn: "sync-sharepoint-csv", label: "Ciclo diário do RH (importação)", when: "06:30 UTC (03:30 BRT)", desc: "SharePoint → base de colaboradores" },
-  { fn: "reconcile-identities", label: "Ciclo diário do RH (reconciliação)", when: "após a importação", desc: "Base × Entra → fila para aprovação" },
-  { fn: "expire-access-exceptions", label: "Expiração de exceções", when: "05:00 UTC", desc: "Exceções vencidas → remoção pelo acesso efetivo" },
-  { fn: "auto-recertification", label: "Recertificação e terceiros", when: "05:15 UTC", desc: "Revisões por aplicação, expiração/revalidação de terceiros" },
-  { fn: "audit-reconciliation", label: "Auditoria da reconciliação", when: "domingo 04:00 UTC", desc: "Amostragem base × Entra" },
+
+export const ESSENCIAIS = [
+  { key: "csv_email_dominio", label: "Domínio do e-mail corporativo" },
+  { key: "sharepoint_rh_site", label: "Site SharePoint da base do RH" },
 ];
 
 export default function ParametrosPage() {
@@ -79,15 +82,17 @@ export default function ParametrosPage() {
   useEffect(() => { setValues(stored); }, [stored]);
   const dirty = useMemo(() => Object.keys(values).filter((k) => values[k] !== stored[k]), [values, stored]);
 
-  const { data: cronRuns } = useQuery({
-    queryKey: ["auditoria_cron"],
+
+  const [closed, setClosed] = useState<Record<string, boolean>>({});
+  const missing = ESSENCIAIS.filter((f) => !(stored[f.key] ?? "").trim());
+  const { data: historico } = useQuery({
+    queryKey: ["parametros_historico"],
     queryFn: async () => {
-      const { data } = await (supabase as Row).from("auditoria").select("timestamp, resumo").eq("acao", "agent_task").order("timestamp", { ascending: false }).limit(100);
-      const last: Record<string, string> = {};
-      for (const r of (data ?? []) as Row[]) { const fn = String(r.resumo || "").replace("Hermes disparou ", ""); if (!last[fn]) last[fn] = r.timestamp; }
-      return last;
+      const { data } = await (supabase as Row).from("auditoria").select("id, timestamp, operador, detalhes").eq("acao", "salvar_parametros").order("timestamp", { ascending: false }).limit(10);
+      return (data ?? []) as Row[];
     },
   });
+  const labelOf = (k: string) => GROUPS.flatMap((g) => g.fields).find((f) => f.key === k)?.label ?? k;
 
   const set = (k: string, v: string) => setValues((s) => ({ ...s, [k]: v }));
 
@@ -109,7 +114,7 @@ export default function ParametrosPage() {
         detalhes: Object.fromEntries(dirty.map((k) => [k, { de: stored[k] ?? null, para: values[k] }])),
       });
       toast({ title: "Parâmetros salvos", description: `${dirty.length} alteração(ões) aplicada(s) — valem imediatamente para agente, importação e agenda.` });
-      qc.invalidateQueries({ queryKey: ["parametros"] });
+      qc.invalidateQueries({ queryKey: ["parametros"] }); qc.invalidateQueries({ queryKey: ["parametros_historico"] });
     } catch (err: Row) {
       toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" });
     } finally { setSaving(false); }
@@ -118,17 +123,27 @@ export default function ParametrosPage() {
   if (isLoading) return <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-40 w-full" />)}</div>;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-16">
+      {missing.length > 0 && (
+        <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+          <span>Falta configurar: <strong>{missing.map((m) => m.label).join(", ")}</strong>. Sem isso, a importação do RH e a criação de contas podem falhar.</span>
+        </div>
+      )}
       {!isAdmin && <p className="text-xs text-muted-foreground">Somente administradores alteram parâmetros.</p>}
-      {GROUPS.map((g) => (
+      {GROUPS.map((g) => {
+        const isClosed = closed[g.title];
+        const changedHere = g.fields.filter((f) => dirty.includes(f.key)).length;
+        return (
         <Card key={g.title}>
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><g.icon className="h-4 w-4" /></div>
-              <div><CardTitle className="text-base">{g.title}</CardTitle><CardDescription>{g.description}</CardDescription></div>
-            </div>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <button type="button" onClick={() => setClosed((c) => ({ ...c, [g.title]: !c[g.title] }))} className="flex w-full items-center gap-3 p-4 text-left">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><g.icon className="h-4 w-4" /></div>
+            <div className="min-w-0 flex-1"><CardTitle className="text-base">{g.title}</CardTitle><CardDescription>{g.description}</CardDescription></div>
+            {changedHere > 0 && <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary">{changedHere} alterado(s)</Badge>}
+            <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isClosed ? "-rotate-90" : ""}`} />
+          </button>
+          {!isClosed && (
+          <CardContent className="grid grid-cols-1 gap-3 border-t pt-4 md:grid-cols-2">
             {g.fields.map((f) => {
               const v = values[f.key] ?? "";
               const changed = dirty.includes(f.key);
@@ -154,17 +169,36 @@ export default function ParametrosPage() {
               );
             })}
           </CardContent>
+          )}
         </Card>
-      ))}
+        );
+      })}
 
-      {isAdmin && (
-        <div className="sticky bottom-4 flex justify-end">
-          <Button onClick={handleSave} disabled={saving || dirty.length === 0} className="shadow-lg">
-            <Save className="mr-2 h-4 w-4" />{saving ? "Salvando..." : dirty.length ? `Salvar ${dirty.length} alteração(ões)` : "Nada a salvar"}
-          </Button>
+      <Card>
+        <CardHeader className="pb-3"><div className="flex items-center gap-2"><History className="h-4 w-4 text-muted-foreground" /><CardTitle className="text-base">Últimas alterações</CardTitle></div></CardHeader>
+        <CardContent>
+          {(historico ?? []).length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma alteração registrada.</p> : (
+            <ul className="divide-y text-sm">
+              {(historico ?? []).map((h) => (
+                <li key={h.id} className="py-2">
+                  <div className="flex justify-between gap-3 text-xs text-muted-foreground"><span>{h.operador}</span><span>{new Date(h.timestamp).toLocaleString("pt-BR")}</span></div>
+                  {Object.entries((h.detalhes ?? {}) as Record<string, { de: string | null; para: string }>).map(([k, d]) => (
+                    <p key={k} className="mt-0.5"><span className="font-medium">{labelOf(k)}</span>: <span className="text-muted-foreground line-through">{d?.de ?? "vazio"}</span> → {d?.para || "vazio"}</p>
+                  ))}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      {isAdmin && dirty.length > 0 && (
+        <div className="fixed bottom-4 right-6 z-30 flex items-center gap-2 rounded-lg border bg-card p-2 shadow-lg">
+          <span className="px-2 text-sm text-muted-foreground">{dirty.length} alteração(ões) não salva(s)</span>
+          <Button variant="outline" size="sm" onClick={() => setValues(stored)} disabled={saving}><Undo2 className="mr-1 h-4 w-4" />Descartar</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving}><Save className="mr-1 h-4 w-4" />{saving ? "Salvando..." : "Salvar"}</Button>
         </div>
       )}
-      <div className="flex items-center gap-1 text-[11px] text-muted-foreground"><SlidersHorizontal className="h-3 w-3" />Última sincronização de roles privilegiadas: {stored.entra_roles_last_sync ? new Date(stored.entra_roles_last_sync).toLocaleString("pt-BR") : "nunca"}</div>
     </div>
   );
 }

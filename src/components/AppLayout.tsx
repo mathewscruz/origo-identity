@@ -33,8 +33,10 @@ const routeLabels: Record<string, string> = {
   "/configuracoes/areas": "Áreas",
   "/configuracoes/empresas": "Empresas",
   "/configuracoes/localidades": "Localidades",
-  "/configuracoes/parametros": "Parâmetros",
-  "/configuracoes/integracoes": "Integrações",
+  "/configuracoes/geral": "Geral",
+  "/configuracoes/estrutura": "Estrutura",
+  "/configuracoes/usuarios": "Usuários do painel",
+  "/configuracoes/hermes": "Hermes e conexões",
   "/auditoria": "Auditoria",
   "/alertas": "Alertas",
   "/admin": "Administração",
@@ -116,8 +118,8 @@ export default function AppLayout() {
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => navigate("/alertas")}><Bell className="mr-2 h-4 w-4" />Alertas</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => navigate("/configuracoes/integracoes")}><Bot className="mr-2 h-4 w-4" />Órigo Agente & integrações</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => navigate("/configuracoes/parametros")}><Pencil className="mr-2 h-4 w-4" />Parâmetros</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate("/configuracoes/hermes")}><Bot className="mr-2 h-4 w-4" />Hermes e conexões</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate("/configuracoes/geral")}><Pencil className="mr-2 h-4 w-4" />Configurações gerais</DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => signOut()}><LogOut className="mr-2 h-4 w-4" />Sair</DropdownMenuItem>
                 </DropdownMenuContent>

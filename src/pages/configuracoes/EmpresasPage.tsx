@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { logAuditoria } from "@/lib/auditLogger";
+import { useUsoCadastro } from "@/hooks/useUsoCadastro";
 import EmptyState from "@/components/EmptyState";
 
 export default function EmpresasPage() {
@@ -28,6 +29,7 @@ export default function EmpresasPage() {
   const [form, setForm] = useState({ nome: "", cnpj: "", ativo: true });
   const qc = useQueryClient();
   const { toast } = useToast();
+  const uso = useUsoCadastro("empresa_id");
 
   const list = (empresas ?? []) as any[];
   const { paginatedItems, safePage } = usePagination(list, page, 25);
@@ -54,6 +56,7 @@ export default function EmpresasPage() {
 
   const handleDelete = async () => {
     if (!deleteId) return;
+    if ((uso[deleteId] ?? 0) > 0) { toast({ title: "Cadastro em uso", description: `${uso[deleteId]} pessoa(s) usam este cadastro. Desative em vez de excluir.`, variant: "destructive" }); setDeleteId(null); return; }
     const { error } = await supabase.from("empresas").delete().eq("id", deleteId);
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
     await logAuditoria({ acao: "excluir_empresa", entidade: "empresas", entidade_id: deleteId });
@@ -82,12 +85,12 @@ export default function EmpresasPage() {
                   {paginatedItems.length === 0 && <tr><td colSpan={4}><EmptyState message="Nenhuma empresa cadastrada." /></td></tr>}
                   {paginatedItems.map((emp: any) => (
                     <tr key={emp.id} className="border-b last:border-0 hover:bg-muted/50">
-                      <td className="py-3 font-medium">{emp.nome}</td>
+                      <td className="py-3 font-medium">{emp.nome}<span className="ml-2 text-xs font-normal text-muted-foreground">{uso[emp.id] ?? 0} pessoa(s)</span></td>
                       <td className="py-3 text-muted-foreground hidden md:table-cell">{emp.cnpj || "—"}</td>
                       <td className="py-3"><Badge variant={emp.ativo ? "default" : "secondary"}>{emp.ativo ? "Ativo" : "Inativo"}</Badge></td>
                       <td className="py-3"><div className="flex gap-1">
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(emp)}><Pencil className="h-3 w-3" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(emp.id)}><Trash2 className="h-3 w-3" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" disabled={(uso[emp.id] ?? 0) > 0} title={(uso[emp.id] ?? 0) > 0 ? "Em uso — desative em vez de excluir" : "Excluir"} onClick={() => setDeleteId(emp.id)}><Trash2 className="h-3 w-3" /></Button>
                       </div></td>
                     </tr>
                   ))}
