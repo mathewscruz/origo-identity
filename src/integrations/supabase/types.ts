@@ -21,8 +21,10 @@ export type Database = {
           http_status: number | null
           id: string
           owner: string | null
+          payload: Json | null
           requested_by: string | null
           result: string | null
+          result_json: Json | null
           started_at: string | null
           status: string
           task: string
@@ -33,8 +35,10 @@ export type Database = {
           http_status?: number | null
           id?: string
           owner?: string | null
+          payload?: Json | null
           requested_by?: string | null
           result?: string | null
+          result_json?: Json | null
           started_at?: string | null
           status?: string
           task: string
@@ -45,8 +49,10 @@ export type Database = {
           http_status?: number | null
           id?: string
           owner?: string | null
+          payload?: Json | null
           requested_by?: string | null
           result?: string | null
+          result_json?: Json | null
           started_at?: string | null
           status?: string
           task?: string
@@ -2409,6 +2415,20 @@ export type Database = {
       alertas_marcar_notificados: { Args: { p_ids: string[] }; Returns: number }
       aplicacao_responsavel_revisao: {
         Args: { p_aplicacao_id: string }
+        Returns: string
+      }
+      app_analise_concluir: {
+        Args: { p_diagnostico: Json; p_erro?: string; p_id: string }
+        Returns: boolean
+      }
+      app_analise_solicitar: {
+        Args: {
+          p_aplicacao_id: string
+          p_arquivo_nome?: string
+          p_arquivo_path?: string
+          p_observacao?: string
+          p_url?: string
+        }
         Returns: string
       }
       apply_reconcile_updates: {

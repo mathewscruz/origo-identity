@@ -1011,6 +1011,53 @@ var health_check_default = defineTool21({
 // src/lib/mcp/tools/agent-tasks.ts
 import { defineTool as defineTool22 } from "npm:@lovable.dev/mcp-js@0.20.0";
 import { z as z20 } from "npm:zod@^4.4.3";
+
+// src/lib/appAnalysis.ts
+var SECRET_KEY = /(pass(word)?|senha|secret|token|api[_-]?key|apikey|client[_-]?secret|authorization|bearer|credential|private[_-]?key)/i;
+var SECRET_VALUE = [
+  /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/gi,
+  /\b(sk|pk|rk|ghp|gho|xox[abp]|AKIA)[A-Za-z0-9_-]{10,}/g,
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}/g,
+  /\b[A-Fa-f0-9]{32,}\b/g,
+  /\b(password|senha|secret|token|api[_-]?key)\s*[:=]\s*["']?[^\s"',}]{4,}/gi
+];
+function limparSegredos(texto) {
+  let removidos = 0;
+  let t = texto;
+  for (const re of SECRET_VALUE) t = t.replace(re, () => {
+    removidos++;
+    return "[removido]";
+  });
+  return { texto: t, removidos };
+}
+function limpar(v, cont) {
+  if (typeof v === "string") {
+    const r = limparSegredos(v);
+    cont.n += r.removidos;
+    return r.texto;
+  }
+  if (Array.isArray(v)) return v.map((x) => limpar(x, cont));
+  if (v && typeof v === "object") {
+    const out = {};
+    for (const [k, x] of Object.entries(v)) {
+      if (SECRET_KEY.test(k) && k !== "auth_type" && typeof x === "string" && x.length > 0 && !/\{\{\s*\w+\s*\}\}/.test(x)) {
+        cont.n++;
+        continue;
+      }
+      out[k] = limpar(x, cont);
+    }
+    return out;
+  }
+  return v;
+}
+function sanitizarDiagnostico(raw) {
+  const cont = { n: 0 };
+  const d = limpar(raw ?? {}, cont) ?? {};
+  const modo = d.modo_sugerido && ["grupo", "api", "manual"].includes(d.modo_sugerido) ? d.modo_sugerido : null;
+  return { ...d, modo_sugerido: modo, perfis: (d.perfis ?? []).filter((p) => typeof p === "string" && p.trim()).map((p) => p.trim()), segredos_removidos: (d.segredos_removidos ?? 0) + cont.n };
+}
+
+// src/lib/mcp/tools/agent-tasks.ts
 var MCP_AGENT_TASKS = [
   "sync-entra-groups",
   "sync-entra-licencas",
@@ -1019,7 +1066,8 @@ var MCP_AGENT_TASKS = [
   "sync-app-profiles",
   "quarantine-triage",
   "audit-reconciliation",
-  "test-app-connection"
+  "test-app-connection",
+  "analyze-app-docs"
 ];
 function isAllowedAgentTask(task) {
   return MCP_AGENT_TASKS.includes(task);
@@ -1072,11 +1120,56 @@ var runAgentTasksTool = defineTool22({
       return { content: [{ type: "text", text: "Agente pausado no painel; nada executado." }], structuredContent: out2 };
     }
     const executed = [];
+    const analises_para_voce = [];
     for (const t of r.tasks) {
+      if (t.task === "analyze-app-docs") {
+        const p = t.payload ?? {};
+        let arquivo_url = null;
+        if (typeof p.arquivo_path === "string") {
+          const { data: s } = await sb(ctx).storage.from("app-docs").createSignedUrl(p.arquivo_path, 3600);
+          arquivo_url = s?.signedUrl ?? null;
+        }
+        analises_para_voce.push({ id: t.id, aplicacao_id: p.aplicacao_id, url: p.url ?? null, arquivo_nome: p.arquivo_nome ?? null, arquivo_url, observacao: p.observacao ?? null });
+        continue;
+      }
       executed.push(await runOne(ctx, t));
     }
-    const out = { agent_paused: false, executed };
+    const out = {
+      agent_paused: false,
+      executed,
+      analises_para_voce,
+      ...analises_para_voce.length ? { instrucao: "Para cada item de analises_para_voce: abra o link/arquivo VOC\xCA MESMO, descubra como o sistema d\xE1 acesso e responda com submit_app_analysis. Nunca devolva senhas, tokens ou chaves." } : {}
+    };
     return { content: [{ type: "text", text: JSON.stringify(out) }], structuredContent: out };
+  }
+});
+var acao = z20.object({ method: z20.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]), path: z20.string().min(1).max(300), body_template: z20.string().max(2e3).nullable().optional() }).nullable().optional();
+var submitAppAnalysisTool = defineTool22({
+  name: "submit_app_analysis",
+  title: "Entregar an\xE1lise de um sistema",
+  description: "Entrega o diagn\xF3stico de um pedido de analises_para_voce (run_agent_tasks). Voc\xEA leu o link/arquivo e diz a melhor forma de conectar: 'grupo' (acesso por grupo AD/Entra), 'api' (com endere\xE7o, autentica\xE7\xE3o e como criar/desativar/consultar usu\xE1rio, usando {{nome}}, {{email}}, {{matricula}}, {{login}}, {{perfil_externo}}) ou 'manual' (com instru\xE7\xF5es). Liste perfis internos e lacunas. NUNCA inclua senhas, tokens ou chaves. Se n\xE3o conseguiu ler (login exigido etc.), envie erro.",
+  inputSchema: {
+    id: z20.string().uuid(),
+    erro: z20.string().max(1e3).nullable().optional().describe("Preencha s\xF3 se n\xE3o conseguiu analisar."),
+    modo_sugerido: z20.enum(["grupo", "api", "manual"]).nullable().optional(),
+    motivo: z20.string().max(1500).nullable().optional(),
+    grupo_nome: z20.string().max(200).nullable().optional(),
+    api_base_url: z20.string().max(500).nullable().optional(),
+    auth_type: z20.enum(["bearer", "api_key", "basic", "oauth2_client_credentials", "app_token"]).nullable().optional(),
+    actions: z20.object({ create: acao, disable: acao, lookup: acao }).nullable().optional(),
+    perfis: z20.array(z20.string().max(120)).max(50).nullable().optional(),
+    instrucoes_acesso: z20.string().max(3e3).nullable().optional(),
+    instrucoes_revogacao: z20.string().max(3e3).nullable().optional(),
+    lacunas: z20.array(z20.string().max(300)).max(20).nullable().optional()
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  handler: async ({ id, erro, ...diag }, ctx) => {
+    if (!ctx.isAuthenticated()) return err("N\xE3o autenticado");
+    const limpo = sanitizarDiagnostico(diag);
+    const { data, error } = await sb(ctx).rpc("app_analise_concluir", { p_id: id, p_diagnostico: limpo, p_erro: erro ?? null });
+    if (error) return err(error.message);
+    const r = { entregue: !!data, segredos_removidos: limpo.segredos_removidos ?? 0 };
+    return { content: [{ type: "text", text: JSON.stringify(r) }], structuredContent: r };
   }
 });
 var listPendingNotificationsTool = defineTool22({
@@ -1121,8 +1214,8 @@ var projectRef = "jobopjhhxgcfanlhzlkc";
 var mcp_default = defineMcp({
   name: "origo-access-identity-mcp",
   title: "\xD3rigo Access & Identity",
-  version: "0.5.0",
-  instructions: "Servidor MCP do \xD3rigo Access & Identity (IGA da \xD3rigo Energia). Voc\xEA \xE9 o Hermes, o c\xE9rebro operacional do sistema: decide, orquestra e explica; o \xD3rigo Agente (executor) \xE9 o \xDANICO que toca AD/Entra/SharePoint/apps, sempre a partir da fila IAM. Nunca insira na fila nem altere dados de identidade via SQL \u2014 use as ferramentas, que passam por RPCs auditadas e respeitam pap\xE9is/RLS do usu\xE1rio OAuth conectado.\n\nCICLO OPERACIONAL (a cada turno ou chamado): 0) run_agent_tasks (atende os pedidos de atualiza\xE7\xE3o das telas) e list_pending_notifications \u2192 envie pelo seu Telegram \u2192 mark_notifications_sent. 1) get_inbox \u2192 veja aprova\xE7\xF5es pendentes, falhas, exce\xE7\xF5es, revis\xF5es abertas/atrasadas, quarentena do RH, terceiros a vencer/revalidar, alertas cr\xEDticos e se o agente est\xE1 online. 2) Trate cada fila: approve_iam_item (aprovar/rejeitar itens em nome do usu\xE1rio \u2014 auto-aprova\xE7\xE3o \xE9 recusada), retry_failed_items depois de corrigir a causa, decide_exception, resolve_quarantine, revalidate_terceiro / set_terceiro_status, ack_alerts s\xF3 depois de tratar. 3) Revis\xF5es: create_review (por aplica\xE7\xE3o, por gestor ou todos os gestores) envia o link ao respons\xE1vel; quando o gestor/owner responder pelo chamado, decide_review_items e close_review \u2014 as revoga\xE7\xF5es entram na fila j\xE1 aprovadas e o agente executa; acompanhe com get_review (bloco execucao). 4) Registre no chamado o que foi feito e o que ficou aguardando (aprova\xE7\xE3o, agente offline, e-mail sem destinat\xE1rio).\n\nCHAMADOS (GLPI): identifique a pessoa (list_colaboradores/get_colaborador/list_terceiros), o recurso (list_catalog), confira get_effective_access antes de conceder/revogar, e use request_access, reset_password ou start_jml_event (joiner/mover/leaver/pr\xE9-leaver). Acesso fora do perfil do cargo \xE9 exce\xE7\xE3o com justificativa e validade. A\xE7\xF5es destrutivas (leaver, revoga\xE7\xE3o em massa, desligar terceiro) exigem confirma\xE7\xE3o expl\xEDcita do solicitante no chamado.\n\nFerramentas admin (run_admin_sql, apply_migration, introspect_schema, invoke_edge_function) exigem papel admin/platform_admin, s\xE3o auditadas e servem para diagn\xF3stico/manuten\xE7\xE3o \u2014 nunca para provisionar.",
+  version: "0.6.0",
+  instructions: "Servidor MCP do \xD3rigo Access & Identity (IGA da \xD3rigo Energia). Voc\xEA \xE9 o Hermes, o c\xE9rebro operacional do sistema: decide, orquestra e explica; o \xD3rigo Agente (executor) \xE9 o \xDANICO que toca AD/Entra/SharePoint/apps, sempre a partir da fila IAM. Nunca insira na fila nem altere dados de identidade via SQL \u2014 use as ferramentas, que passam por RPCs auditadas e respeitam pap\xE9is/RLS do usu\xE1rio OAuth conectado.\n\nCICLO OPERACIONAL (a cada turno ou chamado): 0) run_agent_tasks (atende os pedidos de atualiza\xE7\xE3o das telas; se vier analises_para_voce, leia voc\xEA mesmo o link/arquivo de cada sistema e responda com submit_app_analysis) e list_pending_notifications \u2192 envie pelo seu Telegram \u2192 mark_notifications_sent. 1) get_inbox \u2192 veja aprova\xE7\xF5es pendentes, falhas, exce\xE7\xF5es, revis\xF5es abertas/atrasadas, quarentena do RH, terceiros a vencer/revalidar, alertas cr\xEDticos e se o agente est\xE1 online. 2) Trate cada fila: approve_iam_item (aprovar/rejeitar itens em nome do usu\xE1rio \u2014 auto-aprova\xE7\xE3o \xE9 recusada), retry_failed_items depois de corrigir a causa, decide_exception, resolve_quarantine, revalidate_terceiro / set_terceiro_status, ack_alerts s\xF3 depois de tratar. 3) Revis\xF5es: create_review (por aplica\xE7\xE3o, por gestor ou todos os gestores) envia o link ao respons\xE1vel; quando o gestor/owner responder pelo chamado, decide_review_items e close_review \u2014 as revoga\xE7\xF5es entram na fila j\xE1 aprovadas e o agente executa; acompanhe com get_review (bloco execucao). 4) Registre no chamado o que foi feito e o que ficou aguardando (aprova\xE7\xE3o, agente offline, e-mail sem destinat\xE1rio).\n\nCHAMADOS (GLPI): identifique a pessoa (list_colaboradores/get_colaborador/list_terceiros), o recurso (list_catalog), confira get_effective_access antes de conceder/revogar, e use request_access, reset_password ou start_jml_event (joiner/mover/leaver/pr\xE9-leaver). Acesso fora do perfil do cargo \xE9 exce\xE7\xE3o com justificativa e validade. A\xE7\xF5es destrutivas (leaver, revoga\xE7\xE3o em massa, desligar terceiro) exigem confirma\xE7\xE3o expl\xEDcita do solicitante no chamado.\n\nFerramentas admin (run_admin_sql, apply_migration, introspect_schema, invoke_edge_function) exigem papel admin/platform_admin, s\xE3o auditadas e servem para diagn\xF3stico/manuten\xE7\xE3o \u2014 nunca para provisionar.",
   auth: auth.oauth.issuer({
     issuer: `https://${projectRef}.supabase.co/auth/v1`,
     acceptedAudiences: "authenticated"
@@ -1133,6 +1226,7 @@ var mcp_default = defineMcp({
     runAgentTasksTool,
     listPendingNotificationsTool,
     markNotificationsSentTool,
+    submitAppAnalysisTool,
     list_iam_queue_default,
     approve_iam_item_default,
     retryFailedTool,

@@ -20,6 +20,7 @@ import { PromptInput, PromptInputFooter, PromptInputSubmit, PromptInputTextarea 
 import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput } from "@/components/ai-elements/tool";
 import { MODELOS_SISTEMA, MODOS_ACESSO, fichaPendencias, type ModoAcesso } from "@/lib/appConnect";
 import { invokeFunction } from "@/lib/invokeFunction";
+import { AnaliseHermesCard, AnexarDocumento } from "./AnaliseHermes";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = any;
@@ -84,7 +85,7 @@ function ConectarSistema({ id, initial }: { id: string; initial: UIMessage[] }) 
   const { messages, sendMessage, status, stop } = useChat({
     id, messages: initial, transport,
     onError: (e) => toast.error("O assistente não respondeu", { description: e.message.includes("402") ? "Créditos de IA esgotados." : e.message.includes("429") ? "Muitas mensagens seguidas; aguarde um pouco." : e.message }),
-    onFinish: () => { refetch(); refetchLigados(); qc.invalidateQueries({ queryKey: ["aplicacao_perfis_internos", id] }); },
+    onFinish: () => { refetch(); qc.invalidateQueries({ queryKey: ["app_analises", id] }); refetchLigados(); qc.invalidateQueries({ queryKey: ["aplicacao_perfis_internos", id] }); },
   });
   const busy = status === "submitted" || status === "streaming";
 
@@ -146,7 +147,7 @@ function ConectarSistema({ id, initial }: { id: string; initial: UIMessage[] }) 
                       if (p.type === "text") return <MessageResponse key={i}>{p.text}</MessageResponse>;
                       if (typeof p.type === "string" && p.type.startsWith("tool-")) {
                         const nome = p.type.replace("tool-", "");
-                        const titulo = nome === "atualizar_ficha" ? "Atualizou a ficha" : nome === "buscar_grupo" ? "Buscou grupos" : nome === "buscar_colaborador" ? "Buscou colaboradores" : nome === "atualizar_acoes_api" ? "Registrou uma ação da API" : nome === "buscar_perfil_acesso" ? "Buscou perfis de acesso" : nome === "ligar_perfis" ? "Ligou a perfis de acesso" : nome;
+                        const titulo = nome === "atualizar_ficha" ? "Atualizou a ficha" : nome === "buscar_grupo" ? "Buscou grupos" : nome === "buscar_colaborador" ? "Buscou colaboradores" : nome === "atualizar_acoes_api" ? "Registrou uma ação da API" : nome === "buscar_perfil_acesso" ? "Buscou perfis de acesso" : nome === "ligar_perfis" ? "Ligou a perfis de acesso" : nome === "pedir_analise_hermes" ? "Pediu análise ao Hermes" : nome;
                         return (
                           <Tool key={i} defaultOpen={false}>
                             <ToolHeader type={p.type} state={p.state} title={titulo} />
@@ -165,8 +166,9 @@ function ConectarSistema({ id, initial }: { id: string; initial: UIMessage[] }) 
           </Conversation>
           <div className="border-t p-3">
             <PromptInput onSubmit={({ text }) => { if (text.trim() && !busy) sendMessage({ text }); }}>
-              <PromptInputTextarea autoFocus placeholder="Escreva aqui… (nunca cole senhas ou chaves)" />
-              <PromptInputFooter className="justify-end">
+              <PromptInputTextarea autoFocus placeholder="Explique, cole um link ou anexe a documentação… (nunca cole senhas ou chaves)" />
+              <PromptInputFooter className="justify-between">
+                <AnexarDocumento id={id} onSent={() => qc.invalidateQueries({ queryKey: ["app_analises", id] })} />
                 <PromptInputSubmit status={status} onStop={stop} />
               </PromptInputFooter>
             </PromptInput>
@@ -187,6 +189,7 @@ function ConectarSistema({ id, initial }: { id: string; initial: UIMessage[] }) 
           <CardContent className="space-y-4">
             {!app ? <Loader2 className="h-4 w-4 animate-spin" /> : (
               <>
+                <AnaliseHermesCard id={id} app={app} cfg={cfg} onApplied={() => { refetch(); qc.invalidateQueries({ queryKey: ["aplicacao_perfis_internos", id] }); }} />
                 <Campo label="Nome"><Input defaultValue={app.nome} key={`n${app.nome}`} onBlur={(e) => e.target.value !== app.nome && save({ nome: e.target.value })} /></Campo>
                 <Campo label="Link"><Input defaultValue={app.url ?? ""} key={`u${app.url}`} placeholder="https://" onBlur={(e) => e.target.value !== (app.url ?? "") && save({ url: e.target.value || null })} /></Campo>
                 <div className="grid gap-3 sm:grid-cols-2">
