@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { requireRole } from "../_shared/auth.ts";
-import { friendlyName, isTrialSku, loadOfficialSkuNames, resolveFriendlyName } from "../_shared/m365SkuNames.ts";
+import { isTrialSku, loadOfficialSkuNames, resolveFriendlyName } from "../_shared/m365SkuNames.ts";
 
 
 const corsHeaders = {
