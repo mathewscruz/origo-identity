@@ -60,6 +60,7 @@ export type Database = {
           id: string
           lido: boolean
           mensagem: string | null
+          notificado_em: string | null
           ref_id: string | null
           ref_tipo: string | null
           ref_url: string | null
@@ -73,6 +74,7 @@ export type Database = {
           id?: string
           lido?: boolean
           mensagem?: string | null
+          notificado_em?: string | null
           ref_id?: string | null
           ref_tipo?: string | null
           ref_url?: string | null
@@ -86,6 +88,7 @@ export type Database = {
           id?: string
           lido?: boolean
           mensagem?: string | null
+          notificado_em?: string | null
           ref_id?: string | null
           ref_tipo?: string | null
           ref_url?: string | null

@@ -273,6 +273,27 @@ Deno.serve(async (req) => {
     return jsonResponse({ success: true, data });
   }
 
+  // ─── GET /notifications — alertas que o Hermes deve enviar pelo Telegram dele ───
+  if (req.method === "GET" && path === "notifications") {
+    const since = new Date(Date.now() - 2 * 86400000).toISOString();
+    const { data, error } = await supabase.from("alertas").select("id, tipo, severidade, titulo, mensagem, ref_url, created_at")
+      .is("notificado_em", null).eq("lido", false).in("severidade", ["aviso", "critico"]).gte("created_at", since)
+      .order("created_at", { ascending: true }).limit(20);
+    if (error) return jsonResponse({ error: error.message }, 500);
+    const base = "https://iam.origoenergia.com.br";
+    return jsonResponse({ notifications: (data ?? []).map((a) => ({ ...a, link: a.ref_url ? `${base}${a.ref_url}` : base })) });
+  }
+
+  // ─── POST /notifications/ack { ids } ───
+  if (req.method === "POST" && path === "ack") {
+    const body = await req.json().catch(() => ({}));
+    const ids = Array.isArray(body?.ids) ? body.ids.filter((x: unknown) => typeof x === "string").slice(0, 100) : [];
+    if (!ids.length) return jsonResponse({ error: "ids obrigatório" }, 400);
+    const { error } = await supabase.from("alertas").update({ notificado_em: new Date().toISOString() }).in("id", ids);
+    if (error) return jsonResponse({ error: error.message }, 500);
+    return jsonResponse({ ok: true, acked: ids.length });
+  }
+
   // ─── POST /release ───
   if (req.method === "POST" && path === "release") {
     const body = await req.json().catch(() => null) as { id?: string; claim_token?: string; reason?: string } | null;
