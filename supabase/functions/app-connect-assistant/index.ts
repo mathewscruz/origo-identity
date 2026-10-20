@@ -51,7 +51,7 @@ Deno.serve(async (req) => {
     nome: app.nome, url: app.url, descricao: app.descricao, modo_acesso: app.modo_acesso, grupo_id: app.grupo_id,
     owner_colaborador_id: app.owner_colaborador_id, revisor_colaborador_id: app.revisor_colaborador_id,
     instrucoes_acesso: app.instrucoes_acesso, instrucoes_revogacao: app.instrucoes_revogacao,
-    api_base_url: cfg.base_url ?? null, api_auth_type: cfg.auth_type ?? null, credencial_salva: !!cfg.has_secret,
+    api_base_url: cfg.base_url ?? null, api_auth_type: cfg.auth_type ?? null, credencial_salva: !!(cfg.api_token || cfg.api_key_value || cfg.password || cfg.oauth_client_secret),
     perfis_internos: (perfis ?? []).map((p) => p.nome_externo),
   };
 
