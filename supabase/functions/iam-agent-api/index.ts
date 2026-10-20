@@ -297,6 +297,33 @@ Deno.serve(async (req) => {
     return jsonResponse({ ok: true, acked: ids.length });
   }
 
+  // ─── POST /app_api_execute → executa create/disable de um sistema por API (credencial fica aqui) ───
+  if (req.method === "POST" && path === "app_api_execute") {
+    const body = await req.json().catch(() => null) as { id?: string; claim_token?: string } | null;
+    if (!body?.id || !body.claim_token) return jsonResponse({ error: "id and claim_token are required" }, 400);
+    const { data: item } = await supabase.from("iam_queue").select("id, action_type, payload_json, colaborador_id, terceiro_id, claim_token, status")
+      .eq("id", body.id).maybeSingle();
+    if (!item || item.claim_token !== body.claim_token || item.status !== "processing") return jsonResponse({ error: "item não reservado por este agente" }, 409);
+    const kind = item.action_type === "create_user_app" ? "create" : item.action_type === "disable_user_app" ? "disable" : null;
+    if (!kind) return jsonResponse({ error: "ação não é de sistema por API" }, 400);
+    const p = (item.payload_json || {}) as Record<string, unknown>;
+    const { data: conn } = await supabase.from("aplicacao_connectors").select("config").eq("aplicacao_id", p.aplicacao_id as string).maybeSingle();
+    const pessoa = item.colaborador_id
+      ? (await supabase.from("colaboradores").select("nome, email, matricula, sam_account_name").eq("id", item.colaborador_id).maybeSingle()).data
+      : item.terceiro_id ? (await supabase.from("terceiros").select("nome, email, sam_account_name").eq("id", item.terceiro_id).maybeSingle()).data : null;
+    let perfil: string | null = null;
+    if (p.perfil_interno_id) perfil = (await supabase.from("aplicacao_perfis_internos").select("nome_externo").eq("id", p.perfil_interno_id as string).maybeSingle()).data?.nome_externo ?? null;
+    // deno-lint-ignore no-explicit-any
+    const pr = pessoa as any;
+    const vars = { nome: pr?.nome ?? null, email: pr?.email ?? null, matricula: pr?.matricula ?? null, login: pr?.sam_account_name ?? null, perfil_externo: perfil };
+    try {
+      const r = await runAppAction(conn?.config, kind, vars, req.headers.get("x-agent-execute") === "1" || req.headers.get("x-execute") === "1" || true);
+      return jsonResponse(r);
+    } catch (e) {
+      return jsonResponse({ status: "failed", error_code: "app_api_exception", result_message: (e as Error).message.slice(0, 300) });
+    }
+  }
+
   // ─── POST /release ───
   if (req.method === "POST" && path === "release") {
     const body = await req.json().catch(() => null) as { id?: string; claim_token?: string; reason?: string } | null;
