@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Search, X } from "lucide-react";
-import { PageHeader } from "@/components/PageHeader";
+import PageHeader from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { EmptyState } from "@/components/EmptyState";
+import EmptyState from "@/components/EmptyState";
 import { AutoUpdatedHint } from "@/components/AutoUpdatedHint";
 import { supabase } from "@/integrations/supabase/client";
 import { useCanEdit } from "@/hooks/useRole";
