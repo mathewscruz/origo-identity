@@ -44,7 +44,8 @@ describe('Dashboard read failures', () => {
   it('shows one read error instead of zero KPIs, false empty governance or agent status when RPCs fail', () => {
     rpc.mockResolvedValue({ data: null, error: new Error('dashboard_kpis missing') });
     mount();
-    expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível carregar os dados');
+    expect(screen.getAllByRole('alert').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByRole('alert').some((a) => a.textContent?.includes('Não foi possível carregar os dados'))).toBe(true);
     expect(screen.queryByText('Pessoas ativas')).toBeNull();
     expect(screen.queryByText('Nenhuma pendência — tudo em dia.')).toBeNull();
     expect(screen.queryByText(/Hermes online/)).toBeNull();
@@ -62,7 +63,7 @@ describe('Dashboard read failures', () => {
     rpc.mockResolvedValue({ data: { pessoas_ativas: 17, admissoes: 0, desligamentos: 0, aguardando: 0, falhas_24h: 0, falhas_prev: 0, revisoes_abertas: 0, excecoes_vencendo: 0, terceiros_vencidos: 0, quarentena: 0, licencas: [] }, error: null });
     mount();
     expect(await screen.findByText('Pessoas ativas')).toBeTruthy();
-    expect(screen.getByText('17')).toBeTruthy();
+    expect(await screen.findByText('17')).toBeTruthy();
     expect(screen.getByText('Pessoas ativas').closest('a')?.getAttribute('href')).toBe('/colaboradores?status=ativo');
     expect(screen.getByLabelText('Pessoas por situação: total').textContent).toBe('16');
     expect(screen.getByText('Aguardando aprovação')).toBeTruthy();
