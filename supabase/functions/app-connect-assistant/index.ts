@@ -20,7 +20,9 @@ Campos da ficha: nome, url, descricao, dono (colaborador), revisor (colaborador)
 - "grupo": o acesso vem de estar num grupo do AD/Entra. Use buscar_grupo para achar o grupo e grave grupo_id.
 - "api": o sistema tem API. Grave api_base_url, api_auth_type (bearer, api_key, basic, oauth2_client_credentials) e api_docs (resumo do que o usuário colou). NUNCA peça nem aceite senhas/chaves no chat: diga para digitar no campo protegido "Credencial" ao lado.
 - "manual": não há integração. Grave instrucoes_acesso (passo a passo para dar acesso) e instrucoes_revogacao.
-Também colete perfis_internos (ex.: Técnico, Administrador) quando existirem.
+  No modo "api" registre também, com atualizar_acoes_api, como CRIAR, DESATIVAR e CONSULTAR o usuário: método HTTP, caminho (relativo ao endereço) e corpo JSON. Use os marcadores {{nome}}, {{email}}, {{matricula}}, {{login}} e {{perfil_externo}}. Ex.: create = POST /users com {"name":"{{nome}}","email":"{{email}}"}; disable = PATCH /users/{{email}} com {"active":false}; lookup = GET /users/{{email}}.
+Também colete perfis_internos (papéis do sistema, ex.: Leitor, Aprovador) quando existirem.
+Último passo: pergunte quais perfis de acesso (que agrupam cargos) devem receber o sistema. Use buscar_perfil_acesso e ligar_perfis; se o sistema tiver papéis, pergunte qual papel cada perfil recebe.
 Use buscar_colaborador para dono e revisor (sempre confirme o nome encontrado). Chame atualizar_ficha sempre que aprender algo novo — não espere o fim.
 Faça uma pergunta por vez. Quando a ficha estiver completa, diga que o usuário pode clicar em "Salvar e ativar" e que o Hermes vai testar a conexão.`;
 
@@ -53,9 +55,57 @@ Deno.serve(async (req) => {
     instrucoes_acesso: app.instrucoes_acesso, instrucoes_revogacao: app.instrucoes_revogacao,
     api_base_url: cfg.base_url ?? null, api_auth_type: cfg.auth_type ?? null, credencial_salva: !!(cfg.api_token || cfg.api_key_value || cfg.password || cfg.oauth_client_secret),
     perfis_internos: (perfis ?? []).map((p) => p.nome_externo),
+    api_acoes: { create: !!cfg.actions?.create, disable: !!cfg.actions?.disable, lookup: !!cfg.actions?.lookup },
   };
 
   const tools = {
+    atualizar_acoes_api: tool({
+      description: "Grava como criar, desativar e consultar o usuário no sistema por API.",
+      inputSchema: z.object({
+        acao: z.enum(["create", "disable", "lookup"]),
+        method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
+        path: z.string().min(1).max(300),
+        body_template: z.string().max(2000).nullable(),
+      }),
+      execute: async ({ acao, method, path, body_template }) => {
+        if (body_template) { try { JSON.parse(body_template.replace(/\{\{\s*\w+\s*\}\}/g, "x")); } catch { return { ok: false, error: "O corpo precisa ser JSON válido" }; } }
+        const next = { ...cfg, actions: { ...(cfg.actions ?? {}), [acao]: { method, path, body_template } } };
+        const { error } = await sb.from("aplicacao_connectors").upsert({ aplicacao_id: aplicacaoId, config: next, updated_at: new Date().toISOString() });
+        if (error) return { ok: false, error: error.message };
+        Object.assign(cfg, next);
+        await sb.from("aplicacoes").update({ teste_status: "pendente" }).eq("id", aplicacaoId);
+        return { ok: true };
+      },
+    }),
+    buscar_perfil_acesso: tool({
+      description: "Busca perfis de acesso (que são ligados aos cargos) pelo nome.",
+      inputSchema: z.object({ termo: z.string().min(2) }),
+      execute: async ({ termo }) => {
+        const { data } = await sb.from("perfis_acesso").select("id, nome, descricao").eq("ativo", true).ilike("nome", `%${termo}%`).limit(10);
+        return data ?? [];
+      },
+    }),
+    ligar_perfis: tool({
+      description: "Liga o sistema a perfis de acesso, para que os cargos desses perfis recebam o acesso. Opcionalmente informa o papel interno.",
+      inputSchema: z.object({ ligacoes: z.array(z.object({ perfil_id: z.string(), papel_interno: z.string().nullable() })).min(1).max(20) }),
+      execute: async ({ ligacoes }) => {
+        const out: string[] = [];
+        for (const l of ligacoes) {
+          const { data: ja } = await sb.from("perfil_aplicacoes").select("id").eq("perfil_id", l.perfil_id).eq("aplicacao_id", aplicacaoId).maybeSingle();
+          if (!ja) { const { error } = await sb.from("perfil_aplicacoes").insert({ perfil_id: l.perfil_id, aplicacao_id: aplicacaoId }); if (error) return { ok: false, error: error.message }; }
+          if (l.papel_interno) {
+            const { data: pi } = await sb.from("aplicacao_perfis_internos").select("id").eq("aplicacao_id", aplicacaoId).ilike("nome_externo", l.papel_interno).maybeSingle();
+            if (pi) {
+              await sb.from("perfil_apps_internos").delete().eq("perfil_id", l.perfil_id).eq("aplicacao_id", aplicacaoId);
+              await sb.from("perfil_apps_internos").insert({ perfil_id: l.perfil_id, aplicacao_id: aplicacaoId, perfil_interno_id: pi.id });
+            }
+          }
+          out.push(l.perfil_id);
+        }
+        await sb.from("auditoria").insert({ acao: "ligar_perfil_aplicacao", entidade: "aplicacoes", entidade_id: aplicacaoId, operador: auth.userId ?? null, resumo: `${app.nome} ligado a ${out.length} perfil(is) pelo assistente` });
+        return { ok: true, ligados: out.length, aviso: "Pessoas desses cargos recebem o acesso quando o sistema estiver ativo." };
+      },
+    }),
     buscar_grupo: tool({
       description: "Busca grupos do AD/Entra pelo nome.",
       inputSchema: z.object({ termo: z.string().min(2) }),
@@ -126,7 +176,7 @@ Deno.serve(async (req) => {
     instructions: `${INSTRUCTIONS}\n\nFicha atual (JSON): ${JSON.stringify(fichaAtual)}`,
     messages: await convertToModelMessages(messages),
     tools,
-    stopWhen: stepCountIs(8),
+    stopWhen: stepCountIs(10),
     abortSignal: req.signal,
     providerOptions: {
       openai: { store: false, forceReasoning: true, reasoningEffort: "low", reasoningSummary: "auto", include: ["reasoning.encrypted_content"] },
