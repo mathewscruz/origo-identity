@@ -36,6 +36,7 @@ import LocalidadesPage from "./pages/configuracoes/LocalidadesPage";
 
 import ParametrosPage from "./pages/configuracoes/ParametrosPage";
 import IntegracoesPage from "./pages/configuracoes/IntegracoesPage";
+import AgentePage from "./pages/configuracoes/AgentePage";
 import UsuariosPage from "./pages/admin/UsuariosPage";
 import LoginPage from "./pages/auth/LoginPage";
 import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
@@ -115,6 +116,7 @@ const App = () => (
                 <Route path="parametros" element={<ParametrosPage />} />
                 <Route path="integracoes" element={<IntegracoesPage />} />
                 <Route path="usuarios" element={<UsuariosPage />} />
+                <Route path="agente" element={<AgentePage />} />
                 <Route path="auditoria" element={<Navigate to="/auditoria" replace />} />
                 <Route path="alertas" element={<Navigate to="/alertas" replace />} />
               </Route>

@@ -1,6 +1,6 @@
 import { Outlet } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
-import { Briefcase, Building2, MapPin, Network, Sliders, Cloud, UsersRound } from "lucide-react";
+import { Briefcase, Building2, MapPin, Network, Sliders, Cloud, UsersRound, Bot } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
@@ -9,6 +9,7 @@ import { tourSteps } from "@/lib/tourSteps";
 
 const ALL_NAV = [
   { title: "Parâmetros", url: "/configuracoes/parametros", icon: Sliders },
+  { title: "Hermes Agent", url: "/configuracoes/agente", icon: Bot },
   { title: "Integrações", url: "/configuracoes/integracoes", icon: Cloud },
   { title: "Usuários", url: "/configuracoes/usuarios", icon: UsersRound, admin: true },
   { title: "Cargos", url: "/configuracoes/cargos", icon: Briefcase },

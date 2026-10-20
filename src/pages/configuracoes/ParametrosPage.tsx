@@ -157,30 +157,6 @@ export default function ParametrosPage() {
         </Card>
       ))}
 
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><Bot className="h-4 w-4" /></div>
-            <div><CardTitle className="text-base">Agenda automática (pg_cron)</CardTitle><CardDescription>Rotinas que rodam sozinhas. A execução das ações geradas é sempre do Órigo Agente.</CardDescription></div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b text-left text-xs uppercase tracking-wider text-muted-foreground"><th className="p-3 font-medium">Rotina</th><th className="p-3 font-medium hidden md:table-cell">O que faz</th><th className="p-3 font-medium">Horário</th><th className="p-3 font-medium">Último disparo</th></tr></thead>
-            <tbody>
-              {CRON.map((c) => (
-                <tr key={c.fn} className="border-b last:border-0">
-                  <td className="p-3 font-medium">{c.label}<div className="font-mono text-[10px] text-muted-foreground">{c.fn}</div></td>
-                  <td className="p-3 hidden md:table-cell text-xs text-muted-foreground">{c.desc}</td>
-                  <td className="p-3 text-xs">{c.when}</td>
-                  <td className="p-3 text-xs">{cronRuns?.[c.fn] ? new Date(cronRuns[c.fn]).toLocaleString("pt-BR") : <Badge variant="outline" className="border-warning/30 bg-warning/10 text-warning">Nunca — confira os segredos do Vault</Badge>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
-
       {isAdmin && (
         <div className="sticky bottom-4 flex justify-end">
           <Button onClick={handleSave} disabled={saving || dirty.length === 0} className="shadow-lg">
