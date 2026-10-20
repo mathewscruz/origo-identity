@@ -64,6 +64,13 @@
       "when": 1792500745321,
       "tag": "0008_perfis_super_admin_suporte_leitor",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792501053158,
+      "tag": "0009_dashboard_entradas_saidas_reais",
+      "breakpoints": true
     }
   ]
 }
