@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { AppWindow, CalendarClock, CheckCircle2, ClipboardCheck, Hourglass, Loader2, Plus, Search, Users, UserCheck } from "lucide-react";
+import { AppWindow, CalendarClock, CheckCircle2, ClipboardCheck, Hourglass, Loader2, Plus, Search, Trash2, Users, UserCheck } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import TablePagination, { usePagination } from "@/components/TablePagination";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
@@ -44,8 +45,26 @@ export default function RevisoesPage() {
   const { data: terceiros } = useTerceiros();
   const prazoTerceiros = useParametro("terceiro_revalidacao_prazo_dias", "7");
   const { toast } = useToast();
-  const { profile } = useAuth();
+  const { profile, role } = useAuth();
   const canEdit = useCanEdit();
+  const isAdmin = role === "admin" || role === "platform_admin";
+  const [toDelete, setToDelete] = useState<Row | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const handleDelete = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
+    try {
+      const { error: e1 } = await supabase.from("revisao_itens").delete().eq("revisao_id", toDelete.id);
+      if (e1) throw e1;
+      const { error: e2 } = await supabase.from("revisoes").delete().eq("id", toDelete.id);
+      if (e2) throw e2;
+      await supabase.from("auditoria").insert({ entidade: "revisoes", entidade_id: toDelete.id, acao: "excluir_revisao", operador: profile?.email || "sistema", resumo: `Revisão excluída: ${toDelete.nome}`, detalhes: { status: toDelete.status, total_itens: toDelete.total_itens } });
+      toast({ title: "Revisão excluída", description: toDelete.nome });
+      setToDelete(null);
+    } catch (err: Row) {
+      toast({ title: "Erro ao excluir", description: err.message, variant: "destructive" });
+    } finally { setDeleting(false); }
+  };
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -175,7 +194,7 @@ export default function RevisoesPage() {
           <table className="w-full text-sm"><thead><tr className="border-b text-left text-xs uppercase tracking-wider text-muted-foreground">
             <th className="p-3 font-medium">Campanha</th><th className="p-3 font-medium hidden md:table-cell">Tipo</th><th className="p-3 font-medium">Status</th>
             <th className="p-3 font-medium">Progresso</th><th className="p-3 font-medium hidden lg:table-cell">Responsável</th>
-            <th className="p-3 font-medium">Prazo</th><th className="p-3 font-medium hidden xl:table-cell">Resultado</th>
+            <th className="p-3 font-medium">Prazo</th><th className="p-3 font-medium hidden xl:table-cell">Resultado</th>{isAdmin && <th className="p-3" />}
           </tr></thead><tbody>
             {paginatedItems.map((r: Row) => {
               const t = TIPO[r.tipo] || TIPO.aplicacao; const late = isAtrasada(r);
@@ -189,6 +208,7 @@ export default function RevisoesPage() {
                   <td className="p-3 hidden lg:table-cell text-xs text-muted-foreground">{r.owner_email || r.responsavel || "—"}</td>
                   <td className="p-3 text-xs">{r.data_fim ? <span className={late ? "font-medium text-destructive" : ""}>{new Date(r.data_fim + "T12:00:00").toLocaleDateString("pt-BR")}</span> : <span className="text-muted-foreground">sem prazo</span>}</td>
                   <td className="p-3 hidden xl:table-cell text-xs text-muted-foreground">{r.resultado?.cancelada ? "Cancelada" : r.resultado ? `${r.resultado.mantidos ?? 0} mantidos · ${r.resultado.revogados ?? 0} ${r.tipo === "terceiros" ? "desligados" : "revogados"}${r.resultado.automaticos ? ` (${r.resultado.automaticos} por prazo)` : ""}` : "—"}</td>
+                  {isAdmin && <td className="p-3 text-right"><Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" aria-label="Excluir revisão" onClick={() => setToDelete(r)}><Trash2 className="h-4 w-4" /></Button></td>}
                 </tr>
               );
             })}
@@ -196,6 +216,19 @@ export default function RevisoesPage() {
         )}
       </CardContent></Card>
       <TablePagination totalItems={filtered.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
+
+      <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && !deleting && setToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir revisão?</AlertDialogTitle>
+            <AlertDialogDescription>A campanha "{toDelete?.nome}" e seus {toDelete?.total_itens ?? 0} itens serão apagados definitivamente. Nenhum acesso é concedido ou removido por esta exclusão.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction disabled={deleting} onClick={(e) => { e.preventDefault(); handleDelete(); }} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">{deleting ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}Excluir</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
