@@ -9,7 +9,7 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
-  Activity, AlertTriangle, Bot, CalendarClock, ClipboardCheck, FileCheck, KeyRound,
+  Activity, AlertTriangle, CalendarClock, ClipboardCheck, FileCheck, KeyRound,
   ShieldAlert, ShieldCheck, UserCheck, Users, XCircle, Crown, FileSpreadsheet, Hourglass,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +20,7 @@ import PageHeader from "@/components/PageHeader";
 import StatCard from "@/components/StatCard";
 import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
-import { useDashboardMetrics, useDashboardSeries, useParametro, type DashboardSeriesPoint } from "@/hooks/useOrigoData";
+import { useDashboardMetrics, useDashboardSeries, type DashboardSeriesPoint } from "@/hooks/useOrigoData";
 import { actionLabel, QUEUE_STATUS_META } from "@/lib/queueLabels";
 import ActivityFeed from "@/components/ActivityFeed";
 import { useQuery } from "@tanstack/react-query";
@@ -147,60 +147,29 @@ function ChartTooltip({ active, payload, label }: Row) {
   );
 }
 
-/* ── status do sistema (agente, base RH, aprovação) ── */
+/* ── linha discreta de status (só ganha cor quando há problema) ── */
 function SystemStrip({ m, loading }: { m: Row; loading: boolean }) {
-  const approval = useParametro("iam_approval_required", "true") === "true";
+  if (loading) return null;
   const agent: Row = m?.agente?.[0];
   const agentAge = agent ? (Date.now() - new Date(agent.last_seen_at).getTime()) / 60000 : Infinity;
-  const agentOnline = agentAge < 5;
-  const agentWarn = !agentOnline && agentAge < 30;
+  const agentBad = agentAge > 10;
   const csv: Row = m?.ultimo_csv;
-  const items = [
-    {
-      icon: Bot, label: "Agente executor",
-      value: loading ? "…" : !agent ? "nunca visto" : agentOnline ? "online" : agentWarn ? "sem sinal" : "offline",
-      hint: agent ? `${agent.execute_mode === false ? "simulação" : "execução ativa"} · ${relTime(agent.last_seen_at)}` : "sem heartbeat",
-      tone: !agent || (!agentOnline && !agentWarn) ? "destructive" : agentWarn ? "warning" : "success",
-      to: "/fila-provisionamento",
-    },
-
-    {
-      icon: FileSpreadsheet, label: "Base do RH",
-      value: loading ? "…" : !csv ? "nenhuma" : csv.display_status === "collected_not_imported" ? "coletada; não importada" : csv.status === "running" ? "importando" : csv.status === "done" ? `${csv.colab_created ?? 0} novos · ${csv.colab_updated ?? 0} alt.` : "falhou",
-      hint: csv ? `${csv.filename || "RH_COLAB"} · ${relTime(csv.source_modified_at || csv.updated_at)}` : "sem arquivo",
-      tone: !csv || csv.display_status === "collected_not_imported" ? "warning" : csv.status === "error" ? "destructive" : "info",
-      to: "/configuracoes/integracoes",
-    },
-    {
-      icon: approval ? ShieldCheck : ShieldAlert, label: "Aprovação",
-      value: approval ? "obrigatória" : "direta",
-      hint: approval ? "antes da execução" : "sem etapa de aprovação",
-      tone: approval ? "success" : "warning",
-      to: "/fila-provisionamento?tab=aprovacao",
-    },
-  ] as const;
+  const csvAt = csv ? new Date(csv.source_modified_at || csv.updated_at).getTime() : 0;
+  const csvBad = !csv || csv.status === "error" || csv.display_status === "collected_not_imported" || (Date.now() - csvAt) / 3600000 > 26;
+  const csvText = !csv ? "Base do RH sem arquivo"
+    : csv.status === "error" ? "Base do RH falhou"
+    : csv.status === "running" ? "Base do RH importando"
+    : `Base do RH atualizada ${relTime(csv.source_modified_at || csv.updated_at)}${csv.colab_updated || csv.colab_created ? ` (${(csv.colab_created ?? 0) + (csv.colab_updated ?? 0)} alterações)` : ""}`;
+  const part = (bad: boolean, text: string, to: string) => (
+    <Link to={to} className={`inline-flex items-center gap-1.5 hover:underline ${bad ? "font-medium text-warning" : ""}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${bad ? "bg-warning" : "bg-muted-foreground/40"}`} />{text}
+    </Link>
+  );
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-      {items.map((it) => (
-        <Link key={it.label} to={it.to} className="group">
-          <Card className="h-full transition-all hover:-translate-y-0.5 hover:shadow-md">
-            <CardContent className="flex items-center gap-3 p-3">
-              <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-                it.tone === "success" ? "bg-success/10 text-success" : it.tone === "destructive" ? "bg-destructive/10 text-destructive" : it.tone === "warning" ? "bg-warning/10 text-warning" : "bg-info/10 text-info"}`}>
-                <it.icon className="h-4 w-4" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{it.label}</p>
-                <p className="flex items-center gap-1.5 text-sm font-semibold">
-                  <span className={`h-1.5 w-1.5 rounded-full ${it.tone === "success" ? "bg-success" : it.tone === "destructive" ? "bg-destructive" : it.tone === "warning" ? "bg-warning" : "bg-info animate-pulse"}`} />
-                  {it.value}
-                </p>
-                <p className="truncate text-[11px] text-muted-foreground">{it.hint}</p>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-      ))}
+    <div className="-mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      {part(agentBad, !agent ? "Hermes nunca conectado" : agentBad ? `Hermes sem sinal ${relTime(agent.last_seen_at)}` : `Hermes online ${relTime(agent.last_seen_at)}`, "/configuracoes/hermes")}
+      <span aria-hidden>·</span>
+      {part(csvBad, csvText, "/configuracoes/integracoes")}
     </div>
   );
 }
