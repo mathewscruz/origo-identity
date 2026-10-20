@@ -59,7 +59,8 @@ const GROUPS: Group[] = [
 ];
 
 const CRON = [
-  { fn: "run-daily-cycle", label: "Ciclo diário do RH", when: "06:30 UTC (03:30 BRT)", desc: "SharePoint → reconciliação → fila para o agente" },
+  { fn: "sync-sharepoint-csv", label: "Ciclo diário do RH (importação)", when: "06:30 UTC (03:30 BRT)", desc: "SharePoint → base de colaboradores" },
+  { fn: "reconcile-identities", label: "Ciclo diário do RH (reconciliação)", when: "após a importação", desc: "Base × Entra → fila para aprovação" },
   { fn: "expire-access-exceptions", label: "Expiração de exceções", when: "05:00 UTC", desc: "Exceções vencidas → remoção pelo acesso efetivo" },
   { fn: "auto-recertification", label: "Recertificação e terceiros", when: "05:15 UTC", desc: "Revisões por aplicação, expiração/revalidação de terceiros" },
   { fn: "audit-reconciliation", label: "Auditoria da reconciliação", when: "domingo 04:00 UTC", desc: "Amostragem base × Entra" },
@@ -81,9 +82,9 @@ export default function ParametrosPage() {
   const { data: cronRuns } = useQuery({
     queryKey: ["auditoria_cron"],
     queryFn: async () => {
-      const { data } = await (supabase as Row).from("auditoria").select("timestamp, resumo").eq("acao", "cron_invoke").order("timestamp", { ascending: false }).limit(50);
+      const { data } = await (supabase as Row).from("auditoria").select("timestamp, resumo").eq("acao", "agent_task").order("timestamp", { ascending: false }).limit(100);
       const last: Record<string, string> = {};
-      for (const r of (data ?? []) as Row[]) { const fn = String(r.resumo || "").replace("Job agendado disparou ", ""); if (!last[fn]) last[fn] = r.timestamp; }
+      for (const r of (data ?? []) as Row[]) { const fn = String(r.resumo || "").replace("Hermes disparou ", ""); if (!last[fn]) last[fn] = r.timestamp; }
       return last;
     },
   });
