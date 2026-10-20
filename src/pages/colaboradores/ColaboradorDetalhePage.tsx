@@ -254,23 +254,6 @@ export default function ColaboradorDetalhePage() {
     setRevertOpen(false); setPreLeaverMotivo(""); invalidatePessoa();
   }
 
-  // Atualização automática dos acessos do Entra ao abrir a pessoa (no máx. 1x a cada 15 min por pessoa)
-  useEffect(() => {
-    if (!id || !canEdit) return;
-    const k = `auto-sync-user:${id}`;
-    const last = Number(sessionStorage.getItem(k) || 0);
-    if (Date.now() - last < 15 * 60 * 1000) return;
-    sessionStorage.setItem(k, String(Date.now()));
-    setSyncing(true);
-    syncSingleUserAccess(id).then(async (res) => {
-      if (res.success) {
-        await Promise.all([queryClient.invalidateQueries({ queryKey: ["colab_individual_queue", id] }), queryClient.invalidateQueries({ queryKey: ["colaborador", id] })]);
-      } else {
-        console.warn("[auto-sync] acessos do Entra:", res.message);
-      }
-    }).finally(() => setSyncing(false));
-  }, [id, canEdit, queryClient]);
-
   const onStatusChange = async (newStatus: string) => {
     const oldStatus = pessoa.status;
     if (newStatus === oldStatus) return;
