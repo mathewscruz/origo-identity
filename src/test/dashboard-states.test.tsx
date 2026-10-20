@@ -54,9 +54,10 @@ describe('Dashboard read failures', () => {
 
   it('keeps loading distinct from error and confirmed zero', async () => {
     state.metrics.error = null; state.metrics.isLoading = true; state.series.error = null; state.people.error = null;
-    mount();
+    const first = mount();
     expect(screen.getByRole('status')).toHaveTextContent('Carregando dados');
     expect(screen.queryByText('Pessoas ativas')).toBeNull();
+    first.unmount();
 
     state.metrics.isLoading = false;
     state.metrics.data = { gerado_em: '2026-10-20T12:00:00Z', colab_ativos: 10, colab_ferias: 2, colab_afastados: 1, colab_inativos: 5, colab_desligados: 7, terc_ativos: 3, terc_inativos: 4, colab_suspensos: 2, fila_waiting: 0, fila_failed: 0, fila_success_24h: 0, revisoes_abertas: 0, excecoes_vencendo: 0, terc_vencidos: 0, quarentena: 0, sod_violacoes: 0, licencas_criticas: 0, fila_orfaos: 0, colab_sem_entra: 0, colab_sem_cargo: 0, priv_membros: 0, excecoes_pendentes: 0, fila_oldest_waiting: null, fila_oldest_pending: null, agente: [{ last_seen_at: '2026-10-20T12:00:00Z' }], ultimo_csv: { status: 'done', source_modified_at: '2026-10-20T11:00:00Z', colab_created: 1, colab_updated: 2 } };
