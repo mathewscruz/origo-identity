@@ -24,6 +24,8 @@ import { useDashboardMetrics, useDashboardSeries, useParametro, type DashboardSe
 import { actionLabel, QUEUE_STATUS_META } from "@/lib/queueLabels";
 import ActivityFeed from "@/components/ActivityFeed";
 import { useQuery } from "@tanstack/react-query";
+import { usePeopleSeries } from "@/hooks/usePeopleSeries";
+import { splitPeriods } from "@/lib/peopleActivity";
 import { supabase } from "@/integrations/supabase/client";
 import { TrendingDown, TrendingUp } from "lucide-react";
 
@@ -298,6 +300,9 @@ export default function Dashboard() {
     joiners: acc.joiners + p.joiners, movers: acc.movers + p.movers, leavers: acc.leavers + p.leavers,
   }), { concessoes: 0, revogacoes: 0, falhas: 0, joiners: 0, movers: 0, leavers: 0 }), [series]);
   const toggle = (key: string) => setHidden((h) => { const n = new Set(h); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  const people = usePeopleSeries(period * 2);
+  const ppl = useMemo(() => splitPeriods(people.data ?? [], period), [people.data, period]);
+  const pplChart = useMemo(() => ppl.cur.map((p) => ({ ...p, label: fmtDay(p.dia) })), [ppl]);
   const tick = period === 7 ? 0 : period === 30 ? 4 : 14;
 
   const { data: k } = useDashboardKpis(period);
@@ -326,7 +331,7 @@ export default function Dashboard() {
       {/* KPIs */}
       <div data-tour="kpi-cards" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiCard label="Pessoas ativas" value={k?.pessoas_ativas ?? pessoas} color={C.primary} to="/colaboradores?status=ativo" hint={`${k?.admissoes ?? 0} admissões · ${k?.desligamentos ?? 0} desligamentos em ${period} d`} spark={(series ?? []).map((p) => p.joiners - p.leavers)} />
-        <KpiCard label={`Execuções em ${period} d`} value={k?.execucoes ?? 0} prev={k?.execucoes_prev} color={C.success} to="/fila-provisionamento?status=success" hint="vs período anterior" spark={(series ?? []).map((p) => p.concessoes + p.revogacoes)} />
+        <KpiCard label={`Execuções em ${period} d`} value={ppl.total} prev={ppl.prevTotal} color={C.success} to="/auditoria" hint={`${ppl.entradas} entradas · ${ppl.saidas} saídas`} spark={ppl.cur.map((p) => p.entradas + p.saidas)} />
         <KpiCard label="Aguardando aprovação" value={k?.aguardando ?? m?.fila_waiting ?? 0} color={C.warning} to="/fila-provisionamento?tab=aprovacao" hint={waitingAge ? `mais antigo: ${waitingAge}` : "nada pendente"} />
         <KpiCard label="Falhas em 24 h" value={k?.falhas_24h ?? 0} prev={k?.falhas_prev} invert color={C.destructive} to="/fila-provisionamento?status=failed" hint="vs 24 h anteriores" spark={(series ?? []).map((p) => p.falhas)} />
       </div>
@@ -345,30 +350,28 @@ export default function Dashboard() {
       {/* Séries */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
-        <div className="h-full"><QueryState loading={seriesLoading || seriesPlaceholder} error={seriesError} retry={retrySeries}>
+        <div className="h-full"><QueryState loading={people.isLoading} error={people.error} retry={people.refetch}>
         <Card data-tour="chart-requests" className="min-h-[360px] flex flex-col">
           <CardHeader className="pb-3">
-            <div className="flex items-center justify-between gap-3"><div><CardTitle className="text-base">Execuções por dia</CardTitle>
-            <p className="text-xs text-muted-foreground">Concessões, revogações e falhas executadas pelo agente</p></div>
+            <div className="flex items-center justify-between gap-3"><div><CardTitle className="text-base">Entradas e saídas por dia</CardTitle>
+            <p className="text-xs text-muted-foreground">Pessoas que entraram e saíram (cada pessoa conta uma vez por dia)</p></div>
             <div className="flex gap-1">{([7, 30, 90] as Period[]).map((d) => <Button key={d} size="sm" variant={period === d ? "secondary" : "ghost"} className="h-7 px-2 text-xs" onClick={() => setPeriod(d)}>{d} d</Button>)}</div></div>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col pt-0">
-            <div className="mb-4 grid grid-cols-3 gap-2">
-              <div className="rounded-lg border bg-muted/40 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Concessões</p><p className="text-lg font-semibold tabular-nums text-success">{totals.concessoes}</p></div>
-              <div className="rounded-lg border bg-muted/40 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Revogações</p><p className="text-lg font-semibold tabular-nums">{totals.revogacoes}</p></div>
-              <div className="rounded-lg border bg-muted/40 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Falhas</p><p className="text-lg font-semibold tabular-nums text-destructive">{totals.falhas}</p></div>
+            <div className="mb-4 grid grid-cols-2 gap-2">
+              <div className="rounded-lg border bg-muted/40 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Entradas</p><p className="text-lg font-semibold tabular-nums text-success">{ppl.entradas}</p></div>
+              <div className="rounded-lg border bg-muted/40 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Saídas</p><p className="text-lg font-semibold tabular-nums text-destructive">{ppl.saidas}</p></div>
             </div>
             <div className="h-[240px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ left: -16, right: 8, top: 8 }} barCategoryGap={period === 7 ? "30%" : "15%"}>
+              <BarChart data={pplChart} margin={{ left: -16, right: 8, top: 8 }} barCategoryGap={period === 7 ? "30%" : "15%"}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
                 <XAxis dataKey="label" interval={tick} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
                 <Tooltip content={<ChartTooltip />} />
                 <Legend onClick={(e: Row) => toggle(String(e.dataKey))} wrapperStyle={{ fontSize: 12, cursor: "pointer" }} />
-                <Bar dataKey="concessoes" name="Concessões" stackId="x" fill={C.success} hide={hidden.has("concessoes")} />
-                <Bar dataKey="revogacoes" name="Revogações" stackId="x" fill={C.muted} hide={hidden.has("revogacoes")} />
-                <Bar dataKey="falhas" name="Falhas" stackId="x" fill={C.destructive} radius={[3, 3, 0, 0]} hide={hidden.has("falhas")} />
+                <Bar dataKey="entradas" name="Entradas" fill={C.success} radius={[3, 3, 0, 0]} hide={hidden.has("entradas")} />
+                <Bar dataKey="saidas" name="Saídas" fill={C.destructive} radius={[3, 3, 0, 0]} hide={hidden.has("saidas")} />
               </BarChart>
             </ResponsiveContainer>
             </div>

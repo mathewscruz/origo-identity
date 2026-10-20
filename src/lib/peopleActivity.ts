@@ -13,3 +13,10 @@ export function parsePeopleSeries(value: unknown): PeopleSeriesPoint[] {
   }
   return value;
 }
+/** Splits a 2*days series into current/previous totals of people in + out. */
+export function splitPeriods(series: PeopleSeriesPoint[], days: number) {
+  const cur = series.slice(-days), prev = series.slice(0, Math.max(0, series.length - days));
+  const sum = (s: PeopleSeriesPoint[]) => s.reduce((a, p) => ({ entradas: a.entradas + p.entradas, saidas: a.saidas + p.saidas }), { entradas: 0, saidas: 0 });
+  const c = sum(cur), p = sum(prev);
+  return { cur, ...c, total: c.entradas + c.saidas, prevTotal: p.entradas + p.saidas };
+}
