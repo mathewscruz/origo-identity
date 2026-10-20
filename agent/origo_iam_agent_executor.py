@@ -196,6 +196,12 @@ def run_due_schedule(api_url: str, token: str, done: Dict[str, str], execute: bo
                 break
 
 
+def post_task_result(api_url: str, token: str, task_id: str, status: str, http_status: int, result: str, execute: bool = False) -> None:
+    r = requests.post(f"{api_url}/task_result", headers=agent_headers(token, execute),
+                      json={"id": task_id, "status": status, "http_status": http_status, "result": result[:2000]}, timeout=30)
+    r.raise_for_status()
+
+
 def post_update(api_url: str, token: str, body: Dict[str, Any], execute: bool = False) -> None:
     r = requests.post(
         f"{api_url}/update",
@@ -838,6 +844,24 @@ def main() -> int:
                 run_due_schedule(api_url, api_token, schedule_done, execute=args.execute)
 
             body = fetch_pending(api_url, api_token, owner=args.owner, limit=args.limit, lease=args.lease, execute=args.execute)
+            if body.get("agent_paused"):
+                print("[origo-agent] PAUSADO pela tela (parâmetro agent_paused) — nada será executado")
+                if args.once:
+                    return 0
+                time.sleep(args.interval)
+                continue
+            # tarefas pedidas pela tela ("Executar agora")
+            for t in body.get("tasks", []) or []:
+                try:
+                    res = run_task(api_url, api_token, t["task"], execute=args.execute)
+                    ok = res["status"] < 400
+                    post_task_result(api_url, api_token, t["id"], "done" if ok else "error", res["status"], res["body"], execute=args.execute)
+                    print(f"[origo-agent] tarefa {t['task']}: HTTP {res['status']}")
+                except Exception as e:  # noqa: BLE001
+                    try:
+                        post_task_result(api_url, api_token, t["id"], "error", 0, str(e), execute=args.execute)
+                    except Exception:  # noqa: BLE001
+                        pass
             items = body.get("data", []) or []
             enable_requires_approval = body.get("enable_requires_approval", True)
             print(f"[origo-agent] {datetime.now(timezone.utc).isoformat()} reservados={len(items)}")
