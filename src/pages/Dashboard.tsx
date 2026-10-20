@@ -1,3 +1,4 @@
+import { AutoUpdatedHint } from "@/components/AutoUpdatedHint";
 import { QUEUE_ERROR_LABELS } from "@/lib/queueErrorLabels";
 import { Button } from "@/components/ui/button";
 import QueryState from "@/components/QueryState";
@@ -288,7 +289,7 @@ export default function Dashboard() {
     <div className="space-y-5">
       <PageHeader
         title="Início"
-        description={<>Operação IAM em tempo real{m?.gerado_em ? <span className="text-xs"> · atualizado {relTime(m.gerado_em)}</span> : null}</>}
+        description={<>Operação IAM em tempo real{m?.gerado_em ? <span className="text-xs"> · atualizado {relTime(m.gerado_em)}</span> : null} · <AutoUpdatedHint tasks={["sync-entra-licencas", "sync-entra-groups"]} /></>}
         actions={<Button asChild variant="outline" size="sm"><Link to="/relatorios">Relatórios</Link></Button>}
       />
 

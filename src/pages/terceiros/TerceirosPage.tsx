@@ -1,3 +1,4 @@
+import { AutoUpdatedHint } from "@/components/AutoUpdatedHint";
 import { useState, useEffect } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
@@ -156,7 +157,7 @@ export default function TerceirosPage() {
     <div className="space-y-6">
       <PageHeader
         title="Terceiros"
-        description="Prestadores com contrato: conta expira no fim do contrato; o responsável revalida periodicamente por e-mail (Manter ou Desligar) e, sem resposta no prazo, o terceiro é desativado. Contrato vencido = desligamento automático."
+        description={<>Prestadores com contrato: conta expira no fim do contrato; o responsável revalida periodicamente por e-mail (Manter ou Desligar) e, sem resposta no prazo, o terceiro é desativado. Contrato vencido = desligamento automático. <AutoUpdatedHint tasks="sync-entra-groups" /></>}
         actions={<div><Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />Novo Terceiro</Button></div>}
       />
 
