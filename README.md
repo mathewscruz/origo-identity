@@ -82,7 +82,7 @@ docker exec -i supabase_db_jobopjhhxgcfanlhzlkc psql -U postgres -d postgres -v 
 18 cenários (mover, leaver, reativação, claim/lease, anti-auto-aprovação, terceiros,
 acesso efetivo, idempotência, cadastro manual, reset de senha, exceções, dashboard)
 numa transação com rollback. `db/tests/rh_teste_*.csv`
-são fixtures para testar a importação do RH via upload (`sync-csv-colab`, `?dry_run=1`).
+são fixtures de exemplo da Base do RH (a importação por upload foi removida; a base entra só pelo `sync-sharepoint-csv`, acionado pelo Hermes).
 
 ### 5. Segredos das Edge Functions (opcional)
 
