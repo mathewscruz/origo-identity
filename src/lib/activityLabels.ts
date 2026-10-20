@@ -131,6 +131,6 @@ export function activitySentence(item: ActivityLike): string {
 export function isHermesActor(ator: string | null | undefined): boolean {
   if (!ator) return false;
   const a = ator.trim().toLowerCase().replace(/[\s_]+/g, "-");
-  return /^(hermes|origo-agent|origo-agent)/.test(a);
+  return /^(hermes|origo-agent)/.test(a);
 }
 
