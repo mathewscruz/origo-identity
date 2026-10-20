@@ -1,28 +1,33 @@
 import { Outlet } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
-import { Briefcase, Building2, MapPin, Network, Sliders, Cloud } from "lucide-react";
+import { Briefcase, Building2, MapPin, Network, Sliders, Cloud, UsersRound } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import OnboardingTour from "@/components/OnboardingTour";
 import { tourSteps } from "@/lib/tourSteps";
 
-const subNav = [
+const ALL_NAV = [
+  { title: "Parâmetros", url: "/configuracoes/parametros", icon: Sliders },
+  { title: "Integrações", url: "/configuracoes/integracoes", icon: Cloud },
+  { title: "Usuários", url: "/configuracoes/usuarios", icon: UsersRound, admin: true },
   { title: "Cargos", url: "/configuracoes/cargos", icon: Briefcase },
   { title: "Áreas", url: "/configuracoes/areas", icon: Network },
   { title: "Empresas", url: "/configuracoes/empresas", icon: Building2 },
   { title: "Localidades", url: "/configuracoes/localidades", icon: MapPin },
-  { title: "Parâmetros", url: "/configuracoes/parametros", icon: Sliders },
-  { title: "Integrações", url: "/configuracoes/integracoes", icon: Cloud },
 ];
 
 export default function ConfiguracoesLayout() {
   const isMobile = useIsMobile();
+  const { role } = useAuth();
+  const isAdmin = role === "admin" || role === "platform_admin";
+  const subNav = ALL_NAV.filter((i) => !i.admin || isAdmin);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
-        <p className="text-sm text-muted-foreground">Dados base (cargos, áreas, empresas, localidades), parâmetros de governança e integrações. Auditoria e alertas ficam no menu Controle.</p>
+        <p className="text-sm text-muted-foreground">Parâmetros, integrações, usuários do sistema e cadastros de apoio.</p>
       </div>
 
       {isMobile ? (

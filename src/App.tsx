@@ -93,18 +93,20 @@ const App = () => (
               <Route path="/revisoes" element={<RevisoesPage />} />
               <Route path="/revisoes/:id" element={<RevisaoDetalhePage />} />
               
-              <Route element={<SectionTabs tabs={RISK_OR_CONTROL} />}>
+              <Route element={<SectionTabs tabs={[{ title: "SoD / Conflitos", url: "/sod" }, { title: "Privilegiados", url: "/privilegiados" }, { title: "Licenças", url: "/licencas" }]} />}>
                 <Route path="/licencas" element={<LicencasPage />} />
                 <Route path="/licencas/:id" element={<LicencasPage />} />
                 <Route path="/sod" element={<SoDPage />} />
                 <Route path="/privilegiados" element={<PrivilegiadosPage />} />
+              </Route>
+              <Route element={<SectionTabs tabs={[{ title: "Auditoria", url: "/auditoria" }, { title: "Alertas", url: "/alertas" }, { title: "Relatórios", url: "/relatorios" }]} />}>
                 <Route path="/relatorios" element={<RelatoriosPage />} />
                 <Route path="/auditoria" element={<AuditoriaPage />} />
                 <Route path="/alertas" element={<AlertasPage />} />
               </Route>
-              <Route path="/admin/usuarios" element={<UsuariosPage />} />
+              <Route path="/admin/usuarios" element={<Navigate to="/configuracoes/usuarios" replace />} />
               <Route path="/configuracoes" element={<ConfiguracoesLayout />}>
-                <Route index element={<Navigate to="/configuracoes/cargos" replace />} />
+                <Route index element={<Navigate to="/configuracoes/parametros" replace />} />
                 <Route path="cargos" element={<CargosPage />} />
                 <Route path="areas" element={<AreasPage />} />
                 <Route path="empresas" element={<EmpresasPage />} />
@@ -112,6 +114,7 @@ const App = () => (
                 
                 <Route path="parametros" element={<ParametrosPage />} />
                 <Route path="integracoes" element={<IntegracoesPage />} />
+                <Route path="usuarios" element={<UsuariosPage />} />
                 <Route path="auditoria" element={<Navigate to="/auditoria" replace />} />
                 <Route path="alertas" element={<Navigate to="/alertas" replace />} />
               </Route>

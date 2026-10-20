@@ -131,7 +131,7 @@ export function AppSidebar() {
                       <SidebarMenuItem key={item.title}>
                         <SidebarMenuButton size="sm" asChild isActive={active} tooltip={count > 0 ? `${item.title} (${count})` : item.title} className="h-8 rounded-md">
                           <NavLink to={item.url} end={item.url === "/"}
-                            className={cn("relative text-[12.5px] text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground", collapsed && "justify-center")}
+                            className={cn("relative text-[12.5px] text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground", collapsed && "justify-center", active && "bg-sidebar-accent text-sidebar-accent-foreground font-medium before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-0.5 before:rounded-full before:bg-sidebar-primary")}
                             activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-0.5 before:rounded-full before:bg-sidebar-primary">
                             <item.icon className={cn("h-4 w-4 shrink-0", active ? "text-sidebar-primary" : "text-sidebar-foreground/60")} />
                             {!collapsed && <span className="flex-1 truncate">{item.title}</span>}
