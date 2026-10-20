@@ -24,6 +24,7 @@ Campos da ficha: nome, url, descricao, dono (colaborador), revisor (colaborador)
 Também colete perfis_internos (papéis do sistema, ex.: Leitor, Aprovador) quando existirem.
 Último passo: pergunte quais perfis de acesso (que agrupam cargos) devem receber o sistema. Use buscar_perfil_acesso e ligar_perfis; se o sistema tiver papéis, pergunte qual papel cada perfil recebe.
 Use buscar_colaborador para dono e revisor (sempre confirme o nome encontrado). Chame atualizar_ficha sempre que aprender algo novo — não espere o fim.
+Quando o usuário colar um link (site, manual, Swagger/OpenAPI) ou disser que anexou um arquivo, chame pedir_analise_hermes: quem lê e analisa o material é SEMPRE o Hermes — você não lê links. Diga que o diagnóstico vai aparecer num cartão "Aplicar na ficha" em alguns minutos e continue a conversa. Se "analise_hermes" na ficha tiver um diagnóstico, use-o para orientar as próximas perguntas.
 Faça uma pergunta por vez. Quando a ficha estiver completa, diga que o usuário pode clicar em "Salvar e ativar" e que o Hermes vai testar a conexão.`;
 
 Deno.serve(async (req) => {
@@ -55,10 +56,24 @@ Deno.serve(async (req) => {
     instrucoes_acesso: app.instrucoes_acesso, instrucoes_revogacao: app.instrucoes_revogacao,
     api_base_url: cfg.base_url ?? null, api_auth_type: cfg.auth_type ?? null, credencial_salva: !!(cfg.api_token || cfg.api_key_value || cfg.password || cfg.oauth_client_secret),
     perfis_internos: (perfis ?? []).map((p) => p.nome_externo),
+    analise_hermes: null as unknown,
     api_acoes: { create: !!cfg.actions?.create, disable: !!cfg.actions?.disable, lookup: !!cfg.actions?.lookup },
   };
 
+  const { data: ultAnalise } = await sb.from("agent_tasks").select("status, result, result_json, created_at").eq("task", "analyze-app-docs")
+    .eq("payload->>aplicacao_id", aplicacaoId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (ultAnalise) fichaAtual.analise_hermes = ultAnalise;
+
   const tools = {
+    pedir_analise_hermes: tool({
+      description: "Pede ao Hermes para ler e analisar um link de documentação/site do sistema e sugerir a forma de conexão, ações da API e perfis.",
+      inputSchema: z.object({ url: z.string().url().max(1000), observacao: z.string().max(1000).nullable() }),
+      execute: async ({ url, observacao }) => {
+        const { data, error } = await sb.rpc("app_analise_solicitar", { p_aplicacao_id: aplicacaoId, p_url: url, p_observacao: observacao });
+        if (error) return { ok: false, error: error.message };
+        return { ok: true, pedido: data, aviso: "O Hermes vai analisar e o diagnóstico aparece no cartão 'Aplicar na ficha'." };
+      },
+    }),
     atualizar_acoes_api: tool({
       description: "Grava como criar, desativar e consultar o usuário no sistema por API.",
       inputSchema: z.object({
