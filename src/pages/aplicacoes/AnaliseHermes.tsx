@@ -1,12 +1,14 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Paperclip, ShieldAlert, Sparkles } from "lucide-react";
+import { AlertTriangle, Clock3, Loader2, Paperclip, RefreshCw, ShieldAlert, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
 import HermesIcon from "@/components/icons/HermesIcon";
 import { diagnosticoParaFicha, sanitizarDiagnostico, type ItemAplicavel } from "@/lib/appAnalysis";
+import { formatElapsed, getAnalysisProgress, isAnalysisStale } from "@/lib/appAnalysisProgress";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = any;
@@ -17,7 +19,7 @@ export function useAnalises(id: string) {
   return useQuery({
     queryKey: ["app_analises", id],
     queryFn: async () => {
-      const { data, error } = await (supabase as Row).from("agent_tasks").select("id, status, result, result_json, created_at, payload")
+      const { data, error } = await (supabase as Row).from("agent_tasks").select("id, status, result, result_json, created_at, started_at, finished_at, owner, payload")
         .eq("task", "analyze-app-docs").eq("payload->>aplicacao_id", id).order("created_at", { ascending: false }).limit(3);
       if (error) throw error;
       return (data ?? []) as Row[];
@@ -53,21 +55,51 @@ export function AnexarDocumento({ id, onSent }: { id: string; onSent: () => void
 
 /** Cartão com o diagnóstico mais recente do Hermes. */
 export function AnaliseHermesCard({ id, app, cfg, onApplied }: { id: string; app: Row; cfg: Record<string, unknown>; onApplied: () => void }) {
-  const { data } = useAnalises(id);
+  const { data, refetch, isFetching } = useAnalises(id);
   const t = data?.[0];
   const [marcados, setMarcados] = useState<ItemAplicavel[] | null>(null);
   const [aplicando, setAplicando] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const analysisActive = t?.status === "pending" || t?.status === "running";
+  useEffect(() => {
+    if (!analysisActive) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [analysisActive]);
   if (!t) return null;
   const fonte = t.payload?.arquivo_nome ?? t.payload?.url ?? "material enviado";
 
   if (t.status === "pending" || t.status === "running") {
-    const atrasado = Date.now() - new Date(t.created_at).getTime() > 10 * 60000;
+    const progress = getAnalysisProgress(t.status);
+    const activityAt = t.status === "running" && t.started_at ? t.started_at : t.created_at;
+    const elapsed = formatElapsed(now - new Date(t.created_at).getTime());
+    const sinceActivity = formatElapsed(now - new Date(activityAt).getTime());
+    const stale = isAnalysisStale(t, now);
     return (
-      <div className="flex items-start gap-2 rounded-md border bg-muted/40 p-3 text-xs">
-        <HermesIcon className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-        <div>
-          <p className="font-medium">{atrasado ? "Hermes ainda não respondeu" : "Hermes analisando…"}</p>
-          <p className="break-all text-muted-foreground">{fonte}{atrasado ? " — você pode continuar a conversa normalmente." : ""}</p>
+      <div className={`rounded-md border p-3 text-xs ${stale ? "border-warning/40 bg-warning/5" : "bg-muted/40"}`}>
+        <div className="flex items-start gap-2">
+          {stale ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" /> : <HermesIcon className="mt-0.5 h-4 w-4 shrink-0 text-primary" />}
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="font-medium">{stale ? "Possível travamento" : progress.title}</p>
+                <p className="text-muted-foreground">{stale ? "O status não mudou dentro do tempo esperado. A tela continua consultando o processo." : progress.detail}</p>
+              </div>
+              <span className="shrink-0 font-medium tabular-nums">{progress.percent}%</span>
+            </div>
+            <Progress value={progress.percent} className="h-2" aria-label={`Progresso da análise: ${progress.percent}%`} />
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-muted-foreground">
+              <span>Etapa {progress.step} de {progress.totalSteps}</span>
+              <span className="flex items-center gap-1"><Clock3 className="h-3 w-3" />Decorrido: {elapsed}</span>
+            </div>
+            <p className="break-all text-muted-foreground">Fonte: {fonte}</p>
+            <div className="flex items-center justify-between gap-2 border-t pt-2">
+              <span>Última mudança de status há {sinceActivity}</span>
+              <Button type="button" variant="ghost" size="sm" className="h-7 px-2" disabled={isFetching} onClick={() => refetch()}>
+                <RefreshCw className={`mr-1 h-3 w-3 ${isFetching ? "animate-spin" : ""}`} />Verificar agora
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
     );
