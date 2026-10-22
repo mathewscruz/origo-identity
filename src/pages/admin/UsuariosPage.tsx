@@ -225,7 +225,7 @@ export default function UsuariosPage() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <StatCard label="Usuários" value={list.length} icon={Users} tone="primary" active={statusFilter === "todos" && roleFilter === "todos"} onClick={() => { setStatusFilter("todos"); setRoleFilter("todos"); setPage(1); }} />
         <StatCard label="Ativos" value={ativos} icon={UserCheck} tone="success" active={statusFilter === "ativos"} onClick={() => { setStatusFilter(statusFilter === "ativos" ? "todos" : "ativos"); setPage(1); }} hint={`${list.length - ativos} inativo(s)`} />
-        <StatCard label="Super Admins" value={admins} icon={ShieldCheck} tone={admins <= 1 ? "warning" : "info"} hint={admins <= 1 ? "só um Super Admin ativo — cadastre outro" : "ativos"} active={roleFilter === "admin"} onClick={() => { setRoleFilter(roleFilter === "admin" ? "todos" : "admin"); setPage(1); }} />
+        <StatCard label="Super Admins" value={admins} icon={ShieldCheck} tone={admins <= 1 ? "warning" : "info"} hint={admins <= 1 ? "só um Super Admin ativo — cadastre outro" : "ativos"} active={roleFilter === "platform_admin"} onClick={() => { setRoleFilter(roleFilter === "platform_admin" ? "todos" : "platform_admin"); setPage(1); }} />
         <StatCard label="Senha temporária" value={senhaTemp} icon={KeyRound} tone={senhaTemp ? "warning" : "default"} hint="ainda não trocaram" active={statusFilter === "senha_temp"} onClick={() => { setStatusFilter(statusFilter === "senha_temp" ? "todos" : "senha_temp"); setPage(1); }} />
         <StatCard label="Sem acesso há 30 d" value={semAcesso30d} icon={Clock} tone={semAcesso30d ? "warning" : "default"} hint="ativos que não entram" />
       </div>

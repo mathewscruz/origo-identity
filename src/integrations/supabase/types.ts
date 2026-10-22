@@ -2770,6 +2770,19 @@ export type Database = {
         Returns: Json
       }
       quarentena_triagem: { Args: never; Returns: Json }
+      request_privileged_access: {
+        Args: {
+          p_action: string
+          p_directory_scope_id?: string
+          p_duration_hours?: number
+          p_justification: string
+          p_linked_eligible_role_assignment_id?: string
+          p_principal_id: string
+          p_role_definition_id: string
+          p_target_schedule_id?: string
+        }
+        Returns: Json
+      }
       revisao_cancelar: {
         Args: { p_motivo?: string; p_revisao_id: string }
         Returns: Json
