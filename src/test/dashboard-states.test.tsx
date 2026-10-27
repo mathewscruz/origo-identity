@@ -65,7 +65,7 @@ describe('Dashboard read failures', () => {
     expect(await screen.findByText('Pessoas ativas')).toBeTruthy();
     expect(await screen.findByText('17')).toBeTruthy();
     expect(screen.getByText('Pessoas ativas').closest('a')?.getAttribute('href')).toBe('/colaboradores?status=ativo');
-    expect(screen.getByLabelText('Pessoas por situação: total').textContent).toBe('16');
+    expect(screen.getByLabelText('Categoria de Usuários: total').textContent).toBe('16');
     expect(screen.getByText('Aguardando aprovação')).toBeTruthy();
   });
 });

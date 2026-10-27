@@ -274,6 +274,17 @@ export default function Dashboard() {
   const tick = period === 7 ? 0 : period === 30 ? 4 : 14;
 
   const { data: k } = useDashboardKpis(period);
+  const { data: contasServico = 0 } = useQuery({
+    queryKey: ["dashboard_contas_servico"],
+    queryFn: async () => {
+      const { count, error } = await supabase.from("contas_servico").select("id", { count: "exact", head: true }).eq("ativo", true);
+      if (error) throw error;
+      return count ?? 0;
+    },
+    refetchInterval: 30000,
+  });
+  // as contas de serviço ficam ancoradas em terceiros; aqui aparecem só na categoria própria
+  const tercAtivos = Math.max(0, (m?.terc_ativos ?? 0) - contasServico);
   const pessoas = (m?.colab_ativos ?? 0) + (m?.colab_ferias ?? 0) + (m?.colab_afastados ?? 0) + (m?.terc_ativos ?? 0);
   const waitingAge = ageLabel(m?.fila_oldest_waiting);
   const pendingAge = ageLabel(m?.fila_oldest_pending);
@@ -347,11 +358,12 @@ export default function Dashboard() {
         </Card>
         </QueryState></div>
         </div>
-        <BarsPanel title="Pessoas por situação" unit="pessoas" rows={[
+        <BarsPanel title="Categoria de Usuários" unit="usuários" rows={[
           { label: "Ativos", value: m?.colab_ativos ?? 0, color: C.success, to: "/colaboradores?status=ativo" },
           { label: "Férias", value: m?.colab_ferias ?? 0, color: C.info, to: "/colaboradores?status=ferias" },
           { label: "Afastados", value: m?.colab_afastados ?? 0, color: C.warning, to: "/colaboradores?status=afastado" },
-          { label: "Terceiros ativos", value: m?.terc_ativos ?? 0, color: C.violet, to: "/terceiros" },
+          { label: "Terceiros ativos", value: tercAtivos, color: C.violet, to: "/terceiros" },
+          { label: "Contas de serviço", value: contasServico, color: C.info, to: "/contas-servico" },
         ]} />
       </div>
 
