@@ -6,7 +6,7 @@ import { sanitizarDiagnostico } from "../../appAnalysis";
 /** Rotinas que o painel pede ao Hermes; mesma lista fechada de agent_refresh_request. */
 export const MCP_AGENT_TASKS = [
   "sync-entra-groups", "sync-entra-licencas", "sync-entra-roles",
-  "sync-sharepoint-sites", "sync-app-profiles", "quarantine-triage", "audit-reconciliation", "test-app-connection",
+  "sync-sharepoint-sites", "sync-app-profiles", "quarantine-triage", "audit-reconciliation", "test-app-connection", "sync-service-accounts",
   "analyze-app-docs",
 ] as const;
 

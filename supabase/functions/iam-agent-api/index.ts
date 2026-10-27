@@ -36,7 +36,7 @@ const IDENTITY_ERRORS = new Set(["user_not_found", "not_found_in_entra", "user_n
 export const AGENT_TASKS = [
   "sync-sharepoint-csv", "reconcile-identities", "expire-access-exceptions", "auto-recertification",
   "audit-reconciliation", "sync-entra-groups", "sync-entra-licencas", "sync-entra-roles",
-  "sync-sharepoint-sites", "sync-app-profiles", "sync-user-access", "quarantine-triage", "test-app-connection",
+  "sync-sharepoint-sites", "sync-app-profiles", "sync-user-access", "quarantine-triage", "test-app-connection", "sync-service-accounts",
 ];
 
 export const AGENT_ACTION_TYPES = [

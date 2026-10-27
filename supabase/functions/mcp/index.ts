@@ -1067,6 +1067,7 @@ var MCP_AGENT_TASKS = [
   "quarantine-triage",
   "audit-reconciliation",
   "test-app-connection",
+  "sync-service-accounts",
   "analyze-app-docs"
 ];
 function isAllowedAgentTask(task) {
