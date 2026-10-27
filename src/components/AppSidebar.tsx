@@ -27,7 +27,7 @@ const ITEMS: Item[] = [
   { title: "Início", url: "/", icon: LayoutDashboard },
   { title: "Fila", url: "/fila-provisionamento", icon: ListOrdered, badge: (m) => (m?.fila_waiting ?? 0) + (m?.fila_failed ?? 0), tone: "warning",
     children: [{ title: "Aprovações e Fila", url: "/fila-provisionamento" }, { title: "Eventos JML", url: "/eventos-jml" }] },
-  { title: "Pessoas", url: "/colaboradores", icon: Users, badge: (m) => m?.terc_vencidos ?? 0, tone: "destructive",
+  { title: "Usuários", url: "/colaboradores", icon: Users, badge: (m) => m?.terc_vencidos ?? 0, tone: "destructive",
     children: [{ title: "Colaboradores", url: "/colaboradores" }, { title: "Terceiros", url: "/terceiros" }, { title: "Contas de serviço", url: "/contas-servico" }] },
   { title: "Aplicações", url: "/aplicacoes", icon: AppWindow },
   { title: "Perfis", url: "/perfis-acesso", icon: Shield },
