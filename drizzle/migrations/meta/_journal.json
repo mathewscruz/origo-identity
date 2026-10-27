@@ -99,6 +99,13 @@
       "when": 1792523008317,
       "tag": "0013_migration",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793126135307,
+      "tag": "0014_contas_servico",
+      "breakpoints": true
     }
   ]
 }

@@ -883,6 +883,84 @@ export type Database = {
         }
         Relationships: []
       }
+      contas_servico: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          criticidade: Database["public"]["Enums"]["criticidade"]
+          dono_colaborador_id: string | null
+          email: string | null
+          entra_ativo: boolean | null
+          entra_id: string | null
+          finalidade: string | null
+          id: string
+          nome: string
+          sam_account_name: string | null
+          sistemas: string | null
+          terceiro_id: string | null
+          ultima_revalidacao: string | null
+          ultimo_login: string | null
+          updated_at: string
+          verificacao_detalhe: string | null
+          verificado_em: string | null
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          criticidade?: Database["public"]["Enums"]["criticidade"]
+          dono_colaborador_id?: string | null
+          email?: string | null
+          entra_ativo?: boolean | null
+          entra_id?: string | null
+          finalidade?: string | null
+          id?: string
+          nome: string
+          sam_account_name?: string | null
+          sistemas?: string | null
+          terceiro_id?: string | null
+          ultima_revalidacao?: string | null
+          ultimo_login?: string | null
+          updated_at?: string
+          verificacao_detalhe?: string | null
+          verificado_em?: string | null
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          criticidade?: Database["public"]["Enums"]["criticidade"]
+          dono_colaborador_id?: string | null
+          email?: string | null
+          entra_ativo?: boolean | null
+          entra_id?: string | null
+          finalidade?: string | null
+          id?: string
+          nome?: string
+          sam_account_name?: string | null
+          sistemas?: string | null
+          terceiro_id?: string | null
+          ultima_revalidacao?: string | null
+          ultimo_login?: string | null
+          updated_at?: string
+          verificacao_detalhe?: string | null
+          verificado_em?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contas_servico_dono_colaborador_id_fkey"
+            columns: ["dono_colaborador_id"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contas_servico_terceiro_id_fkey"
+            columns: ["terceiro_id"]
+            isOneToOne: true
+            referencedRelation: "terceiros"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       empresas: {
         Row: {
           ativo: boolean
@@ -2297,6 +2375,7 @@ export type Database = {
       terceiros: {
         Row: {
           ativo: boolean
+          conta_servico: boolean
           contrato_fim: string | null
           contrato_inicio: string | null
           created_at: string
@@ -2313,6 +2392,7 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean
+          conta_servico?: boolean
           contrato_fim?: string | null
           contrato_inicio?: string | null
           created_at?: string
@@ -2329,6 +2409,7 @@ export type Database = {
         }
         Update: {
           ativo?: boolean
+          conta_servico?: boolean
           contrato_fim?: string | null
           contrato_inicio?: string | null
           created_at?: string
@@ -2527,6 +2608,27 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      conta_servico_alterar_status: {
+        Args: {
+          p_ativo: boolean
+          p_id: string
+          p_motivo?: string
+          p_operador?: string
+        }
+        Returns: Json
+      }
+      conta_servico_mover_de_terceiro: {
+        Args: { p_operador?: string; p_terceiro_id: string }
+        Returns: Json
+      }
+      conta_servico_revalidar: {
+        Args: { p_id: string; p_operador?: string }
+        Returns: Json
+      }
+      conta_servico_salvar: {
+        Args: { p_dados: Json; p_id: string; p_operador?: string }
+        Returns: Json
       }
       dashboard_activity: {
         Args: {

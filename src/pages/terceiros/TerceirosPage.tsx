@@ -26,6 +26,9 @@ import SortableHeader, { SortDirection, useSortableData } from "@/components/Sor
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import ColaboradorPicker from "@/components/ColaboradorPicker";
+import { pareceContaServico } from "@/lib/contasServico";
+import { useCanEdit } from "@/hooks/useRole";
+import { useQueryClient } from "@tanstack/react-query";
 
 const criticidadeConfig: Record<string, { label: string; class: string }> = {
   baixa: { label: "Baixa", class: "bg-muted text-muted-foreground" },
@@ -105,7 +108,18 @@ export default function TerceirosPage() {
     setForm(prev => ({ ...prev, sam_account_name: sam, email: email }));
   }, [form.nome, form.empresa_terceira, editing, dominioTerceiro]);
 
-  const list = terceiros ?? [];
+  const canEdit = useCanEdit();
+  const qc = useQueryClient();
+  const [verSugestoes, setVerSugestoes] = useState(false);
+  const list = (terceiros ?? []).filter((t: any) => !t.conta_servico);
+  const sugestoes = list.filter((t: any) => t.ativo && pareceContaServico(t));
+  const moverParaContaServico = async (t: any) => {
+    const { data, error } = await supabase.rpc("conta_servico_mover_de_terceiro", { p_terceiro_id: t.id, p_operador: profile?.email || null });
+    const r = (data ?? {}) as Record<string, any>;
+    if (error || r.ok === false) { toast({ title: "Não foi possível mover", description: error?.message || r.error, variant: "destructive" }); return; }
+    toast({ title: `${t.nome} movido para Contas de serviço` });
+    qc.invalidateQueries({ queryKey: ["terceiros"] }); qc.invalidateQueries({ queryKey: ["contas_servico"] });
+  };
   const vencendo7d = list.filter((t: any) => { const d = diasRestantes(t.contrato_fim); return d >= 0 && d <= 7; }).length;
   const filtered = list.filter((t: any) => !busca || t.nome.toLowerCase().includes(busca.toLowerCase()));
   const sorted = useSortableData(filtered, sortField, sortDir);
@@ -167,6 +181,15 @@ export default function TerceirosPage() {
         <StatCard label="Contrato vencido" value={list.filter((t: any) => t.ativo && t.contrato_fim && diasRestantes(t.contrato_fim) < 0).length} icon={AlertTriangle} tone="destructive" hint="desligados no próximo ciclo" />
         <StatCard label="Críticos" value={list.filter((t: any) => t.ativo && t.criticidade === "critica").length} icon={ShieldAlert} tone="info" />
       </div>
+
+      {canEdit && sugestoes.length > 0 && (
+        <div className="rounded-md border border-dashed p-3 text-sm">
+          <button className="text-primary hover:underline" onClick={() => setVerSugestoes(!verSugestoes)}>{sugestoes.length} possíveis contas de serviço entre os terceiros {verSugestoes ? "▲" : "▼"}</button>
+          {verSugestoes && <ul className="mt-2 space-y-1">{sugestoes.map((t: any) => (
+            <li key={t.id} className="flex items-center justify-between gap-2"><span className="truncate">{t.nome} <span className="text-muted-foreground">{t.email}</span></span>
+              <Button size="sm" variant="outline" onClick={() => moverParaContaServico(t)}>Mover para Contas de serviço</Button></li>))}</ul>}
+        </div>
+      )}
 
       <div className="relative flex-1 min-w-[200px] max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

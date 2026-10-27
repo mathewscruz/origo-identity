@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 export type AutoRefreshTask =
   | "sync-entra-groups" | "sync-entra-apps" | "sync-entra-licencas" | "sync-entra-roles"
-  | "sync-sharepoint-sites" | "sync-app-profiles" | "quarantine-triage" | "audit-reconciliation";
+  | "sync-sharepoint-sites" | "sync-app-profiles" | "quarantine-triage" | "audit-reconciliation" | "sync-service-accounts";
 
 export type AutoRefreshState = "loading" | "ok" | "waiting" | "error";
 

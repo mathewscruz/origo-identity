@@ -18,6 +18,7 @@ const routeLabels: Record<string, string> = {
   "/": "Início",
   "/colaboradores": "Colaboradores",
   "/terceiros": "Terceiros",
+  "/contas-servico": "Contas de serviço",
   "/eventos-jml": "Eventos JML",
   "/aplicacoes": "Aplicações",
   "/perfis-acesso": "Perfis de Acesso",

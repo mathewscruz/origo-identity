@@ -24,6 +24,7 @@ const ROTINAS = [
   { fn: "sync-entra-groups", label: "Sincronizar grupos do Entra", when: "ao abrir a página" },
   { fn: "sync-entra-licencas", label: "Sincronizar licenças do Entra", when: "ao abrir a página" },
   { fn: "sync-entra-roles", label: "Sincronizar roles privilegiadas", when: "ao abrir a página" },
+  { fn: "sync-service-accounts", label: "Verificar contas de serviço", when: "ao abrir a página" },
 ];
 const STATUS: Record<string, { label: string; cls: string }> = {
   pending: { label: "Aguardando agente", cls: "border-warning/30 bg-warning/10 text-warning" },
