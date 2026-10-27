@@ -12,6 +12,7 @@ import ColaboradorDetalhePage from "./pages/colaboradores/ColaboradorDetalhePage
 import QuarentenaPage from "./pages/colaboradores/QuarentenaPage";
 import TerceirosPage from "./pages/terceiros/TerceirosPage";
 import TerceiroDetalhePage from "./pages/terceiros/TerceiroDetalhePage";
+import ContasServicoPage from "./pages/contas-servico/ContasServicoPage";
 import EventoJMLDetalhePage from "./pages/eventos-jml/EventoJMLDetalhePage";
 import EventosJMLPage from "./pages/eventos-jml/EventosJMLPage";
 import AplicacoesPage from "./pages/aplicacoes/AplicacoesPage";
@@ -74,12 +75,14 @@ const App = () => (
               </Route>
               <Route path="/aprovacao-iam" element={<AprovacaoRedirect />} />
               <Route path="/fila-provisionamento/:id" element={<SolicitacaoDetalhePage />} />
-              <Route element={<SectionTabs tabs={[{ title: "Colaboradores", url: "/colaboradores" }, { title: "Terceiros", url: "/terceiros" }]} />}>
+              <Route element={<SectionTabs tabs={[{ title: "Colaboradores", url: "/colaboradores" }, { title: "Terceiros", url: "/terceiros" }, { title: "Contas de serviço", url: "/contas-servico" }]} />}>
                 <Route path="/colaboradores" element={<ColaboradoresPage />} />
                 <Route path="/colaboradores/quarentena" element={<QuarentenaPage />} />
                 <Route path="/colaboradores/:id" element={<ColaboradorDetalhePage />} />
                 <Route path="/terceiros" element={<TerceirosPage />} />
                 <Route path="/terceiros/:id" element={<TerceiroDetalhePage />} />
+                <Route path="/contas-servico" element={<ContasServicoPage />} />
+                <Route path="/contas-servico/:id" element={<ContasServicoPage />} />
               </Route>
               <Route element={<SectionTabs tabs={[{ title: "Fila e aprovações", url: "/fila-provisionamento" }, { title: "Eventos JML", url: "/eventos-jml" }]} />}>
                 <Route path="/eventos-jml" element={<EventosJMLPage />} />
