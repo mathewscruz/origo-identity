@@ -363,7 +363,7 @@ export default function Dashboard() {
           { label: "Férias", value: m?.colab_ferias ?? 0, color: C.info, to: "/colaboradores?status=ferias" },
           { label: "Afastados", value: m?.colab_afastados ?? 0, color: C.warning, to: "/colaboradores?status=afastado" },
           { label: "Terceiros ativos", value: tercAtivos, color: C.violet, to: "/terceiros" },
-          { label: "Contas de serviço", value: contasServico, color: C.info, to: "/contas-servico" },
+          { label: "Contas de serviço", value: contasServico, color: C.primary, to: "/contas-servico" },
         ]} />
       </div>
 
