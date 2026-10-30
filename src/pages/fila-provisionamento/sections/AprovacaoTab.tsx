@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -701,7 +702,7 @@ export default function AprovacaoTab() {
           <Card>
             <CardContent className="p-0">
               {isLoading ? (
-                <div className="p-8 text-center text-sm text-muted-foreground">Carregando...</div>
+                <LoadingSkeleton />
               ) : filtered.length === 0 ? (
                 <EmptyState message="Nada aguardando aprovação." />
               ) : (

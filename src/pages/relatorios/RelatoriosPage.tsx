@@ -1,3 +1,4 @@
+import { TableSkeletonRows } from "@/components/LoadingSkeleton";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useDbChange } from "@/hooks/useRealtimeSync";
@@ -132,7 +133,7 @@ function AcessoReport() {
           </TableRow></TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
+              <TableSkeletonRows cols={4} />
             ) : paged.length === 0 ? (
               <TableRow><TableCell colSpan={4}><EmptyState message="Nenhum registro" /></TableCell></TableRow>
             ) : paged.map((r, i) => (
@@ -234,7 +235,7 @@ function ExcessivosReport() {
           </TableRow></TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={2} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
+              <TableSkeletonRows cols={2} />
             ) : filtered.length === 0 ? (
               <TableRow><TableCell colSpan={2}><EmptyState message="Nenhum colaborador com acesso excessivo" /></TableCell></TableRow>
             ) : filtered.map(r => (
