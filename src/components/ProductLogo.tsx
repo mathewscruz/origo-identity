@@ -1,4 +1,19 @@
 /** Logos simplificados (SVG inline) reconhecidos pelo nome comercial da licença. */
+import m365 from "@/assets/ms/m365.svg.asset.json";
+import teams from "@/assets/ms/teams.svg.asset.json";
+import outlook from "@/assets/ms/outlook.svg.asset.json";
+import word from "@/assets/ms/word.svg.asset.json";
+import excel from "@/assets/ms/excel.svg.asset.json";
+import powerpoint from "@/assets/ms/powerpoint.svg.asset.json";
+import project from "@/assets/ms/project.svg.asset.json";
+import visio from "@/assets/ms/visio.svg.asset.json";
+import sharepoint from "@/assets/ms/sharepoint.svg.asset.json";
+import onedrive from "@/assets/ms/onedrive.svg.asset.json";
+
+const OFFICIAL: [string, string][] = [
+  ["teams", teams.url], ["outlook", outlook.url], ["sharepoint", sharepoint.url], ["onedrive", onedrive.url],
+  ["powerpoint", powerpoint.url], ["excel", excel.url], ["word", word.url], ["project", project.url], ["visio", visio.url],
+];
 type Kind = "m365" | "teams" | "exchange" | "dynamics" | "power" | "copilot" | "project" | "visio" | "entra" | "defender" | "windows" | "generic";
 
 export function productKind(nome: string): Kind {
@@ -22,7 +37,10 @@ function Tile({ bg, children }: { bg: string; children: React.ReactNode }) {
 }
 
 export default function ProductLogo({ nome }: { nome: string }) {
+  const n = nome.toLowerCase();
   const k = productKind(nome);
+  const hit = OFFICIAL.find(([key]) => n.includes(key))?.[1] ?? (k === "m365" ? m365.url : null);
+  if (hit) return <img src={hit} alt="" className="h-8 w-8 shrink-0 object-contain" />;
   switch (k) {
     case "m365":
       return <svg viewBox="0 0 32 32" className="h-8 w-8 shrink-0" aria-hidden><path d="M6 9l12-5 8 3v18l-8 3-12-5z" fill="#EB3C00" /><path d="M18 4l8 3v18l-8 3z" fill="#FF8F6B" /><path d="M10 11l8-2v14l-8-2z" fill="#fff" opacity=".9" /></svg>;
