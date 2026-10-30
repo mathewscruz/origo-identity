@@ -79,7 +79,6 @@ export default function TerceirosPage() {
     { key: "reval", label: "Revalidação", index: 6 },
   ]);
   const [busca, setBusca] = useState("");
-  const [statusFilter, setStatusFilter] = useState(searchParams.get("status") || "ativo");
   const buscaDeferida = useDeferredValue(busca);
   const revalCiclo = parseInt(useParametro("terceiro_revalidacao_dias", "45"), 10) || 45;
   const [page, setPage] = useState(1);
@@ -98,6 +97,7 @@ export default function TerceirosPage() {
   const dominioTerceiro = useParametro("terceiro_email_dominio", "parceiroorigoenergia.com.br");
   const revalidacaoDias = useParametro("terceiro_revalidacao_dias", "45");
   const [searchParams, setSearchParams] = useSearchParams();
+  const [statusFilter, setStatusFilter] = useState(searchParams.get("status") || "ativo");
 
   // /terceiros?new=1 (paleta) abre o cadastro; ?edit=<id> (detalhe) abre a edição
   useEffect(() => {
