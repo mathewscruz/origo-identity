@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export interface MetricItem {
   label: string;
@@ -16,7 +17,7 @@ const TONE: Record<string, string> = {
 };
 
 /** Faixa compacta de números com divisórias; cada item pode filtrar a lista. */
-export default function MetricStrip({ items, right }: { items: MetricItem[]; right?: React.ReactNode }) {
+export default function MetricStrip({ items, right, loading }: { items: MetricItem[]; right?: React.ReactNode; loading?: boolean }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-card px-6 py-4">
       <div className="flex flex-wrap items-center divide-x divide-border">
@@ -31,9 +32,9 @@ export default function MetricStrip({ items, right }: { items: MetricItem[]; rig
               m.onClick && "hover:opacity-80",
             )}
           >
-            <span className={cn("text-2xl font-semibold tabular-nums leading-tight", TONE[m.tone ?? "default"])}>
+            {loading ? <Skeleton className="my-1 h-7 w-12" /> : <span className={cn("text-2xl font-semibold tabular-nums leading-tight", TONE[m.tone ?? "default"])}>
               {typeof m.value === "number" ? m.value.toLocaleString("pt-BR") : m.value}
-            </span>
+            </span>}
             <span className={cn("text-sm text-muted-foreground", m.active && "font-medium text-primary underline underline-offset-4")}>{m.label}</span>
           </button>
         ))}
