@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useIsSuperAdmin } from "@/hooks/useRole";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -59,7 +59,7 @@ export default function AplicacoesPage() {
 
   const [busca, setBusca] = useState("");
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(12);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [filtro, setFiltro] = useState("todas");
   const [modo, setModo] = useState("todos");
@@ -87,7 +87,6 @@ export default function AplicacoesPage() {
     return true;
   });
   const { paginatedItems, safePage } = usePagination(list, page, pageSize);
-  useEffect(() => { setPageSize(12); }, []);
 
   const conectados = allApps.filter((a) => situacaoSistema(a) === "conectado").length;
   const emDemo = allApps.filter((a) => situacaoSistema(a) === "demo").length;
@@ -194,7 +193,7 @@ export default function AplicacoesPage() {
       )}
       <div className="flex items-center justify-between gap-4">
         <span className="text-sm text-muted-foreground">{list.length} {list.length === 1 ? "aplicação" : "aplicações"}</span>
-      <TablePagination totalItems={list.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
+      <TablePagination totalItems={list.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} pageSizeOptions={[12, 24, 48]} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
       </div>
 
       <ConfirmImpactDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}
