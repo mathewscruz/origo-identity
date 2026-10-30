@@ -26,7 +26,14 @@ import { useQuery } from "@tanstack/react-query";
 import { usePeopleSeries } from "@/hooks/usePeopleSeries";
 import { splitPeriods } from "@/lib/peopleActivity";
 import { supabase } from "@/integrations/supabase/client";
-import { TrendingDown, TrendingUp, Play, Clock, AlertCircle } from "lucide-react";
+import { Play, Clock, AlertCircle, Shield, ChevronRight, ChevronDown, Box, Activity, Minus } from "lucide-react";
+import ProductLogo from "@/components/ProductLogo";
+import { useActivityFeed, acaoIcon } from "@/components/ActivityFeed";
+import { activitySentence, isActivityNoise } from "@/lib/activityLabels";
+import { tempoRelativo } from "@/lib/alertLabels";
+import { useAuth } from "@/contexts/AuthContext";
+import { useAvatarUrl } from "@/lib/avatarUrl";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 function useDashboardKpis(days: number) {
   return useQuery({
@@ -41,55 +48,23 @@ function useDashboardKpis(days: number) {
   });
 }
 
-/* ── cartão de indicador com variação e mini-gráfico ── */
-function KpiCard({ label, value, prev, spark, color, to, hint, invert }: { label: string; value: number; prev?: number; spark?: number[]; color: string; to: string; hint?: string; invert?: boolean }) {
-  const delta = prev === undefined ? null : prev === 0 ? (value > 0 ? 100 : 0) : Math.round(((value - prev) / prev) * 100);
-  const good = delta === null ? true : invert ? delta <= 0 : delta >= 0;
-  const data = (spark ?? []).map((v, i) => ({ i, v }));
-  return (
-    <Link to={to} className="group">
-      <Card className="h-full overflow-hidden transition-all hover:-translate-y-0.5 hover:border-primary/40">
-        <CardContent className="p-4">
-          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
-          <div className="mt-1 flex items-end justify-between gap-2">
-            <span className="text-3xl font-semibold tabular-nums">{value.toLocaleString("pt-BR")}</span>
-            {delta !== null && (
-              <span className={`flex items-center gap-0.5 text-xs font-medium ${good ? "text-success" : "text-destructive"}`}>
-                {delta >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}{delta > 0 ? "+" : ""}{delta}%
-              </span>
-            )}
-          </div>
-          {hint && <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{hint}</p>}
-          {data.length > 1 && (
-            <div className="-mx-4 -mb-4 mt-2 h-10">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={data} margin={{ top: 2, bottom: 0, left: 0, right: 0 }}>
-                  <defs><linearGradient id={`g-${label}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity={0.35} /><stop offset="100%" stopColor={color} stopOpacity={0} /></linearGradient></defs>
-                  <Area type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} fill={`url(#g-${label})`} isAnimationActive={false} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </Link>
-  );
-}
-
 /* ── uso de licenças ── */
 function LicensesPanel({ rows }: { rows: { nome: string; total: number; em_uso: number }[] }) {
   return (
-    <Card className="h-full">
-      <CardHeader className="pb-2"><div className="flex items-center justify-between"><CardTitle className="text-base">Licenças em uso</CardTitle><Link to="/licencas" className="text-xs text-primary hover:underline">Ver todas</Link></div></CardHeader>
-      <CardContent className="space-y-3">
+    <Card className="flex h-full flex-col rounded-xl">
+      <CardTitleRow icon={Box} title="Licenças em uso" action={<Link to="/licencas" className="text-xs text-primary hover:underline">Ver todas</Link>} />
+      <CardContent className="flex flex-1 flex-col gap-5 px-5 pb-5 pt-0">
         {rows.length === 0 ? <EmptyState message="Sem licenças sincronizadas." /> : rows.map((r) => {
           const pct = r.total > 0 ? Math.round((r.em_uso / r.total) * 100) : 0;
-          const tone = pct >= 90 ? "bg-destructive" : pct >= 75 ? "bg-warning" : "bg-primary";
           return (
-            <div key={r.nome} className="space-y-1">
-              <div className="flex items-center justify-between gap-3 text-sm"><span className="truncate" title={r.nome}>{r.nome}</span><span className="shrink-0 text-xs text-muted-foreground"><span className="font-semibold text-foreground tabular-nums">{r.em_uso}</span>/{r.total} · {pct}%</span></div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-muted"><div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.min(100, pct)}%` }} /></div>
-            </div>
+            <Link key={r.nome} to="/licencas" className="flex items-center gap-4 hover:opacity-90" title={`${r.em_uso} de ${r.total}`}>
+              <ProductLogo nome={r.nome} />
+              <div className="min-w-0 flex-1 space-y-2">
+                <span className="block truncate text-sm" title={r.nome}>{r.nome}</span>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, pct)}%` }} /></div>
+              </div>
+              <span className="w-11 text-right text-sm font-medium tabular-nums text-primary">{pct}%</span>
+            </Link>
           );
         })}
       </CardContent>
@@ -174,32 +149,26 @@ function SystemStrip({ m, loading }: { m: Row; loading: boolean }) {
 }
 
 /* ── barras horizontais clicáveis ── */
-function BarsPanel({ title, rows, unit, footer }: { title: string; rows: { label: string; value: number; color: string; to?: string; includeInTotal?: boolean }[]; unit?: string; footer?: React.ReactNode }) {
-  const total = rows.reduce((s, r) => s + (r.includeInTotal === false ? 0 : r.value), 0);
-  const max = Math.max(1, ...rows.map((r) => r.value));
+function BarsPanel({ title, rows }: { title: string; rows: { label: string; value: number; to?: string }[]; unit?: string }) {
+  const total = rows.reduce((s, r) => s + r.value, 0);
   return (
-    <Card className="h-full">
-      <CardHeader className="pb-2"><CardTitle className="text-base">{title}</CardTitle></CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-baseline justify-between border-b pb-2">
-          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Total</span>
-          <span aria-label={`${title}: total`} className="text-xl font-semibold tabular-nums">{total}</span>
-        </div>
+    <Card className="flex h-full flex-col rounded-xl">
+      <CardTitleRow icon={Users} title={title} action={<span aria-label={`${title}: total`} className="text-sm tabular-nums text-muted-foreground">{total.toLocaleString("pt-BR")}</span>} />
+      <CardContent className="flex flex-1 flex-col gap-5 px-5 pb-5 pt-0">
         {rows.map((r) => {
           const pct = total > 0 ? Math.round((r.value / total) * 100) : 0;
-          const width = r.value > 0 ? Math.max(3, Math.round((r.value / max) * 100)) : 0;
           const inner = (
-            <div className="space-y-1">
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="flex min-w-0 items-center gap-2"><span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: r.color }} /><span className="truncate" title={r.label}>{r.label}</span></span>
-                <span className="shrink-0 text-xs text-muted-foreground"><span className="font-semibold text-foreground tabular-nums">{r.value}</span>{unit ? ` ${unit}` : ""} · {pct}%</span>
+            <div className="flex items-center gap-4">
+              <div className="min-w-0 flex-1 space-y-2">
+                <span className="block truncate text-sm" title={r.label}>{r.label}</span>
+                <div className="h-3.5 w-full overflow-hidden rounded-md bg-muted"><div className="h-full rounded-md bg-primary transition-all duration-500" style={{ width: `${r.value > 0 ? Math.max(4, pct) : 0}%` }} /></div>
               </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full transition-all duration-500" style={{ width: `${width}%`, backgroundColor: r.color }} /></div>
+              <span className="w-14 text-right text-sm font-semibold tabular-nums">{r.value.toLocaleString("pt-BR")}</span>
+              <span className="w-10 text-right text-sm tabular-nums text-muted-foreground">{pct}%</span>
             </div>
           );
-          return r.to ? <Link key={r.label} to={r.to} className="block rounded-md p-1 -m-1 hover:bg-muted/50">{inner}</Link> : <div key={r.label}>{inner}</div>;
+          return r.to ? <Link key={r.label} to={r.to} className="block rounded-md hover:opacity-90">{inner}</Link> : <div key={r.label}>{inner}</div>;
         })}
-        {footer}
       </CardContent>
     </Card>
   );
@@ -225,26 +194,21 @@ function GovernanceList({ m, loading }: { m: Row; loading: boolean }) {
   ];
   const open = items.filter((i) => i.value > 0);
   return (
-    <Card className="h-full">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base">Pendências de governança</CardTitle>
-          <Badge variant="outline" className="text-xs">{open.length} tema(s)</Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="p-0">
+    <Card className="flex h-full flex-col rounded-xl">
+      <CardTitleRow icon={Shield} title="Pendências de governança" />
+      <CardContent className="flex-1 overflow-auto px-5 pb-4 pt-0">
         {loading ? (
-          <div className="space-y-2 p-4">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
+          <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-9 w-full" />)}</div>
         ) : open.length === 0 ? (
           <div className="py-10"><EmptyState message="Nenhuma pendência — tudo em dia." /></div>
         ) : (
-          <ul className="divide-y">
+          <ul className="divide-y divide-border/60">
             {open.map((i) => (
               <li key={i.label}>
-                <Link to={i.to} className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-muted/50">
-                  <i.icon className={`h-4 w-4 shrink-0 ${i.tone === "destructive" ? "text-destructive" : i.tone === "warning" ? "text-warning" : i.tone === "info" ? "text-info" : "text-muted-foreground"}`} />
+                <Link to={i.to} className="group flex items-center gap-3 py-3 text-sm text-foreground/85 transition-colors hover:text-foreground">
                   <span className="flex-1 truncate" title={i.label}>{i.label}</span>
-                  <Badge variant="outline" className={`tabular-nums ${i.tone === "destructive" ? "border-destructive/30 bg-destructive/10 text-destructive" : i.tone === "warning" ? "border-warning/30 bg-warning/10 text-warning" : ""}`}>{i.value}</Badge>
+                  <span className="flex h-7 min-w-7 items-center justify-center rounded-md border border-warning/70 bg-warning/15 px-1.5 text-xs font-semibold tabular-nums text-warning">{i.value}</span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
                 </Link>
               </li>
             ))}
@@ -252,6 +216,15 @@ function GovernanceList({ m, loading }: { m: Row; loading: boolean }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function CardTitleRow({ icon: Icon, title, action }: { icon: typeof Users; title: string; action?: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-2 px-5 pb-4 pt-5">
+      <h3 className="flex items-center gap-2.5 text-lg font-medium"><Icon className="h-5 w-5 text-primary" />{title}</h3>
+      {action}
+    </div>
   );
 }
 
@@ -297,38 +270,44 @@ export default function Dashboard() {
   ];
 
   const strip = [
-    { label: "Pessoas ativas", value: k?.pessoas_ativas ?? pessoas, icon: Users, tone: "primary", to: "/colaboradores?status=ativo", hint: `${k?.admissoes ?? 0} admissões · ${k?.desligamentos ?? 0} saídas em ${period} d` },
-    { label: `Execuções em ${period} d`, value: ppl.total, prev: ppl.prevTotal, icon: Play, tone: "primary", to: "/auditoria", hint: `${ppl.entradas} entradas · ${ppl.saidas} saídas` },
-    { label: "Aguardando aprovação", value: k?.aguardando ?? m?.fila_waiting ?? 0, icon: Clock, tone: "warning", to: "/fila-provisionamento?tab=aprovacao", hint: waitingAge ? `mais antigo: ${waitingAge}` : "nada pendente" },
-    { label: "Falhas em 24 h", value: k?.falhas_24h ?? 0, prev: k?.falhas_prev, invert: true, icon: AlertCircle, tone: "destructive", to: "/fila-provisionamento?status=failed", hint: "vs 24 h anteriores" },
+    { label: "Pessoas ativas", value: k?.pessoas_ativas ?? pessoas, icon: Users, tone: "primary", to: "/colaboradores?status=ativo", hint: `${k?.admissoes ?? 0} admissões · ${k?.desligamentos ?? 0} saídas` },
+    { label: "Execuções", value: ppl.total, prev: ppl.prevTotal, icon: Play, tone: "primary", to: "/auditoria", hint: "vs. período anterior" },
+    { label: "Aguardando", value: k?.aguardando ?? m?.fila_waiting ?? 0, icon: Clock, tone: "warning", to: "/fila-provisionamento?tab=aprovacao", hint: waitingAge ? `mais antigo: ${waitingAge}` : "nada pendente" },
+    { label: "Falhas", value: k?.falhas_24h ?? 0, prev: k?.falhas_prev, invert: true, icon: AlertCircle, tone: "destructive", to: "/fila-provisionamento?status=failed", hint: "vs. 24 h anteriores" },
   ] as const;
-  const toneCls: Record<string, string> = { primary: "bg-primary/15 text-primary", warning: "bg-warning/15 text-warning", destructive: "bg-destructive/15 text-destructive" };
+  const toneCls: Record<string, string> = { primary: "bg-primary/15 text-primary ring-primary/20", warning: "bg-warning/15 text-warning ring-warning/20", destructive: "bg-destructive/15 text-destructive ring-destructive/20" };
+  const periodLabel = `Últimos ${period} dias`;
 
   return (
-    <div className="mx-auto max-w-[1700px] space-y-5">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Governança de Identidades</h1>
-        <p className="text-sm text-muted-foreground">Visibilidade. Controle. Conformidade.{m?.gerado_em ? <span className="text-xs"> · atualizado {relTime(m.gerado_em)}</span> : null} · <AutoUpdatedHint tasks={["sync-entra-licencas", "sync-entra-groups"]} /></p>
+    <div className="flex min-h-[calc(100vh-3.5rem-4rem)] flex-col gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-[28px] font-semibold tracking-tight">Governança de Identidades</h1>
+          <p className="text-base text-muted-foreground">Visibilidade. Controle. Conformidade.</p>
+          <div className="flex flex-wrap items-center gap-x-3 pt-1 text-xs text-muted-foreground"><SystemStrip m={m} loading={isLoading} /><AutoUpdatedHint tasks={["sync-entra-licencas", "sync-entra-groups"]} /></div>
+        </div>
+        <UserChip />
       </div>
 
       <QueryState loading={isLoading} error={metricsError || (!isLoading && !m ? new Error("Métricas indisponíveis") : null)} retry={retryMetrics}>
-      <div className="pt-1"><SystemStrip m={m} loading={isLoading} /></div>
-
-      {/* Faixa de indicadores */}
       <Card className="rounded-xl">
-        <div className="grid grid-cols-1 divide-y sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-4 lg:divide-x">
-          {strip.map((s) => {
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+          {strip.map((s, idx) => {
             const prev = "prev" in s ? s.prev : undefined;
             const delta = prev === undefined || prev === null ? null : prev === 0 ? (s.value > 0 ? 100 : 0) : Math.round(((s.value - prev) / prev) * 100);
             const good = delta === null ? true : ("invert" in s && s.invert) ? delta <= 0 : delta >= 0;
             return (
-              <Link key={s.label} to={s.to} className="flex items-center gap-4 p-5 transition-colors hover:bg-muted/40">
-                <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${toneCls[s.tone]}`}><s.icon className="h-6 w-6" /></span>
+              <Link key={s.label} to={s.to} className={`flex items-center gap-6 px-6 py-6 transition-colors hover:bg-muted/30 ${idx > 0 ? "xl:border-l" : ""}`}>
+                <span className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-full ring-1 ${toneCls[s.tone]}`}><s.icon className="h-9 w-9" /></span>
                 <div className="min-w-0">
-                  <p className="truncate text-sm text-muted-foreground">{s.label}</p>
-                  <p className="text-3xl font-semibold tabular-nums leading-tight">{Number(s.value).toLocaleString("pt-BR")}</p>
-                  <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-                    {delta !== null && <span className={`flex items-center gap-0.5 font-medium ${good ? "text-success" : "text-destructive"}`}>{delta >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}{delta > 0 ? "+" : ""}{delta}%</span>}
+                  <p className="truncate text-base text-foreground/85">{s.label}</p>
+                  <p className="text-4xl font-medium tabular-nums leading-tight">{Number(s.value).toLocaleString("pt-BR")}</p>
+                  <p className="mt-1 flex items-center gap-2 truncate text-sm text-muted-foreground">
+                    {delta !== null && (
+                      <span className={`flex items-center gap-1 font-medium ${delta === 0 ? "text-foreground/80" : good ? "text-success" : "text-destructive"}`}>
+                        {delta === 0 ? <Minus className="h-4 w-4" /> : <span className="text-xs">{delta > 0 ? "▲" : "▼"}</span>}{delta > 0 ? "+" : ""}{delta}%
+                      </span>
+                    )}
                     <span className="truncate">{s.hint}</span>
                   </p>
                 </div>
@@ -339,66 +318,100 @@ export default function Dashboard() {
       </Card>
       </QueryState>
 
-      {/* Gráfico principal */}
       <QueryState loading={people.isLoading} error={people.error} retry={people.refetch}>
       <Card className="rounded-xl">
-        <CardHeader className="pb-2">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <CardTitle className="text-lg">Entradas e saídas por dia</CardTitle>
-              <p className="text-xs text-muted-foreground">Cada pessoa conta uma vez por dia</p>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="flex gap-3 text-xs">
-                {[{ k: "entradas", l: "Entradas", c: CH.in }, { k: "saidas", l: "Saídas", c: CH.out }].map((x) => (
-                  <button key={x.k} type="button" onClick={() => toggle(x.k)} className={`flex items-center gap-1.5 ${hidden.has(x.k) ? "opacity-40" : ""}`}><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: x.c }} />{x.l}</button>
-                ))}
-              </div>
-              <div className="flex rounded-md border p-0.5">{([7, 30, 90] as Period[]).map((d) => <Button key={d} size="sm" variant={period === d ? "secondary" : "ghost"} className="h-7 px-2.5 text-xs" onClick={() => setPeriod(d)}>{d} dias</Button>)}</div>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="h-[280px] pt-2">
+        <div className="flex items-center justify-between gap-3 px-6 pt-5">
+          <h3 className="text-xl font-medium">Entradas e saídas por dia</h3>
+          <DropdownMenu>
+            <DropdownMenuTrigger className="flex items-center gap-2 text-sm text-foreground/85 hover:text-foreground">{periodLabel}<ChevronDown className="h-4 w-4" /></DropdownMenuTrigger>
+            <DropdownMenuContent align="end">{([7, 30, 90] as Period[]).map((d) => <DropdownMenuItem key={d} onClick={() => setPeriod(d)}>{d} dias</DropdownMenuItem>)}</DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        <div className="flex justify-end gap-6 px-6 pt-3 text-sm">
+          {[{ k: "entradas", l: "Entradas", c: CH.in }, { k: "saidas", l: "Saídas", c: CH.out }].map((x) => (
+            <button key={x.k} type="button" onClick={() => toggle(x.k)} className={`flex items-center gap-2 ${hidden.has(x.k) ? "opacity-40" : ""}`}><span className="h-3 w-3 rounded-full" style={{ backgroundColor: x.c }} />{x.l}</button>
+          ))}
+        </div>
+        <div className="h-[240px] px-3 pb-4 pt-2">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={pplChart} margin={{ left: -16, right: 8, top: 8 }}>
+            <AreaChart data={pplChart} margin={{ left: -8, right: 12, top: 8 }}>
               <defs>
-                <linearGradient id="g-in" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={CH.in} stopOpacity={0.35} /><stop offset="100%" stopColor={CH.in} stopOpacity={0} /></linearGradient>
-                <linearGradient id="g-out" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={CH.out} stopOpacity={0.25} /><stop offset="100%" stopColor={CH.out} stopOpacity={0} /></linearGradient>
+                <linearGradient id="g-in" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={CH.in} stopOpacity={0.45} /><stop offset="100%" stopColor={CH.in} stopOpacity={0.02} /></linearGradient>
+                <linearGradient id="g-out" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={CH.out} stopOpacity={0.3} /><stop offset="100%" stopColor={CH.out} stopOpacity={0.02} /></linearGradient>
               </defs>
-              <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
-              <XAxis dataKey="label" interval={tick} tick={{ fill: CH.axis, fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: CH.axis, fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <CartesianGrid stroke="hsl(var(--border))" />
+              <XAxis dataKey="label" interval={tick} tick={{ fill: CH.axis, fontSize: 13 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: CH.axis, fontSize: 13 }} axisLine={false} tickLine={false} allowDecimals={false} />
               <Tooltip content={<ChartTooltip />} />
-              <Area type="monotone" dataKey="entradas" name="Entradas" stroke={CH.in} strokeWidth={2} fill="url(#g-in)" hide={hidden.has("entradas")} />
-              <Area type="monotone" dataKey="saidas" name="Saídas" stroke={CH.out} strokeWidth={2} fill="url(#g-out)" hide={hidden.has("saidas")} />
+              <Area type="monotone" dataKey="entradas" name="Entradas" stroke={CH.in} strokeWidth={2.5} fill="url(#g-in)" hide={hidden.has("entradas")} />
+              <Area type="monotone" dataKey="saidas" name="Saídas" stroke={CH.out} strokeWidth={2.5} fill="url(#g-out)" hide={hidden.has("saidas")} />
             </AreaChart>
           </ResponsiveContainer>
-        </CardContent>
+        </div>
       </Card>
       </QueryState>
 
-      {/* Base: 4 cartões */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
-        <BarsPanel title="Categoria de Usuários" unit="usuários" rows={[
-          { label: "Ativos", value: m?.colab_ativos ?? 0, color: C.primary, to: "/colaboradores?status=ativo" },
-          { label: "Férias", value: m?.colab_ferias ?? 0, color: C.info, to: "/colaboradores?status=ferias" },
-          { label: "Afastados", value: m?.colab_afastados ?? 0, color: C.warning, to: "/colaboradores?status=afastado" },
-          { label: "Terceiros ativos", value: tercAtivos, color: C.violet, to: "/terceiros" },
-          { label: "Contas de serviço", value: contasServico, color: C.muted, to: "/contas-servico" },
+      <div className="grid flex-1 grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-4">
+        <BarsPanel title="Categoria de Usuários" rows={[
+          { label: "Ativos", value: m?.colab_ativos ?? 0, to: "/colaboradores?status=ativo" },
+          { label: "Férias", value: m?.colab_ferias ?? 0, to: "/colaboradores?status=ferias" },
+          { label: "Afastados", value: m?.colab_afastados ?? 0, to: "/colaboradores?status=afastado" },
+          { label: "Terceiros ativos", value: tercAtivos, to: "/terceiros" },
+          { label: "Contas de serviço", value: contasServico, to: "/contas-servico" },
         ]} />
-        <LicensesPanel rows={k?.licencas ?? []} />
+        <LicensesPanel rows={(k?.licencas ?? []).slice(0, 5)} />
         <GovernanceList m={m} loading={isLoading || !!metricsError} />
-        <Card className="h-full rounded-xl">
-          <CardHeader className="pb-2"><CardTitle className="text-base">Atividade recente</CardTitle></CardHeader>
-          <CardContent className="p-0">
-            <ActivityFeed limit={6} />
-            <Link to="/auditoria" className="block px-4 py-3 text-xs font-medium text-primary hover:underline">Ver toda a atividade →</Link>
-          </CardContent>
-        </Card>
+        <RecentCard />
       </div>
     </div>
   );
 }
 
-const CH = { in: "hsl(var(--primary))", out: "hsl(var(--destructive))", axis: "hsl(var(--muted-foreground))" };
+const ROLE_NAME: Record<string, string> = { platform_admin: "Super Admin", admin: "Super Admin", operador: "Suporte", viewer: "Leitor" };
+function UserChip() {
+  const { profile, role } = useAuth();
+  const avatar = useAvatarUrl(profile?.avatar_url);
+  const initials = profile?.nome ? profile.nome.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase() : "??";
+  return (
+    <div className="flex items-center gap-3">
+      <span className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-muted text-base font-semibold">{avatar ? <img src={avatar} alt="" className="h-full w-full object-cover" /> : initials}</span>
+      <div className="leading-tight"><p className="text-sm font-medium">{profile?.nome || "Usuário"}</p><p className="text-xs text-muted-foreground">{ROLE_NAME[role ?? ""] ?? "—"}</p></div>
+    </div>
+  );
+}
+
+function RecentCard() {
+  const { data, isLoading } = useActivityFeed(80, "");
+  const items = (data ?? []).filter((i) => !isActivityNoise(i)).slice(0, 5);
+  return (
+    <Card className="flex h-full flex-col rounded-xl">
+      <CardTitleRow icon={Activity} title="Atividade recente" />
+      <CardContent className="flex flex-1 flex-col px-5 pb-4 pt-0">
+        {isLoading ? <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-11 w-full" />)}</div>
+          : items.length === 0 ? <EmptyState message="Nenhuma atividade registrada ainda." />
+          : (
+          <ul className="flex-1 divide-y divide-border/60">
+            {items.map((it) => {
+              const { icon: Icon } = acaoIcon(it);
+              const sentence = activitySentence(it) || it.detalhe || it.acao.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+              const title = it.pessoa || sentence;
+              const desc = it.pessoa ? sentence : (it.detalhe && it.detalhe !== sentence ? it.detalhe : "");
+              const row = (
+                <div className="flex items-start gap-3 py-2.5">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-primary"><Icon className="h-4 w-4" /></span>
+                  <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{title}</p><p className="truncate text-xs text-muted-foreground">{desc}</p></div>
+                  <span className="shrink-0 text-xs text-muted-foreground">{tempoRelativo(it.ts)}</span>
+                </div>
+              );
+              return <li key={`${it.fonte}-${it.id}`}>{it.link ? <Link to={it.link} className="block hover:opacity-90">{row}</Link> : row}</li>;
+            })}
+          </ul>
+        )}
+        <Link to="/auditoria" className="mt-2 flex items-center gap-1 text-sm font-medium text-primary hover:underline">Ver toda a atividade<ChevronRight className="h-4 w-4" /></Link>
+      </CardContent>
+    </Card>
+  );
+}
+
+const CH = { in: "hsl(var(--primary))", out: "hsl(var(--chart-out))", axis: "hsl(var(--muted-foreground))" };
 

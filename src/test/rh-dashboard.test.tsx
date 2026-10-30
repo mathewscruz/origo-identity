@@ -24,7 +24,7 @@ vi.mock('@/hooks/useOrigoData', () => ({
   useDashboardSeries: (days: number) => { state.period(days); return { data: state.series, isLoading: false, error: null, refetch: vi.fn(), isPlaceholderData: false }; },
   useParametro: () => 'true',
 }));
-vi.mock('@/components/ActivityFeed', () => ({ default: () => null }));
+vi.mock('@/components/ActivityFeed', () => ({ default: () => null, useActivityFeed: () => ({ data: [], isLoading: false }), acaoIcon: () => ({ icon: () => null, tone: '' }) }));
 vi.mock('@/hooks/usePeopleSeries', () => ({ usePeopleSeries: () => ({ data: [{ dia: '2026-09-18', entradas: 1, saidas: 3 }], isLoading: false, error: null, refetch: vi.fn() }) }));
 vi.mock('recharts', () => ({
   ResponsiveContainer: () => <div>Chart fixture</div>, Area: () => null, AreaChart: () => null, Bar: () => null,
@@ -48,8 +48,7 @@ describe('RH dashboard contract fixtures, not production counts', () => {
     expect(screen.queryByText('Ciclo RH')).toBeNull();
     expect(screen.queryByText('pausado por segurança')).toBeNull();
     expect(screen.getByText(/Base do RH atualizada/)).toBeTruthy();
-    expect(screen.getByText(/1 entradas · 3 saídas/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '7 dias' }));
-    expect(state.period).toHaveBeenLastCalledWith(7);
+    expect(screen.getByText('Execuções')).toBeTruthy();
+    expect(screen.getByText(/Últimos 30 dias/)).toBeTruthy();
   });
 });
