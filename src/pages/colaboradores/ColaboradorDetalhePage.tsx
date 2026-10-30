@@ -39,25 +39,13 @@ import PrivilegedRolesSection from "./sections/PrivilegedRolesSection";
 import PerfisAtribuidosTable from "./sections/PerfisAtribuidosTable";
 import JMLTimeline from "./sections/JMLTimeline";
 import StartJmlEventDialog from "@/components/jml/StartJmlEventDialog";
+import IdentityHeader, { ProgressRing } from "@/components/identity/IdentityHeader";
+import AccessSummaryCard from "@/components/identity/AccessSummaryCard";
 import { useAssignPerfil, useRevokePerfil } from "@/hooks/mutations/usePerfilAssignment";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = any;
 
-const STATUS_RING: Record<string, string> = {
-  ativo: "ring-success/40 bg-success/15 text-success",
-  ferias: "ring-info/40 bg-info/15 text-info",
-  afastado: "ring-warning/40 bg-warning/15 text-warning",
-  inativo: "ring-muted-foreground/30 bg-muted text-muted-foreground",
-  desligado: "ring-destructive/40 bg-destructive/15 text-destructive",
-};
-const STATUS_BAR: Record<string, string> = {
-  ativo: "from-success/80 via-success/40 to-primary/30",
-  ferias: "from-info/80 via-info/40 to-primary/30",
-  afastado: "from-warning/80 via-warning/40 to-primary/30",
-  inativo: "from-muted-foreground/50 via-muted-foreground/20 to-transparent",
-  desligado: "from-destructive/80 via-destructive/40 to-transparent",
-};
 
 function Fact({ icon: Icon, label, value, mono, copy, to }: { icon: typeof Mail; label: string; value?: string | null; mono?: boolean; copy?: boolean; to?: string }) {
   const [copied, setCopied] = useState(false);
@@ -307,57 +295,55 @@ export default function ColaboradorDetalhePage() {
   return (
     <div className="space-y-5">
       {/* ── cabeçalho da pessoa ── */}
-      <Card className="overflow-hidden">
-        <div className={cn("h-1.5 bg-gradient-to-r", STATUS_BAR[p.status] || STATUS_BAR.inativo)} />
-        <CardContent className="pt-5">
-          <div className="flex flex-wrap items-start gap-4">
-            <Button variant="ghost" size="icon" className="shrink-0" asChild><Link to="/colaboradores" aria-label="Voltar"><ArrowLeft className="h-4 w-4" /></Link></Button>
-            <div className={cn("flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-xl font-semibold ring-2", STATUS_RING[p.status] || STATUS_RING.inativo)}>{initials}</div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-semibold tracking-tight">{p.nome}</h1>
-                <Badge variant="outline" className={sc.className}>{sc.label}</Badge>
-                {suspenso && <Badge variant="outline" className="gap-1 border-destructive/30 bg-destructive/15 text-destructive"><ShieldAlert className="h-3 w-3" />Suspensão preventiva{p.suspenso_em ? ` desde ${new Date(p.suspenso_em).toLocaleDateString("pt-BR")}` : ""}</Badge>}
-                {p.desligado_manual && <Tooltip><TooltipTrigger asChild><span className="inline-flex"><Badge variant="outline" className="gap-1 border-amber-500/30 bg-amber-500/15 text-amber-700"><ShieldAlert className="h-3 w-3" />Desligado manualmente</Badge></span></TooltipTrigger><TooltipContent>A base do RH não reativa esta pessoa até refletir o desligamento.</TooltipContent></Tooltip>}
-                {p.entra_id ? <Tooltip><TooltipTrigger asChild><span className="inline-flex"><Badge variant="outline" className="gap-1 border-info/30 bg-info/10 text-info"><Cloud className="h-3 w-3" />Entra ID</Badge></span></TooltipTrigger><TooltipContent>Conta vinculada no Entra ID</TooltipContent></Tooltip>
-                  : <Tooltip><TooltipTrigger asChild><span className="inline-flex"><Badge variant="outline" className="gap-1 border-warning/30 bg-warning/10 text-warning"><CloudOff className="h-3 w-3" />Sem conta no Entra</Badge></span></TooltipTrigger><TooltipContent>Nenhuma conta vinculada — o agente cria/vincula no próximo ciclo </TooltipContent></Tooltip>}
-              </div>
-              <p className="mt-0.5 text-sm text-muted-foreground">{cargo} · {area} · {empresa}</p>
-              {suspenso && p.suspenso_motivo && <p className="mt-1 text-xs text-destructive">Motivo da suspensão: {p.suspenso_motivo}</p>}
-            </div>
-            {canEdit && (
-              <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto xl:max-w-[420px] xl:justify-end">
-                <Select value={p.status} onValueChange={onStatusChange}>
-                  <SelectTrigger className="h-9 w-[150px]"><span className="text-xs text-muted-foreground">Status:&nbsp;</span><SelectValue /></SelectTrigger>
-                  <SelectContent>{Object.entries(COLAB_STATUS_META).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent>
-                </Select>
-                {atribuirMenu}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild><Button variant="outline" size="sm" aria-label="Mais ações"><MoreHorizontal className="h-4 w-4" /><span className="ml-1 hidden sm:inline">Mais</span></Button></DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-64">
-                    <DropdownMenuItem onClick={() => { setResetResult(null); setResetMotivo(""); setResetDialogOpen(true); }}><KeyRound className="mr-2 h-4 w-4" />Resetar senha (pelo agente)</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setStartJmlOpen(true)}><Workflow className="mr-2 h-4 w-4" />Iniciar evento JML</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => navigate(`/colaboradores?edit=${id}`)}><Pencil className="mr-2 h-4 w-4" />Editar cadastro</DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    {p.status === "ativo" && !suspenso && <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => { setPreLeaverMotivo(""); setPreLeaverOpen(true); }}><ShieldAlert className="mr-2 h-4 w-4" />Suspender acessos agora</DropdownMenuItem>}
-                    {suspenso && <DropdownMenuItem className="text-success focus:text-success" onClick={() => { setPreLeaverMotivo(""); setRevertOpen(true); }}><ShieldCheck className="mr-2 h-4 w-4" />Reverter suspensão</DropdownMenuItem>}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                {p.status === "ativo" && !suspenso && <Button variant="destructive" size="sm" onClick={() => { setPreLeaverMotivo(""); setPreLeaverOpen(true); }}><ShieldAlert className="mr-1 h-3.5 w-3.5" />Suspender</Button>}
-                {suspenso && <Button variant="outline" size="sm" className="border-success/40 text-success hover:text-success" onClick={() => { setPreLeaverMotivo(""); setRevertOpen(true); }}><ShieldCheck className="mr-1 h-3.5 w-3.5" />Reverter suspensão</Button>}
-              </div>
-            )}
-          </div>
-          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
-            <Fact icon={Mail} label="E-mail" value={p.email} copy />
-            <Fact icon={AtSign} label="Login AD" value={p.sam_account_name} mono copy />
-            <Fact icon={Hash} label="Matrícula" value={p.matricula} mono />
-            <Fact icon={UserCircle2} label="Gestor" value={gestor} to={p.gestor_id ? `/colaboradores/${p.gestor_id}` : undefined} />
-            <Fact icon={CalendarDays} label="Admissão" value={admissao} />
-            <Fact icon={Sparkles} label="Origem" value={humanize(p.origem)} />
-          </div>
-        </CardContent>
-      </Card>
+      <IdentityHeader
+        backTo="/colaboradores"
+        initials={initials}
+        nome={p.nome}
+        tag="Colaborador"
+        badges={<>
+          <Badge variant="outline" className={sc.className}>{sc.label}</Badge>
+          {suspenso && <Badge variant="outline" className="gap-1 border-destructive/30 bg-destructive/15 text-destructive"><ShieldAlert className="h-3 w-3" />Suspensão preventiva{p.suspenso_em ? ` desde ${new Date(p.suspenso_em).toLocaleDateString("pt-BR")}` : ""}</Badge>}
+          {p.desligado_manual && <Tooltip><TooltipTrigger asChild><span className="inline-flex"><Badge variant="outline" className="gap-1 border-warning/30 bg-warning/15 text-warning"><ShieldAlert className="h-3 w-3" />Desligado manualmente</Badge></span></TooltipTrigger><TooltipContent>A base do RH não reativa esta pessoa até refletir o desligamento.</TooltipContent></Tooltip>}
+          {p.entra_id ? <Badge variant="outline" className="gap-1 border-info/30 bg-info/10 text-info"><Cloud className="h-3 w-3" />Entra ID</Badge>
+            : <Tooltip><TooltipTrigger asChild><span className="inline-flex"><Badge variant="outline" className="gap-1 border-warning/30 bg-warning/10 text-warning"><CloudOff className="h-3 w-3" />Sem conta no Entra</Badge></span></TooltipTrigger><TooltipContent>Nenhuma conta vinculada — o agente cria/vincula no próximo ciclo</TooltipContent></Tooltip>}
+        </>}
+        subtitle={<div className="space-y-0.5">
+          <p className="text-lg text-sidebar-accent-foreground">{cargo}</p>
+          <p>{[area, empresa].filter((x) => x && x !== "—").join(" · ")}</p>
+          {suspenso && p.suspenso_motivo && <p className="text-xs text-destructive">Motivo da suspensão: {p.suspenso_motivo}</p>}
+        </div>}
+        aside={(() => {
+          if (!p.data_admissao) return undefined;
+          const meses = Math.max(0, Math.floor((Date.now() - new Date(p.data_admissao + "T12:00:00").getTime()) / (30.44 * 86_400_000)));
+          const anos = Math.floor(meses / 12);
+          return <ProgressRing percent={((meses % 12) / 12) * 100} tone="success" top="Tempo de casa" value={anos >= 1 ? String(anos) : String(meses)} bottom={anos >= 1 ? (anos === 1 ? "ano" : "anos") : (meses === 1 ? "mês" : "meses")} />;
+        })()}
+        actions={canEdit ? <>
+          <Select value={p.status} onValueChange={onStatusChange}>
+            <SelectTrigger className="h-9 w-[150px] bg-card text-foreground"><span className="text-xs text-muted-foreground">Status:&nbsp;</span><SelectValue /></SelectTrigger>
+            <SelectContent>{Object.entries(COLAB_STATUS_META).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent>
+          </Select>
+          {atribuirMenu}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button variant="secondary" size="sm" aria-label="Mais ações"><MoreHorizontal className="h-4 w-4" /><span className="ml-1 hidden sm:inline">Mais</span></Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuItem onClick={() => { setResetResult(null); setResetMotivo(""); setResetDialogOpen(true); }}><KeyRound className="mr-2 h-4 w-4" />Resetar senha (pelo agente)</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setStartJmlOpen(true)}><Workflow className="mr-2 h-4 w-4" />Iniciar evento JML</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate(`/colaboradores?edit=${id}`)}><Pencil className="mr-2 h-4 w-4" />Editar cadastro</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {p.status === "ativo" && !suspenso && <Button variant="destructive" size="sm" onClick={() => { setPreLeaverMotivo(""); setPreLeaverOpen(true); }}><ShieldAlert className="mr-1 h-3.5 w-3.5" />Suspender</Button>}
+          {suspenso && <Button variant="secondary" size="sm" onClick={() => { setPreLeaverMotivo(""); setRevertOpen(true); }}><ShieldCheck className="mr-1 h-3.5 w-3.5" />Reverter suspensão</Button>}
+        </> : undefined}
+      />
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+        <Fact icon={Mail} label="E-mail" value={p.email} copy />
+        <Fact icon={AtSign} label="Login AD" value={p.sam_account_name} mono copy />
+        <Fact icon={Hash} label="Matrícula" value={p.matricula} mono />
+        <Fact icon={UserCircle2} label="Gestor" value={gestor} to={p.gestor_id ? `/colaboradores/${p.gestor_id}` : undefined} />
+        <Fact icon={CalendarDays} label="Admissão" value={admissao} />
+        <Fact icon={Sparkles} label="Origem" value={humanize(p.origem)} />
+      </div>
 
       {/* ── resumo ── */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
@@ -371,7 +357,7 @@ export default function ColaboradorDetalhePage() {
       {/* ── conteúdo ── */}
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="flex-wrap">
-          <TabsTrigger value="visao"><Info className="mr-1.5 h-3.5 w-3.5" />Visão geral</TabsTrigger>
+          <TabsTrigger value="visao"><Info className="mr-1.5 h-3.5 w-3.5" />Resumo</TabsTrigger>
           <TabsTrigger value="acessos"><Shield className="mr-1.5 h-3.5 w-3.5" />Acessos ({perfisAtivos + diretos})</TabsTrigger>
           <TabsTrigger value="privilegiados"><Crown className="mr-1.5 h-3.5 w-3.5" />Privilegiados</TabsTrigger>
           <TabsTrigger value="jml"><Workflow className="mr-1.5 h-3.5 w-3.5" />Histórico JML ({eventos.length})</TabsTrigger>
@@ -397,7 +383,7 @@ export default function ColaboradorDetalhePage() {
                 </dl>
               </CardContent>
             </Card>
-            <Card>
+            <div className="space-y-4"><Card>
               <CardContent className="pt-5">
                 <h3 className="mb-3 text-sm font-semibold">Identidade no diretório</h3>
                 <ul className="space-y-2.5 text-sm">
@@ -410,6 +396,7 @@ export default function ColaboradorDetalhePage() {
                 {syncing && <p className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground"><RefreshCw className="h-3 w-3 animate-spin" />Atualizando acessos do Entra ID…</p>}
               </CardContent>
             </Card>
+            <AccessSummaryCard colaboradorId={id} /></div>
           </div>
         </TabsContent>
 

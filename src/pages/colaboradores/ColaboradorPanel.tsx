@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Hash, MapPin, CalendarDays, UserRound, Shield, Key, Monitor, ArrowRight } from "lucide-react";
 import DetailPanel, { DetailField } from "@/components/DetailPanel";
+import IdentityHeader from "@/components/identity/IdentityHeader";
 import ProductLogo from "@/components/ProductLogo";
 import { useEffectiveAccess } from "@/hooks/useOrigoData";
 
@@ -26,16 +27,10 @@ export default function ColaboradorPanel({ c, statusLabel, statusClass, localida
   const admissao = c.data_admissao ? new Date(c.data_admissao + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }) : "";
   return (
     <DetailPanel onClose={onClose}>
-      <div className="flex items-start gap-4 pr-8">
-        <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-primary/10 text-lg font-semibold text-primary">{initials(c.nome)}</span>
-        <div className="min-w-0 space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-semibold leading-tight">{c.nome}</h2>
-            <Badge variant="outline" className={statusClass}>{statusLabel}</Badge>
-          </div>
-          <p className="text-sm text-muted-foreground">{[c.cargo, c.area].filter((x: string) => x && x !== "—").join(" · ")}</p>
-          <p className="truncate text-sm text-muted-foreground">{c.email}</p>
-        </div>
+      <div className="pr-8">
+        <IdentityHeader compact initials={initials(c.nome)} nome={c.nome} tag="Colaborador"
+          badges={<Badge variant="outline" className={statusClass}>{statusLabel}</Badge>}
+          subtitle={<div><p>{[c.cargo, c.area].filter((x: string) => x && x !== "—").join(" · ")}</p><p className="truncate">{c.email}</p></div>} />
       </div>
 
       <div className="mt-5 grid grid-cols-2 gap-4">
