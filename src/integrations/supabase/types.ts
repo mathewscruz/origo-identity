@@ -1547,6 +1547,170 @@ export type Database = {
           },
         ]
       }
+      matriz_mapeamentos: {
+        Row: {
+          acc_id: string
+          cargo_id: string | null
+          created_at: string
+          evidence_ref: string | null
+          id: string
+          perfil_id: string | null
+          resource_id: string | null
+          resource_type: string
+          technical_status: string
+          version_sha256: string
+        }
+        Insert: {
+          acc_id: string
+          cargo_id?: string | null
+          created_at?: string
+          evidence_ref?: string | null
+          id?: string
+          perfil_id?: string | null
+          resource_id?: string | null
+          resource_type: string
+          technical_status?: string
+          version_sha256: string
+        }
+        Update: {
+          acc_id?: string
+          cargo_id?: string | null
+          created_at?: string
+          evidence_ref?: string | null
+          id?: string
+          perfil_id?: string | null
+          resource_id?: string | null
+          resource_type?: string
+          technical_status?: string
+          version_sha256?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "matriz_mapeamentos_cargo_id_fkey"
+            columns: ["cargo_id"]
+            isOneToOne: false
+            referencedRelation: "cargos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "matriz_mapeamentos_perfil_id_fkey"
+            columns: ["perfil_id"]
+            isOneToOne: false
+            referencedRelation: "perfis_acesso"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "matriz_mapeamentos_version_sha256_acc_id_fkey"
+            columns: ["version_sha256", "acc_id"]
+            isOneToOne: false
+            referencedRelation: "matriz_requisitos"
+            referencedColumns: ["version_sha256", "acc_id"]
+          },
+        ]
+      }
+      matriz_requisitos: {
+        Row: {
+          acc_id: string
+          access_type: string
+          area_id: string | null
+          area_name: string
+          cargo_id: string | null
+          cargo_name: string
+          created_at: string
+          individual_or_shared: string
+          macro_area_name: string
+          required_for_role: string
+          sod_flag: string
+          source_data: Json
+          source_row: number
+          system_name: string
+          technical_status: string
+          version_sha256: string
+        }
+        Insert: {
+          acc_id: string
+          access_type?: string
+          area_id?: string | null
+          area_name: string
+          cargo_id?: string | null
+          cargo_name: string
+          created_at?: string
+          individual_or_shared?: string
+          macro_area_name: string
+          required_for_role?: string
+          sod_flag?: string
+          source_data: Json
+          source_row: number
+          system_name: string
+          technical_status?: string
+          version_sha256: string
+        }
+        Update: {
+          acc_id?: string
+          access_type?: string
+          area_id?: string | null
+          area_name?: string
+          cargo_id?: string | null
+          cargo_name?: string
+          created_at?: string
+          individual_or_shared?: string
+          macro_area_name?: string
+          required_for_role?: string
+          sod_flag?: string
+          source_data?: Json
+          source_row?: number
+          system_name?: string
+          technical_status?: string
+          version_sha256?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "matriz_requisitos_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "matriz_requisitos_cargo_id_fkey"
+            columns: ["cargo_id"]
+            isOneToOne: false
+            referencedRelation: "cargos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "matriz_requisitos_version_sha256_fkey"
+            columns: ["version_sha256"]
+            isOneToOne: false
+            referencedRelation: "matriz_versoes"
+            referencedColumns: ["sha256"]
+          },
+        ]
+      }
+      matriz_versoes: {
+        Row: {
+          approved: boolean
+          expected_count: number
+          imported_at: string
+          sha256: string
+          source_name: string
+        }
+        Insert: {
+          approved?: boolean
+          expected_count: number
+          imported_at?: string
+          sha256: string
+          source_name: string
+        }
+        Update: {
+          approved?: boolean
+          expected_count?: number
+          imported_at?: string
+          sha256?: string
+          source_name?: string
+        }
+        Relationships: []
+      }
       parametros: {
         Row: {
           chave: string
