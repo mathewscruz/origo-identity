@@ -2383,6 +2383,94 @@ export type Database = {
           },
         ]
       }
+      sharepoint_site_group_links: {
+        Row: {
+          created_at: string
+          entra_group_id: string
+          owner_count: number
+          owners_checked_at: string
+          site_db_id: string
+          source: string
+          sync_status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          entra_group_id: string
+          owner_count?: number
+          owners_checked_at: string
+          site_db_id: string
+          source?: string
+          sync_status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          entra_group_id?: string
+          owner_count?: number
+          owners_checked_at?: string
+          site_db_id?: string
+          source?: string
+          sync_status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sharepoint_site_group_links_site_db_id_fkey"
+            columns: ["site_db_id"]
+            isOneToOne: true
+            referencedRelation: "sharepoint_sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sharepoint_site_group_owners: {
+        Row: {
+          active: boolean
+          first_seen_at: string
+          last_seen_at: string
+          owner_display_name: string | null
+          owner_mail: string | null
+          owner_object_id: string
+          owner_type: string
+          owner_upn: string | null
+          site_db_id: string
+          source: string
+        }
+        Insert: {
+          active?: boolean
+          first_seen_at?: string
+          last_seen_at: string
+          owner_display_name?: string | null
+          owner_mail?: string | null
+          owner_object_id: string
+          owner_type?: string
+          owner_upn?: string | null
+          site_db_id: string
+          source?: string
+        }
+        Update: {
+          active?: boolean
+          first_seen_at?: string
+          last_seen_at?: string
+          owner_display_name?: string | null
+          owner_mail?: string | null
+          owner_object_id?: string
+          owner_type?: string
+          owner_upn?: string | null
+          site_db_id?: string
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sharepoint_site_group_owners_site_db_id_fkey"
+            columns: ["site_db_id"]
+            isOneToOne: false
+            referencedRelation: "sharepoint_site_group_links"
+            referencedColumns: ["site_db_id"]
+          },
+        ]
+      }
       sharepoint_sites: {
         Row: {
           created_at: string
