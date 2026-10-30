@@ -1,3 +1,5 @@
+import { useDeferredValue } from "react";
+import { IdentityAvatar } from "@/components/identity/IdentityCells";
 import { useMemo, useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -42,6 +44,7 @@ export default function ContasServicoPage() {
   const canEdit = useCanEdit();
   const dias = Number(useParametro("conta_servico_revalidacao_dias", "90")) || 90;
   const [busca, setBusca] = useState("");
+  const buscaDeferida = useDeferredValue(busca);
   const [filtro, setFiltro] = useState<"todas" | "ativas" | "inativas" | "sem_dono" | "vencidas">("todas");
   const [form, setForm] = useState<typeof vazio | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
@@ -68,7 +71,7 @@ export default function ContasServicoPage() {
 
   const list = contas ?? [];
   const filtered = list.filter((c) => {
-    if (busca && !`${c.nome} ${c.email ?? ""} ${c.sam_account_name ?? ""}`.toLowerCase().includes(busca.toLowerCase())) return false;
+    if (buscaDeferida && !`${c.nome} ${c.email ?? ""} ${c.sam_account_name ?? ""}`.toLowerCase().includes(buscaDeferida.toLowerCase())) return false;
     if (filtro === "ativas") return c.ativo;
     if (filtro === "inativas") return !c.ativo;
     if (filtro === "sem_dono") return semDono(c);
@@ -146,21 +149,21 @@ export default function ContasServicoPage() {
 
       <Card><CardContent className="p-0">
         {isLoading ? <div className="space-y-3 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div> : (
-          <div className="overflow-x-auto"><table className="w-full text-sm">
-            <thead><tr className="border-b text-left text-xs uppercase tracking-wider text-muted-foreground">
-              <th className="p-4 font-medium">Conta</th><th className="hidden p-4 font-medium md:table-cell">Dono</th>
-              <th className="hidden p-4 font-medium lg:table-cell">Revalidação</th><th className="hidden p-4 font-medium md:table-cell">Entra</th>
-              <th className="p-4 font-medium">Situação</th>
+          <div className="max-h-[70vh] overflow-auto"><table className="w-full text-sm">
+            <thead className="sticky top-0 z-10 bg-card"><tr className="border-b text-left text-xs uppercase tracking-wider text-muted-foreground">
+              <th className="px-4 py-2.5 font-medium">Conta</th><th className="hidden px-4 py-2.5 font-medium md:table-cell">Dono</th>
+              <th className="hidden px-4 py-2.5 font-medium lg:table-cell">Revalidação</th><th className="hidden px-4 py-2.5 font-medium md:table-cell">Entra</th>
+              <th className="px-4 py-2.5 font-medium">Situação</th>
             </tr></thead>
             <tbody>
               {filtered.length === 0 && <tr><td colSpan={5}><EmptyState message="Nenhuma conta de serviço encontrada." /></td></tr>}
               {filtered.map((c) => (
                 <tr key={c.id} className="cursor-pointer border-b last:border-0 hover:bg-muted/50" onClick={() => navigate(`/contas-servico/${c.id}`)}>
-                  <td className="p-4"><div className="font-medium text-primary">{c.nome}</div><div className="text-xs text-muted-foreground">{c.email || c.sam_account_name || "—"}</div></td>
-                  <td className="hidden p-4 md:table-cell">{donoNome(c.dono_colaborador_id) ?? <span className="text-destructive">Sem dono</span>}</td>
-                  <td className="hidden p-4 lg:table-cell">{revalidacaoVencida(c, dias) ? <span className="font-medium text-warning">Vencida ({diasDesdeRevalidacao(c)}d)</span> : <span className="text-muted-foreground">{fmt(c.ultima_revalidacao)}</span>}</td>
-                  <td className="hidden p-4 md:table-cell">{entraBadge(c)}</td>
-                  <td className="p-4"><Badge variant={c.ativo ? "default" : "secondary"}>{c.ativo ? "Ativa" : "Desativada"}</Badge></td>
+                  <td className="px-4 py-2.5"><div className="flex items-center gap-2.5"><IdentityAvatar nome={c.nome} className="rounded-lg" /><div className="min-w-0"><div className="font-medium text-primary">{c.nome}</div><div className="truncate text-xs text-muted-foreground">{c.email || c.sam_account_name || "—"}</div></div></div></td>
+                  <td className="hidden px-4 py-2.5 md:table-cell">{donoNome(c.dono_colaborador_id) ?? <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">⚠ Sem dono</span>}</td>
+                  <td className="hidden px-4 py-2.5 lg:table-cell">{revalidacaoVencida(c, dias) ? <span className="font-medium text-warning">Vencida ({diasDesdeRevalidacao(c)}d)</span> : <span className="text-muted-foreground">{fmt(c.ultima_revalidacao)}</span>}</td>
+                  <td className="hidden px-4 py-2.5 md:table-cell">{entraBadge(c)}</td>
+                  <td className="px-4 py-2.5"><Badge variant={c.ativo ? "default" : "secondary"}>{c.ativo ? "Ativa" : "Desativada"}</Badge></td>
                 </tr>
               ))}
             </tbody>
@@ -175,7 +178,7 @@ export default function ContasServicoPage() {
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <div><dt className="text-xs text-muted-foreground">Login</dt><dd>{aberto.sam_account_name || "—"}</dd></div>
               <div><dt className="text-xs text-muted-foreground">E-mail</dt><dd className="break-all">{aberto.email || "—"}</dd></div>
-              <div><dt className="text-xs text-muted-foreground">Dono</dt><dd>{donoNome(aberto.dono_colaborador_id) ?? <span className="text-destructive">Sem dono</span>}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Dono</dt><dd>{donoNome(aberto.dono_colaborador_id) ?? <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">⚠ Sem dono</span>}</dd></div>
               <div><dt className="text-xs text-muted-foreground">Criticidade</dt><dd>{CRIT[aberto.criticidade] ?? aberto.criticidade}</dd></div>
               <div className="col-span-2"><dt className="text-xs text-muted-foreground">Finalidade</dt><dd>{aberto.finalidade || "—"}</dd></div>
               <div className="col-span-2"><dt className="text-xs text-muted-foreground">Sistemas que usa</dt><dd>{aberto.sistemas || "—"}</dd></div>

@@ -173,7 +173,7 @@ export default function AplicacoesPage() {
                   <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" aria-label="Excluir" onClick={(e) => { e.stopPropagation(); setDeleteId(app.id); }}><Trash2 className="h-3 w-3" /></Button>
                 </div>}
                 <div className="flex gap-4">
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center"><AppIcon url={app.url} origem={app.origem} size={44} /></div>
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center"><AppIcon nome={app.nome} url={app.url} origem={app.origem} size={44} /></div>
                   <div className="min-w-0 space-y-1.5">
                     <p className="truncate font-semibold">{app.nome}</p>
                     <span className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium ${modoCls}`}>{MODO_LABEL[app.modo_acesso] ?? "Sem tipo"}</span>
