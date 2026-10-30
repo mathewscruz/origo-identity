@@ -418,7 +418,7 @@ export default function AplicacaoDetalhePage() {
           <div className="flex items-start justify-between flex-wrap gap-4">
             <div className="space-y-3">
               <div className="flex items-center gap-3 flex-wrap">
-                <AppIcon url={app.url} origem={app.origem} size={32} />
+                <AppIcon nome={app.nome} url={app.url} origem={app.origem} size={32} />
                 <h1 className="text-2xl font-semibold">{app.nome}</h1>
                 <Badge variant="outline" className={criticidadeColors[app.criticidade]}>{humanize(app.criticidade)}</Badge>
                 {(app as any).origem === "azure" ? (
