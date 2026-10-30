@@ -1,3 +1,4 @@
+import { useColumnVisibility } from "@/components/ColumnToggle";
 import { useDeferredValue } from "react";
 import { IdentityAvatar } from "@/components/identity/IdentityCells";
 import { useMemo, useState, useEffect } from "react";
@@ -36,6 +37,9 @@ const fmt = (d: string | null) => (d ? new Date(d).toLocaleDateString("pt-BR", {
 const vazio = { nome: "", email: "", sam_account_name: "", finalidade: "", sistemas: "", criticidade: "media", dono_colaborador_id: "" };
 
 export default function ContasServicoPage() {
+  const cols = useColumnVisibility("contas", [
+    { key: "dono", label: "Dono", index: 2 }, { key: "reval", label: "Revalidação", index: 3 }, { key: "entra", label: "Entra", index: 4 },
+  ]);
   const { id } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -138,6 +142,7 @@ export default function ContasServicoPage() {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Buscar contas..." className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
         </div>
+        {cols.menu}
         <Select value={filtro} onValueChange={(v) => setFiltro(v as typeof filtro)}>
           <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -149,7 +154,7 @@ export default function ContasServicoPage() {
 
       <Card><CardContent className="p-0">
         {isLoading ? <div className="space-y-3 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div> : (
-          <div className="max-h-[70vh] overflow-auto"><table className="w-full text-sm">
+          <div className="max-h-[70vh] overflow-auto">{cols.styleTag}<table data-cols="contas" className="w-full text-sm">
             <thead className="sticky top-0 z-10 bg-card"><tr className="border-b text-left text-xs uppercase tracking-wider text-muted-foreground">
               <th className="px-4 py-2.5 font-medium">Conta</th><th className="hidden px-4 py-2.5 font-medium md:table-cell">Dono</th>
               <th className="hidden px-4 py-2.5 font-medium lg:table-cell">Revalidação</th><th className="hidden px-4 py-2.5 font-medium md:table-cell">Entra</th>

@@ -71,6 +71,17 @@ export function useParametro(chave: string, fallback = "") {
 
 // ─── Identidades ──────────────────────────────────────────────────────────────
 
+/** Lista enxuta: só os campos que a tabela de Colaboradores usa. */
+const COLAB_LISTA_COLS = "id, nome, email, cpf, matricula, sam_account_name, status, origem, entra_id, cargo_id, area_id, empresa_id, localidade_id, gestor_id, data_admissao, suspenso_preventivo, cargos(nome), areas(nome)";
+export function useColaboradoresLista() {
+  return useQuery({
+    queryKey: ["colaboradores", "lista"],
+    queryFn: () => fetchAll("colaboradores", COLAB_LISTA_COLS, "nome", true, Infinity, "id"),
+    ...REFETCH_OPTS,
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useColaboradores() {
   return useQuery({
     queryKey: ["colaboradores"],
