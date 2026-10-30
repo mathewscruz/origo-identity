@@ -285,7 +285,6 @@ export default function Dashboard() {
         <div className="space-y-1">
           <h1 className="text-[28px] font-semibold tracking-tight">{primeiroNome ? `Olá, ${primeiroNome}` : "Olá"}</h1>
           <p className="text-base text-muted-foreground">Governança de Identidades</p>
-          <div className="flex flex-wrap items-center gap-x-3 pt-1 text-xs text-muted-foreground"><SystemStrip m={m} loading={isLoading} /><span aria-hidden>·</span><AutoUpdatedHint tasks={["sync-entra-licencas", "sync-entra-groups"]} /></div>
         </div>
       </div>
 
