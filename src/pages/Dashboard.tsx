@@ -270,38 +270,44 @@ export default function Dashboard() {
   ];
 
   const strip = [
-    { label: "Pessoas ativas", value: k?.pessoas_ativas ?? pessoas, icon: Users, tone: "primary", to: "/colaboradores?status=ativo", hint: `${k?.admissoes ?? 0} admissões · ${k?.desligamentos ?? 0} saídas em ${period} d` },
-    { label: `Execuções em ${period} d`, value: ppl.total, prev: ppl.prevTotal, icon: Play, tone: "primary", to: "/auditoria", hint: `${ppl.entradas} entradas · ${ppl.saidas} saídas` },
-    { label: "Aguardando aprovação", value: k?.aguardando ?? m?.fila_waiting ?? 0, icon: Clock, tone: "warning", to: "/fila-provisionamento?tab=aprovacao", hint: waitingAge ? `mais antigo: ${waitingAge}` : "nada pendente" },
-    { label: "Falhas em 24 h", value: k?.falhas_24h ?? 0, prev: k?.falhas_prev, invert: true, icon: AlertCircle, tone: "destructive", to: "/fila-provisionamento?status=failed", hint: "vs 24 h anteriores" },
+    { label: "Pessoas ativas", value: k?.pessoas_ativas ?? pessoas, icon: Users, tone: "primary", to: "/colaboradores?status=ativo", hint: `${k?.admissoes ?? 0} admissões · ${k?.desligamentos ?? 0} saídas` },
+    { label: "Execuções", value: ppl.total, prev: ppl.prevTotal, icon: Play, tone: "primary", to: "/auditoria", hint: "vs. período anterior" },
+    { label: "Aguardando", value: k?.aguardando ?? m?.fila_waiting ?? 0, icon: Clock, tone: "warning", to: "/fila-provisionamento?tab=aprovacao", hint: waitingAge ? `mais antigo: ${waitingAge}` : "nada pendente" },
+    { label: "Falhas", value: k?.falhas_24h ?? 0, prev: k?.falhas_prev, invert: true, icon: AlertCircle, tone: "destructive", to: "/fila-provisionamento?status=failed", hint: "vs. 24 h anteriores" },
   ] as const;
-  const toneCls: Record<string, string> = { primary: "bg-primary/15 text-primary", warning: "bg-warning/15 text-warning", destructive: "bg-destructive/15 text-destructive" };
+  const toneCls: Record<string, string> = { primary: "bg-primary/15 text-primary ring-primary/20", warning: "bg-warning/15 text-warning ring-warning/20", destructive: "bg-destructive/15 text-destructive ring-destructive/20" };
+  const periodLabel = `Últimos ${period} dias`;
 
   return (
-    <div className="mx-auto max-w-[1700px] space-y-5">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Governança de Identidades</h1>
-        <p className="text-sm text-muted-foreground">Visibilidade. Controle. Conformidade.{m?.gerado_em ? <span className="text-xs"> · atualizado {relTime(m.gerado_em)}</span> : null} · <AutoUpdatedHint tasks={["sync-entra-licencas", "sync-entra-groups"]} /></p>
+    <div className="flex min-h-[calc(100vh-3.5rem-4rem)] flex-col gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-[28px] font-semibold tracking-tight">Governança de Identidades</h1>
+          <p className="text-base text-muted-foreground">Visibilidade. Controle. Conformidade.</p>
+          <div className="flex flex-wrap items-center gap-x-3 pt-1 text-xs text-muted-foreground"><SystemStrip m={m} loading={isLoading} /><AutoUpdatedHint tasks={["sync-entra-licencas", "sync-entra-groups"]} /></div>
+        </div>
+        <UserChip />
       </div>
 
       <QueryState loading={isLoading} error={metricsError || (!isLoading && !m ? new Error("Métricas indisponíveis") : null)} retry={retryMetrics}>
-      <div className="pt-1"><SystemStrip m={m} loading={isLoading} /></div>
-
-      {/* Faixa de indicadores */}
       <Card className="rounded-xl">
-        <div className="grid grid-cols-1 divide-y sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-4 lg:divide-x">
-          {strip.map((s) => {
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+          {strip.map((s, idx) => {
             const prev = "prev" in s ? s.prev : undefined;
             const delta = prev === undefined || prev === null ? null : prev === 0 ? (s.value > 0 ? 100 : 0) : Math.round(((s.value - prev) / prev) * 100);
             const good = delta === null ? true : ("invert" in s && s.invert) ? delta <= 0 : delta >= 0;
             return (
-              <Link key={s.label} to={s.to} className="flex items-center gap-4 p-5 transition-colors hover:bg-muted/40">
-                <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${toneCls[s.tone]}`}><s.icon className="h-6 w-6" /></span>
+              <Link key={s.label} to={s.to} className={`flex items-center gap-6 px-6 py-6 transition-colors hover:bg-muted/30 ${idx > 0 ? "xl:border-l" : ""}`}>
+                <span className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-full ring-1 ${toneCls[s.tone]}`}><s.icon className="h-9 w-9" /></span>
                 <div className="min-w-0">
-                  <p className="truncate text-sm text-muted-foreground">{s.label}</p>
-                  <p className="text-3xl font-semibold tabular-nums leading-tight">{Number(s.value).toLocaleString("pt-BR")}</p>
-                  <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-                    {delta !== null && <span className={`flex items-center gap-0.5 font-medium ${good ? "text-success" : "text-destructive"}`}>{delta >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}{delta > 0 ? "+" : ""}{delta}%</span>}
+                  <p className="truncate text-base text-foreground/85">{s.label}</p>
+                  <p className="text-4xl font-medium tabular-nums leading-tight">{Number(s.value).toLocaleString("pt-BR")}</p>
+                  <p className="mt-1 flex items-center gap-2 truncate text-sm text-muted-foreground">
+                    {delta !== null && (
+                      <span className={`flex items-center gap-1 font-medium ${delta === 0 ? "text-foreground/80" : good ? "text-success" : "text-destructive"}`}>
+                        {delta === 0 ? <Minus className="h-4 w-4" /> : <span className="text-xs">{delta > 0 ? "▲" : "▼"}</span>}{delta > 0 ? "+" : ""}{delta}%
+                      </span>
+                    )}
                     <span className="truncate">{s.hint}</span>
                   </p>
                 </div>
@@ -312,66 +318,100 @@ export default function Dashboard() {
       </Card>
       </QueryState>
 
-      {/* Gráfico principal */}
       <QueryState loading={people.isLoading} error={people.error} retry={people.refetch}>
       <Card className="rounded-xl">
-        <CardHeader className="pb-2">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <CardTitle className="text-lg">Entradas e saídas por dia</CardTitle>
-              <p className="text-xs text-muted-foreground">Cada pessoa conta uma vez por dia</p>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="flex gap-3 text-xs">
-                {[{ k: "entradas", l: "Entradas", c: CH.in }, { k: "saidas", l: "Saídas", c: CH.out }].map((x) => (
-                  <button key={x.k} type="button" onClick={() => toggle(x.k)} className={`flex items-center gap-1.5 ${hidden.has(x.k) ? "opacity-40" : ""}`}><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: x.c }} />{x.l}</button>
-                ))}
-              </div>
-              <div className="flex rounded-md border p-0.5">{([7, 30, 90] as Period[]).map((d) => <Button key={d} size="sm" variant={period === d ? "secondary" : "ghost"} className="h-7 px-2.5 text-xs" onClick={() => setPeriod(d)}>{d} dias</Button>)}</div>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="h-[280px] pt-2">
+        <div className="flex items-center justify-between gap-3 px-6 pt-5">
+          <h3 className="text-xl font-medium">Entradas e saídas por dia</h3>
+          <DropdownMenu>
+            <DropdownMenuTrigger className="flex items-center gap-2 text-sm text-foreground/85 hover:text-foreground">{periodLabel}<ChevronDown className="h-4 w-4" /></DropdownMenuTrigger>
+            <DropdownMenuContent align="end">{([7, 30, 90] as Period[]).map((d) => <DropdownMenuItem key={d} onClick={() => setPeriod(d)}>{d} dias</DropdownMenuItem>)}</DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        <div className="flex justify-end gap-6 px-6 pt-3 text-sm">
+          {[{ k: "entradas", l: "Entradas", c: CH.in }, { k: "saidas", l: "Saídas", c: CH.out }].map((x) => (
+            <button key={x.k} type="button" onClick={() => toggle(x.k)} className={`flex items-center gap-2 ${hidden.has(x.k) ? "opacity-40" : ""}`}><span className="h-3 w-3 rounded-full" style={{ backgroundColor: x.c }} />{x.l}</button>
+          ))}
+        </div>
+        <div className="h-[240px] px-3 pb-4 pt-2">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={pplChart} margin={{ left: -16, right: 8, top: 8 }}>
+            <AreaChart data={pplChart} margin={{ left: -8, right: 12, top: 8 }}>
               <defs>
-                <linearGradient id="g-in" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={CH.in} stopOpacity={0.35} /><stop offset="100%" stopColor={CH.in} stopOpacity={0} /></linearGradient>
-                <linearGradient id="g-out" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={CH.out} stopOpacity={0.25} /><stop offset="100%" stopColor={CH.out} stopOpacity={0} /></linearGradient>
+                <linearGradient id="g-in" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={CH.in} stopOpacity={0.45} /><stop offset="100%" stopColor={CH.in} stopOpacity={0.02} /></linearGradient>
+                <linearGradient id="g-out" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={CH.out} stopOpacity={0.3} /><stop offset="100%" stopColor={CH.out} stopOpacity={0.02} /></linearGradient>
               </defs>
-              <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
-              <XAxis dataKey="label" interval={tick} tick={{ fill: CH.axis, fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: CH.axis, fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <CartesianGrid stroke="hsl(var(--border))" />
+              <XAxis dataKey="label" interval={tick} tick={{ fill: CH.axis, fontSize: 13 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: CH.axis, fontSize: 13 }} axisLine={false} tickLine={false} allowDecimals={false} />
               <Tooltip content={<ChartTooltip />} />
-              <Area type="monotone" dataKey="entradas" name="Entradas" stroke={CH.in} strokeWidth={2} fill="url(#g-in)" hide={hidden.has("entradas")} />
-              <Area type="monotone" dataKey="saidas" name="Saídas" stroke={CH.out} strokeWidth={2} fill="url(#g-out)" hide={hidden.has("saidas")} />
+              <Area type="natural" dataKey="entradas" name="Entradas" stroke={CH.in} strokeWidth={2.5} fill="url(#g-in)" hide={hidden.has("entradas")} />
+              <Area type="natural" dataKey="saidas" name="Saídas" stroke={CH.out} strokeWidth={2.5} fill="url(#g-out)" hide={hidden.has("saidas")} />
             </AreaChart>
           </ResponsiveContainer>
-        </CardContent>
+        </div>
       </Card>
       </QueryState>
 
-      {/* Base: 4 cartões */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
-        <BarsPanel title="Categoria de Usuários" unit="usuários" rows={[
-          { label: "Ativos", value: m?.colab_ativos ?? 0, color: C.primary, to: "/colaboradores?status=ativo" },
-          { label: "Férias", value: m?.colab_ferias ?? 0, color: C.info, to: "/colaboradores?status=ferias" },
-          { label: "Afastados", value: m?.colab_afastados ?? 0, color: C.warning, to: "/colaboradores?status=afastado" },
-          { label: "Terceiros ativos", value: tercAtivos, color: C.violet, to: "/terceiros" },
-          { label: "Contas de serviço", value: contasServico, color: C.muted, to: "/contas-servico" },
+      <div className="grid flex-1 grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-4">
+        <BarsPanel title="Categoria de Usuários" rows={[
+          { label: "Ativos", value: m?.colab_ativos ?? 0, to: "/colaboradores?status=ativo" },
+          { label: "Férias", value: m?.colab_ferias ?? 0, to: "/colaboradores?status=ferias" },
+          { label: "Afastados", value: m?.colab_afastados ?? 0, to: "/colaboradores?status=afastado" },
+          { label: "Terceiros ativos", value: tercAtivos, to: "/terceiros" },
+          { label: "Contas de serviço", value: contasServico, to: "/contas-servico" },
         ]} />
-        <LicensesPanel rows={k?.licencas ?? []} />
+        <LicensesPanel rows={(k?.licencas ?? []).slice(0, 5)} />
         <GovernanceList m={m} loading={isLoading || !!metricsError} />
-        <Card className="h-full rounded-xl">
-          <CardHeader className="pb-2"><CardTitle className="text-base">Atividade recente</CardTitle></CardHeader>
-          <CardContent className="p-0">
-            <ActivityFeed limit={6} />
-            <Link to="/auditoria" className="block px-4 py-3 text-xs font-medium text-primary hover:underline">Ver toda a atividade →</Link>
-          </CardContent>
-        </Card>
+        <RecentCard />
       </div>
     </div>
   );
 }
 
-const CH = { in: "hsl(var(--primary))", out: "hsl(var(--destructive))", axis: "hsl(var(--muted-foreground))" };
+const ROLE_NAME: Record<string, string> = { platform_admin: "Super Admin", admin: "Super Admin", operador: "Suporte", viewer: "Leitor" };
+function UserChip() {
+  const { profile, role } = useAuth();
+  const avatar = useAvatarUrl(profile?.avatar_url);
+  const initials = profile?.nome ? profile.nome.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase() : "??";
+  return (
+    <div className="flex items-center gap-3">
+      <span className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-muted text-base font-semibold">{avatar ? <img src={avatar} alt="" className="h-full w-full object-cover" /> : initials}</span>
+      <div className="leading-tight"><p className="text-sm font-medium">{profile?.nome || "Usuário"}</p><p className="text-xs text-muted-foreground">{ROLE_NAME[role ?? ""] ?? "—"}</p></div>
+    </div>
+  );
+}
+
+function RecentCard() {
+  const { data, isLoading } = useActivityFeed(12, "");
+  const items = (data ?? []).filter((i) => !isActivityNoise(i)).slice(0, 5);
+  return (
+    <Card className="flex h-full flex-col rounded-xl">
+      <CardTitleRow icon={Activity} title="Atividade recente" />
+      <CardContent className="flex flex-1 flex-col px-5 pb-4 pt-0">
+        {isLoading ? <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-11 w-full" />)}</div>
+          : items.length === 0 ? <EmptyState message="Nenhuma atividade registrada ainda." />
+          : (
+          <ul className="flex-1 divide-y divide-border/60">
+            {items.map((it) => {
+              const { icon: Icon } = acaoIcon(it);
+              const sentence = activitySentence(it) || it.acao;
+              const title = it.pessoa || sentence;
+              const desc = it.pessoa ? sentence : (it.detalhe ?? "");
+              const row = (
+                <div className="flex items-start gap-3 py-2.5">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-primary"><Icon className="h-4 w-4" /></span>
+                  <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{title}</p><p className="truncate text-xs text-muted-foreground">{desc}</p></div>
+                  <span className="shrink-0 text-xs text-muted-foreground">{tempoRelativo(it.ts)}</span>
+                </div>
+              );
+              return <li key={`${it.fonte}-${it.id}`}>{it.link ? <Link to={it.link} className="block hover:opacity-90">{row}</Link> : row}</li>;
+            })}
+          </ul>
+        )}
+        <Link to="/auditoria" className="mt-2 flex items-center gap-1 text-sm font-medium text-primary hover:underline">Ver toda a atividade<ChevronRight className="h-4 w-4" /></Link>
+      </CardContent>
+    </Card>
+  );
+}
+
+const CH = { in: "hsl(var(--primary))", out: "hsl(var(--chart-out))", axis: "hsl(var(--muted-foreground))" };
 
