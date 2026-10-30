@@ -2627,6 +2627,13 @@ export type Database = {
       }
     }
     Functions: {
+      activity_name_references: {
+        Args: { p_names: string[] }
+        Returns: {
+          corrupted_name: string
+          reference_name: string
+        }[]
+      }
       admin_exec_ddl: {
         Args: { p_description?: string; p_sql: string }
         Returns: string

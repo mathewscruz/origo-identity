@@ -8,6 +8,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { requireRoleOrService } from "../_shared/auth.ts";
 import { getGraphToken, graphHeaders, GRAPH } from "../_shared/graph.ts";
 import { processCsvColab } from "../_shared/csvColabSync.ts";
+import { decodeRhCsv } from "../_shared/csvEncoding.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -98,7 +99,7 @@ Deno.serve(async (req) => {
       }), { status: 200, headers: corsHeaders });
     }
 
-    const csvText = new TextDecoder("utf-8").decode(bytes);
+    const csvText = decodeRhCsv(bytes);
 
     const result = await processCsvColab(sb, csvText, {
       source: "sharepoint", filename: latest.name, operador: auth.email, dryRun,

@@ -16,8 +16,11 @@ describe("filtros das pendências de governança", () => {
     expect(tercFiltros.revalidar({ ativo: true, ultima_revalidacao: "2026-09-15" }, H, 45)).toBe(false);
   });
   it("exceção vencendo = aprovada com validade em até 15 dias", () => {
+    expect(excecaoVencendo({ status: "aprovada", validade: "2026-11-07" }, H)).toBe(true);
     expect(excecaoVencendo({ status: "aprovada", validade: "2026-11-14" }, H)).toBe(true);
     expect(excecaoVencendo({ status: "aprovada", validade: "2026-11-15" }, H)).toBe(false);
+    expect(excecaoVencendo({ status: "aprovada", validade: "2026-10-29" }, H)).toBe(false);
+    expect(excecaoVencendo({ status: "pendente", validade: "2026-11-07" }, H)).toBe(false);
   });
   it("revisão atrasada = em andamento com prazo passado", () => {
     expect(revisaoAtrasada({ status: "em_andamento", data_fim: "2026-10-29" }, H)).toBe(true);

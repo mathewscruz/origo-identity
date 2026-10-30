@@ -18,6 +18,7 @@ import { humanize } from "@/lib/labels";
 import { tempoRelativo } from "@/lib/alertLabels";
 import { cn } from "@/lib/utils";
 import { activitySentence, isActivityNoise, isHermesActor } from "@/lib/activityLabels";
+import { resolveActivityNames } from "@/lib/activityNames";
 
 export interface ActivityItem {
   fonte: "fila" | "jml" | "auditoria";
@@ -47,7 +48,13 @@ export function useActivityFeed(limit: number, categoria: string, colaboradorId?
     queryFn: async () => {
       const { data, error } = await supabase.rpc("dashboard_activity", { p_limit: limit, p_categoria: categoria || null, p_colaborador_id: colaboradorId ?? null, p_terceiro_id: terceiroId ?? null });
       if (error) throw error;
-      return (data ?? []) as unknown as ActivityItem[];
+      const items = (data ?? []) as unknown as ActivityItem[];
+      const names = [...new Set(items.flatMap(item => item.pessoa?.includes("\uFFFD") ? [item.pessoa] : []))];
+      if (names.length === 0) return items;
+      const { data: references, error: referenceError } = await supabase.rpc("activity_name_references", { p_names: names });
+      // A reference failure must not hide the original activity or guess a person's name.
+      if (referenceError) return items;
+      return resolveActivityNames(items, references ?? []);
     },
     staleTime: 15_000,
   });
