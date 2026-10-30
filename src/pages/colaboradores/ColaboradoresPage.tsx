@@ -1,3 +1,4 @@
+import { useColumnVisibility } from "@/components/ColumnToggle";
 import ConfirmImpactDialog, { useLeaverImpacts } from "@/components/ConfirmImpactDialog";
 import { useDeferredValue } from "react";
 import { Power } from "lucide-react";
@@ -16,7 +17,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Link } from "react-router-dom";
 import ColaboradorActivityPopover from "@/components/ColaboradorActivityPopover";
-import { useColaboradores, useEmpresas, useAreas, useCargos, useLocalidades, useEntraGrupos, useEntraLicencas, useAplicacoes, useParametro } from "@/hooks/useOrigoData";
+import { useColaboradoresLista, useEmpresas, useAreas, useCargos, useLocalidades, useEntraGrupos, useEntraLicencas, useAplicacoes, useParametro } from "@/hooks/useOrigoData";
 import { Skeleton } from "@/components/ui/skeleton";
 import TablePagination, { usePagination } from "@/components/TablePagination";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -91,7 +92,11 @@ export default function ColaboradoresPage() {
   const leaverImpacts = useLeaverImpacts(deleteId ?? undefined);
   const [syncing, setSyncing] = useState(false);
 
-  const { data: colaboradores, isLoading } = useColaboradores();
+  const { data: colaboradores, isLoading } = useColaboradoresLista();
+  const cols = useColumnVisibility("colaboradores", [
+    { key: "cpf", label: "CPF", index: 3 }, { key: "cargo", label: "Cargo", index: 4 },
+    { key: "area", label: "Área", index: 5 }, { key: "origem", label: "Origem", index: 6 },
+  ]);
   const gestores = colaboradores;
   const buscaDeferida = useDeferredValue(busca);
   const emailDominio = useParametro("csv_email_dominio", "origoenergia.com.br");
@@ -378,7 +383,7 @@ export default function ColaboradoresPage() {
             <div className="p-4 space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
           ) : (
             <div className="max-h-[70vh] overflow-auto">
-              <table className="w-full text-sm">
+              {cols.styleTag}<table data-cols="colaboradores" className="w-full text-sm">
                 <thead className="sticky top-0 z-10 bg-card">
                   <tr className="border-b text-left text-muted-foreground text-xs uppercase tracking-wider">
                     <th className="px-4 py-2.5"><SortableHeader label="Nome" field="nome" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
