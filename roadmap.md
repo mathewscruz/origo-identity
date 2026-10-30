@@ -14,3 +14,9 @@
 - [x] Atividade recente em linguagem de negócio
 - [x] Dashboard moderno
 - [ ] Executor Hermes atualizado no servidor (bloqueado: depende de vocês levarem a versão ao servidor)
+
+## Visual "Lista com painel" (opção C)
+- [x] Faixa de números + painel lateral em Colaboradores
+- [ ] Mesmo padrão em Terceiros e Contas de serviço
+- [ ] Fila, Licenças, Aplicações
+- [ ] Privilegiados, SoD, Exceções, Revisões, Auditoria

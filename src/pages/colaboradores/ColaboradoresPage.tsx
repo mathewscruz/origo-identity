@@ -25,6 +25,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { handleStatusChange } from "@/lib/colaboradorLifecycle";
 import { generateEntraQueueForDiff } from "@/lib/entraQueueHelper";
 import PageHeader from "@/components/PageHeader";
+import MetricStrip from "@/components/MetricStrip";
+import ColaboradorPanel from "./ColaboradorPanel";
 import { COLAB_STATUS_META } from "@/lib/queueLabels";
 import EmptyState from "@/components/EmptyState";
 import SortableHeader, { SortDirection, useSortableData } from "@/components/SortableHeader";
@@ -168,6 +170,10 @@ export default function ColaboradoresPage() {
     entra_id: c.entra_id || null,
     suspenso_preventivo: c.suspenso_preventivo,
   }));
+
+  const selId = searchParams.get("sel");
+  const selected = selId ? mapped.find((c) => c.id === selId) : undefined;
+  const selectRow = (id: string | null) => { const n = new URLSearchParams(searchParams); if (id) n.set("sel", id); else n.delete("sel"); setSearchParams(n, { replace: true }); };
 
   const filtered = mapped.filter((c) => {
     if (searchParams.get("suspenso_preventivo") === "true" && !isPreventivelySuspended(c)) return false;
@@ -317,6 +323,18 @@ export default function ColaboradoresPage() {
         </div>}
       />
 
+      {(() => {
+        const ativos = mapped.filter((c) => c.status === "ativo");
+        const setPend = (k: string | null, st = "todos") => { const n = new URLSearchParams(searchParams); n.delete("pendencia"); if (k) n.set("pendencia", k); if (st === "todos") n.delete("status"); else n.set("status", st); setStatusFilter(st); setSearchParams(n, { replace: true }); setPage(1); };
+        const pend = searchParams.get("pendencia");
+        return <MetricStrip items={[
+          { label: "Ativos", value: ativos.length, tone: "primary", active: statusFilter === "ativo" && !pend, onClick: () => setPend(null, "ativo") },
+          { label: "Desligados", value: mapped.filter((c) => c.status === "desligado").length, active: statusFilter === "desligado", onClick: () => setPend(null, "desligado") },
+          { label: "Sem conta Entra", value: ativos.filter(colabFiltros.sem_entra).length, tone: "warning", active: pend === "sem_entra", onClick: () => setPend("sem_entra") },
+          { label: "Sem cargo", value: ativos.filter(colabFiltros.sem_cargo).length, tone: "danger", active: pend === "sem_cargo", onClick: () => setPend("sem_cargo") },
+        ]} />;
+      })()}
+
       <div className="flex flex-wrap gap-2">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -347,6 +365,8 @@ export default function ColaboradoresPage() {
         </Select>
       </div>
 
+      <div className="flex items-start gap-4">
+      <div className="min-w-0 flex-1 space-y-4">
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
@@ -357,20 +377,20 @@ export default function ColaboradoresPage() {
                 <thead>
                   <tr className="border-b text-left text-muted-foreground text-xs uppercase tracking-wider">
                     <th className="p-4"><SortableHeader label="Nome" field="nome" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
-                    <th className="p-4 hidden md:table-cell"><SortableHeader label="Email" field="email" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
-                    <th className="p-4 font-medium hidden lg:table-cell">CPF</th>
+                    <th className={`p-4 hidden ${selected ? "" : "md:table-cell"}`}><SortableHeader label="Email" field="email" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
+                    <th className={`p-4 font-medium hidden ${selected ? "" : "lg:table-cell"}`}>CPF</th>
                     <th className="p-4"><SortableHeader label="Cargo" field="cargo" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
                     <th className="p-4 hidden lg:table-cell"><SortableHeader label="Área" field="area" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
-                    <th className="p-4 font-medium hidden lg:table-cell">Origem</th>
+                    <th className={`p-4 font-medium hidden ${selected ? "" : "lg:table-cell"}`}>Origem</th>
                     <th className="p-4"><SortableHeader label="Status" field="status" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
                     <th className="p-4 font-medium">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
                   {paginatedItems.map((c) => (
-                    <tr key={c.id} className="border-b last:border-0 hover:bg-muted/50 cursor-pointer" onClick={(e) => {
+                    <tr key={c.id} className={`border-b last:border-0 cursor-pointer ${selId === c.id ? "bg-primary/10" : "hover:bg-muted/50"}`} onClick={(e) => {
                       const tag = (e.target as HTMLElement).closest("button, a, [role='menuitem']");
-                      if (!tag) navigate(`/colaboradores/${c.id}`);
+                      if (!tag) selectRow(c.id);
                     }}>
                       <td className="p-4">
                         <div className="flex items-center gap-1">
@@ -389,12 +409,13 @@ export default function ColaboradoresPage() {
                           )}
                           <ColaboradorActivityPopover colaboradorId={c.id} colaboradorNome={c.nome} />
                         </div>
+                        {selected && <p className="truncate text-xs text-muted-foreground">{c.email}</p>}
                       </td>
-                      <td className="p-4 text-muted-foreground hidden md:table-cell">{c.email}</td>
-                      <td className="p-4 text-muted-foreground font-mono text-xs hidden lg:table-cell">{c.cpf}</td>
+                      <td className={`p-4 text-muted-foreground hidden ${selected ? "" : "md:table-cell"}`}>{c.email}</td>
+                      <td className={`p-4 text-muted-foreground font-mono text-xs hidden ${selected ? "" : "lg:table-cell"}`}>{c.cpf}</td>
                       <td className="p-4 text-muted-foreground">{c.cargo}</td>
                       <td className="p-4 text-muted-foreground hidden lg:table-cell">{c.area}</td>
-                      <td className="p-4 hidden lg:table-cell">
+                      <td className={`p-4 hidden ${selected ? "" : "lg:table-cell"}`}>
                         <Badge variant="outline" className={
                           c.origem === "csv" ? "bg-primary/10 text-primary border-primary/30" :
                           c.origem === "entra_id" ? "bg-info/10 text-info border-info/30" :
@@ -453,6 +474,12 @@ export default function ColaboradoresPage() {
         </CardContent>
       </Card>
       <TablePagination totalItems={filtered.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
+      </div>
+      {selected && <ColaboradorPanel c={selected} statusLabel={statusConfig[selected.status]?.label || humanize(selected.status)} statusClass={statusConfig[selected.status]?.class || ""}
+        localidade={(localidades as any[] | undefined)?.find((l) => l.id === selected.localidade_id)?.nome}
+        gestor={(gestores as any[] | undefined)?.find((g) => g.id === selected.gestor_id)?.nome}
+        onClose={() => selectRow(null)} />}
+      </div>
 
       {/* Dialog Novo/Editar */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
