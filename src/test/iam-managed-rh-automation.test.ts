@@ -44,7 +44,7 @@ describe("gestão automática da base RH pelo IAM", () => {
 
   it("remove o card legado Ciclo RH e mantém os gráficos do dashboard em altura fixa", () => {
     expect(dashboardPage).not.toContain('label: "Ciclo RH"');
-    expect(dashboardPage).toContain('className="h-[280px] pt-2"');
+    expect(dashboardPage).toContain('className="h-[240px] px-3 pb-4 pt-2"');
     expect(peopleChart).toContain('className="h-full min-h-[390px] flex flex-col"');
   });
 });

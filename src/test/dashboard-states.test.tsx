@@ -48,7 +48,7 @@ describe('Dashboard read failures', () => {
     expect(screen.queryByText('Pessoas ativas')).toBeNull();
     expect(screen.queryByText('Nenhuma pendência — tudo em dia.')).toBeNull();
     expect(screen.queryByText(/Hermes online/)).toBeNull();
-    expect(screen.getByText('Independent activity feed')).toBeTruthy();
+    expect(screen.getByText('Atividade recente')).toBeTruthy();
   });
 
   it('keeps loading distinct from error and confirmed zero', async () => {
@@ -66,6 +66,6 @@ describe('Dashboard read failures', () => {
     expect(await screen.findByText('17')).toBeTruthy();
     expect(screen.getByText('Pessoas ativas').closest('a')?.getAttribute('href')).toBe('/colaboradores?status=ativo');
     expect(screen.getByLabelText('Categoria de Usuários: total').textContent).toBe('16');
-    expect(screen.getByText('Aguardando aprovação')).toBeTruthy();
+    expect(screen.getByText('Aguardando')).toBeTruthy();
   });
 });
