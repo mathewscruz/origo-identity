@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useIsSuperAdmin } from "@/hooks/useRole";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,6 +19,8 @@ import { logAuditoria } from "@/lib/auditLogger";
 import AppIcon from "@/components/AppIcon";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
+import MetricStrip from "@/components/MetricStrip";
+import ConfirmImpactDialog from "@/components/ConfirmImpactDialog";
 import { MODOS_ACESSO, situacaoSistema } from "@/lib/appConnect";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -31,6 +33,21 @@ const SITUACAO: Record<string, { label: string; cls: string }> = {
   aguardando: { label: "Aguardando teste", cls: "bg-info/15 text-info border-info/30" },
   rascunho: { label: "Rascunho", cls: "bg-muted text-muted-foreground" },
 };
+const DOT: Record<string, string> = { conectado: "bg-success", demo: "bg-warning", falhou: "bg-destructive", aguardando: "bg-info", rascunho: "bg-muted-foreground/50" };
+const MODO_CLS: Record<string, string> = { grupo: "bg-success/15 text-success", api: "bg-info/15 text-info", manual: "bg-warning/15 text-warning", sso: "bg-primary/15 text-primary" };
+
+function Pessoa({ label, nome }: { label: string; nome: string | null }) {
+  const ini = nome ? nome.split(/\s+/).filter(Boolean).map((p) => p[0]).slice(0, 2).join("").toUpperCase() : "?";
+  return (
+    <div className="min-w-0">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <div className="mt-1 flex items-center gap-2">
+        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${nome ? "bg-primary/10 text-primary" : "bg-warning/15 text-warning"}`}>{ini}</span>
+        <span className={`truncate text-sm ${nome ? "" : "text-warning"}`}>{nome ?? `Sem ${label.toLowerCase()}`}</span>
+      </div>
+    </div>
+  );
+}
 const MODO_LABEL: Record<string, string> = { ...Object.fromEntries(MODOS_ACESSO.map((m) => [m.value, m.label.replace("Por ", "")])), sso: "SSO" };
 
 export default function AplicacoesPage() {
@@ -45,6 +62,7 @@ export default function AplicacoesPage() {
   const [pageSize, setPageSize] = useState(25);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [filtro, setFiltro] = useState("todas");
+  const [modo, setModo] = useState("todos");
 
   const { data: colabs } = useQuery({
     queryKey: ["aplicacoes_responsaveis", (apps ?? []).map((a: Row) => a.revisor_colaborador_id).join(",")],
@@ -59,6 +77,7 @@ export default function AplicacoesPage() {
 
   const allApps = (apps ?? []) as Row[];
   const list = allApps.filter((a) => {
+    if (modo !== "todos" && a.modo_acesso !== modo) return false;
     if (busca && !a.nome.toLowerCase().includes(busca.toLowerCase())) return false;
     const s = situacaoSistema(a);
     if (filtro === "incompletos" && (s === "conectado" || s === "demo" || s === "aguardando")) return false;
@@ -68,6 +87,7 @@ export default function AplicacoesPage() {
     return true;
   });
   const { paginatedItems, safePage } = usePagination(list, page, pageSize);
+  useEffect(() => { setPageSize(12); }, []);
 
   const conectados = allApps.filter((a) => situacaoSistema(a) === "conectado").length;
   const emDemo = allApps.filter((a) => situacaoSistema(a) === "demo").length;
@@ -98,32 +118,30 @@ export default function AplicacoesPage() {
         </div>}
       />
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-        {[
-          { icon: Globe, n: allApps.length, l: "Total", c: "primary", f: "todas" },
-          { icon: CheckCircle2, n: conectados, l: "Conectados", c: "success", f: "conectado" },
-          { icon: Globe, n: emDemo, l: "Conectados (demo)", c: "warning", f: "demo" },
-          { icon: AlertTriangle, n: falhas, l: "Com falha", c: "destructive", f: "falhou" },
-          { icon: FileEdit, n: rascunhos, l: "Incompletos", c: "warning", f: "incompletos" },
-        ].map((k) => (
-          <Card key={k.l} className="cursor-pointer hover:bg-muted/40" onClick={() => { setFiltro(k.f); setPage(1); }}>
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className={`flex h-10 w-10 items-center justify-center rounded-lg bg-${k.c}/10`}><k.icon className={`h-5 w-5 text-${k.c}`} /></div>
-              <div><p className="text-2xl font-bold">{k.n}</p><p className="text-xs text-muted-foreground">{k.l}</p></div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <MetricStrip items={[
+        { label: "Total", n: allApps.length, f: "todas", tone: "primary" as const },
+        { label: "Conectados", n: conectados, f: "conectado" },
+        { label: "Demonstração", n: emDemo, f: "demo", tone: "warning" as const },
+        { label: "Com falha", n: falhas, f: "falhou", tone: "danger" as const },
+        { label: "Incompletos", n: rascunhos, f: "incompletos", tone: "warning" as const },
+      ].map((k) => ({ label: k.label, value: k.n, tone: k.tone, active: filtro === k.f, onClick: () => { setFiltro(filtro === k.f ? "todas" : k.f); setPage(1); } }))} />
 
       <div className="flex flex-wrap gap-2">
         <div className="relative max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Buscar sistemas..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
         </div>
+        <Select value={modo} onValueChange={(v) => { setModo(v); setPage(1); }}>
+          <SelectTrigger className="w-[170px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos os tipos</SelectItem>
+            {Object.entries(MODO_LABEL).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+          </SelectContent>
+        </Select>
         <Select value={filtro} onValueChange={(v) => { setFiltro(v); setPage(1); }}>
           <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="todas">Todos</SelectItem>
+            <SelectItem value="todas">Todas as situações</SelectItem>
             <SelectItem value="conectado">Conectados</SelectItem>
             <SelectItem value="demo">Conectados (demo)</SelectItem>
             <SelectItem value="falhou">Com falha</SelectItem>
@@ -132,53 +150,61 @@ export default function AplicacoesPage() {
         </Select>
       </div>
 
-      <Card><CardContent className="p-0">
-        {isLoading ? (
-          <div className="space-y-3 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
-        ) : paginatedItems.length === 0 ? (
-          <div className="p-12 text-center">
-            <EmptyState message="Nenhum sistema encontrado" size="lg" />
-            <p className="mt-1 text-sm text-muted-foreground">Cadastre os sistemas da empresa pelo botão "Conectar sistema"</p>
-            {canEdit && <Button className="mt-4" onClick={() => navigate("/aplicacoes/conectar")}><Plus className="mr-1 h-4 w-4" />Conectar sistema</Button>}
-          </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead><tr className="border-b text-left text-muted-foreground">
-              <th className="p-4 font-medium">Sistema</th>
-              <th className="hidden p-4 font-medium md:table-cell">Acesso</th>
-              <th className="hidden p-4 font-medium md:table-cell">Dono</th>
-              <th className="hidden p-4 font-medium lg:table-cell">Revisor</th>
-              <th className="p-4 font-medium">Situação</th>
-              {canEdit && <th className="w-20 p-4 font-medium">Ações</th>}
-            </tr></thead>
-            <tbody>
-              {paginatedItems.map((app: Row) => {
-                const s = SITUACAO[situacaoSistema(app)];
-                return (
-                  <tr key={app.id} className="cursor-pointer border-b last:border-0 hover:bg-muted/50" onClick={() => navigate(`/aplicacoes/${app.id}`)}>
-                    <td className="p-4 font-medium text-primary"><div className="flex items-center gap-2"><AppIcon url={app.url} origem={app.origem} size={20} />{app.nome}</div></td>
-                    <td className="hidden p-4 md:table-cell"><Badge variant="outline">{MODO_LABEL[app.modo_acesso] ?? "—"}</Badge></td>
-                    <td className="hidden p-4 text-muted-foreground md:table-cell">{nome(app.owner_colaborador_id) ?? app.owner ?? <span className="text-warning">Sem dono</span>}</td>
-                    <td className="hidden p-4 text-muted-foreground lg:table-cell">{nome(app.revisor_colaborador_id) ?? <span className="text-warning">Sem revisor</span>}</td>
-                    <td className="p-4"><Badge variant="outline" className={s.cls} title={situacaoSistema(app) === "demo" ? "Apresentação visual; conector e provisionamento IAM não homologados." : app.teste_detalhe ?? undefined}>{s.label}</Badge></td>
-                    {canEdit && <td className="p-4"><div className="flex gap-1">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Editar ficha" onClick={(e) => { e.stopPropagation(); navigate(`/aplicacoes/${app.id}/conectar`); }}><Pencil className="h-3 w-3" /></Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" aria-label="Excluir" onClick={(e) => { e.stopPropagation(); setDeleteId(app.id); }}><Trash2 className="h-3 w-3" /></Button>
-                    </div></td>}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </CardContent></Card>
+      {isLoading ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-44 w-full rounded-xl" />)}</div>
+      ) : paginatedItems.length === 0 ? (
+        <Card><CardContent className="p-12 text-center">
+          <EmptyState message="Nenhum sistema encontrado" size="lg" />
+          <p className="mt-1 text-sm text-muted-foreground">Cadastre os sistemas da empresa pelo botão "Conectar sistema"</p>
+          {canEdit && <Button className="mt-4" onClick={() => navigate("/aplicacoes/conectar")}><Plus className="mr-1 h-4 w-4" />Conectar sistema</Button>}
+        </CardContent></Card>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {paginatedItems.map((app: Row) => {
+            const sit = situacaoSistema(app);
+            const s = SITUACAO[sit];
+            const modoCls = MODO_CLS[app.modo_acesso] ?? "bg-muted text-muted-foreground";
+            const dono = nome(app.owner_colaborador_id) ?? app.owner ?? null;
+            const rev = nome(app.revisor_colaborador_id);
+            return (
+              <div key={app.id} role="button" tabIndex={0} onClick={() => navigate(`/aplicacoes/${app.id}`)} onKeyDown={(e) => e.key === "Enter" && navigate(`/aplicacoes/${app.id}`)}
+                className="group relative cursor-pointer rounded-xl border bg-card p-5 transition-colors hover:border-primary/40 hover:bg-primary/[0.03]">
+                {canEdit && <div className="absolute right-2 top-2 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                  <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Editar ficha" onClick={(e) => { e.stopPropagation(); navigate(`/aplicacoes/${app.id}/conectar`); }}><Pencil className="h-3 w-3" /></Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" aria-label="Excluir" onClick={(e) => { e.stopPropagation(); setDeleteId(app.id); }}><Trash2 className="h-3 w-3" /></Button>
+                </div>}
+                <div className="flex gap-4">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center"><AppIcon url={app.url} origem={app.origem} size={44} /></div>
+                  <div className="min-w-0 space-y-1.5">
+                    <p className="truncate font-semibold">{app.nome}</p>
+                    <span className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium ${modoCls}`}>{MODO_LABEL[app.modo_acesso] ?? "Sem tipo"}</span>
+                    <p className="flex items-center gap-1.5 text-sm" title={sit === "demo" ? "Apresentação visual; conector não homologado." : app.teste_detalhe ?? undefined}>
+                      <span className={`h-2.5 w-2.5 rounded-full ${DOT[sit] ?? "bg-muted-foreground"}`} />{s.label}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <Pessoa label="Dono" nome={dono} />
+                  <Pessoa label="Revisor" nome={rev} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-sm text-muted-foreground">{list.length} {list.length === 1 ? "aplicação" : "aplicações"}</span>
       <TablePagination totalItems={list.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
+      </div>
 
-      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir sistema?</AlertDialogTitle><AlertDialogDescription>A ficha e a conversa serão apagadas. Esta ação não pode ser desfeita.</AlertDialogDescription></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleDelete}>Excluir</AlertDialogAction></AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmImpactDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}
+        title={`Excluir ${allApps.find((a) => a.id === deleteId)?.nome ?? "sistema"}?`}
+        description="Esta ação não pode ser desfeita."
+        impacts={[
+          { icon: FileEdit, title: "Apaga a ficha do sistema", detail: "Dono, revisor, forma de acesso e conversa de cadastro." },
+          { icon: Globe, title: "Desfaz a ligação com os perfis de acesso", detail: "Os cargos deixam de receber este sistema." },
+        ]}
+        confirmLabel="Excluir" confirmIcon={Trash2} onConfirm={handleDelete} />
     </div>
   );
 }
