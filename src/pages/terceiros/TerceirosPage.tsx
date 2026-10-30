@@ -209,20 +209,22 @@ export default function TerceirosPage() {
         </div>
       )}
 
-      <div className="relative flex-1 min-w-[200px] max-w-sm">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input placeholder="Buscar terceiros..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
-      </div>
-      <Select value={statusFilter} onValueChange={setStatusF}>
-        <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="ativo">Ativos</SelectItem>
-          <SelectItem value="inativo">Inativos</SelectItem>
-          <SelectItem value="todos">Todos</SelectItem>
-        </SelectContent>
-      </Select>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full sm:w-72">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input placeholder="Buscar terceiros..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusF}>
+          <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ativo">Ativos</SelectItem>
+            <SelectItem value="inativo">Inativos</SelectItem>
+            <SelectItem value="todos">Todos</SelectItem>
+          </SelectContent>
+        </Select>
         {cols.menu}
-      {TERC_FILTRO_LABEL[pend] && <Button variant="outline" size="sm" onClick={() => { const n = new URLSearchParams(searchParams); n.delete("pendencia"); setSearchParams(n); setPage(1); }}>Filtro: {TERC_FILTRO_LABEL[pend]} ×</Button>}
+        {TERC_FILTRO_LABEL[pend] && <Button variant="outline" size="sm" onClick={() => { const n = new URLSearchParams(searchParams); n.delete("pendencia"); setSearchParams(n); setPage(1); }}>Filtro: {TERC_FILTRO_LABEL[pend]} ×</Button>}
+      </div>
 
       <Card><CardContent className="p-0">
         {isLoading ? <div className="p-4 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div> : (
