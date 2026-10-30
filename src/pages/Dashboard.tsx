@@ -317,7 +317,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
           { l: "Revisões abertas", v: k?.revisoes_abertas ?? 0, to: "/revisoes?status=em_andamento", icon: ClipboardCheck },
-          { l: "Exceções vencendo (7 d)", v: k?.excecoes_vencendo ?? 0, to: "/excecoes?aba=aprovadas", icon: CalendarClock },
+          { l: "Exceções vencendo (15 d)", v: m?.excecoes_vencendo ?? 0, to: "/excecoes?aba=aprovadas&pendencia=vencendo", icon: CalendarClock },
           { l: "Terceiros vencidos", v: k?.terceiros_vencidos ?? 0, to: "/terceiros?pendencia=vencidos", icon: UserCheck },
           { l: "RH: precisa de você", v: k?.quarentena ?? 0, to: "/colaboradores/quarentena", icon: FileSpreadsheet },
         ].map((x) => (
