@@ -1,3 +1,4 @@
+import { useColumnVisibility } from "@/components/ColumnToggle";
 import { useDeferredValue } from "react";
 import { IdentityAvatar, RevalidationMini } from "@/components/identity/IdentityCells";
 import ConfirmImpactDialog, { useLeaverImpacts } from "@/components/ConfirmImpactDialog";
@@ -72,6 +73,11 @@ function fimContratoDisplay(dataFim: string | null) {
 }
 
 export default function TerceirosPage() {
+  const cols = useColumnVisibility("terceiros", [
+    { key: "empresa", label: "Empresa", index: 2 }, { key: "resp", label: "Responsável", index: 3 },
+    { key: "crit", label: "Criticidade", index: 4 }, { key: "fim", label: "Fim contrato", index: 5 },
+    { key: "reval", label: "Revalidação", index: 6 },
+  ]);
   const [busca, setBusca] = useState("");
   const buscaDeferida = useDeferredValue(busca);
   const revalCiclo = parseInt(useParametro("terceiro_revalidacao_dias", "45"), 10) || 45;
@@ -205,11 +211,12 @@ export default function TerceirosPage() {
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input placeholder="Buscar terceiros..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
       </div>
+        {cols.menu}
       {TERC_FILTRO_LABEL[pend] && <Button variant="outline" size="sm" onClick={() => { const n = new URLSearchParams(searchParams); n.delete("pendencia"); setSearchParams(n); setPage(1); }}>Filtro: {TERC_FILTRO_LABEL[pend]} ×</Button>}
 
       <Card><CardContent className="p-0">
         {isLoading ? <div className="p-4 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div> : (
-          <div className="max-h-[70vh] overflow-auto"><table className="w-full text-sm"><thead className="sticky top-0 z-10 bg-card"><tr className="border-b text-left text-muted-foreground text-xs uppercase tracking-wider">
+          <div className="max-h-[70vh] overflow-auto">{cols.styleTag}<table data-cols="terceiros" className="w-full text-sm"><thead className="sticky top-0 z-10 bg-card"><tr className="border-b text-left text-muted-foreground text-xs uppercase tracking-wider">
             <th className="px-4 py-2.5"><SortableHeader label="Nome" field="nome" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th><th className="px-4 py-2.5 hidden md:table-cell"><SortableHeader label="Empresa" field="empresa_terceira" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th><th className="px-4 py-2.5 font-medium hidden lg:table-cell">Responsável</th>
             <th className="px-4 py-2.5 font-medium hidden md:table-cell">Criticidade</th><th className="px-4 py-2.5 font-medium">Fim Contrato</th><th className="px-4 py-2.5 font-medium hidden lg:table-cell">Revalidação</th><th className="px-4 py-2.5"><SortableHeader label="Status" field="ativo" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th><th className="px-4 py-2.5 font-medium w-20">Ações</th>
           </tr></thead><tbody>

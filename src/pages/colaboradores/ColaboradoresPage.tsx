@@ -350,6 +350,7 @@ export default function ColaboradoresPage() {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Buscar nome ou email..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
         </div>
+        {cols.menu}
         {searchParams.get("suspenso_preventivo") === "true" && <Button variant="outline" onClick={() => { const next = new URLSearchParams(searchParams); next.delete("suspenso_preventivo"); setSearchParams(next); setPage(1); }}>Suspensos preventivamente ×</Button>}
         {COLAB_FILTRO_LABEL[searchParams.get("pendencia") || ""] && <Button variant="outline" onClick={() => { const next = new URLSearchParams(searchParams); next.delete("pendencia"); setSearchParams(next); setPage(1); }}>Filtro: {COLAB_FILTRO_LABEL[searchParams.get("pendencia")!]} ×</Button>}
         <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); const n = new URLSearchParams(searchParams); if (v === "todos") n.delete("status"); else n.set("status", v); setSearchParams(n, { replace: true }); }}>
