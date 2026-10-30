@@ -1,4 +1,4 @@
-import { AutoUpdatedHint } from "@/components/AutoUpdatedHint";
+import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import { QUEUE_ERROR_LABELS } from "@/lib/queueErrorLabels";
 import { Button } from "@/components/ui/button";
 import QueryState from "@/components/QueryState";
@@ -89,14 +89,6 @@ const FAILURE_LABELS = QUEUE_ERROR_LABELS;
 type Period = 7 | 30 | 90;
 
 function fmtDay(iso: string) { const [, m, d] = iso.split("-"); return `${d}/${m}`; }
-function relTime(iso?: string | null) {
-  if (!iso) return "nunca";
-  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (s < 60) return `há ${s}s`;
-  if (s < 3600) return `há ${Math.floor(s / 60)} min`;
-  if (s < 86400) return `há ${Math.floor(s / 3600)} h`;
-  return `há ${Math.floor(s / 86400)} d`;
-}
 function ageLabel(iso?: string | null) {
   if (!iso) return null;
   const h = (Date.now() - new Date(iso).getTime()) / 3600000;
@@ -121,31 +113,6 @@ function ChartTooltip({ active, payload, label }: Row) {
 }
 
 /* ── linha discreta de status (só ganha cor quando há problema) ── */
-function SystemStrip({ m, loading }: { m: Row; loading: boolean }) {
-  if (loading) return null;
-  const agent: Row = m?.agente?.[0];
-  const agentAge = agent ? (Date.now() - new Date(agent.last_seen_at).getTime()) / 60000 : Infinity;
-  const agentBad = agentAge > 10;
-  const csv: Row = m?.ultimo_csv;
-  const csvAt = csv ? new Date(csv.source_modified_at || csv.updated_at).getTime() : 0;
-  const csvBad = !csv || csv.status === "error" || csv.display_status === "collected_not_imported" || (Date.now() - csvAt) / 3600000 > 26;
-  const csvText = !csv ? "Base do RH sem arquivo"
-    : csv.status === "error" ? "Base do RH falhou"
-    : csv.status === "running" ? "Base do RH importando"
-    : `Base do RH atualizada ${relTime(csv.source_modified_at || csv.updated_at)}${csv.colab_updated || csv.colab_created ? ` (${(csv.colab_created ?? 0) + (csv.colab_updated ?? 0)} alterações)` : ""}`;
-  const part = (bad: boolean, text: string, to: string) => (
-    <Link to={to} className={`inline-flex items-center gap-1.5 hover:underline ${bad ? "font-medium text-warning" : ""}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${bad ? "bg-warning" : "bg-muted-foreground/40"}`} />{text}
-    </Link>
-  );
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-      {part(agentBad, !agent ? "Hermes nunca conectado" : agentBad ? `Hermes sem sinal ${relTime(agent.last_seen_at)}` : `Hermes online ${relTime(agent.last_seen_at)}`, "/configuracoes/hermes")}
-      <span aria-hidden>·</span>
-      {part(csvBad, csvText, "/configuracoes/hermes")}
-    </div>
-  );
-}
 
 /* ── barras horizontais clicáveis ── */
 function BarsPanel({ title, rows }: { title: string; rows: { label: string; value: number; to?: string }[]; unit?: string }) {
@@ -230,6 +197,7 @@ function CardTitleRow({ icon: Icon, title, action }: { icon: typeof Users; title
 /* ── main ── */
 export default function Dashboard() {
   const { profile } = useAuth();
+  useAutoRefresh(["sync-entra-licencas", "sync-entra-groups"]);
   const primeiroNome = (profile?.nome ?? "").trim().split(/\s+/)[0] ?? "";
   const [period, setPeriod] = useState<Period>(30);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
@@ -285,7 +253,6 @@ export default function Dashboard() {
         <div className="space-y-1">
           <h1 className="text-[28px] font-semibold tracking-tight">{primeiroNome ? `Olá, ${primeiroNome}` : "Olá"}</h1>
           <p className="text-base text-muted-foreground">Governança de Identidades</p>
-          <div className="flex flex-wrap items-center gap-x-3 pt-1 text-xs text-muted-foreground"><SystemStrip m={m} loading={isLoading} /><span aria-hidden>·</span><AutoUpdatedHint tasks={["sync-entra-licencas", "sync-entra-groups"]} /></div>
         </div>
       </div>
 
