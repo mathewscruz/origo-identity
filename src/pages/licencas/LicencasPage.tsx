@@ -53,7 +53,8 @@ type UnifiedLicense = {
 function metrics(l: { total: number; em_uso: number; is_trial: boolean }) {
   const realPct = l.total > 0 ? Math.round((l.em_uso / l.total) * 100) : 0;
   const excedido = l.em_uso > l.total && l.total > 0;
-  return { realPct, pct: Math.min(100, realPct), excedido, alerta: excedido || realPct > 100 };
+  // 100% = vermelho (destructive); acima de 100% = vermelho escuro (critical)
+  return { realPct, pct: Math.min(100, realPct), excedido, alerta: realPct >= 100 };
 }
 
 export default function LicencasPage() {
