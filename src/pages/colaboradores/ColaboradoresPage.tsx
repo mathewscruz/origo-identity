@@ -337,7 +337,7 @@ export default function ColaboradoresPage() {
         const ativos = mapped.filter((c) => c.status === "ativo");
         const setPend = (k: string | null, st = "todos") => { const n = new URLSearchParams(searchParams); n.delete("pendencia"); if (k) n.set("pendencia", k); n.set("status", st); setStatusFilter(st); setSearchParams(n, { replace: true }); setPage(1); };
         const pend = searchParams.get("pendencia");
-        return <MetricStrip items={[
+        return <MetricStrip loading={isLoading} items={[
           { label: "Ativos", value: ativos.length, tone: "primary", active: statusFilter === "ativo" && !pend, onClick: () => setPend(null, "ativo") },
           { label: "Desligados", value: mapped.filter((c) => c.status === "desligado").length, active: statusFilter === "desligado", onClick: () => setPend(null, "desligado") },
           { label: "Sem conta Entra", value: ativos.filter(colabFiltros.sem_entra).length, tone: "warning", active: pend === "sem_entra", onClick: () => setPend("sem_entra") },
