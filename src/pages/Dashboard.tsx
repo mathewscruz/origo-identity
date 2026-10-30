@@ -54,15 +54,18 @@ function LicensesPanel({ rows }: { rows: { nome: string; total: number; em_uso: 
       <CardTitleRow icon={Box} title="Licenças em uso" action={<Link to="/licencas" className="text-xs text-primary hover:underline">Ver todas</Link>} />
       <CardContent className="flex flex-1 flex-col gap-5 px-5 pb-5 pt-0">
         {rows.length === 0 ? <EmptyState message="Sem licenças sincronizadas." /> : rows.map((r) => {
-          const pct = r.total > 0 ? Math.round((r.em_uso / r.total) * 100) : 0;
+          const realPct = r.total > 0 ? Math.round((r.em_uso / r.total) * 100) : 0;
+          const excedido = r.em_uso > r.total && r.total > 0;
+          const alerta = realPct >= 100;
+          // Mesmas cores da tela de Licenças: 100% vermelho, acima de 100% vermelho escuro, ≥75% âmbar
           return (
             <Link key={r.nome} to="/licencas" className="flex items-center gap-4 hover:opacity-90" title={`${r.em_uso} de ${r.total}`}>
               <ProductLogo nome={r.nome} />
               <div className="min-w-0 flex-1 space-y-2">
                 <span className="block truncate text-sm" title={r.nome}>{r.nome}</span>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, pct)}%` }} /></div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted"><div className={`h-full rounded-full ${excedido ? "bg-critical" : alerta ? "bg-destructive" : realPct >= 75 ? "bg-warning" : "bg-primary"}`} style={{ width: `${Math.min(100, realPct)}%` }} /></div>
               </div>
-              <span className="w-11 text-right text-sm font-medium tabular-nums text-primary">{pct}%</span>
+              <span className={`w-11 text-right text-sm font-medium tabular-nums ${excedido ? "text-critical" : alerta ? "text-destructive" : "text-muted-foreground"}`}>{realPct}%</span>
             </Link>
           );
         })}

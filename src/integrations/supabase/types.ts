@@ -2338,6 +2338,54 @@ export type Database = {
         }
         Relationships: []
       }
+      sharepoint_ownership_batches: {
+        Row: {
+          batch_no: number
+          payload: Json
+          run_id: string
+        }
+        Insert: {
+          batch_no: number
+          payload: Json
+          run_id: string
+        }
+        Update: {
+          batch_no?: number
+          payload?: Json
+          run_id?: string
+        }
+        Relationships: []
+      }
+      sharepoint_ownership_sync_runs: {
+        Row: {
+          applied_at: string
+          collected_at: string
+          group_count: number
+          id: string
+          link_count: number
+          owner_count: number
+          site_count: number
+        }
+        Insert: {
+          applied_at?: string
+          collected_at: string
+          group_count: number
+          id: string
+          link_count: number
+          owner_count: number
+          site_count: number
+        }
+        Update: {
+          applied_at?: string
+          collected_at?: string
+          group_count?: number
+          id?: string
+          link_count?: number
+          owner_count?: number
+          site_count?: number
+        }
+        Relationships: []
+      }
       sharepoint_pastas: {
         Row: {
           caminho: string | null
@@ -2385,6 +2433,7 @@ export type Database = {
       }
       sharepoint_site_group_links: {
         Row: {
+          active: boolean
           created_at: string
           entra_group_id: string
           owner_count: number
@@ -2395,6 +2444,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          active?: boolean
           created_at?: string
           entra_group_id: string
           owner_count?: number
@@ -2405,6 +2455,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          active?: boolean
           created_at?: string
           entra_group_id?: string
           owner_count?: number
@@ -2468,6 +2519,44 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "sharepoint_site_group_links"
             referencedColumns: ["site_db_id"]
+          },
+        ]
+      }
+      sharepoint_site_ownership_coverage: {
+        Row: {
+          direct_permission_status: string
+          site_admin_status: string
+          site_db_id: string
+          source: string
+          status: string
+          updated_at: string
+          verified_at: string
+        }
+        Insert: {
+          direct_permission_status?: string
+          site_admin_status?: string
+          site_db_id: string
+          source?: string
+          status: string
+          updated_at?: string
+          verified_at: string
+        }
+        Update: {
+          direct_permission_status?: string
+          site_admin_status?: string
+          site_db_id?: string
+          source?: string
+          status?: string
+          updated_at?: string
+          verified_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sharepoint_site_ownership_coverage_site_db_id_fkey"
+            columns: ["site_db_id"]
+            isOneToOne: true
+            referencedRelation: "sharepoint_sites"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -2776,6 +2865,17 @@ export type Database = {
       }
       apply_reconcile_updates: {
         Args: { colab_updates?: Json; queue_updates?: Json }
+        Returns: Json
+      }
+      apply_sharepoint_ownership_snapshot: {
+        Args: {
+          p_collected_at: string
+          p_group_count: number
+          p_links: number
+          p_owners: number
+          p_run: string
+          p_sites: number
+        }
         Returns: Json
       }
       audit_operador: { Args: never; Returns: string }
