@@ -18,7 +18,7 @@ vi.mock('@/hooks/useOrigoData', () => ({
   useParametro: () => 'true',
 }));
 vi.mock('@/hooks/usePeopleSeries', () => ({ usePeopleSeries: () => state.people }));
-vi.mock('@/components/ActivityFeed', () => ({ default: () => <div>Independent activity feed</div> }));
+vi.mock('@/components/ActivityFeed', () => ({ default: () => <div>Independent activity feed</div>, useActivityFeed: () => ({ data: [], isLoading: false }), acaoIcon: () => ({ icon: () => null, tone: '' }) }));
 vi.mock('recharts', () => ({
   ResponsiveContainer: () => <div>Chart fixture</div>, Area: () => null, AreaChart: () => null, Bar: () => null,
   BarChart: () => null, CartesianGrid: () => null, Legend: () => null, Tooltip: () => null, XAxis: () => null, YAxis: () => null,

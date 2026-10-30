@@ -53,7 +53,7 @@ function LicensesPanel({ rows }: { rows: { nome: string; total: number; em_uso: 
   return (
     <Card className="flex h-full flex-col rounded-xl">
       <CardTitleRow icon={Box} title="Licenças em uso" action={<Link to="/licencas" className="text-xs text-primary hover:underline">Ver todas</Link>} />
-      <CardContent className="flex flex-1 flex-col justify-between gap-4 px-5 pb-5 pt-0">
+      <CardContent className="flex flex-1 flex-col gap-5 px-5 pb-5 pt-0">
         {rows.length === 0 ? <EmptyState message="Sem licenças sincronizadas." /> : rows.map((r) => {
           const pct = r.total > 0 ? Math.round((r.em_uso / r.total) * 100) : 0;
           return (
@@ -154,7 +154,7 @@ function BarsPanel({ title, rows }: { title: string; rows: { label: string; valu
   return (
     <Card className="flex h-full flex-col rounded-xl">
       <CardTitleRow icon={Users} title={title} action={<span aria-label={`${title}: total`} className="text-sm tabular-nums text-muted-foreground">{total.toLocaleString("pt-BR")}</span>} />
-      <CardContent className="flex flex-1 flex-col justify-between gap-4 px-5 pb-5 pt-0">
+      <CardContent className="flex flex-1 flex-col gap-5 px-5 pb-5 pt-0">
         {rows.map((r) => {
           const pct = total > 0 ? Math.round((r.value / total) * 100) : 0;
           const inner = (
@@ -343,8 +343,8 @@ export default function Dashboard() {
               <XAxis dataKey="label" interval={tick} tick={{ fill: CH.axis, fontSize: 13 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: CH.axis, fontSize: 13 }} axisLine={false} tickLine={false} allowDecimals={false} />
               <Tooltip content={<ChartTooltip />} />
-              <Area type="natural" dataKey="entradas" name="Entradas" stroke={CH.in} strokeWidth={2.5} fill="url(#g-in)" hide={hidden.has("entradas")} />
-              <Area type="natural" dataKey="saidas" name="Saídas" stroke={CH.out} strokeWidth={2.5} fill="url(#g-out)" hide={hidden.has("saidas")} />
+              <Area type="monotone" dataKey="entradas" name="Entradas" stroke={CH.in} strokeWidth={2.5} fill="url(#g-in)" hide={hidden.has("entradas")} />
+              <Area type="monotone" dataKey="saidas" name="Saídas" stroke={CH.out} strokeWidth={2.5} fill="url(#g-out)" hide={hidden.has("saidas")} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
