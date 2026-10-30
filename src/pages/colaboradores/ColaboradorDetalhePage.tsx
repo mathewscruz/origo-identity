@@ -46,20 +46,6 @@ import { useAssignPerfil, useRevokePerfil } from "@/hooks/mutations/usePerfilAss
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = any;
 
-const STATUS_RING: Record<string, string> = {
-  ativo: "ring-success/40 bg-success/15 text-success",
-  ferias: "ring-info/40 bg-info/15 text-info",
-  afastado: "ring-warning/40 bg-warning/15 text-warning",
-  inativo: "ring-muted-foreground/30 bg-muted text-muted-foreground",
-  desligado: "ring-destructive/40 bg-destructive/15 text-destructive",
-};
-const STATUS_BAR: Record<string, string> = {
-  ativo: "from-success/80 via-success/40 to-primary/30",
-  ferias: "from-info/80 via-info/40 to-primary/30",
-  afastado: "from-warning/80 via-warning/40 to-primary/30",
-  inativo: "from-muted-foreground/50 via-muted-foreground/20 to-transparent",
-  desligado: "from-destructive/80 via-destructive/40 to-transparent",
-};
 
 function Fact({ icon: Icon, label, value, mono, copy, to }: { icon: typeof Mail; label: string; value?: string | null; mono?: boolean; copy?: boolean; to?: string }) {
   const [copied, setCopied] = useState(false);
