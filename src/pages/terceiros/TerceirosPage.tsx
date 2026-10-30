@@ -97,6 +97,7 @@ export default function TerceirosPage() {
   const dominioTerceiro = useParametro("terceiro_email_dominio", "parceiroorigoenergia.com.br");
   const revalidacaoDias = useParametro("terceiro_revalidacao_dias", "45");
   const [searchParams, setSearchParams] = useSearchParams();
+  const [statusFilter, setStatusFilter] = useState(searchParams.get("status") || "ativo");
 
   // /terceiros?new=1 (paleta) abre o cadastro; ?edit=<id> (detalhe) abre a edição
   useEffect(() => {
@@ -137,7 +138,8 @@ export default function TerceirosPage() {
   const vencendo7d = list.filter((t: any) => { const d = diasRestantes(t.contrato_fim); return d >= 0 && d <= 7; }).length;
   const pend = searchParams.get("pendencia") || "";
   const pendFn = pend === "revalidar" ? (t: any) => tercFiltros.revalidar(t, undefined, Number(revalidacaoDias) || 45) : (tercFiltros as any)[pend];
-  const filtered = list.filter((t: any) => (!pendFn || pendFn(t)) && (!buscaDeferida || `${t.nome} ${t.email ?? ""} ${t.empresa_terceira ?? ""}`.toLowerCase().includes(buscaDeferida.toLowerCase())));
+  const setStatusF = (v: string) => { setStatusFilter(v); setPage(1); const n = new URLSearchParams(searchParams); n.set("status", v); setSearchParams(n, { replace: true }); };
+  const filtered = list.filter((t: any) => (!pendFn || pendFn(t)) && (statusFilter === "todos" || t.ativo === (statusFilter === "ativo")) && (!buscaDeferida || `${t.nome} ${t.email ?? ""} ${t.empresa_terceira ?? ""}`.toLowerCase().includes(buscaDeferida.toLowerCase())));
   const sorted = useSortableData(filtered, sortField, sortDir);
   const { paginatedItems, safePage } = usePagination(sorted, page, pageSize);
 
@@ -192,7 +194,7 @@ export default function TerceirosPage() {
       />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard label="Ativos" value={list.filter((t: any) => t.ativo).length} icon={UserCheck} tone="success" />
+        <StatCard label="Ativos" value={list.filter((t: any) => t.ativo).length} icon={UserCheck} tone="success" active={statusFilter === "ativo"} onClick={() => setStatusF("ativo")} />
         <StatCard label="Vencendo em 30 dias" value={list.filter((t: any) => { const d = diasRestantes(t.contrato_fim); return t.ativo && d >= 0 && d <= 30; }).length} icon={CalendarClock} tone="warning" hint={vencendo7d > 0 ? `${vencendo7d} em 7 dias` : undefined} />
         <StatCard label="Contrato vencido" value={list.filter((t: any) => t.ativo && t.contrato_fim && diasRestantes(t.contrato_fim) < 0).length} icon={AlertTriangle} tone="destructive" hint="desligados no próximo ciclo" />
         <StatCard label="Críticos" value={list.filter((t: any) => t.ativo && t.criticidade === "critica").length} icon={ShieldAlert} tone="info" />
@@ -207,12 +209,22 @@ export default function TerceirosPage() {
         </div>
       )}
 
-      <div className="relative flex-1 min-w-[200px] max-w-sm">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input placeholder="Buscar terceiros..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
-      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full sm:w-72">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input placeholder="Buscar terceiros..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusF}>
+          <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ativo">Ativos</SelectItem>
+            <SelectItem value="inativo">Inativos</SelectItem>
+            <SelectItem value="todos">Todos</SelectItem>
+          </SelectContent>
+        </Select>
         {cols.menu}
-      {TERC_FILTRO_LABEL[pend] && <Button variant="outline" size="sm" onClick={() => { const n = new URLSearchParams(searchParams); n.delete("pendencia"); setSearchParams(n); setPage(1); }}>Filtro: {TERC_FILTRO_LABEL[pend]} ×</Button>}
+        {TERC_FILTRO_LABEL[pend] && <Button variant="outline" size="sm" onClick={() => { const n = new URLSearchParams(searchParams); n.delete("pendencia"); setSearchParams(n); setPage(1); }}>Filtro: {TERC_FILTRO_LABEL[pend]} ×</Button>}
+      </div>
 
       <Card><CardContent className="p-0">
         {isLoading ? <div className="p-4 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div> : (
