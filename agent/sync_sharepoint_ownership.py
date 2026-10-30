@@ -35,7 +35,7 @@ def load_graph_environment():
         raise RuntimeError('Graph identity unavailable')
 
 def lock(verb, token=None):
-    args = ['python', LOCK, verb, '--domain', 'iam', '--object', 'sharepoint-ownership-catalog']
+    args = [sys.executable, LOCK, verb, '--domain', 'iam', '--object', 'sharepoint-ownership-catalog']
     if verb == 'acquire': args += ['--profile', 'default', '--ttl', '3600']
     if token: args += ['--token=' + token]
     r = subprocess.run(args, text=True, capture_output=True, timeout=20)
