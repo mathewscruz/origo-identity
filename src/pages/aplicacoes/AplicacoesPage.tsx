@@ -117,7 +117,7 @@ export default function AplicacoesPage() {
         </div>}
       />
 
-      <MetricStrip items={[
+      <MetricStrip loading={isLoading} items={[
         { label: "Total", n: allApps.length, f: "todas", tone: "primary" as const },
         { label: "Conectados", n: conectados, f: "conectado" },
         { label: "Demonstração", n: emDemo, f: "demo", tone: "warning" as const },

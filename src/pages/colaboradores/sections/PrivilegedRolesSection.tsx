@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,7 +28,7 @@ export default function PrivilegedRolesSection({ colaboradorId }: { colaboradorI
     },
   });
 
-  if (isLoading) return <Card><CardContent className="py-6 text-sm text-muted-foreground">Carregando funções...</CardContent></Card>;
+  if (isLoading) return <Card><CardContent className="p-0"><LoadingSkeleton rows={3} /></CardContent></Card>;
 
   const rows = (data || []) as any[];
   if (rows.length === 0) {

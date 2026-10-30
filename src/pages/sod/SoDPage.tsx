@@ -1,3 +1,4 @@
+import { TableSkeletonRows } from "@/components/LoadingSkeleton";
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useDbChange } from "@/hooks/useRealtimeSync";
@@ -281,7 +282,7 @@ export default function SoDPage() {
               </TableRow></TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
+                  <TableSkeletonRows cols={6} />
                 ) : filteredConflitos.length === 0 ? (
                   <TableRow><TableCell colSpan={6}><EmptyState message="Nenhum conflito cadastrado" /></TableCell></TableRow>
                 ) : filteredConflitos.map(c => (
@@ -324,7 +325,7 @@ export default function SoDPage() {
               </TableRow></TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
+                  <TableSkeletonRows cols={4} />
                 ) : filteredViolacoes.length === 0 ? (
                   <TableRow><TableCell colSpan={4}>
                     <div className="flex flex-col items-center gap-2">

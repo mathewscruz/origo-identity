@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Search, X } from "lucide-react";
@@ -84,7 +85,7 @@ export default function QuarentenaPage() {
       </div>
 
       <Card><CardContent className="p-0">
-        {isLoading ? <p className="p-6 text-sm text-muted-foreground">Carregando…</p> : rows.length === 0 ? <EmptyState message="Nenhuma pendência. Tudo em dia." size="lg" /> : (
+        {isLoading ? <LoadingSkeleton /> : rows.length === 0 ? <EmptyState message="Nenhuma pendência. Tudo em dia." size="lg" /> : (
           <ul className="divide-y">
             {rows.map((r: Row) => (
               <li key={r.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">

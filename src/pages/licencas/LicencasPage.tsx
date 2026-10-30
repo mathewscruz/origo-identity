@@ -221,7 +221,7 @@ export default function LicencasPage() {
         </>}
       />
 
-      <MetricStrip items={[
+      <MetricStrip loading={isLoading} items={[
         { label: hideTrials ? "Licenças pagas" : "Licenças", value: (hideTrials ? paidPool : allLicenses).length, tone: "primary" },
         { label: "Contratadas", value: seatsTotal },
         { label: "Em uso", value: seatsEmUso },

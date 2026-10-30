@@ -1,3 +1,4 @@
+import { TableSkeletonRows } from "@/components/LoadingSkeleton";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -226,7 +227,7 @@ export default function PrivilegiadosPage() {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
+                <TableSkeletonRows cols={5} />
               ) : paginated.length === 0 ? (
                 <TableRow><TableCell colSpan={5}>
                   <EmptyState message={totalRoles === 0 ? "As roles do Entra ID chegam automaticamente em alguns minutos." : "Nenhuma role encontrada com os filtros aplicados."} />
