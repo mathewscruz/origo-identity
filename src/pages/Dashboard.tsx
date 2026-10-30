@@ -381,7 +381,7 @@ function UserChip() {
 }
 
 function RecentCard() {
-  const { data, isLoading } = useActivityFeed(12, "");
+  const { data, isLoading } = useActivityFeed(80, "");
   const items = (data ?? []).filter((i) => !isActivityNoise(i)).slice(0, 5);
   return (
     <Card className="flex h-full flex-col rounded-xl">
