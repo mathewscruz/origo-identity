@@ -194,7 +194,7 @@ export default function TerceirosPage() {
       />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard label="Ativos" value={list.filter((t: any) => t.ativo).length} icon={UserCheck} tone="success" />
+        <StatCard label="Ativos" value={list.filter((t: any) => t.ativo).length} icon={UserCheck} tone="success" active={statusFilter === "ativo"} onClick={() => setStatusF("ativo")} />
         <StatCard label="Vencendo em 30 dias" value={list.filter((t: any) => { const d = diasRestantes(t.contrato_fim); return t.ativo && d >= 0 && d <= 30; }).length} icon={CalendarClock} tone="warning" hint={vencendo7d > 0 ? `${vencendo7d} em 7 dias` : undefined} />
         <StatCard label="Contrato vencido" value={list.filter((t: any) => t.ativo && t.contrato_fim && diasRestantes(t.contrato_fim) < 0).length} icon={AlertTriangle} tone="destructive" hint="desligados no próximo ciclo" />
         <StatCard label="Críticos" value={list.filter((t: any) => t.ativo && t.criticidade === "critica").length} icon={ShieldAlert} tone="info" />
