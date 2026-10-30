@@ -216,6 +216,7 @@ export type Database = {
           created_at: string
           criticidade: Database["public"]["Enums"]["criticidade"]
           default_app_role_id: string
+          demo_conectado: boolean
           descricao: string | null
           entra_id: string | null
           grupo_id: string | null
@@ -242,6 +243,7 @@ export type Database = {
           created_at?: string
           criticidade?: Database["public"]["Enums"]["criticidade"]
           default_app_role_id?: string
+          demo_conectado?: boolean
           descricao?: string | null
           entra_id?: string | null
           grupo_id?: string | null
@@ -268,6 +270,7 @@ export type Database = {
           created_at?: string
           criticidade?: Database["public"]["Enums"]["criticidade"]
           default_app_role_id?: string
+          demo_conectado?: boolean
           descricao?: string | null
           entra_id?: string | null
           grupo_id?: string | null
