@@ -53,7 +53,8 @@ type UnifiedLicense = {
 function metrics(l: { total: number; em_uso: number; is_trial: boolean }) {
   const realPct = l.total > 0 ? Math.round((l.em_uso / l.total) * 100) : 0;
   const excedido = l.em_uso > l.total && l.total > 0;
-  return { realPct, pct: Math.min(100, realPct), excedido, alerta: excedido || realPct > 100 };
+  // 100% = vermelho (destructive); acima de 100% = vermelho escuro (critical)
+  return { realPct, pct: Math.min(100, realPct), excedido, alerta: realPct >= 100 };
 }
 
 export default function LicencasPage() {
@@ -279,9 +280,9 @@ export default function LicencasPage() {
                     </div>
                     <div className="mt-5 flex items-baseline justify-between">
                       <p className="text-lg"><span className="font-semibold">{l.em_uso.toLocaleString("pt-BR")}</span> de {l.total.toLocaleString("pt-BR")}</p>
-                      <span className={`text-sm font-medium ${m.alerta ? "text-destructive" : "text-muted-foreground"}`}>{m.realPct}%</span>
+                      <span className={`text-sm font-medium ${m.excedido ? "text-critical" : m.alerta ? "text-destructive" : "text-muted-foreground"}`}>{m.realPct}%</span>
                     </div>
-                    <Progress value={m.pct} className={`mt-2 h-2 ${m.alerta ? "[&>div]:bg-destructive" : m.pct >= 75 ? "[&>div]:bg-warning" : ""}`} />
+                    <Progress value={m.pct} className={`mt-2 h-2 ${m.excedido ? "[&>div]:bg-critical" : m.alerta ? "[&>div]:bg-destructive" : m.pct >= 75 ? "[&>div]:bg-warning" : ""}`} />
                     <p className="mt-2 text-xs text-muted-foreground">Licenças usadas de contratadas</p>
                   </button>
                 );
@@ -301,10 +302,10 @@ export default function LicencasPage() {
               </div>
               <div className="mt-6 grid grid-cols-3 gap-2 text-center">
                 {[["Contratadas", selected.total], ["Em uso", selected.em_uso], [m.excedido ? "Acima" : "Livres", Math.abs(selected.total - selected.em_uso)]].map(([k, v]) => (
-                  <div key={k as string} className="rounded-lg bg-muted/60 p-3"><p className={`text-xl font-semibold tabular-nums ${k === "Acima" ? "text-destructive" : ""}`}>{(v as number).toLocaleString("pt-BR")}</p><p className="text-xs text-muted-foreground">{k}</p></div>
+                  <div key={k as string} className="rounded-lg bg-muted/60 p-3"><p className={`text-xl font-semibold tabular-nums ${k === "Acima" ? "text-critical" : ""}`}>{(v as number).toLocaleString("pt-BR")}</p><p className="text-xs text-muted-foreground">{k}</p></div>
                 ))}
               </div>
-              <Progress value={m.pct} className={`mt-4 h-2 ${m.alerta ? "[&>div]:bg-destructive" : ""}`} />
+              <Progress value={m.pct} className={`mt-4 h-2 ${m.excedido ? "[&>div]:bg-critical" : m.alerta ? "[&>div]:bg-destructive" : ""}`} />
               <dl className="mt-6 space-y-3 text-sm">
                 <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Situação</dt><dd>{selected.capability_status === "Suspended" ? "Suspensa" : selected.capability_status === "Warning" ? "Em graça" : "Ativa"}</dd></div>
                 {selected.display_name !== selected.nome && <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Código</dt><dd className="truncate font-mono text-xs">{selected.nome}</dd></div>}
