@@ -346,7 +346,7 @@ export default function Dashboard() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <CardTitle className="text-lg">Entradas e saídas por dia</CardTitle>
-              <p className="text-xs text-muted-foreground">Cada pessoa conta uma vez por dia · {ppl.entradas} entradas · {ppl.saidas} saídas</p>
+              <p className="text-xs text-muted-foreground">Cada pessoa conta uma vez por dia</p>
             </div>
             <div className="flex items-center gap-4">
               <div className="flex gap-3 text-xs">

@@ -49,7 +49,7 @@ describe('RH dashboard contract fixtures, not production counts', () => {
     expect(screen.queryByText('pausado por segurança')).toBeNull();
     expect(screen.getByText(/Base do RH atualizada/)).toBeTruthy();
     expect(screen.getByText(/1 entradas · 3 saídas/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '7 d' }));
+    fireEvent.click(screen.getByRole('button', { name: '7 dias' }));
     expect(state.period).toHaveBeenLastCalledWith(7);
   });
 });
