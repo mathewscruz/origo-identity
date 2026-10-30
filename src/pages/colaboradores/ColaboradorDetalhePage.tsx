@@ -39,6 +39,8 @@ import PrivilegedRolesSection from "./sections/PrivilegedRolesSection";
 import PerfisAtribuidosTable from "./sections/PerfisAtribuidosTable";
 import JMLTimeline from "./sections/JMLTimeline";
 import StartJmlEventDialog from "@/components/jml/StartJmlEventDialog";
+import IdentityHeader, { ProgressRing } from "@/components/identity/IdentityHeader";
+import AccessSummaryCard from "@/components/identity/AccessSummaryCard";
 import { useAssignPerfil, useRevokePerfil } from "@/hooks/mutations/usePerfilAssignment";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -369,7 +371,7 @@ export default function ColaboradorDetalhePage() {
       {/* ── conteúdo ── */}
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="flex-wrap">
-          <TabsTrigger value="visao"><Info className="mr-1.5 h-3.5 w-3.5" />Visão geral</TabsTrigger>
+          <TabsTrigger value="visao"><Info className="mr-1.5 h-3.5 w-3.5" />Resumo</TabsTrigger>
           <TabsTrigger value="acessos"><Shield className="mr-1.5 h-3.5 w-3.5" />Acessos ({perfisAtivos + diretos})</TabsTrigger>
           <TabsTrigger value="privilegiados"><Crown className="mr-1.5 h-3.5 w-3.5" />Privilegiados</TabsTrigger>
           <TabsTrigger value="jml"><Workflow className="mr-1.5 h-3.5 w-3.5" />Histórico JML ({eventos.length})</TabsTrigger>
@@ -395,7 +397,7 @@ export default function ColaboradorDetalhePage() {
                 </dl>
               </CardContent>
             </Card>
-            <Card>
+            <div className="space-y-4"><Card>
               <CardContent className="pt-5">
                 <h3 className="mb-3 text-sm font-semibold">Identidade no diretório</h3>
                 <ul className="space-y-2.5 text-sm">
@@ -408,6 +410,7 @@ export default function ColaboradorDetalhePage() {
                 {syncing && <p className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground"><RefreshCw className="h-3 w-3 animate-spin" />Atualizando acessos do Entra ID…</p>}
               </CardContent>
             </Card>
+            <AccessSummaryCard colaboradorId={id} /></div>
           </div>
         </TabsContent>
 
