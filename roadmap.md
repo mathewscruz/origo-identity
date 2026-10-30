@@ -1,7 +1,7 @@
 # Roadmap
 
-- [ ] Padronizar os indicadores de exceções vencendo em 15 dias e abrir a lista correspondente
-- [ ] Corrigir os caracteres corrompidos nas atividades recentes e verificar a origem
+- [x] Padronizar os indicadores de exceções vencendo em 15 dias e abrir a lista correspondente (verificado com sessão real)
+- [x] Corrigir os caracteres corrompidos nas atividades recentes usando nomes anteriores verificados, sem alterar identidades; proteger a leitura do CSV RH (27 testes aprovados, tela sem símbolos)
 
 - [x] Verificar recusas de autenticação: heartbeat recente e pedidos concluídos; logs não identificam o chamador rejeitado
 - [ ] Identificar chamador recusado e confirmar configuração no servidor Hermes (bloqueado: sem acesso ao processo/configuração externa; não alterar credenciais por hipótese)
