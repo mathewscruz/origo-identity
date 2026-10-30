@@ -213,6 +213,14 @@ export default function TerceirosPage() {
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input placeholder="Buscar terceiros..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
       </div>
+      <Select value={statusFilter} onValueChange={setStatusF}>
+        <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="ativo">Ativos</SelectItem>
+          <SelectItem value="inativo">Inativos</SelectItem>
+          <SelectItem value="todos">Todos</SelectItem>
+        </SelectContent>
+      </Select>
         {cols.menu}
       {TERC_FILTRO_LABEL[pend] && <Button variant="outline" size="sm" onClick={() => { const n = new URLSearchParams(searchParams); n.delete("pendencia"); setSearchParams(n); setPage(1); }}>Filtro: {TERC_FILTRO_LABEL[pend]} ×</Button>}
 
