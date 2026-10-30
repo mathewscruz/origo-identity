@@ -377,11 +377,11 @@ export default function ColaboradoresPage() {
                 <thead>
                   <tr className="border-b text-left text-muted-foreground text-xs uppercase tracking-wider">
                     <th className="p-4"><SortableHeader label="Nome" field="nome" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
-                    <th className="p-4 hidden md:table-cell"><SortableHeader label="Email" field="email" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
-                    <th className="p-4 font-medium hidden lg:table-cell">CPF</th>
+                    <th className={`p-4 hidden ${selected ? "" : "md:table-cell"}`}><SortableHeader label="Email" field="email" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
+                    <th className={`p-4 font-medium hidden ${selected ? "" : "lg:table-cell"}`}>CPF</th>
                     <th className="p-4"><SortableHeader label="Cargo" field="cargo" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
                     <th className="p-4 hidden lg:table-cell"><SortableHeader label="Área" field="area" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
-                    <th className="p-4 font-medium hidden lg:table-cell">Origem</th>
+                    <th className={`p-4 font-medium hidden ${selected ? "" : "lg:table-cell"}`}>Origem</th>
                     <th className="p-4"><SortableHeader label="Status" field="status" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
                     <th className="p-4 font-medium">Ações</th>
                   </tr>
@@ -409,12 +409,13 @@ export default function ColaboradoresPage() {
                           )}
                           <ColaboradorActivityPopover colaboradorId={c.id} colaboradorNome={c.nome} />
                         </div>
+                        {selected && <p className="truncate text-xs text-muted-foreground">{c.email}</p>}
                       </td>
-                      <td className="p-4 text-muted-foreground hidden md:table-cell">{c.email}</td>
-                      <td className="p-4 text-muted-foreground font-mono text-xs hidden lg:table-cell">{c.cpf}</td>
+                      <td className={`p-4 text-muted-foreground hidden ${selected ? "" : "md:table-cell"}`}>{c.email}</td>
+                      <td className={`p-4 text-muted-foreground font-mono text-xs hidden ${selected ? "" : "lg:table-cell"}`}>{c.cpf}</td>
                       <td className="p-4 text-muted-foreground">{c.cargo}</td>
                       <td className="p-4 text-muted-foreground hidden lg:table-cell">{c.area}</td>
-                      <td className="p-4 hidden lg:table-cell">
+                      <td className={`p-4 hidden ${selected ? "" : "lg:table-cell"}`}>
                         <Badge variant="outline" className={
                           c.origem === "csv" ? "bg-primary/10 text-primary border-primary/30" :
                           c.origem === "entra_id" ? "bg-info/10 text-info border-info/30" :

@@ -8,8 +8,8 @@ import DetailPanel, { DetailField } from "@/components/DetailPanel";
 import ProductLogo from "@/components/ProductLogo";
 import { useEffectiveAccess } from "@/hooks/useOrigoData";
 
-const TIPO_ICON: Record<string, React.ComponentType<{ className?: string }>> = { grupo: Shield, licenca: Key, app: Monitor };
-const TIPO_LABEL: Record<string, string> = { grupo: "Grupo", licenca: "Licença", app: "Aplicação" };
+const TIPO_ICON: Record<string, React.ComponentType<{ className?: string }>> = { grupo: Shield, licenca: Key, app: Monitor, app_interno: Monitor };
+const TIPO_LABEL: Record<string, string> = { grupo: "Grupo", licenca: "Licença", app: "Aplicação", app_interno: "Sistema" };
 
 function initials(nome: string) {
   return nome.split(" ").filter(Boolean).map((n) => n[0]).slice(0, 2).join("").toUpperCase();
@@ -21,7 +21,7 @@ export default function ColaboradorPanel({ c, statusLabel, statusClass, localida
   const { data, isLoading } = useEffectiveAccess(c.id);
   const items = (data ?? []).map((a) => ({
     ...a,
-    nome: String(a.payload?.nome ?? a.payload?.displayName ?? a.payload?.name ?? a.resource_key),
+    nome: String(a.payload?.groupName ?? a.payload?.licenseName ?? a.payload?.appName ?? a.resource_key),
   }));
   const admissao = c.data_admissao ? new Date(c.data_admissao + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }) : "";
   return (
@@ -33,7 +33,7 @@ export default function ColaboradorPanel({ c, statusLabel, statusClass, localida
             <h2 className="text-lg font-semibold leading-tight">{c.nome}</h2>
             <Badge variant="outline" className={statusClass}>{statusLabel}</Badge>
           </div>
-          <p className="text-sm text-muted-foreground">{c.cargo} · {c.area}</p>
+          <p className="text-sm text-muted-foreground">{[c.cargo, c.area].filter((x: string) => x && x !== "—").join(" · ")}</p>
           <p className="truncate text-sm text-muted-foreground">{c.email}</p>
         </div>
       </div>
@@ -63,7 +63,7 @@ export default function ColaboradorPanel({ c, statusLabel, statusClass, localida
                         : <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-primary"><Icon className="h-4 w-4" /></span>}
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">{a.nome}</p>
-                        <p className="text-xs text-muted-foreground">{TIPO_LABEL[a.tipo] ?? a.tipo} · {a.origem === "perfil" ? "pelo cargo" : "individual"}</p>
+                        <p className="text-xs text-muted-foreground">{TIPO_LABEL[a.tipo] ?? a.tipo} · {a.origem === "individual" ? "individual" : "pelo cargo"}</p>
                       </div>
                     </li>
                   );
