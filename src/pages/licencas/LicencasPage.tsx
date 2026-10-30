@@ -24,6 +24,10 @@ import { logAuditoria } from "@/lib/auditLogger";
 import EmptyState from "@/components/EmptyState";
 import { authedFetch } from "@/lib/authedFetch";
 import PageHeader from "@/components/PageHeader";
+import MetricStrip from "@/components/MetricStrip";
+import DetailPanel from "@/components/DetailPanel";
+import ProductLogo from "@/components/ProductLogo";
+import ConfirmImpactDialog from "@/components/ConfirmImpactDialog";
 import { humanize } from "@/lib/labels";
 import { licencaCritica } from "@/lib/dashboardFilters";
 
@@ -46,6 +50,12 @@ type UnifiedLicense = {
   raw: any;
 };
 
+function metrics(l: { total: number; em_uso: number; is_trial: boolean }) {
+  const realPct = l.total > 0 ? Math.round((l.em_uso / l.total) * 100) : 0;
+  const excedido = l.em_uso > l.total && l.total > 0;
+  return { realPct, pct: Math.min(100, realPct), excedido, alerta: excedido || realPct > 100 };
+}
+
 export default function LicencasPage() {
   const canEdit = useIsSuperAdmin();
   const { data: licencas, isLoading: loadingLicencas } = useLicencas();
@@ -57,7 +67,8 @@ export default function LicencasPage() {
   const { toast } = useToast();
 
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(12);
+  const [selected, setSelected] = useState<UnifiedLicense | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editing, setEditing] = useState<any>(null);
@@ -209,38 +220,13 @@ export default function LicencasPage() {
         </>}
       />
 
-      {/* Counters */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <Card><CardContent className="py-3 px-4">
-          <p className="text-xs text-muted-foreground">SKUs ({hideTrials ? "pagas" : "todas"})</p>
-          <p className="text-2xl font-bold">{(hideTrials ? paidPool : allLicenses).length}</p>
-          <p className="text-[10px] text-muted-foreground mt-0.5">
-            MS {msLicenses.filter(l => !hideTrials || !l.is_trial).length} · Ext {extLicenses.length}
-          </p>
-        </CardContent></Card>
-        <Card><CardContent className="py-3 px-4">
-          <p className="text-xs text-muted-foreground">Seats totais</p>
-          <p className="text-2xl font-bold">{seatsTotal.toLocaleString("pt-BR")}</p>
-          <p className="text-[10px] text-muted-foreground mt-0.5">Excluindo trials/free</p>
-        </CardContent></Card>
-        <Card><CardContent className="py-3 px-4">
-          <p className="text-xs text-muted-foreground">Seats em uso</p>
-          <p className="text-2xl font-bold">{seatsEmUso.toLocaleString("pt-BR")}</p>
-          <p className="text-[10px] text-muted-foreground mt-0.5">
-            {seatsTotal > 0 ? `${Math.round((seatsEmUso / seatsTotal) * 100)}% do total` : "—"}
-          </p>
-        </CardContent></Card>
-        <Card><CardContent className="py-3 px-4">
-          <p className="text-xs text-muted-foreground flex items-center gap-1"><Globe className="h-3 w-3" /> Externas</p>
-          <p className="text-2xl font-bold">{extLicenses.length}</p>
-        </CardContent></Card>
-        <Card className={criticos > 0 ? "border-destructive/30" : ""}>
-          <CardContent className="py-3 px-4">
-            <p className="text-xs text-muted-foreground flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Críticas (≥{criticalPct}%)</p>
-            <p className={`text-2xl font-bold ${criticos > 0 ? "text-destructive" : ""}`}>{criticos}</p>
-          </CardContent>
-        </Card>
-      </div>
+      <MetricStrip items={[
+        { label: hideTrials ? "Licenças pagas" : "Licenças", value: (hideTrials ? paidPool : allLicenses).length, tone: "primary" },
+        { label: "Contratadas", value: seatsTotal },
+        { label: "Em uso", value: seatsEmUso },
+        { label: "Externas", value: extLicenses.length, active: tab === "externas", onClick: () => { setTab(tab === "externas" ? "todas" : "externas"); setPage(1); } },
+        { label: `Críticas (≥${criticalPct}%)`, value: criticos, tone: criticos > 0 ? "danger" : "default", active: soCriticas, onClick: () => { setSoCriticas(!soCriticas); setPage(1); } },
+      ]} />
 
       {/* Tabs + Search + toggle */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -248,7 +234,7 @@ export default function LicencasPage() {
           <TabsList>
             <TabsTrigger value="todas">Todas ({allLicenses.filter(l => !hideTrials || !l.is_trial).length})</TabsTrigger>
             <TabsTrigger value="microsoft">Microsoft ({msLicenses.filter(l => !hideTrials || !l.is_trial).length})</TabsTrigger>
-            <TabsTrigger value="externas">Externas ({extLicenses.length})</TabsTrigger>
+            <TabsTrigger value="externas">Outros ({extLicenses.length})</TabsTrigger>
           </TabsList>
         </Tabs>
         <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -265,90 +251,79 @@ export default function LicencasPage() {
       </div>
 
 
-      {/* Table */}
-      <Card><CardContent className="p-0">
-        {isLoading ? <div className="p-4 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div> : filtered.length === 0 ? (
-          <EmptyState message="Nenhuma licença encontrada" size="lg" />
-        ) : (
-          <table className="w-full text-sm"><thead><tr className="border-b text-left text-muted-foreground">
-            <th className="p-4 font-medium">Nome</th>
-            <th className="p-4 font-medium hidden md:table-cell">Origem</th>
-            <th className="p-4 font-medium hidden sm:table-cell">Total</th>
-            <th className="p-4 font-medium hidden sm:table-cell">Em uso</th>
-            <th className="p-4 font-medium min-w-[180px]">Disponibilidade</th>
-            <th className="p-4 font-medium hidden lg:table-cell">Tipo</th>
-            <th className="p-4 font-medium w-20">Ações</th>
-          </tr></thead><tbody>
-            {paginatedItems.map((l: UnifiedLicense) => {
-              const pct = l.total > 0 ? Math.min(100, Math.round((l.em_uso / l.total) * 100)) : 0;
-              const disp = l.total - l.em_uso;
-              const excedido = l.em_uso > l.total && l.total > 0;
-              const critico = !l.is_trial && l.total > 0 && pct >= criticalPct;
-              const showAsCritical = excedido || critico;
-              return (
-                <tr key={`${l.origem}-${l.id}`} className="border-b last:border-0 hover:bg-muted/50">
-                  <td className="p-4">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium text-primary">{l.display_name}</span>
-                      {excedido && <Badge className="bg-destructive text-destructive-foreground border-0">Excedido</Badge>}
-                      {l.is_trial && <Badge variant="outline" className="text-muted-foreground">Trial/Free</Badge>}
-                      {l.capability_status === "Warning" && <Badge variant="outline" className="border-warning/40 text-warning">Em graça</Badge>}
-                      {l.capability_status === "Suspended" && <Badge variant="outline" className="border-destructive/40 text-destructive">Suspensa</Badge>}
-                    </div>
-                    {l.display_name !== l.nome && (
-                      <p className="text-[11px] text-muted-foreground font-mono mt-0.5">{l.nome}</p>
-                    )}
-                  </td>
-                  <td className="p-4 hidden md:table-cell">
-                    {l.origem === "microsoft" ? (
-                      <Badge className="bg-blue-600 hover:bg-blue-700 text-white border-0"><Monitor className="h-3 w-3 mr-1" />Microsoft</Badge>
-                    ) : (
-                      <Badge variant="outline"><Globe className="h-3 w-3 mr-1" />Externa</Badge>
-                    )}
-                  </td>
-                  <td className="p-4 text-muted-foreground hidden sm:table-cell">{l.total.toLocaleString("pt-BR")}</td>
-                  <td className="p-4 hidden sm:table-cell">
-                    <TooltipProvider delayDuration={150}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="text-muted-foreground cursor-help underline decoration-dotted decoration-muted-foreground/40">
-                            {l.em_uso.toLocaleString("pt-BR")}
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {l.em_uso_source === "microsoft" && "Reportado pela Microsoft (consumedUnits)"}
-                          {l.em_uso_source === "calculated" && "Calculado a partir das atribuições processadas"}
-                          {l.em_uso_source === "manual" && "Valor manual — não há atribuições rastreadas"}
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </td>
-                  <td className="p-4">
-                    <div className="flex items-center gap-2">
-                      <Progress value={pct} className={`h-2 flex-1 ${showAsCritical ? "[&>div]:bg-destructive" : pct >= 75 ? "[&>div]:bg-warning" : ""}`} />
-                      <span className={`text-xs font-medium whitespace-nowrap ${showAsCritical ? "text-destructive" : "text-muted-foreground"}`}>
-                        {excedido ? `+${l.em_uso - l.total} acima` : `${disp} disp.`}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="p-4 text-muted-foreground text-xs hidden lg:table-cell">{humanize(l.tipo)}</td>
-                  <td className="p-4">
-                    {l.origem === "externa" ? (
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(l)}><Pencil className="h-3 w-3" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(l.id)}><Trash2 className="h-3 w-3" /></Button>
+      <div className="flex items-start gap-5">
+        <div className="min-w-0 flex-1 space-y-4">
+          {isLoading ? (
+            <div className="grid gap-4 md:grid-cols-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-40 w-full rounded-xl" />)}</div>
+          ) : filtered.length === 0 ? (
+            <Card><CardContent><EmptyState message="Nenhuma licença encontrada" size="lg" /></CardContent></Card>
+          ) : (
+            <div className={`grid gap-4 md:grid-cols-2 ${selected ? "" : "2xl:grid-cols-3"}`}>
+              {paginatedItems.map((l: UnifiedLicense) => {
+                const m = metrics(l);
+                const isSel = selected?.id === l.id && selected.origem === l.origem;
+                return (
+                  <button key={`${l.origem}-${l.id}`} type="button" onClick={() => setSelected(isSel ? null : l)}
+                    className={`rounded-xl border bg-card p-5 text-left transition-colors hover:border-primary/40 ${isSel ? "border-primary bg-primary/5" : ""}`}>
+                    <div className="flex items-start gap-4">
+                      <div className="scale-150 origin-top-left pb-3 pr-3"><ProductLogo nome={l.display_name} /></div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="line-clamp-2 font-semibold leading-snug">{l.display_name}</p>
+                          {l.capability_status === "Suspended" && <Badge variant="outline" className="shrink-0 border-warning/40 bg-warning/15 text-warning">Suspensa</Badge>}
+                          {l.capability_status === "Warning" && <Badge variant="outline" className="shrink-0 border-warning/40 text-warning">Em graça</Badge>}
+                          {l.is_trial && <Badge variant="outline" className="shrink-0 text-muted-foreground">Trial/Free</Badge>}
+                        </div>
+                        <p className="text-sm text-muted-foreground">{l.origem === "microsoft" ? "Microsoft" : l.aplicacao_nome || "Externa"}</p>
                       </div>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">Auto</span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody></table>
-        )}
-      </CardContent></Card>
-      <TablePagination totalItems={filtered.length} pageSize={pageSize} currentPage={safePage} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
+                    </div>
+                    <div className="mt-5 flex items-baseline justify-between">
+                      <p className="text-lg"><span className="font-semibold">{l.em_uso.toLocaleString("pt-BR")}</span> de {l.total.toLocaleString("pt-BR")}</p>
+                      <span className={`text-sm font-medium ${m.alerta ? "text-destructive" : "text-muted-foreground"}`}>{m.realPct}%</span>
+                    </div>
+                    <Progress value={m.pct} className={`mt-2 h-2 ${m.alerta ? "[&>div]:bg-destructive" : m.pct >= 75 ? "[&>div]:bg-warning" : ""}`} />
+                    <p className="mt-2 text-xs text-muted-foreground">Licenças usadas de contratadas</p>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <TablePagination totalItems={filtered.length} pageSize={pageSize} currentPage={safePage} pageSizeOptions={[12, 24, 48]} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
+        </div>
+
+        {selected && (() => {
+          const m = metrics(selected);
+          return (
+            <DetailPanel onClose={() => setSelected(null)}>
+              <div className="flex items-center gap-4 pr-8">
+                <div className="scale-150 origin-left pl-1 pr-4"><ProductLogo nome={selected.display_name} /></div>
+                <div className="min-w-0"><p className="text-lg font-semibold leading-snug">{selected.display_name}</p><p className="text-sm text-muted-foreground">{selected.origem === "microsoft" ? "Microsoft" : "Externa"}</p></div>
+              </div>
+              <div className="mt-6 grid grid-cols-3 gap-2 text-center">
+                {[["Contratadas", selected.total], ["Em uso", selected.em_uso], [m.excedido ? "Acima" : "Livres", Math.abs(selected.total - selected.em_uso)]].map(([k, v]) => (
+                  <div key={k as string} className="rounded-lg bg-muted/60 p-3"><p className={`text-xl font-semibold tabular-nums ${k === "Acima" ? "text-destructive" : ""}`}>{(v as number).toLocaleString("pt-BR")}</p><p className="text-xs text-muted-foreground">{k}</p></div>
+                ))}
+              </div>
+              <Progress value={m.pct} className={`mt-4 h-2 ${m.alerta ? "[&>div]:bg-destructive" : ""}`} />
+              <dl className="mt-6 space-y-3 text-sm">
+                <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Situação</dt><dd>{selected.capability_status === "Suspended" ? "Suspensa" : selected.capability_status === "Warning" ? "Em graça" : "Ativa"}</dd></div>
+                {selected.display_name !== selected.nome && <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Código</dt><dd className="truncate font-mono text-xs">{selected.nome}</dd></div>}
+                <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Uso informado por</dt><dd>{selected.em_uso_source === "microsoft" ? "Microsoft" : selected.em_uso_source === "calculated" ? "Atribuições do IAM" : "Valor manual"}</dd></div>
+                {selected.tipo && <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Tipo</dt><dd>{humanize(selected.tipo)}</dd></div>}
+                {selected.custo_unitario != null && <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Custo unitário</dt><dd>{selected.custo_unitario.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</dd></div>}
+                {selected.renovacao && <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Renovação</dt><dd>{new Date(selected.renovacao + "T12:00:00").toLocaleDateString("pt-BR")}</dd></div>}
+              </dl>
+              {selected.origem === "externa" && canEdit && (
+                <div className="mt-6 flex gap-2">
+                  <Button variant="outline" className="flex-1" onClick={() => openEdit(selected)}><Pencil className="mr-1 h-4 w-4" />Editar</Button>
+                  <Button variant="outline" className="flex-1 text-destructive" onClick={() => setDeleteId(selected.id)}><Trash2 className="mr-1 h-4 w-4" />Excluir</Button>
+                </div>
+              )}
+              {selected.origem === "microsoft" && <p className="mt-6 text-xs text-muted-foreground">Atualizada automaticamente a partir do tenant Microsoft.</p>}
+            </DetailPanel>
+          );
+        })()}
+      </div>
 
       {/* Dialog Nova/Editar Licença Externa */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -375,11 +350,11 @@ export default function LicencasPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir licença?</AlertDialogTitle><AlertDialogDescription>Esta ação não pode ser desfeita.</AlertDialogDescription></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleDelete}>Excluir</AlertDialogAction></AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmImpactDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}
+        title={`Excluir ${extLicenses.find((l) => l.id === deleteId)?.display_name ?? "licença"}?`}
+        description="Esta ação não pode ser desfeita."
+        impacts={[{ icon: Trash2, title: "Apaga a licença do inventário", detail: "Contagem, custo e renovação deixam de aparecer." }]}
+        confirmLabel="Excluir" confirmIcon={Trash2} onConfirm={() => { handleDelete(); setSelected(null); }} />
     </div>
   );
 }

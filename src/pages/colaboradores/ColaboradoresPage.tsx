@@ -1,3 +1,5 @@
+import ConfirmImpactDialog, { useLeaverImpacts } from "@/components/ConfirmImpactDialog";
+import { Power } from "lucide-react";
 import { AutoUpdatedHint } from "@/components/AutoUpdatedHint";
 import { isPreventivelySuspended, colabFiltros, COLAB_FILTRO_LABEL } from "@/lib/dashboardFilters";
 import { useState, useEffect } from "react";
@@ -85,6 +87,7 @@ export default function ColaboradoresPage() {
   const [form, setForm] = useState<ColabForm>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const leaverImpacts = useLeaverImpacts(deleteId ?? undefined);
   const [syncing, setSyncing] = useState(false);
 
   const { data: colaboradores, isLoading } = useColaboradores();
@@ -584,19 +587,10 @@ export default function ColaboradoresPage() {
         </DialogContent>
       </Dialog>
 
-      {/* AlertDialog Excluir */}
-      <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Desligar colaborador?</AlertDialogTitle>
-            <AlertDialogDescription>Identidades nunca são apagadas (auditoria e recertificação). O colaborador será marcado como desligado: contas desabilitadas e acessos removidos pelo Órigo Agente. O histórico é mantido.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Desligar</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmImpactDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}
+        title={`Desligar ${mapped.find((c) => c.id === deleteId)?.nome ?? "colaborador"}?`}
+        description="A identidade não é apagada: o colaborador fica desligado e o histórico é mantido."
+        impacts={leaverImpacts} confirmLabel="Desligar" confirmIcon={Power} onConfirm={handleDelete} />
 
       {/* Dialog Atribuição Individual Rápida */}
       <Dialog open={!!quickAssignType} onOpenChange={(open) => { if (!open) { setQuickAssignType(null); setQuickAssignColab(null); } }}>

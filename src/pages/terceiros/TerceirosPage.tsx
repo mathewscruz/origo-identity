@@ -1,3 +1,5 @@
+import ConfirmImpactDialog, { useLeaverImpacts } from "@/components/ConfirmImpactDialog";
+import { Power } from "lucide-react";
 import { AutoUpdatedHint } from "@/components/AutoUpdatedHint";
 import { useState, useEffect } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -76,6 +78,7 @@ export default function TerceirosPage() {
   const { data: terceiros, isLoading } = useTerceiros();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const leaverImpacts = useLeaverImpacts(undefined, deleteId ?? undefined);
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState({ nome: "", email: "", empresa_terceira: "", contrato_inicio: "", contrato_fim: "", criticidade: "media", responsavel: "", responsavel_colaborador_id: "" as string | "", ativo: true, sam_account_name: "", motivo: "" });
   const [saving, setSaving] = useState(false);
@@ -281,11 +284,10 @@ export default function TerceirosPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Desligar terceiro?</AlertDialogTitle><AlertDialogDescription>Identidades nunca são apagadas. O terceiro fica inativo: conta desabilitada, perfis revogados e acessos removidos pelo Órigo Agente. O histórico é mantido.</AlertDialogDescription></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Desligar</AlertDialogAction></AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmImpactDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}
+        title={`Desligar ${((terceiros ?? []) as { id: string; nome: string }[]).find((t) => t.id === deleteId)?.nome ?? "terceiro"}?`}
+        description="A identidade não é apagada: o terceiro fica inativo e o histórico é mantido."
+        impacts={leaverImpacts} confirmLabel="Desligar" confirmIcon={Power} onConfirm={handleDelete} />
     </div>
   );
 }
