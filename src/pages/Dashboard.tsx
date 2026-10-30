@@ -292,8 +292,8 @@ export default function Dashboard() {
   const kpis = [
     { label: "Aguardando aprovação", value: m?.fila_waiting ?? 0, hint: waitingAge ? `mais antigo: ${waitingAge}` : "nada pendente", icon: ShieldCheck, tone: (m?.fila_waiting ?? 0) > 0 ? "warning" as const : "success" as const, to: "/fila-provisionamento?tab=aprovacao" },
     { label: "Falhas do agente", value: m?.fila_failed ?? 0, hint: `${m?.fila_success_24h ?? 0} concluídos em 24 h${pendingAge ? ` · espera: ${pendingAge}` : ""}`, icon: XCircle, tone: (m?.fila_failed ?? 0) > 0 ? "destructive" as const : "success" as const, to: "/fila-provisionamento?status=failed" },
-    { label: "Revisões abertas", value: m?.revisoes_abertas ?? 0, hint: `${pessoas} pessoas ativas`, icon: Users, tone: "primary" as const, to: "/revisoes" },
-    { label: "Terceiros vencidos", value: m?.terc_vencidos ?? 0, hint: `${m?.excecoes_pendentes ?? 0} exceções pendentes`, icon: FileCheck, tone: (m?.terc_vencidos ?? 0) > 0 ? "destructive" as const : "success" as const, to: "/terceiros" },
+    { label: "Revisões abertas", value: m?.revisoes_abertas ?? 0, hint: `${pessoas} pessoas ativas`, icon: Users, tone: "primary" as const, to: "/revisoes?status=em_andamento" },
+    { label: "Terceiros vencidos", value: m?.terc_vencidos ?? 0, hint: `${m?.excecoes_pendentes ?? 0} exceções pendentes`, icon: FileCheck, tone: (m?.terc_vencidos ?? 0) > 0 ? "destructive" as const : "success" as const, to: "/terceiros?pendencia=vencidos" },
   ];
 
   return (
@@ -316,9 +316,9 @@ export default function Dashboard() {
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          { l: "Revisões abertas", v: k?.revisoes_abertas ?? 0, to: "/revisoes", icon: ClipboardCheck },
-          { l: "Exceções vencendo (7 d)", v: k?.excecoes_vencendo ?? 0, to: "/excecoes", icon: CalendarClock },
-          { l: "Terceiros vencidos", v: k?.terceiros_vencidos ?? 0, to: "/terceiros", icon: UserCheck },
+          { l: "Revisões abertas", v: k?.revisoes_abertas ?? 0, to: "/revisoes?status=em_andamento", icon: ClipboardCheck },
+          { l: "Exceções vencendo (7 d)", v: k?.excecoes_vencendo ?? 0, to: "/excecoes?aba=aprovadas", icon: CalendarClock },
+          { l: "Terceiros vencidos", v: k?.terceiros_vencidos ?? 0, to: "/terceiros?pendencia=vencidos", icon: UserCheck },
           { l: "RH: precisa de você", v: k?.quarentena ?? 0, to: "/colaboradores/quarentena", icon: FileSpreadsheet },
         ].map((x) => (
           <Link key={x.l} to={x.to}><Card className="transition-colors hover:border-primary/40"><CardContent className="flex items-center gap-3 p-3"><x.icon className={`h-4 w-4 ${x.v > 0 ? "text-warning" : "text-muted-foreground"}`} /><span className="flex-1 truncate text-sm">{x.l}</span><span className="text-lg font-semibold tabular-nums">{x.v}</span></CardContent></Card></Link>
