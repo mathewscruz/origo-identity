@@ -75,7 +75,7 @@ export default function LicencasPage() {
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState({ nome: "", aplicacao_id: "", total: "0", em_uso: "0", tipo: "SaaS", custo_unitario: "", renovacao: "" });
   const [tab, setTab] = useState("todas");
-  const [soCriticas, setSoCriticas] = useState(() => new URLSearchParams(window.location.search).get("pendencia") === "criticas");
+  const [soCriticas, setSoCriticas] = useState(false); // nunca abre filtrado; filtro só quando clicar no indicador
   const [search, setSearch] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [hideTrials, setHideTrials] = useState(true);

@@ -151,7 +151,7 @@ function GovernanceList({ m, loading }: { m: Row; loading: boolean }) {
     { icon: CalendarClock, label: "Contratos vencendo", value: m?.terc_vencendo_30d ?? 0, to: "/terceiros?pendencia=vencendo", tone: "warning" },
     { icon: UserCheck, label: "Terceiros a revalidar", value: m?.terc_revalidar ?? 0, to: "/terceiros?pendencia=revalidar", tone: "warning" },
     { icon: ShieldAlert, label: "Conflitos de acesso (SoD)", value: m?.sod_violacoes ?? 0, to: "/sod?aba=violacoes", tone: "destructive" },
-    { icon: KeyRound, label: "Licenças críticas", value: m?.licencas_criticas ?? 0, to: "/licencas?pendencia=criticas", tone: "warning" },
+    { icon: KeyRound, label: "Licenças críticas", value: m?.licencas_criticas ?? 0, to: "/licencas", tone: "warning" },
     { icon: Users, label: "Contas órfãs no Entra", value: m?.fila_orfaos ?? 0, to: "/fila-provisionamento?tab=aprovacao&action=review_orphan_entra", tone: "warning" },
     { icon: FileSpreadsheet, label: "RH: precisa de você", value: m?.quarentena ?? 0, to: "/colaboradores/quarentena", tone: "warning" },
     { icon: Users, label: "Ativos sem conta Entra", value: m?.colab_sem_entra ?? 0, to: "/colaboradores?status=ativo&pendencia=sem_entra", tone: "info" },
