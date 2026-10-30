@@ -1,3 +1,5 @@
+/** Nunca cria cadastro (cargo/local/área/empresa) com '\uFFFD' — sinal de leitura com acento perdido. */
+export const hasReplacementChar = (v: string) => v.includes("\uFFFD");
 // Motor ÚNICO de importação da base do RH (CSV) — usado por sync-sharepoint-csv
 // (ciclo diário) e sync-csv-colab (upload manual).
 //
@@ -435,10 +437,10 @@ export async function processCsvColab(sb: Sb, csvText: string, opts: SyncOptions
     await load();
     const missing = { empresa: new Set<string>(), cargo: new Set<string>(), area: new Set<string>(), local: new Set<string>() };
     for (const row of rows) {
-      const company = row.company?.trim(); if (company && company !== "NULL" && !caches.empresa.has(company.toLowerCase())) missing.empresa.add(company);
-      const cargo = (row.description || row.title || "").trim(); if (cargo && cargo !== "NULL" && !caches.cargo.has(cargo.toLowerCase())) missing.cargo.add(cargo);
-      const area = row.departmentNumber?.trim(); if (area && area !== "NULL" && !caches.area.has(area.toLowerCase())) missing.area.add(area);
-      const local = row.Base_Local?.trim(); if (local && local !== "NULL" && !caches.local.has(local.toLowerCase())) missing.local.add(local);
+      const company = row.company?.trim(); if (company && company !== "NULL" && !hasReplacementChar(company) && !caches.empresa.has(company.toLowerCase())) missing.empresa.add(company);
+      const cargo = (row.description || row.title || "").trim(); if (cargo && cargo !== "NULL" && !hasReplacementChar(cargo) && !caches.cargo.has(cargo.toLowerCase())) missing.cargo.add(cargo);
+      const area = row.departmentNumber?.trim(); if (area && area !== "NULL" && !hasReplacementChar(area) && !caches.area.has(area.toLowerCase())) missing.area.add(area);
+      const local = row.Base_Local?.trim(); if (local && local !== "NULL" && !hasReplacementChar(local) && !caches.local.has(local.toLowerCase())) missing.local.add(local);
     }
     if (!preview) {
       for (const b of chunk([...missing.empresa].map((nome) => ({ nome })), 200)) await sb.from("empresas").upsert(b, { onConflict: "nome", ignoreDuplicates: true });
