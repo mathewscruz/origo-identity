@@ -1,3 +1,5 @@
+import { useDeferredValue } from "react";
+import { IdentityAvatar, RevalidationMini } from "@/components/identity/IdentityCells";
 import ConfirmImpactDialog, { useLeaverImpacts } from "@/components/ConfirmImpactDialog";
 import { Power } from "lucide-react";
 import { AutoUpdatedHint } from "@/components/AutoUpdatedHint";
@@ -71,6 +73,8 @@ function fimContratoDisplay(dataFim: string | null) {
 
 export default function TerceirosPage() {
   const [busca, setBusca] = useState("");
+  const buscaDeferida = useDeferredValue(busca);
+  const revalCiclo = parseInt(useParametro("terceiro_revalidacao_dias", "45"), 10) || 45;
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [sortField, setSortField] = useState<string | null>(null);
@@ -127,7 +131,7 @@ export default function TerceirosPage() {
   const vencendo7d = list.filter((t: any) => { const d = diasRestantes(t.contrato_fim); return d >= 0 && d <= 7; }).length;
   const pend = searchParams.get("pendencia") || "";
   const pendFn = pend === "revalidar" ? (t: any) => tercFiltros.revalidar(t, undefined, Number(revalidacaoDias) || 45) : (tercFiltros as any)[pend];
-  const filtered = list.filter((t: any) => (!pendFn || pendFn(t)) && (!busca || t.nome.toLowerCase().includes(busca.toLowerCase())));
+  const filtered = list.filter((t: any) => (!pendFn || pendFn(t)) && (!buscaDeferida || `${t.nome} ${t.email ?? ""} ${t.empresa_terceira ?? ""}`.toLowerCase().includes(buscaDeferida.toLowerCase())));
   const sorted = useSortableData(filtered, sortField, sortDir);
   const { paginatedItems, safePage } = usePagination(sorted, page, pageSize);
 
@@ -205,20 +209,20 @@ export default function TerceirosPage() {
 
       <Card><CardContent className="p-0">
         {isLoading ? <div className="p-4 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div> : (
-          <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left text-muted-foreground text-xs uppercase tracking-wider">
-            <th className="p-4"><SortableHeader label="Nome" field="nome" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th><th className="p-4 hidden md:table-cell"><SortableHeader label="Empresa" field="empresa_terceira" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th><th className="p-4 font-medium hidden lg:table-cell">Responsável</th>
-            <th className="p-4 font-medium hidden md:table-cell">Criticidade</th><th className="p-4 font-medium">Fim Contrato</th><th className="p-4"><SortableHeader label="Status" field="ativo" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th><th className="p-4 font-medium w-20">Ações</th>
+          <div className="max-h-[70vh] overflow-auto"><table className="w-full text-sm"><thead className="sticky top-0 z-10 bg-card"><tr className="border-b text-left text-muted-foreground text-xs uppercase tracking-wider">
+            <th className="px-4 py-2.5"><SortableHeader label="Nome" field="nome" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th><th className="px-4 py-2.5 hidden md:table-cell"><SortableHeader label="Empresa" field="empresa_terceira" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th><th className="px-4 py-2.5 font-medium hidden lg:table-cell">Responsável</th>
+            <th className="px-4 py-2.5 font-medium hidden md:table-cell">Criticidade</th><th className="px-4 py-2.5 font-medium">Fim Contrato</th><th className="px-4 py-2.5 font-medium hidden lg:table-cell">Revalidação</th><th className="px-4 py-2.5"><SortableHeader label="Status" field="ativo" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th><th className="px-4 py-2.5 font-medium w-20">Ações</th>
           </tr></thead><tbody>
-            {paginatedItems.length === 0 && <tr><td colSpan={7}><EmptyState message="Nenhum terceiro encontrado." /></td></tr>}
+            {paginatedItems.length === 0 && <tr><td colSpan={8}><EmptyState message="Nenhum terceiro encontrado." /></td></tr>}
             {paginatedItems.map((t: any) => (
               <tr key={t.id} className="border-b last:border-0 hover:bg-muted/50">
-                <td className="p-4"><Link to={`/terceiros/${t.id}`} className="font-medium text-primary hover:underline">{t.nome}</Link></td>
-                <td className="p-4 text-muted-foreground hidden md:table-cell">{t.empresa_terceira || "—"}</td>
-                <td className="p-4 text-muted-foreground hidden lg:table-cell">{t.responsavel || "—"}</td>
-                <td className="p-4 hidden md:table-cell"><Badge variant="outline" className={criticidadeConfig[t.criticidade]?.class || ""}>{criticidadeConfig[t.criticidade]?.label || t.criticidade}</Badge></td>
-                <td className="p-4">{fimContratoDisplay(t.contrato_fim)}</td>
-                <td className="p-4"><Badge variant={t.ativo ? "default" : "secondary"}>{t.ativo ? "Ativo" : "Inativo"}</Badge></td>
-                <td className="p-4"><div className="flex gap-1">
+                <td className="px-4 py-2.5"><div className="flex items-center gap-2.5"><IdentityAvatar nome={t.nome} /><div className="min-w-0"><Link to={`/terceiros/${t.id}`} className="font-medium text-primary hover:underline">{t.nome}</Link><p className="truncate text-xs text-muted-foreground">{t.email || "—"}</p></div></div></td>
+                <td className="px-4 py-2.5 text-muted-foreground hidden md:table-cell">{t.empresa_terceira || "—"}</td>
+                <td className="px-4 py-2.5 text-muted-foreground hidden lg:table-cell">{t.responsavel || "—"}</td>
+                <td className="px-4 py-2.5 hidden md:table-cell"><Badge variant="outline" className={criticidadeConfig[t.criticidade]?.class || ""}>{criticidadeConfig[t.criticidade]?.label || t.criticidade}</Badge></td>
+                <td className="px-4 py-2.5">{fimContratoDisplay(t.contrato_fim)}</td><td className="px-4 py-2.5 hidden lg:table-cell">{t.ativo ? <RevalidationMini base={t.ultima_revalidacao || t.contrato_inicio} ciclo={revalCiclo} /> : <span className="text-xs text-muted-foreground">—</span>}</td>
+                <td className="px-4 py-2.5"><Badge variant={t.ativo ? "default" : "secondary"}>{t.ativo ? "Ativo" : "Inativo"}</Badge></td>
+                <td className="px-4 py-2.5"><div className="flex gap-1">
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(t)}><Pencil className="h-3 w-3" /></Button>
                   {t.ativo && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" title="Desligar" onClick={() => setDeleteId(t.id)}><Trash2 className="h-3 w-3" /></Button>}
                 </div></td>
