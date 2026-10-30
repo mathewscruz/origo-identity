@@ -138,7 +138,8 @@ export default function TerceirosPage() {
   const vencendo7d = list.filter((t: any) => { const d = diasRestantes(t.contrato_fim); return d >= 0 && d <= 7; }).length;
   const pend = searchParams.get("pendencia") || "";
   const pendFn = pend === "revalidar" ? (t: any) => tercFiltros.revalidar(t, undefined, Number(revalidacaoDias) || 45) : (tercFiltros as any)[pend];
-  const filtered = list.filter((t: any) => (!pendFn || pendFn(t)) && (!buscaDeferida || `${t.nome} ${t.email ?? ""} ${t.empresa_terceira ?? ""}`.toLowerCase().includes(buscaDeferida.toLowerCase())));
+  const setStatusF = (v: string) => { setStatusFilter(v); setPage(1); const n = new URLSearchParams(searchParams); n.set("status", v); setSearchParams(n, { replace: true }); };
+  const filtered = list.filter((t: any) => (!pendFn || pendFn(t)) && (statusFilter === "todos" || t.ativo === (statusFilter === "ativo")) && (!buscaDeferida || `${t.nome} ${t.email ?? ""} ${t.empresa_terceira ?? ""}`.toLowerCase().includes(buscaDeferida.toLowerCase())));
   const sorted = useSortableData(filtered, sortField, sortDir);
   const { paginatedItems, safePage } = usePagination(sorted, page, pageSize);
 
