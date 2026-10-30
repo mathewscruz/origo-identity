@@ -346,13 +346,13 @@ function RecentCard() {
           : (
           <ul className="flex-1 divide-y divide-border/60">
             {items.map((it) => {
-              const { icon: Icon } = acaoIcon(it);
+              const { icon: Icon, tone } = acaoIcon(it);
               const sentence = activitySentence(it) || it.detalhe || it.acao.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
               const title = it.pessoa || sentence;
               const desc = it.pessoa ? sentence : (it.detalhe && it.detalhe !== sentence ? it.detalhe : "");
               const row = (
                 <div className="flex items-start gap-3 py-2.5">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-primary"><Icon className="h-4 w-4" /></span>
+                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tone}`}><Icon className="h-4 w-4" /></span>
                   <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{title}</p><p className="truncate text-xs text-muted-foreground">{desc}</p></div>
                   <span className="shrink-0 text-xs text-muted-foreground">{tempoRelativo(it.ts)}</span>
                 </div>
