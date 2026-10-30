@@ -393,9 +393,9 @@ function RecentCard() {
           <ul className="flex-1 divide-y divide-border/60">
             {items.map((it) => {
               const { icon: Icon } = acaoIcon(it);
-              const sentence = activitySentence(it) || it.acao;
+              const sentence = activitySentence(it) || it.detalhe || it.acao.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
               const title = it.pessoa || sentence;
-              const desc = it.pessoa ? sentence : (it.detalhe ?? "");
+              const desc = it.pessoa ? sentence : (it.detalhe && it.detalhe !== sentence ? it.detalhe : "");
               const row = (
                 <div className="flex items-start gap-3 py-2.5">
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-primary"><Icon className="h-4 w-4" /></span>
