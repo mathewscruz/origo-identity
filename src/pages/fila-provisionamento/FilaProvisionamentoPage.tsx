@@ -3,7 +3,7 @@ import { completedQueueLink, queueStatuses } from "@/lib/dashboardFilters";
 import QueryState from "@/components/QueryState";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Bot, CheckCircle2, Clock, ListOrdered, Loader2, RotateCcw, Search, ShieldCheck, XCircle, Ban, Eye } from "lucide-react";
+import { Check, ChevronRight, X, Bot, CheckCircle2, Clock, ListOrdered, Loader2, RotateCcw, Search, ShieldCheck, XCircle, Ban, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,8 @@ import AprovacaoTab from "./sections/AprovacaoTab";
 import TablePagination from "@/components/TablePagination";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
+import DetailPanel from "@/components/DetailPanel";
+import ConfirmImpactDialog from "@/components/ConfirmImpactDialog";
 import StatCard from "@/components/StatCard";
 import { useAgentStatus, useQueueDistinctActions, useQueuePage, useQueueStats } from "@/hooks/useOrigoData";
 import { useCancelQueueItem, useReprocessQueueItem } from "@/hooks/mutations/useQueueActions";
@@ -41,6 +43,73 @@ const STATUS_FILTERS: { value: string; label: string; statuses: string[] }[] = [
   { value: "cancelled", label: "Cancelado / recusado", statuses: ["cancelled", "rejected"] },
   { value: "todos", label: "Todos", statuses: [] },
 ];
+
+type StepState = "success" | "failed" | "processing" | "pending" | "cancelled" | "none";
+const STEP_NAMES = ["Criar conta", "Grupos", "Licenças", "Apps"] as const;
+const STEP_DOT: Record<string, string> = { success: "bg-success", failed: "bg-destructive", processing: "bg-info", pending: "bg-warning", waiting_approval: "bg-info", cancelled: "bg-muted-foreground", rejected: "bg-muted-foreground" };
+const RANK: Record<string, number> = { failed: 5, processing: 4, waiting_approval: 3, pending: 3, success: 1, cancelled: 0, rejected: 0 };
+
+function stepOf(action: string): number {
+  const a = action.toLowerCase();
+  if (a.includes("group") || a.includes("grupo") || a.includes("sharepoint")) return 1;
+  if (a.includes("licen")) return 2;
+  if (a.endsWith("_user_app") || a.includes("app")) return 3;
+  return 0;
+}
+function worst(statuses: string[]): string {
+  return statuses.reduce((w, s) => ((RANK[s] ?? 2) > (RANK[w] ?? 2) ? s : w), statuses[0] ?? "pending");
+}
+function toStep(s?: string): StepState {
+  if (!s) return "none";
+  if (s === "success" || s === "failed" || s === "processing") return s;
+  if (s === "cancelled" || s === "rejected") return "cancelled";
+  return "pending";
+}
+function groupByPerson(rows: Row[]) {
+  const map = new Map<string, Row[]>();
+  for (const r of rows) {
+    const key = r.colaborador_id || r.terceiro_id || r.target_identity || r.id;
+    map.set(key, [...(map.get(key) ?? []), r]);
+  }
+  return [...map.entries()].map(([key, items]) => {
+    const f = items[0];
+    const per: string[][] = [[], [], [], []];
+    for (const i of items) per[stepOf(i.action_type)].push(i.status);
+    const created = items.reduce((m, i) => (i.created_at < m ? i.created_at : m), f.created_at);
+    return {
+      key, items,
+      who: f.payload_json?.displayName || f.target_identity || "—",
+      email: f.payload_json?.userPrincipalName || f.payload_json?.mail || (f.target_identity && f.target_identity !== f.payload_json?.displayName ? f.target_identity : ""),
+      status: worst(items.map((i) => i.status)),
+      steps: per.map((st) => toStep(st.length ? worst(st) : undefined)),
+      created,
+      personLink: f.colaborador_id ? `/colaboradores/${f.colaborador_id}` : f.terceiro_id ? `/terceiros/${f.terceiro_id}` : null,
+    };
+  });
+}
+
+function Steps({ steps }: { steps: StepState[] }) {
+  return (
+    <div className="flex min-w-[300px] items-start">
+      {steps.map((st, i) => (
+        <div key={i} className="relative flex flex-1 flex-col items-center">
+          {i > 0 && <span className={`absolute right-1/2 top-3 h-0.5 w-full -translate-y-1/2 ${st === "success" || st === "failed" || st === "processing" ? "bg-primary" : "bg-border"}`} />}
+          <span className={`relative z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 ${
+            st === "success" ? "border-primary bg-primary text-primary-foreground" :
+            st === "failed" ? "border-destructive bg-destructive text-destructive-foreground" :
+            st === "processing" ? "border-primary bg-card text-primary" :
+            st === "pending" ? "border-warning bg-card" :
+            st === "cancelled" ? "border-muted-foreground/40 bg-muted" : "border-dashed border-border bg-card"}`}>
+            {st === "success" && <Check className="h-3.5 w-3.5" />}
+            {st === "failed" && <X className="h-3.5 w-3.5" />}
+            {st === "processing" && <Loader2 className="h-3 w-3 animate-spin" />}
+          </span>
+          <span className={`mt-1 text-xs ${st === "none" ? "text-muted-foreground/50" : "text-muted-foreground"}`}>{STEP_NAMES[i]}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function relTime(iso?: string | null) {
   if (!iso) return "—";
@@ -92,6 +161,9 @@ export default function FilaProvisionamentoPage() {
   const cancel = useCancelQueueItem();
 
   const rows: Row[] = pageData?.rows ?? [];
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const groups = useMemo(() => groupByPerson(rows), [rows]);
+  const selected = groups.find((g) => g.key === selectedKey) ?? null;
   const total = pageData?.total ?? 0;
 
   const agent = agents?.[0];
@@ -110,9 +182,9 @@ export default function FilaProvisionamentoPage() {
 
   const kpis = useMemo(() => [
     { key: "waiting_approval", label: "Aguardando aprovação", value: stats?.waiting_approval ?? 0, icon: ShieldCheck, tone: "info" as const },
-    { key: "pending", label: "Pendente (agente)", value: stats?.pending ?? 0, icon: Clock, tone: "warning" as const, hint: stats?.oldest_pending ? `mais antigo ${relTime(stats.oldest_pending)}${stats.retry_scheduled ? ` · ${stats.retry_scheduled} com retry agendado` : ""}` : undefined },
+    { key: "pending", label: "Na fila", value: stats?.pending ?? 0, icon: Clock, tone: "warning" as const, hint: stats?.oldest_pending ? `mais antigo ${relTime(stats.oldest_pending)}${stats.retry_scheduled ? ` · ${stats.retry_scheduled} com retry agendado` : ""}` : undefined },
     { key: "processing", label: "Executando", value: stats?.processing ?? 0, icon: Loader2, tone: "primary" as const },
-    { key: "failed", label: "Falhou", value: stats?.failed ?? 0, icon: XCircle, tone: "destructive" as const },
+    { key: "failed", label: "Falhas", value: stats?.failed ?? 0, icon: XCircle, tone: "destructive" as const },
     { key: "success", label: "Concluídos (7 dias)", value: stats?.success_7d ?? 0, icon: CheckCircle2, tone: "success" as const, hint: `${stats?.cancelled_7d ?? 0} cancelado(s)/recusado(s)` },
   ], [stats]);
 
@@ -142,12 +214,22 @@ export default function FilaProvisionamentoPage() {
       />
 
       <QueryState loading={statsLoading} error={statsError} retry={retryStats}>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        {kpis.map((k) => (
-          <StatCard key={k.key} label={k.label} value={k.value} hint={k.hint} icon={k.icon} tone={k.tone} loading={statsLoading}
-            active={k.key === "waiting_approval" ? tab === "aprovacao" : tab === "fila" && statusKey === k.key}
-            onClick={() => k.key === "success" ? setParams(new URLSearchParams(completedQueueLink().split("?")[1])) : k.key === "waiting_approval" ? setTab("aprovacao") : setFilter("status", tab === "fila" && statusKey === k.key ? "abertos" : k.key)} />
-        ))}
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
+        {kpis.map((k) => {
+          const active = k.key === "waiting_approval" ? tab === "aprovacao" : tab === "fila" && statusKey === k.key;
+          return (
+            <button key={k.key} type="button"
+              onClick={() => k.key === "success" ? setParams(new URLSearchParams(completedQueueLink().split("?")[1])) : k.key === "waiting_approval" ? setTab("aprovacao") : setFilter("status", tab === "fila" && statusKey === k.key ? "abertos" : k.key)}
+              className={`flex items-center justify-between rounded-xl border bg-card p-5 text-left transition-colors hover:border-primary/40 ${active ? "border-primary/60 bg-primary/5" : ""}`}>
+              <div className="min-w-0">
+                <p className="text-sm">{k.label}</p>
+                <p className={`mt-1 text-4xl font-semibold tabular-nums ${k.tone === "destructive" && k.value > 0 ? "text-destructive" : k.tone === "warning" ? "text-foreground" : "text-primary"}`}>{k.value.toLocaleString("pt-BR")}</p>
+                {k.hint && <p className="mt-1 truncate text-[11px] text-muted-foreground">{k.hint}</p>}
+              </div>
+              <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+            </button>
+          );
+        })}
       </div>
 
       </QueryState>
@@ -186,82 +268,86 @@ export default function FilaProvisionamentoPage() {
       </div>
 
       <QueryState loading={isLoading || isPlaceholderData} error={pageError} retry={retryPage}>
-      <Card>
+      <div className="flex items-start gap-5">
+      <Card className="min-w-0 flex-1">
         <CardContent className="p-0">
           {isLoading && rows.length === 0 ? (
-            <div className="space-y-3 p-4">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
-          ) : rows.length === 0 ? (
+            <div className="space-y-3 p-4">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
+          ) : groups.length === 0 ? (
             <div className="py-10"><EmptyState message="Nenhum item com esses filtros." /></div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-xs uppercase tracking-wider text-muted-foreground">
-                    <th className="p-3 font-medium">Ação</th>
-                    <th className="p-3 font-medium">Pessoa / conta</th>
-                    <th className="p-3 font-medium hidden lg:table-cell">Recurso</th>
-                    <th className="p-3 font-medium">Status</th>
-                    <th className="p-3 font-medium hidden md:table-cell">Origem</th>
-                    <th className="p-3 font-medium hidden md:table-cell">Criado</th>
-                    <th className="p-3 font-medium hidden xl:table-cell">Resultado</th>
-                    <th className="p-3 font-medium text-right">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((item) => {
-                    const st = QUEUE_STATUS_META[item.status];
-                    const who = item.payload_json?.displayName || item.target_identity || "—";
-                    const resource = resolveName(item, "");
-                    const retryHint = item.status === "pending" && item.next_retry_at && new Date(item.next_retry_at) > new Date() ? `retry ${item.retry_count}/${item.max_retries ?? 10} · ${new Date(item.next_retry_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : null;
-                    const personLink = item.colaborador_id ? `/colaboradores/${item.colaborador_id}` : item.terceiro_id ? `/terceiros/${item.terceiro_id}` : null;
-                    return (
-                      <tr key={item.id} className="border-b last:border-0 hover:bg-muted/40">
-                        <td className="p-3">
-                          <div className="flex flex-wrap items-center gap-1">
-                            <Badge variant="outline" className={`whitespace-nowrap text-xs ${actionBadgeClass(item.action_type)}`}>{actionLabel(item.action_type)}</Badge>
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">{actionScope(item.action_type)}</Badge>
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          {personLink ? <Link to={personLink} className="font-medium text-primary hover:underline">{who}</Link> : <span className="font-medium">{who}</span>}
-                          {item.target_identity && item.target_identity !== who && <div className="font-mono text-[11px] text-muted-foreground">{item.target_identity}</div>}
-                        </td>
-                        <td className="p-3 hidden lg:table-cell max-w-[260px] truncate text-muted-foreground">{resource || "—"}</td>
-                        <td className="p-3">
-                          <Badge variant="outline" className={st?.className}>{item.status === "processing" && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}{statusLabel(item.status)}</Badge>
-                          {retryHint && <div className="mt-0.5 text-[10px] text-muted-foreground">{retryHint}</div>}
-                          {item.status === "processing" && item.claim_owner && <div className="mt-0.5 text-[10px] text-muted-foreground">{item.claim_owner}</div>}
-                        </td>
-                        <td className="p-3 hidden md:table-cell text-xs text-muted-foreground">{item.requested_by || "—"}</td>
-                        <td className="p-3 hidden md:table-cell text-xs text-muted-foreground" title={new Date(item.created_at).toLocaleString("pt-BR")}>{relTime(item.created_at)}</td>
-                        <td className="p-3 hidden xl:table-cell max-w-[280px] truncate text-xs text-muted-foreground" title={item.result_message || ""}>
-                          {item.error_code && <span className="mr-1 font-medium text-foreground" title={item.error_code}>{queueErrorLabel(item.error_code)} ·</span>}{item.result_message || "—"}
-                        </td>
-                        <td className="p-3">
-                          <div className="flex justify-end gap-1">
-                            <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7" asChild><Link to={`/fila-provisionamento/${item.id}`}><Eye className="h-3.5 w-3.5" /></Link></Button></TooltipTrigger><TooltipContent>Detalhes</TooltipContent></Tooltip>
-                            {canEdit && item.status === "failed" && (
-                              <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7 text-primary" disabled={reprocess.isPending} onClick={() => reprocess.mutate(item.id)}><RotateCcw className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Reenviar ao agente</TooltipContent></Tooltip>
-                            )}
-                            {canEdit && item.status === "waiting_approval" && (
-                              <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7 text-info" asChild><Link to={`/fila-provisionamento?tab=aprovacao&q=${encodeURIComponent(item.target_identity || "")}`}><ShieldCheck className="h-3.5 w-3.5" /></Link></Button></TooltipTrigger><TooltipContent>Decidir (aba Aguardando aprovação)</TooltipContent></Tooltip>
-                            )}
-                            {canEdit && ["pending", "waiting_approval"].includes(item.status) && (
-                              <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setCancelTarget(item)}><Ban className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Cancelar</TooltipContent></Tooltip>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40 text-left text-muted-foreground">
+                  <th className="p-4 font-medium">Usuário</th>
+                  <th className="p-4 font-medium">Progresso</th>
+                  <th className="hidden p-4 font-medium md:table-cell">Status</th>
+                  <th className="hidden p-4 font-medium lg:table-cell">Solicitado em</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groups.map((g) => {
+                  const st = QUEUE_STATUS_META[g.status];
+                  const ini = g.who.split(/[\s.@]+/).filter(Boolean).map((p: string) => p[0]).slice(0, 2).join("").toUpperCase();
+                  return (
+                    <tr key={g.key} onClick={() => setSelectedKey(selectedKey === g.key ? null : g.key)}
+                      className={`cursor-pointer border-b last:border-0 hover:bg-muted/40 ${selectedKey === g.key ? "bg-primary/5" : ""}`}>
+                      <td className="p-4">
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">{ini || "?"}</span>
+                          <div className="min-w-0"><p className="truncate font-semibold">{g.who}</p><p className="truncate text-xs text-muted-foreground">{g.email}</p></div>
+                        </div>
+                      </td>
+                      <td className="p-4"><Steps steps={g.steps} /></td>
+                      <td className="hidden p-4 md:table-cell"><Badge variant="outline" className={st?.className}>{g.status === "processing" && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}{statusLabel(g.status)}</Badge></td>
+                      <td className="hidden p-4 text-muted-foreground lg:table-cell">{new Date(g.created).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           )}
         </CardContent>
       </Card>
+
+      {selected && (
+        <DetailPanel onClose={() => setSelectedKey(null)}>
+          <p className="pr-8 text-lg font-semibold">{selected.who}</p>
+          <p className="text-sm text-muted-foreground">{selected.email}</p>
+          <div className="mt-4"><Steps steps={selected.steps} /></div>
+          <p className="mb-3 mt-6 text-sm font-semibold">Ações ({selected.items.length})</p>
+          <ol className="relative space-y-4 border-l pl-5">
+            {selected.items.map((item: Row) => {
+              const st = QUEUE_STATUS_META[item.status];
+              const resource = resolveName(item, "");
+              return (
+                <li key={item.id} className="relative">
+                  <span className={`absolute -left-[27px] top-1 h-3 w-3 rounded-full border-2 border-card ${STEP_DOT[item.status] ?? "bg-muted-foreground"}`} />
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="font-medium">{actionLabel(item.action_type)}</span>
+                    <Badge variant="outline" className={`text-[10px] ${st?.className}`}>{statusLabel(item.status)}</Badge>
+                  </div>
+                  {resource && <p className="truncate text-xs text-muted-foreground">{resource}</p>}
+                  <p className="text-[11px] text-muted-foreground">{new Date(item.created_at).toLocaleString("pt-BR")} · {item.requested_by || "—"}{item.retry_count ? ` · ${item.retry_count} tentativa(s)` : ""}</p>
+                  {(item.error_code || (item.status === "failed" && item.result_message)) && (
+                    <p className="mt-1 rounded-md bg-destructive/10 px-2 py-1 text-xs text-destructive">{item.error_code ? queueErrorLabel(item.error_code) : ""}{item.error_code && item.result_message ? " · " : ""}{item.result_message}</p>
+                  )}
+                  <div className="mt-1.5 flex gap-1">
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" asChild><Link to={`/fila-provisionamento/${item.id}`}><Eye className="mr-1 h-3 w-3" />Detalhes</Link></Button>
+                    {canEdit && item.status === "failed" && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-primary" disabled={reprocess.isPending} onClick={() => reprocess.mutate(item.id)}><RotateCcw className="mr-1 h-3 w-3" />Reenviar</Button>}
+                    {canEdit && item.status === "waiting_approval" && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-info" asChild><Link to={`/fila-provisionamento?tab=aprovacao&q=${encodeURIComponent(item.target_identity || "")}`}><ShieldCheck className="mr-1 h-3 w-3" />Decidir</Link></Button>}
+                    {canEdit && ["pending", "waiting_approval"].includes(item.status) && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-destructive" onClick={() => setCancelTarget(item)}><Ban className="mr-1 h-3 w-3" />Cancelar</Button>}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+          {selected.personLink && <Button variant="outline" className="mt-6 w-full" asChild><Link to={selected.personLink}>Abrir ficha da pessoa</Link></Button>}
+        </DetailPanel>
+      )}
+      </div>
       <div className="flex items-center justify-between gap-4">
-        <span className="text-xs text-muted-foreground">{total.toLocaleString("pt-BR")} item(ns)</span>
+        <span className="text-xs text-muted-foreground">{total.toLocaleString("pt-BR")} ação(ões) · {groups.length} pessoa(s) nesta página</span>
         <TablePagination totalItems={total} pageSize={pageSize} currentPage={page} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
       </div>
       </QueryState>
@@ -280,18 +366,12 @@ export default function FilaProvisionamentoPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={!!cancelTarget} onOpenChange={(o) => !o && setCancelTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Cancelar item da fila?</AlertDialogTitle>
-            <AlertDialogDescription>{cancelTarget ? `${actionLabel(cancelTarget.action_type)} — ${cancelTarget.payload_json?.displayName || cancelTarget.target_identity}. O item não será executado.` : ""}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Voltar</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => { if (cancelTarget) cancel.mutate({ queueId: cancelTarget.id, motivo: "Cancelado na fila" }); setCancelTarget(null); }}>Cancelar item</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmImpactDialog open={!!cancelTarget} onOpenChange={(o) => !o && setCancelTarget(null)}
+        title={`Cancelar ação de ${cancelTarget?.payload_json?.displayName || cancelTarget?.target_identity || "item"}?`}
+        description="O Hermes não executará este item."
+        impacts={cancelTarget ? [{ icon: Ban, title: actionLabel(cancelTarget.action_type), detail: resolveName(cancelTarget, "") || undefined }] : []}
+        cancelLabel="Voltar" confirmLabel="Cancelar item" confirmIcon={Ban}
+        onConfirm={() => { if (cancelTarget) cancel.mutate({ queueId: cancelTarget.id, motivo: "Cancelado na fila" }); setCancelTarget(null); }} />
     </div>
   );
 }
