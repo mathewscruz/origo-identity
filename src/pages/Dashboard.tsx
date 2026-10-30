@@ -89,14 +89,6 @@ const FAILURE_LABELS = QUEUE_ERROR_LABELS;
 type Period = 7 | 30 | 90;
 
 function fmtDay(iso: string) { const [, m, d] = iso.split("-"); return `${d}/${m}`; }
-function relTime(iso?: string | null) {
-  if (!iso) return "nunca";
-  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (s < 60) return `há ${s}s`;
-  if (s < 3600) return `há ${Math.floor(s / 60)} min`;
-  if (s < 86400) return `há ${Math.floor(s / 3600)} h`;
-  return `há ${Math.floor(s / 86400)} d`;
-}
 function ageLabel(iso?: string | null) {
   if (!iso) return null;
   const h = (Date.now() - new Date(iso).getTime()) / 3600000;
