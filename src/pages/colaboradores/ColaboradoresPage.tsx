@@ -72,7 +72,7 @@ export default function ColaboradoresPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [busca, setBusca] = useState(searchParams.get("q") || "");
-  const [statusFilter, setStatusFilter] = useState(searchParams.get("status") || "todos");
+  const [statusFilter, setStatusFilter] = useState(searchParams.get("status") || "ativo");
   const [cargoFilter, setCargoFilter] = useState("todos");
   const [areaFilter, setAreaFilter] = useState("todos");
   const [page, setPage] = useState(1);
@@ -335,7 +335,7 @@ export default function ColaboradoresPage() {
 
       {(() => {
         const ativos = mapped.filter((c) => c.status === "ativo");
-        const setPend = (k: string | null, st = "todos") => { const n = new URLSearchParams(searchParams); n.delete("pendencia"); if (k) n.set("pendencia", k); if (st === "todos") n.delete("status"); else n.set("status", st); setStatusFilter(st); setSearchParams(n, { replace: true }); setPage(1); };
+        const setPend = (k: string | null, st = "todos") => { const n = new URLSearchParams(searchParams); n.delete("pendencia"); if (k) n.set("pendencia", k); n.set("status", st); setStatusFilter(st); setSearchParams(n, { replace: true }); setPage(1); };
         const pend = searchParams.get("pendencia");
         return <MetricStrip items={[
           { label: "Ativos", value: ativos.length, tone: "primary", active: statusFilter === "ativo" && !pend, onClick: () => setPend(null, "ativo") },
@@ -353,7 +353,7 @@ export default function ColaboradoresPage() {
         {cols.menu}
         {searchParams.get("suspenso_preventivo") === "true" && <Button variant="outline" onClick={() => { const next = new URLSearchParams(searchParams); next.delete("suspenso_preventivo"); setSearchParams(next); setPage(1); }}>Suspensos preventivamente ×</Button>}
         {COLAB_FILTRO_LABEL[searchParams.get("pendencia") || ""] && <Button variant="outline" onClick={() => { const next = new URLSearchParams(searchParams); next.delete("pendencia"); setSearchParams(next); setPage(1); }}>Filtro: {COLAB_FILTRO_LABEL[searchParams.get("pendencia")!]} ×</Button>}
-        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); const n = new URLSearchParams(searchParams); if (v === "todos") n.delete("status"); else n.set("status", v); setSearchParams(n, { replace: true }); }}>
+        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); const n = new URLSearchParams(searchParams); n.set("status", v); setSearchParams(n, { replace: true }); }}>
           <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="todos">Todos status</SelectItem>
