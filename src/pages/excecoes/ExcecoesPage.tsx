@@ -54,7 +54,8 @@ function markExpired(list: any[]): any[] {
 
 export default function ExcecoesPage() {
   const canEdit = useCanEdit();
-  const [tab, setTab] = useState<TabKey>("pendentes");
+  const [tab, setTab] = useState<TabKey>(() => { const t = new URLSearchParams(window.location.search).get("aba"); return (t && t in tabFilter ? t : "pendentes") as TabKey; });
+  const [soVencendo, setSoVencendo] = useState(() => new URLSearchParams(window.location.search).get("pendencia") === "vencendo");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [search, setSearch] = useState("");
@@ -95,7 +96,7 @@ export default function ExcecoesPage() {
     );
   }, [list, search]);
 
-  const filtered = filteredBySearch.filter(tabFilter[tab]);
+  const filtered = filteredBySearch.filter(tabFilter[tab]).filter((e: any) => !soVencendo || excecaoVencendo(e));
   const { paginatedItems, safePage } = usePagination(filtered, page, pageSize);
 
   // Counters

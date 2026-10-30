@@ -1,5 +1,5 @@
 import { AutoUpdatedHint } from "@/components/AutoUpdatedHint";
-import { isPreventivelySuspended } from "@/lib/dashboardFilters";
+import { isPreventivelySuspended, colabFiltros, COLAB_FILTRO_LABEL } from "@/lib/dashboardFilters";
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -171,6 +171,8 @@ export default function ColaboradoresPage() {
 
   const filtered = mapped.filter((c) => {
     if (searchParams.get("suspenso_preventivo") === "true" && !isPreventivelySuspended(c)) return false;
+    const pf = searchParams.get("pendencia") as keyof typeof colabFiltros | null;
+    if (pf && colabFiltros[pf] && !colabFiltros[pf](c)) return false;
     if (busca && !c.nome.toLowerCase().includes(busca.toLowerCase()) && !c.email.toLowerCase().includes(busca.toLowerCase())) return false;
     if (statusFilter !== "todos" && c.status !== statusFilter) return false;
     if (areaFilter !== "todos" && c.area !== areaFilter) return false;
@@ -321,6 +323,7 @@ export default function ColaboradoresPage() {
           <Input placeholder="Buscar nome ou email..." className="pl-9" value={busca} onChange={(e) => { setBusca(e.target.value); setPage(1); }} />
         </div>
         {searchParams.get("suspenso_preventivo") === "true" && <Button variant="outline" onClick={() => { const next = new URLSearchParams(searchParams); next.delete("suspenso_preventivo"); setSearchParams(next); setPage(1); }}>Suspensos preventivamente ×</Button>}
+        {COLAB_FILTRO_LABEL[searchParams.get("pendencia") || ""] && <Button variant="outline" onClick={() => { const next = new URLSearchParams(searchParams); next.delete("pendencia"); setSearchParams(next); setPage(1); }}>Filtro: {COLAB_FILTRO_LABEL[searchParams.get("pendencia")!]} ×</Button>}
         <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); const n = new URLSearchParams(searchParams); if (v === "todos") n.delete("status"); else n.set("status", v); setSearchParams(n, { replace: true }); }}>
           <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>

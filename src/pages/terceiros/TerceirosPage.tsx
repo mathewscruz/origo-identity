@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Search, Plus, AlertTriangle, Pencil, Trash2 } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
+import { tercFiltros, TERC_FILTRO_LABEL } from "@/lib/dashboardFilters";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -121,7 +122,9 @@ export default function TerceirosPage() {
     qc.invalidateQueries({ queryKey: ["terceiros"] }); qc.invalidateQueries({ queryKey: ["contas_servico"] });
   };
   const vencendo7d = list.filter((t: any) => { const d = diasRestantes(t.contrato_fim); return d >= 0 && d <= 7; }).length;
-  const filtered = list.filter((t: any) => !busca || t.nome.toLowerCase().includes(busca.toLowerCase()));
+  const pend = searchParams.get("pendencia") || "";
+  const pendFn = pend === "revalidar" ? (t: any) => tercFiltros.revalidar(t, undefined, Number(revalidacaoDias) || 45) : (tercFiltros as any)[pend];
+  const filtered = list.filter((t: any) => (!pendFn || pendFn(t)) && (!busca || t.nome.toLowerCase().includes(busca.toLowerCase())));
   const sorted = useSortableData(filtered, sortField, sortDir);
   const { paginatedItems, safePage } = usePagination(sorted, page, pageSize);
 

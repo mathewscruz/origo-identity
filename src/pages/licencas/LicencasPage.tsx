@@ -62,6 +62,7 @@ export default function LicencasPage() {
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState({ nome: "", aplicacao_id: "", total: "0", em_uso: "0", tipo: "SaaS", custo_unitario: "", renovacao: "" });
   const [tab, setTab] = useState("todas");
+  const [soCriticas, setSoCriticas] = useState(() => new URLSearchParams(window.location.search).get("pendencia") === "criticas");
   const [search, setSearch] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [hideTrials, setHideTrials] = useState(true);
@@ -123,6 +124,7 @@ export default function LicencasPage() {
     if (tab === "microsoft" && l.origem !== "microsoft") return false;
     if (tab === "externas" && l.origem !== "externa") return false;
     if (hideTrials && l.is_trial) return false;
+    if (soCriticas && !licencaCritica(l, criticalPct)) return false;
     if (search) {
       const q = search.toLowerCase();
       if (!l.display_name.toLowerCase().includes(q) && !l.nome.toLowerCase().includes(q)) return false;
