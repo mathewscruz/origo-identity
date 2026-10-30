@@ -48,41 +48,6 @@ function useDashboardKpis(days: number) {
   });
 }
 
-/* ── cartão de indicador com variação e mini-gráfico ── */
-function KpiCard({ label, value, prev, spark, color, to, hint, invert }: { label: string; value: number; prev?: number; spark?: number[]; color: string; to: string; hint?: string; invert?: boolean }) {
-  const delta = prev === undefined ? null : prev === 0 ? (value > 0 ? 100 : 0) : Math.round(((value - prev) / prev) * 100);
-  const good = delta === null ? true : invert ? delta <= 0 : delta >= 0;
-  const data = (spark ?? []).map((v, i) => ({ i, v }));
-  return (
-    <Link to={to} className="group">
-      <Card className="h-full overflow-hidden transition-all hover:-translate-y-0.5 hover:border-primary/40">
-        <CardContent className="p-4">
-          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
-          <div className="mt-1 flex items-end justify-between gap-2">
-            <span className="text-3xl font-semibold tabular-nums">{value.toLocaleString("pt-BR")}</span>
-            {delta !== null && (
-              <span className={`flex items-center gap-0.5 text-xs font-medium ${good ? "text-success" : "text-destructive"}`}>
-                {delta >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}{delta > 0 ? "+" : ""}{delta}%
-              </span>
-            )}
-          </div>
-          {hint && <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{hint}</p>}
-          {data.length > 1 && (
-            <div className="-mx-4 -mb-4 mt-2 h-10">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={data} margin={{ top: 2, bottom: 0, left: 0, right: 0 }}>
-                  <defs><linearGradient id={`g-${label}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity={0.35} /><stop offset="100%" stopColor={color} stopOpacity={0} /></linearGradient></defs>
-                  <Area type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} fill={`url(#g-${label})`} isAnimationActive={false} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </Link>
-  );
-}
-
 /* ── uso de licenças ── */
 function LicensesPanel({ rows }: { rows: { nome: string; total: number; em_uso: number }[] }) {
   return (
