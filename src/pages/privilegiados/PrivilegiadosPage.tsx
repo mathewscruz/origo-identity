@@ -44,7 +44,7 @@ function freshnessColor(iso?: string | null) {
 export default function PrivilegiadosPage() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
-  const [onlyPrivileged, setOnlyPrivileged] = useState(false);
+  const [onlyPrivileged, setOnlyPrivileged] = useState(() => new URLSearchParams(window.location.search).get("privilegiadas") === "1");
   const [typeFilter, setTypeFilter] = useState<string>("todos");
   const [selectedRole, setSelectedRole] = useState<any>(null);
   const [page, setPage] = useState(1);

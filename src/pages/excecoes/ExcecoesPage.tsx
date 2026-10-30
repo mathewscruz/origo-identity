@@ -14,6 +14,7 @@ import TablePagination, { usePagination } from "@/components/TablePagination";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { invokeFunction } from "@/lib/invokeFunction";
+import { excecaoVencendo } from "@/lib/dashboardFilters";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -54,7 +55,8 @@ function markExpired(list: any[]): any[] {
 
 export default function ExcecoesPage() {
   const canEdit = useCanEdit();
-  const [tab, setTab] = useState<TabKey>("pendentes");
+  const [tab, setTab] = useState<TabKey>(() => { const t = new URLSearchParams(window.location.search).get("aba"); return (t && t in tabFilter ? t : "pendentes") as TabKey; });
+  const [soVencendo, setSoVencendo] = useState(() => new URLSearchParams(window.location.search).get("pendencia") === "vencendo");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [search, setSearch] = useState("");
@@ -95,7 +97,7 @@ export default function ExcecoesPage() {
     );
   }, [list, search]);
 
-  const filtered = filteredBySearch.filter(tabFilter[tab]);
+  const filtered = filteredBySearch.filter(tabFilter[tab]).filter((e: any) => !soVencendo || excecaoVencendo(e));
   const { paginatedItems, safePage } = usePagination(filtered, page, pageSize);
 
   // Counters
@@ -266,6 +268,7 @@ export default function ExcecoesPage() {
           <TabsTrigger value="expiradas">Expiradas ({counts.expiradas})</TabsTrigger>
           <TabsTrigger value="todas">Todas ({counts.total})</TabsTrigger>
         </TabsList>
+        {soVencendo && <Button variant="outline" size="sm" className="ml-2" onClick={() => { setSoVencendo(false); setPage(1); }}>Filtro: vencendo em 15 dias ×</Button>}
         {(["pendentes", "aprovadas", "rejeitadas", "expiradas", "todas"] as TabKey[]).map((t) => (
           <TabsContent key={t} value={t} className="mt-4">
             <Card><CardContent className="p-0">

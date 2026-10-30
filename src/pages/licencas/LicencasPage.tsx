@@ -25,6 +25,7 @@ import EmptyState from "@/components/EmptyState";
 import { authedFetch } from "@/lib/authedFetch";
 import PageHeader from "@/components/PageHeader";
 import { humanize } from "@/lib/labels";
+import { licencaCritica } from "@/lib/dashboardFilters";
 
 type UnifiedLicense = {
   id: string;
@@ -62,6 +63,7 @@ export default function LicencasPage() {
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState({ nome: "", aplicacao_id: "", total: "0", em_uso: "0", tipo: "SaaS", custo_unitario: "", renovacao: "" });
   const [tab, setTab] = useState("todas");
+  const [soCriticas, setSoCriticas] = useState(() => new URLSearchParams(window.location.search).get("pendencia") === "criticas");
   const [search, setSearch] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [hideTrials, setHideTrials] = useState(true);
@@ -123,6 +125,7 @@ export default function LicencasPage() {
     if (tab === "microsoft" && l.origem !== "microsoft") return false;
     if (tab === "externas" && l.origem !== "externa") return false;
     if (hideTrials && l.is_trial) return false;
+    if (soCriticas && !licencaCritica(l, criticalPct)) return false;
     if (search) {
       const q = search.toLowerCase();
       if (!l.display_name.toLowerCase().includes(q) && !l.nome.toLowerCase().includes(q)) return false;
@@ -249,6 +252,7 @@ export default function LicencasPage() {
           </TabsList>
         </Tabs>
         <div className="flex items-center gap-3 w-full sm:w-auto">
+          {soCriticas && <Button variant="outline" size="sm" onClick={() => { setSoCriticas(false); setPage(1); }}>Filtro: críticas ×</Button>}
           <label className="flex items-center gap-2 text-xs text-muted-foreground whitespace-nowrap">
             <Switch checked={hideTrials} onCheckedChange={(v) => { setHideTrials(v); setPage(1); }} />
             Ocultar trials/free

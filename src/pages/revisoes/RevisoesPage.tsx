@@ -80,7 +80,7 @@ export default function RevisoesPage() {
   const [dataLimite, setDataLimite] = useState(() => new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10));
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("todas");
+  const [statusFilter, setStatusFilter] = useState(() => new URLSearchParams(window.location.search).get("status") || "todas");
 
   const list = (revisoes ?? []) as Row[];
   const hoje = new Date().toISOString().slice(0, 10);

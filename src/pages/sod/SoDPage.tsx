@@ -255,7 +255,7 @@ export default function SoDPage() {
         </CardContent></Card>
       </div>
 
-      <Tabs defaultValue="regras">
+      <Tabs defaultValue={new URLSearchParams(window.location.search).get("aba") === "violacoes" ? "violacoes" : "regras"}>
         <TabsList>
           <TabsTrigger value="regras">Regras SoD ({conflitos.length})</TabsTrigger>
           <TabsTrigger value="violacoes">
