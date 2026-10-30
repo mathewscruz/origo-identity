@@ -24,6 +24,62 @@ function relTime(iso?: string | null) {
   return `há ${Math.floor(s / 86400)} d`;
 }
 
+function SharePointOwnership() {
+  const [status, setStatus] = useState("group_not_discovered");
+  const [page, setPage] = useState(0);
+  const [selectedSite, setSelectedSite] = useState<string | null>(null);
+  const detail = useQuery({
+    queryKey: ["sharepoint-ownership-detail", selectedSite], enabled: !!selectedSite,
+    queryFn: async () => {
+      const [link, owners] = await Promise.all([
+        (supabase as Row).from("sharepoint_site_group_links").select("entra_group_id,owners_checked_at").eq("site_db_id", selectedSite).eq("active", true).maybeSingle(),
+        (supabase as Row).from("sharepoint_site_group_owners").select("owner_object_id,owner_display_name,owner_upn,owner_mail,owner_type,last_seen_at").eq("site_db_id", selectedSite).eq("active", true),
+      ]);
+      if (link.error || owners.error) throw link.error || owners.error;
+      return { link: link.data, owners: owners.data ?? [] };
+    },
+  });
+  const { data, error, isLoading } = useQuery({
+    queryKey: ["sharepoint-ownership", status, page],
+    queryFn: async () => {
+      const q = await (supabase as Row).from("sharepoint_site_ownership_coverage")
+        .select("site_db_id,status,verified_at,site_admin_status,direct_permission_status,sharepoint_sites(nome,url)", { count: "exact" })
+        .eq("status", status).order("site_db_id").range(page * 25, page * 25 + 24);
+      if (q.error) throw q.error;
+      return { rows: q.data ?? [], count: q.count ?? 0 };
+    },
+  });
+  const labels: Record<string, string> = {
+    group_not_discovered: "Sem grupo identificado", group_without_owner: "Grupo sem proprietário retornado",
+    group_owners: "Proprietário do grupo identificado",
+  };
+  return <Card className="border-primary/20">
+    <CardHeader><CardTitle className="text-base">Governança de responsáveis SharePoint</CardTitle>
+      <CardDescription>Metadados do Graph; proprietário do grupo não equivale a administrador do site nem a permissão direta.</CardDescription></CardHeader>
+    <CardContent className="space-y-3 text-sm">
+      <div className="flex flex-wrap gap-2">{Object.entries(labels).map(([key, label]) =>
+        <Button key={key} size="sm" variant={status === key ? "default" : "outline"} onClick={() => { setStatus(key); setPage(0); }}>{label}</Button>)}</div>
+      {error ? <p className="text-destructive">Falha ao consultar a cobertura; não inferir ausência de responsável.</p> :
+        isLoading ? <p>Carregando…</p> : <>
+          <p>{data?.count ?? 0} sites — {labels[status]}. Administração da coleção e permissões diretas: não coletadas.</p>
+          {(data?.rows ?? []).map((r: Row) => <div key={r.site_db_id} className="rounded border p-2">
+            <button className="text-left font-medium underline" onClick={() => setSelectedSite(selectedSite === r.site_db_id ? null : r.site_db_id)}>{r.sharepoint_sites?.nome || r.site_db_id}</button>
+            <div className="text-muted-foreground">{r.sharepoint_sites?.url || "URL não cadastrada"} · Verificado {r.verified_at ? new Date(r.verified_at).toLocaleString("pt-BR") : "não verificado"}</div>
+            {selectedSite === r.site_db_id && (detail.isLoading ? <p>Carregando responsáveis…</p> : detail.error ?
+              <p className="text-destructive">Falha ao consultar responsáveis.</p> : <div className="mt-2 border-t pt-2">
+                <p>Grupo Entra: {detail.data?.link?.entra_group_id || "não identificado"}</p>
+                <p>Proprietários do grupo: {detail.data?.owners.length ?? 0} — não são administradores do site.</p>
+                {(detail.data?.owners ?? []).map((o: Row) => <p key={o.owner_object_id}>{o.owner_display_name || o.owner_upn || o.owner_object_id} · {o.owner_upn || o.owner_mail || "sem e-mail"} · {o.owner_type}</p>)}
+                <p>Administradores da coleção: não coletados. Permissões diretas: não coletadas.</p>
+              </div>)}
+          </div>)}
+          <div className="flex gap-2"><Button size="sm" variant="outline" disabled={!page} onClick={() => setPage(page - 1)}>Anterior</Button>
+            <Button size="sm" variant="outline" disabled={(page + 1) * 25 >= (data?.count ?? 0)} onClick={() => setPage(page + 1)}>Próxima</Button></div>
+        </>}
+    </CardContent>
+  </Card>;
+}
+
 async function callFunction(name: string, body?: unknown): Promise<{ ok: boolean; status: number; body: Row }> {
   const res = await authedFetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: body === undefined ? "{}" : JSON.stringify(body),
@@ -75,6 +131,8 @@ export default function IntegracoesPage() {
           <CardContent><AutoUpdatedHint tasks="sync-sharepoint-sites" /></CardContent>
         </Card>
       </div>
+
+      <SharePointOwnership />
 
       {/* Conectores */}
       <Card className="border-primary/20">

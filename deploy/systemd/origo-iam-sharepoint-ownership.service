@@ -1,0 +1,13 @@
+[Unit]
+Description=Órigo IAM - reconciliar metadados de responsáveis SharePoint
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/origo_work/origo-identity-sharepoint-ownership-live
+ExecStart=/usr/bin/python3 -m agent.sync_sharepoint_ownership
+TimeoutStartSec=1800
+UMask=0077
+NoNewPrivileges=true
+Nice=10
