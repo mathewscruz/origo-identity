@@ -34,6 +34,7 @@
     --ring: 176 74% 34%;
 
     --radius: 0.5rem;
+    --chart-out: 350 80% 58%;
 
     /* Status colors */
     --success: 142 71% 45%;
@@ -56,13 +57,14 @@
   }
 
   .dark {
-    --background: 192 33% 6%;
-    --foreground: 210 30% 92%;
-    --card: 198 37% 12%;
-    --card-foreground: 210 30% 92%;
-    --popover: 198 37% 12%;
+    --background: 200 35% 7%;
+    --foreground: 200 20% 93%;
+    --card: 200 33% 10%;
+    --card-foreground: 200 20% 93%;
+    --chart-out: 350 85% 65%;
+    --popover: 200 33% 10%;
     --popover-foreground: 210 30% 92%;
-    --primary: 176 74% 40%;
+    --primary: 175 70% 45%;
     --primary-foreground: 0 0% 100%;
     --secondary: 198 30% 17%;
     --secondary-foreground: 210 30% 92%;
@@ -75,8 +77,8 @@
     --success: 152 60% 48%;
     --warning: 38 92% 55%;
     --info: 190 80% 50%;
-    --border: 198 28% 18%;
-    --input: 198 28% 18%;
+    --border: 200 25% 16%;
+    --input: 200 25% 16%;
     --ring: 176 74% 40%;
     --sidebar-background: 192 35% 5%;
     --sidebar-foreground: 215 20% 85%;
@@ -95,7 +97,7 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
 }
 
