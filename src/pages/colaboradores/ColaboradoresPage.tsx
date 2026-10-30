@@ -1,4 +1,5 @@
 import ConfirmImpactDialog, { useLeaverImpacts } from "@/components/ConfirmImpactDialog";
+import { useDeferredValue } from "react";
 import { Power } from "lucide-react";
 import { AutoUpdatedHint } from "@/components/AutoUpdatedHint";
 import { isPreventivelySuspended, colabFiltros, COLAB_FILTRO_LABEL } from "@/lib/dashboardFilters";
@@ -91,7 +92,8 @@ export default function ColaboradoresPage() {
   const [syncing, setSyncing] = useState(false);
 
   const { data: colaboradores, isLoading } = useColaboradores();
-  const { data: gestores } = useColaboradores();
+  const gestores = colaboradores;
+  const buscaDeferida = useDeferredValue(busca);
   const emailDominio = useParametro("csv_email_dominio", "origoenergia.com.br");
   const { data: empresas } = useEmpresas();
   const { data: areas } = useAreas();
@@ -182,7 +184,7 @@ export default function ColaboradoresPage() {
     if (searchParams.get("suspenso_preventivo") === "true" && !isPreventivelySuspended(c)) return false;
     const pf = searchParams.get("pendencia") as keyof typeof colabFiltros | null;
     if (pf && colabFiltros[pf] && !colabFiltros[pf](c)) return false;
-    if (busca && !c.nome.toLowerCase().includes(busca.toLowerCase()) && !c.email.toLowerCase().includes(busca.toLowerCase())) return false;
+    if (buscaDeferida && !c.nome.toLowerCase().includes(buscaDeferida.toLowerCase()) && !c.email.toLowerCase().includes(buscaDeferida.toLowerCase())) return false;
     if (statusFilter !== "todos" && c.status !== statusFilter) return false;
     if (areaFilter !== "todos" && c.area !== areaFilter) return false;
     if (cargoFilter !== "todos" && c.cargo !== cargoFilter) return false;
@@ -375,18 +377,18 @@ export default function ColaboradoresPage() {
           {isLoading ? (
             <div className="p-4 space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="max-h-[70vh] overflow-auto">
               <table className="w-full text-sm">
-                <thead>
+                <thead className="sticky top-0 z-10 bg-card">
                   <tr className="border-b text-left text-muted-foreground text-xs uppercase tracking-wider">
-                    <th className="p-4"><SortableHeader label="Nome" field="nome" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
-                    <th className={`p-4 hidden ${selected ? "" : "md:table-cell"}`}><SortableHeader label="Email" field="email" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
-                    <th className={`p-4 font-medium hidden ${selected ? "" : "lg:table-cell"}`}>CPF</th>
-                    <th className="p-4"><SortableHeader label="Cargo" field="cargo" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
-                    <th className="p-4 hidden lg:table-cell"><SortableHeader label="Área" field="area" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
-                    <th className={`p-4 font-medium hidden ${selected ? "" : "lg:table-cell"}`}>Origem</th>
-                    <th className="p-4"><SortableHeader label="Status" field="status" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
-                    <th className="p-4 font-medium">Ações</th>
+                    <th className="px-4 py-2.5"><SortableHeader label="Nome" field="nome" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
+                    <th className={`px-4 py-2.5 hidden`}><SortableHeader label="Email" field="email" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
+                    <th className={`px-4 py-2.5 font-medium hidden ${selected ? "" : "2xl:table-cell"}`}>CPF</th>
+                    <th className="px-4 py-2.5"><SortableHeader label="Cargo" field="cargo" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
+                    <th className="px-4 py-2.5 hidden lg:table-cell"><SortableHeader label="Área" field="area" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
+                    <th className={`px-4 py-2.5 font-medium hidden ${selected ? "" : "2xl:table-cell"}`}>Origem</th>
+                    <th className="px-4 py-2.5"><SortableHeader label="Status" field="status" currentField={sortField} currentDirection={sortDir} onSort={(f, d) => { setSortField(f); setSortDir(d); }} /></th>
+                    <th className="px-4 py-2.5 font-medium">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -395,8 +397,11 @@ export default function ColaboradoresPage() {
                       const tag = (e.target as HTMLElement).closest("button, a, [role='menuitem']");
                       if (!tag) selectRow(c.id);
                     }}>
-                      <td className="p-4">
-                        <div className="flex items-center gap-1">
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">{c.nome.split(" ").filter(Boolean).map((n: string) => n[0]).slice(0, 2).join("").toUpperCase()}</span>
+                          <div className="min-w-0">
+                          <div className="flex items-center gap-1">
                           <Link to={`/colaboradores/${c.id}`} className="font-medium text-primary hover:underline" onClick={(e) => e.stopPropagation()}>{c.nome}</Link>
                           {c.cargo_id && !c.sam_account_name && (
                             <TooltipProvider>
@@ -411,26 +416,28 @@ export default function ColaboradoresPage() {
                             </TooltipProvider>
                           )}
                           <ColaboradorActivityPopover colaboradorId={c.id} colaboradorNome={c.nome} />
+                          </div>
+                          <p className="truncate text-xs text-muted-foreground">{c.email}</p>
+                          </div>
                         </div>
-                        {selected && <p className="truncate text-xs text-muted-foreground">{c.email}</p>}
                       </td>
-                      <td className={`p-4 text-muted-foreground hidden ${selected ? "" : "md:table-cell"}`}>{c.email}</td>
-                      <td className={`p-4 text-muted-foreground font-mono text-xs hidden ${selected ? "" : "lg:table-cell"}`}>{c.cpf}</td>
-                      <td className="p-4 text-muted-foreground">{c.cargo}</td>
-                      <td className="p-4 text-muted-foreground hidden lg:table-cell">{c.area}</td>
-                      <td className={`p-4 hidden ${selected ? "" : "lg:table-cell"}`}>
+                      <td className={`px-4 py-2.5 text-muted-foreground hidden`}>{c.email}</td>
+                      <td className={`px-4 py-2.5 text-muted-foreground font-mono text-xs hidden ${selected ? "" : "2xl:table-cell"}`}>{c.cpf}</td>
+                      <td className="px-4 py-2.5 text-muted-foreground">{c.cargo}</td>
+                      <td className="px-4 py-2.5 text-muted-foreground hidden lg:table-cell">{c.area}</td>
+                      <td className={`px-4 py-2.5 hidden ${selected ? "" : "2xl:table-cell"}`}>
                         <Badge variant="outline" className={
                           c.origem === "csv" ? "bg-primary/10 text-primary border-primary/30" :
                           c.origem === "entra_id" ? "bg-info/10 text-info border-info/30" :
                           "bg-muted text-muted-foreground"
                         }>{humanize(c.origem)}</Badge>
                       </td>
-                      <td className="p-4">
+                      <td className="px-4 py-2.5">
                         <Badge variant="outline" className={statusConfig[c.status]?.class || ""}>
                           {statusConfig[c.status]?.label || humanize(c.status)}
                         </Badge>
                       </td>
-                      <td className="p-4">
+                      <td className="px-4 py-2.5">
                         <div className="flex gap-1">
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openEdit(c); }}>
                             <Pencil className="h-3.5 w-3.5" />

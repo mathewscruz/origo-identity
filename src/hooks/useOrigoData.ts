@@ -12,18 +12,21 @@ type Row = any;
 
 async function fetchAll(table: string, select: string, orderCol: string, ascending = true, cap = Infinity, tieBreaker?: string): Promise<Row[]> {
   const PAGE = 1000;
-  const all: Row[] = [];
-  let from = 0;
-  while (all.length < cap) {
-    let query = (supabase as Row).from(table).select(select).order(orderCol, { ascending });
+  const page = (from: number, withCount = false) => {
+    let query = (supabase as Row).from(table).select(select, withCount ? { count: "exact" } : undefined).order(orderCol, { ascending });
     if (tieBreaker) query = query.order(tieBreaker, { ascending });
-    const { data, error } = await query.range(from, from + PAGE - 1);
-    if (error) throw error;
-    if (!data || data.length === 0) break;
-    all.push(...data);
-    if (data.length < PAGE) break;
-    from += PAGE;
-  }
+    return query.range(from, from + PAGE - 1);
+  };
+  // 1ª página traz o total; as demais vêm em paralelo (antes eram sequenciais).
+  const first = await page(0, true);
+  if (first.error) throw first.error;
+  const all: Row[] = [...(first.data ?? [])];
+  const total = Math.min(first.count ?? all.length, cap);
+  if (all.length < PAGE || total <= PAGE) return all;
+  const offsets: number[] = [];
+  for (let from = PAGE; from < total; from += PAGE) offsets.push(from);
+  const rest = await Promise.all(offsets.map((o) => page(o)));
+  for (const r of rest) { if (r.error) throw r.error; all.push(...(r.data ?? [])); }
   return all;
 }
 
@@ -71,8 +74,9 @@ export function useParametro(chave: string, fallback = "") {
 export function useColaboradores() {
   return useQuery({
     queryKey: ["colaboradores"],
-    queryFn: () => fetchAll("colaboradores", "*, cargos(nome), areas(nome), empresas(nome), localidades(nome)", "nome"),
+    queryFn: () => fetchAll("colaboradores", "*, cargos(nome), areas(nome), empresas(nome), localidades(nome)", "nome", true, Infinity, "id"),
     ...REFETCH_OPTS,
+    staleTime: 5 * 60_000,
   });
 }
 
