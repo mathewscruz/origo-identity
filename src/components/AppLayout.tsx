@@ -6,6 +6,7 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbP
 import { NotificacoesBell } from "@/components/NotificacoesBell";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAvatarUrl } from "@/lib/avatarUrl";
+import ThemeToggle from "@/components/ThemeToggle";
 import ForcePasswordChangeDialog from "@/components/ForcePasswordChangeDialog";
 import { useRealtimeSync } from "@/hooks/useRealtimeSync";
 import { Button } from "@/components/ui/button";
@@ -104,6 +105,7 @@ export default function AppLayout() {
               {!canEdit && (
                 <Tooltip><TooltipTrigger asChild><span className="mr-1 hidden items-center gap-1 rounded-full border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground md:inline-flex"><Eye className="h-3 w-3" />Somente leitura</span></TooltipTrigger><TooltipContent>Seu papel permite consultar, não operar.</TooltipContent></Tooltip>
               )}
+              <ThemeToggle />
               <NotificacoesBell />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

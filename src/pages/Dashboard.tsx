@@ -26,7 +26,7 @@ import { useQuery } from "@tanstack/react-query";
 import { usePeopleSeries } from "@/hooks/usePeopleSeries";
 import { splitPeriods } from "@/lib/peopleActivity";
 import { supabase } from "@/integrations/supabase/client";
-import { TrendingDown, TrendingUp } from "lucide-react";
+import { TrendingDown, TrendingUp, Play, Clock, AlertCircle } from "lucide-react";
 
 function useDashboardKpis(days: number) {
   return useQuery({
@@ -296,119 +296,109 @@ export default function Dashboard() {
     { label: "Terceiros vencidos", value: m?.terc_vencidos ?? 0, hint: `${m?.excecoes_pendentes ?? 0} exceções pendentes`, icon: FileCheck, tone: (m?.terc_vencidos ?? 0) > 0 ? "destructive" as const : "success" as const, to: "/terceiros?pendencia=vencidos" },
   ];
 
+  const strip = [
+    { label: "Pessoas ativas", value: k?.pessoas_ativas ?? pessoas, icon: Users, tone: "primary", to: "/colaboradores?status=ativo", hint: `${k?.admissoes ?? 0} admissões · ${k?.desligamentos ?? 0} saídas em ${period} d` },
+    { label: `Execuções em ${period} d`, value: ppl.total, prev: ppl.prevTotal, icon: Play, tone: "primary", to: "/auditoria", hint: `${ppl.entradas} entradas · ${ppl.saidas} saídas` },
+    { label: "Aguardando aprovação", value: k?.aguardando ?? m?.fila_waiting ?? 0, icon: Clock, tone: "warning", to: "/fila-provisionamento?tab=aprovacao", hint: waitingAge ? `mais antigo: ${waitingAge}` : "nada pendente" },
+    { label: "Falhas em 24 h", value: k?.falhas_24h ?? 0, prev: k?.falhas_prev, invert: true, icon: AlertCircle, tone: "destructive", to: "/fila-provisionamento?status=failed", hint: "vs 24 h anteriores" },
+  ] as const;
+  const toneCls: Record<string, string> = { primary: "bg-primary/15 text-primary", warning: "bg-warning/15 text-warning", destructive: "bg-destructive/15 text-destructive" };
+
   return (
-    <div className="space-y-5">
-      <PageHeader
-        title="Início"
-        description={<>Operação IAM em tempo real{m?.gerado_em ? <span className="text-xs"> · atualizado {relTime(m.gerado_em)}</span> : null} · <AutoUpdatedHint tasks={["sync-entra-licencas", "sync-entra-groups"]} /></>}
-        actions={<Button asChild variant="outline" size="sm"><Link to="/relatorios">Relatórios</Link></Button>}
-      />
+    <div className="mx-auto max-w-[1700px] space-y-5">
+      <div className="space-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight">Governança de Identidades</h1>
+        <p className="text-sm text-muted-foreground">Visibilidade. Controle. Conformidade.{m?.gerado_em ? <span className="text-xs"> · atualizado {relTime(m.gerado_em)}</span> : null} · <AutoUpdatedHint tasks={["sync-entra-licencas", "sync-entra-groups"]} /></p>
+      </div>
 
       <QueryState loading={isLoading} error={metricsError || (!isLoading && !m ? new Error("Métricas indisponíveis") : null)} retry={retryMetrics}>
-      <SystemStrip m={m} loading={isLoading} />
+      <div className="pt-1"><SystemStrip m={m} loading={isLoading} /></div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard label="Pessoas ativas" value={k?.pessoas_ativas ?? pessoas} color={C.primary} to="/colaboradores?status=ativo" hint={`${k?.admissoes ?? 0} admissões · ${k?.desligamentos ?? 0} desligamentos em ${period} d`} spark={(series ?? []).map((p) => p.joiners - p.leavers)} />
-        <KpiCard label={`Execuções em ${period} d`} value={ppl.total} prev={ppl.prevTotal} color={C.success} to="/auditoria" hint={`${ppl.entradas} entradas · ${ppl.saidas} saídas`} spark={ppl.cur.map((p) => p.entradas + p.saidas)} />
-        <KpiCard label="Aguardando aprovação" value={k?.aguardando ?? m?.fila_waiting ?? 0} color={C.warning} to="/fila-provisionamento?tab=aprovacao" hint={waitingAge ? `mais antigo: ${waitingAge}` : "nada pendente"} />
-        <KpiCard label="Falhas em 24 h" value={k?.falhas_24h ?? 0} prev={k?.falhas_prev} invert color={C.destructive} to="/fila-provisionamento?status=failed" hint="vs 24 h anteriores" spark={(series ?? []).map((p) => p.falhas)} />
-      </div>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {[
-          { l: "Revisões abertas", v: k?.revisoes_abertas ?? 0, to: "/revisoes?status=em_andamento", icon: ClipboardCheck },
-          { l: "Exceções vencendo (15 d)", v: m?.excecoes_vencendo ?? 0, to: "/excecoes?aba=aprovadas&pendencia=vencendo", icon: CalendarClock },
-          { l: "Terceiros vencidos", v: k?.terceiros_vencidos ?? 0, to: "/terceiros?pendencia=vencidos", icon: UserCheck },
-          { l: "RH: precisa de você", v: k?.quarentena ?? 0, to: "/colaboradores/quarentena", icon: FileSpreadsheet },
-        ].map((x) => (
-          <Link key={x.l} to={x.to}><Card className="transition-colors hover:border-primary/40"><CardContent className="flex items-center gap-3 p-3"><x.icon className={`h-4 w-4 ${x.v > 0 ? "text-warning" : "text-muted-foreground"}`} /><span className="flex-1 truncate text-sm">{x.l}</span><span className="text-lg font-semibold tabular-nums">{x.v}</span></CardContent></Card></Link>
-        ))}
-      </div>
-
-      </QueryState>
-      {/* Séries */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-        <div className="h-full"><QueryState loading={people.isLoading} error={people.error} retry={people.refetch}>
-        <Card className="min-h-[360px] flex flex-col">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between gap-3"><div><CardTitle className="text-base">Entradas e saídas por dia</CardTitle>
-            <p className="text-xs text-muted-foreground">Pessoas que entraram e saíram (cada pessoa conta uma vez por dia)</p></div>
-            <div className="flex gap-1">{([7, 30, 90] as Period[]).map((d) => <Button key={d} size="sm" variant={period === d ? "secondary" : "ghost"} className="h-7 px-2 text-xs" onClick={() => setPeriod(d)}>{d} d</Button>)}</div></div>
-          </CardHeader>
-          <CardContent className="flex flex-1 flex-col pt-0">
-            <div className="mb-4 grid grid-cols-2 gap-2">
-              <div className="rounded-lg border bg-muted/40 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Entradas</p><p className="text-lg font-semibold tabular-nums text-success">{ppl.entradas}</p></div>
-              <div className="rounded-lg border bg-muted/40 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Saídas</p><p className="text-lg font-semibold tabular-nums text-destructive">{ppl.saidas}</p></div>
-            </div>
-            <div className="h-[240px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={pplChart} margin={{ left: -16, right: 8, top: 8 }} barCategoryGap={period === 7 ? "30%" : "15%"}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                <XAxis dataKey="label" interval={tick} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                <Tooltip content={<ChartTooltip />} />
-                <Legend onClick={(e: Row) => toggle(String(e.dataKey))} wrapperStyle={{ fontSize: 12, cursor: "pointer" }} />
-                <Bar dataKey="entradas" name="Entradas" fill={C.success} radius={[3, 3, 0, 0]} hide={hidden.has("entradas")} />
-                <Bar dataKey="saidas" name="Saídas" fill={C.destructive} radius={[3, 3, 0, 0]} hide={hidden.has("saidas")} />
-              </BarChart>
-            </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-        </QueryState></div>
+      {/* Faixa de indicadores */}
+      <Card className="rounded-xl">
+        <div className="grid grid-cols-1 divide-y sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-4 lg:divide-x">
+          {strip.map((s) => {
+            const prev = "prev" in s ? s.prev : undefined;
+            const delta = prev === undefined || prev === null ? null : prev === 0 ? (s.value > 0 ? 100 : 0) : Math.round(((s.value - prev) / prev) * 100);
+            const good = delta === null ? true : ("invert" in s && s.invert) ? delta <= 0 : delta >= 0;
+            return (
+              <Link key={s.label} to={s.to} className="flex items-center gap-4 p-5 transition-colors hover:bg-muted/40">
+                <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${toneCls[s.tone]}`}><s.icon className="h-6 w-6" /></span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-muted-foreground">{s.label}</p>
+                  <p className="text-3xl font-semibold tabular-nums leading-tight">{Number(s.value).toLocaleString("pt-BR")}</p>
+                  <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+                    {delta !== null && <span className={`flex items-center gap-0.5 font-medium ${good ? "text-success" : "text-destructive"}`}>{delta >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}{delta > 0 ? "+" : ""}{delta}%</span>}
+                    <span className="truncate">{s.hint}</span>
+                  </p>
+                </div>
+              </Link>
+            );
+          })}
         </div>
-        <BarsPanel title="Categoria de Usuários" unit="usuários" rows={[
-          { label: "Ativos", value: m?.colab_ativos ?? 0, color: C.success, to: "/colaboradores?status=ativo" },
-          { label: "Férias", value: m?.colab_ferias ?? 0, color: C.info, to: "/colaboradores?status=ferias" },
-          { label: "Afastados", value: m?.colab_afastados ?? 0, color: C.warning, to: "/colaboradores?status=afastado" },
-          { label: "Terceiros ativos", value: tercAtivos, color: C.violet, to: "/terceiros" },
-          { label: "Contas de serviço", value: contasServico, color: C.primary, to: "/contas-servico" },
-        ]} />
-      </div>
+      </Card>
+      </QueryState>
 
-      {/* Movimentações e licenças */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-2"><CardTitle className="text-base">Movimentações de pessoas</CardTitle><p className="text-xs text-muted-foreground">Admissões, mudanças e desligamentos por dia ({totals.joiners} · {totals.movers} · {totals.leavers})</p></CardHeader>
-          <CardContent className="h-[240px] pt-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ left: -16, right: 8, top: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                <XAxis dataKey="label" interval={tick} tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                <Tooltip content={<ChartTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Area type="monotone" dataKey="joiners" name="Admissões" stroke={C.success} fill={C.success} fillOpacity={0.15} />
-                <Area type="monotone" dataKey="movers" name="Mudanças" stroke={C.info} fill={C.info} fillOpacity={0.15} />
-                <Area type="monotone" dataKey="leavers" name="Desligamentos" stroke={C.destructive} fill={C.destructive} fillOpacity={0.15} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-        <LicensesPanel rows={k?.licencas ?? []} />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      <GovernanceList m={m} loading={isLoading || !!metricsError} />
-      {/* Atividade recente */}
-      <Card className="animate-content-in stagger-5 lg:col-span-2">
+      {/* Gráfico principal */}
+      <QueryState loading={people.isLoading} error={people.error} retry={people.refetch}>
+      <Card className="rounded-xl">
         <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base">Atividade recente</CardTitle>
-            <div className="flex gap-3 text-xs">
-              <Link to="/fila-provisionamento" className="text-primary hover:underline">Fila</Link>
-              <Link to="/eventos-jml" className="text-primary hover:underline">Eventos JML</Link>
-              <Link to="/auditoria" className="text-primary hover:underline">Auditoria</Link>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-lg">Entradas e saídas por dia</CardTitle>
+              <p className="text-xs text-muted-foreground">Cada pessoa conta uma vez por dia</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex gap-3 text-xs">
+                {[{ k: "entradas", l: "Entradas", c: CH.in }, { k: "saidas", l: "Saídas", c: CH.out }].map((x) => (
+                  <button key={x.k} type="button" onClick={() => toggle(x.k)} className={`flex items-center gap-1.5 ${hidden.has(x.k) ? "opacity-40" : ""}`}><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: x.c }} />{x.l}</button>
+                ))}
+              </div>
+              <div className="flex rounded-md border p-0.5">{([7, 30, 90] as Period[]).map((d) => <Button key={d} size="sm" variant={period === d ? "secondary" : "ghost"} className="h-7 px-2.5 text-xs" onClick={() => setPeriod(d)}>{d} dias</Button>)}</div>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="p-0">
-          <ActivityFeed limit={10} />
+        <CardContent className="h-[280px] pt-2">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={pplChart} margin={{ left: -16, right: 8, top: 8 }}>
+              <defs>
+                <linearGradient id="g-in" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={CH.in} stopOpacity={0.35} /><stop offset="100%" stopColor={CH.in} stopOpacity={0} /></linearGradient>
+                <linearGradient id="g-out" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={CH.out} stopOpacity={0.25} /><stop offset="100%" stopColor={CH.out} stopOpacity={0} /></linearGradient>
+              </defs>
+              <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
+              <XAxis dataKey="label" interval={tick} tick={{ fill: CH.axis, fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: CH.axis, fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip content={<ChartTooltip />} />
+              <Area type="monotone" dataKey="entradas" name="Entradas" stroke={CH.in} strokeWidth={2} fill="url(#g-in)" hide={hidden.has("entradas")} />
+              <Area type="monotone" dataKey="saidas" name="Saídas" stroke={CH.out} strokeWidth={2} fill="url(#g-out)" hide={hidden.has("saidas")} />
+            </AreaChart>
+          </ResponsiveContainer>
         </CardContent>
       </Card>
+      </QueryState>
+
+      {/* Base: 4 cartões */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
+        <BarsPanel title="Categoria de Usuários" unit="usuários" rows={[
+          { label: "Ativos", value: m?.colab_ativos ?? 0, color: C.primary, to: "/colaboradores?status=ativo" },
+          { label: "Férias", value: m?.colab_ferias ?? 0, color: C.info, to: "/colaboradores?status=ferias" },
+          { label: "Afastados", value: m?.colab_afastados ?? 0, color: C.warning, to: "/colaboradores?status=afastado" },
+          { label: "Terceiros ativos", value: tercAtivos, color: C.violet, to: "/terceiros" },
+          { label: "Contas de serviço", value: contasServico, color: C.muted, to: "/contas-servico" },
+        ]} />
+        <LicensesPanel rows={k?.licencas ?? []} />
+        <GovernanceList m={m} loading={isLoading || !!metricsError} />
+        <Card className="h-full rounded-xl">
+          <CardHeader className="pb-2"><CardTitle className="text-base">Atividade recente</CardTitle></CardHeader>
+          <CardContent className="p-0">
+            <ActivityFeed limit={6} />
+            <Link to="/auditoria" className="block px-4 py-3 text-xs font-medium text-primary hover:underline">Ver toda a atividade →</Link>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
 }
+
+const CH = { in: "hsl(var(--primary))", out: "hsl(var(--destructive))", axis: "hsl(var(--muted-foreground))" };
 
