@@ -8,7 +8,7 @@ const TONE: Record<RingTone, string> = {
   success: "stroke-success",
   warning: "stroke-warning",
   destructive: "stroke-destructive",
-  muted: "stroke-sidebar-muted-foreground",
+  muted: "stroke-sidebar-border",
 };
 
 export function ProgressRing({ percent, tone, top, value, bottom, size = 132 }: {

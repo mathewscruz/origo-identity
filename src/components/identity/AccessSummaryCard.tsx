@@ -42,7 +42,7 @@ export default function AccessSummaryCard({ colaboradorId, terceiroId }: { colab
                 <div className="grid grid-cols-4 gap-3">
                   {apps.slice(0, 8).map((a) => (
                     <div key={a.resource_key} className="flex flex-col items-center gap-1 text-center">
-                      <ProductLogo name={a.nome} className="h-8 w-8" />
+                      <ProductLogo nome={a.nome} />
                       <span className="line-clamp-2 text-[11px]">{a.nome}</span>
                     </div>
                   ))}

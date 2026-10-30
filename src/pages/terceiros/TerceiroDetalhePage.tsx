@@ -23,6 +23,9 @@ import { queueFullProfileActions } from "@/lib/entraQueueHelper";
 import { desligarTerceiro, reativarTerceiro } from "@/lib/iam/terceiroLifecycle";
 import EmptyState from "@/components/EmptyState";
 import { humanize } from "@/lib/labels";
+import IdentityHeader, { ProgressRing } from "@/components/identity/IdentityHeader";
+import AccessSummaryCard from "@/components/identity/AccessSummaryCard";
+import { daysUntil, revalidationTone } from "@/lib/revalidationRing";
 
 const criticidadeConfig: Record<string, { label: string; class: string }> = {
   baixa: { label: "Baixa", class: "bg-muted text-muted-foreground" },
@@ -194,86 +197,80 @@ export default function TerceiroDetalhePage() {
   };
 
 
+  const revBase = (terceiro as any).ultima_revalidacao || terceiro.contrato_inicio;
+  const proximaRev = revBase ? new Date(new Date(revBase).getTime() + revalidacaoDias * 86_400_000) : null;
+  const diasRev = daysUntil(proximaRev);
+  const iniciais = String(terceiro.nome || "?").split(" ").filter(Boolean).map((n: string) => n[0]).slice(0, 2).join("").toUpperCase();
+  const responsavel = (terceiro as any).responsavel_colaborador;
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild><Link to="/terceiros"><ArrowLeft className="h-4 w-4" /></Link></Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight">{terceiro.nome}</h1>
-            <Badge variant="outline" className={crit.class}>Criticidade {crit.label}</Badge>
-            <Badge variant={terceiro.ativo ? "default" : "secondary"}>{terceiro.ativo ? "Ativo" : "Inativo"}</Badge>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {terceiro.empresa_terceira} · Responsável:{" "}
-            {(terceiro as any).responsavel_colaborador ? (
-              <Link to={`/colaboradores/${(terceiro as any).responsavel_colaborador.id}`} className="text-primary hover:underline">
-                {(terceiro as any).responsavel_colaborador.nome}
-              </Link>
-            ) : (
-              terceiro.responsavel || "—"
-            )}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {terceiro.ativo ? (
-            <Button variant="destructive" size="sm" onClick={() => setDesligarOpen(true)}>
-              <UserX className="mr-1 h-3 w-3" /> Desligar Terceiro
-            </Button>
-          ) : (
-            <Button size="sm" onClick={handleReativar} disabled={reativando}>
-              <RotateCcw className="mr-1 h-3 w-3" /> {reativando ? "Reativando..." : "Reativar Terceiro"}
-            </Button>
-          )}
-          <Button variant="outline" size="sm" onClick={() => setStartJmlOpen(true)}>
-            <Workflow className="mr-1 h-3 w-3" /> Iniciar evento JML
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => navigate(`/terceiros?edit=${id}`)}><Pencil className="mr-1 h-3 w-3" /> Editar</Button>
+      <IdentityHeader
+        backTo="/terceiros"
+        initials={iniciais}
+        nome={terceiro.nome}
+        tag="Terceiro"
+        badges={<>
+          <Badge variant="outline" className={terceiro.ativo ? "border-success/40 bg-success/15 text-success" : "border-sidebar-border text-sidebar-foreground"}>{terceiro.ativo ? "Ativo" : "Inativo"}</Badge>
+          <Badge variant="outline" className={crit.class}>Criticidade {crit.label}</Badge>
+        </>}
+        subtitle={<div className="space-y-0.5">
+          <p className="text-xs uppercase tracking-wide">Empresa</p>
+          <p className="text-lg text-sidebar-accent-foreground">{terceiro.empresa_terceira || "—"}</p>
+          <p className="text-xs">Responsável: {responsavel ? <Link to={`/colaboradores/${responsavel.id}`} className="text-sidebar-primary hover:underline">{responsavel.nome}</Link> : (terceiro.responsavel || "—")}</p>
+        </div>}
+        aside={terceiro.ativo ? (
+          <ProgressRing
+            percent={diasRev === null ? 0 : (Math.max(0, diasRev) / revalidacaoDias) * 100}
+            tone={revalidationTone(diasRev)}
+            top={diasRev !== null && diasRev < 0 ? "Revalidação vencida há" : "Revalidação em"}
+            value={diasRev === null ? "—" : String(Math.abs(diasRev))}
+            bottom="dias"
+          />
+        ) : undefined}
+        actions={<>
+          <Button variant="secondary" size="sm" onClick={() => navigate(`/terceiros?edit=${id}`)}><Pencil className="mr-1 h-3 w-3" /> Editar</Button>
+          <Button variant="secondary" size="sm" onClick={() => setStartJmlOpen(true)}><Workflow className="mr-1 h-3 w-3" /> Iniciar evento JML</Button>
           {terceiro.ativo && <Button size="sm" onClick={() => setRenovarOpen(true)}><ShieldCheck className="mr-1 h-3 w-3" /> Revalidar / Renovar</Button>}
-        </div>
-      </div>
-
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-muted-foreground">
-              Início: {terceiro.contrato_inicio ? new Date(terceiro.contrato_inicio).toLocaleDateString("pt-BR") : "—"}
-            </span>
-            <span className={`text-xs font-medium ${dias <= 7 ? "text-destructive" : dias <= 30 ? "text-warning" : "text-muted-foreground"}`}>
-              {dias > 0 ? `${dias} dias restantes` : dias === 999 ? "—" : `Vencido há ${Math.abs(dias)} dias`}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              Fim: {terceiro.contrato_fim ? new Date(terceiro.contrato_fim).toLocaleDateString("pt-BR") : "—"}
-            </span>
-          </div>
-          <Progress value={progress} className="h-3" />
-        </CardContent>
-      </Card>
+          {terceiro.ativo ? (
+            <Button variant="destructive" size="sm" onClick={() => setDesligarOpen(true)}><UserX className="mr-1 h-3 w-3" /> Desligar</Button>
+          ) : (
+            <Button size="sm" onClick={handleReativar} disabled={reativando}><RotateCcw className="mr-1 h-3 w-3" /> {reativando ? "Reativando..." : "Reativar"}</Button>
+          )}
+        </>}
+      />
 
       <Tabs defaultValue="dados">
         <TabsList>
-          <TabsTrigger value="dados">Dados Pessoais</TabsTrigger>
-          <TabsTrigger value="contrato">Dados Contrato</TabsTrigger>
-          <TabsTrigger value="perfis">Perfis de Acesso ({atribuicoes?.length || 0})</TabsTrigger>
+          <TabsTrigger value="dados">Resumo</TabsTrigger>
+          <TabsTrigger value="perfis">Acessos ({atribuicoes?.length || 0})</TabsTrigger>
+          <TabsTrigger value="contrato">Revalidações</TabsTrigger>
         </TabsList>
 
         <TabsContent value="dados" className="mt-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="grid grid-cols-2 gap-6">
-                {[
-                  ["Nome", terceiro.nome],
-                  ["Email", terceiro.email || "—"],
-                  ["Empresa terceira", terceiro.empresa_terceira || "—"],
-                  ["Responsável", (terceiro as any).responsavel_colaborador ? `${(terceiro as any).responsavel_colaborador.nome}${(terceiro as any).responsavel_colaborador.email ? ` (${(terceiro as any).responsavel_colaborador.email})` : ""}` : (terceiro.responsavel || "—")],
-                  ["Criticidade", crit.label],
-                  ["Login AD", (terceiro as any).sam_account_name || "—"],
-                ].map(([label, value]) => (
-                  <div key={label as string}><p className="text-xs text-muted-foreground">{label}</p><p className="text-sm font-medium">{value}</p></div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card>
+              <CardContent className="pt-5">
+                <h3 className="mb-4 text-base font-semibold">Dados do terceiro</h3>
+                <dl className="divide-y">
+                  {[
+                    ["Nome completo", terceiro.nome],
+                    ["E-mail", terceiro.email || "—"],
+                    ["Empresa", terceiro.empresa_terceira || "—"],
+                    ["Responsável", responsavel ? `${responsavel.nome}${responsavel.email ? ` (${responsavel.email})` : ""}` : (terceiro.responsavel || "—")],
+                    ["Login AD", (terceiro as any).sam_account_name || "—"],
+                    ["Início do contrato", terceiro.contrato_inicio ? new Date(terceiro.contrato_inicio).toLocaleDateString("pt-BR") : "—"],
+                    ["Término do contrato", terceiro.contrato_fim ? `${new Date(terceiro.contrato_fim).toLocaleDateString("pt-BR")}${dias !== 999 ? (dias > 0 ? ` · ${dias} dias restantes` : ` · vencido há ${Math.abs(dias)} dias`) : ""}` : "—"],
+                    ["Criticidade", crit.label],
+                  ].map(([label, value]) => (
+                    <div key={label as string} className="grid grid-cols-[160px_1fr] gap-3 py-2.5 text-sm"><dt className="text-muted-foreground">{label}</dt><dd className="min-w-0 truncate">{value}</dd></div>
+                  ))}
+                </dl>
+                <div className="mt-3"><Progress value={progress} className="h-1.5" /><p className="mt-1 text-xs text-muted-foreground">Andamento do contrato</p></div>
+              </CardContent>
+            </Card>
+            <AccessSummaryCard terceiroId={id} />
+          </div>
         </TabsContent>
 
         <TabsContent value="contrato" className="mt-4 space-y-4">
