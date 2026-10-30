@@ -487,7 +487,11 @@ export default function AplicacaoDetalhePage() {
                 ) : (
                   <Badge variant="outline" className="bg-muted text-muted-foreground">Integração inativa</Badge>
                 )}
+                {(app as any).demo_conectado && (
+                  <Badge variant="outline" className="bg-warning/15 text-warning border-warning/30">Conectado — demonstração</Badge>
+                )}
               </div>
+              {(app as any).demo_conectado && <p className="text-xs text-warning">Somente apresentação. O conector IAM e o provisionamento não estão homologados; o estado técnico acima continua válido.</p>}
             </div>
             <div className="flex gap-2 flex-wrap">
               {(app as any).url && (

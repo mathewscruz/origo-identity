@@ -26,6 +26,7 @@ type Row = any;
 
 const SITUACAO: Record<string, { label: string; cls: string }> = {
   conectado: { label: "Conectado", cls: "bg-success/15 text-success border-success/30" },
+  demo: { label: "Conectado — demonstração", cls: "bg-warning/15 text-warning border-warning/30" },
   falhou: { label: "Falhou", cls: "bg-destructive/15 text-destructive border-destructive/30" },
   aguardando: { label: "Aguardando teste", cls: "bg-info/15 text-info border-info/30" },
   rascunho: { label: "Rascunho", cls: "bg-muted text-muted-foreground" },
@@ -60,14 +61,16 @@ export default function AplicacoesPage() {
   const list = allApps.filter((a) => {
     if (busca && !a.nome.toLowerCase().includes(busca.toLowerCase())) return false;
     const s = situacaoSistema(a);
-    if (filtro === "incompletos" && (s === "conectado" || s === "aguardando")) return false;
+    if (filtro === "incompletos" && (s === "conectado" || s === "demo" || s === "aguardando")) return false;
     if (filtro === "falhou" && s !== "falhou") return false;
     if (filtro === "conectado" && s !== "conectado") return false;
+    if (filtro === "demo" && s !== "demo") return false;
     return true;
   });
   const { paginatedItems, safePage } = usePagination(list, page, pageSize);
 
   const conectados = allApps.filter((a) => situacaoSistema(a) === "conectado").length;
+  const emDemo = allApps.filter((a) => situacaoSistema(a) === "demo").length;
   const falhas = allApps.filter((a) => situacaoSistema(a) === "falhou").length;
   const rascunhos = allApps.filter((a) => situacaoSistema(a) === "rascunho").length;
 
@@ -95,10 +98,11 @@ export default function AplicacoesPage() {
         </div>}
       />
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
         {[
           { icon: Globe, n: allApps.length, l: "Total", c: "primary", f: "todas" },
           { icon: CheckCircle2, n: conectados, l: "Conectados", c: "success", f: "conectado" },
+          { icon: Globe, n: emDemo, l: "Conectados (demo)", c: "warning", f: "demo" },
           { icon: AlertTriangle, n: falhas, l: "Com falha", c: "destructive", f: "falhou" },
           { icon: FileEdit, n: rascunhos, l: "Incompletos", c: "warning", f: "incompletos" },
         ].map((k) => (
@@ -121,6 +125,7 @@ export default function AplicacoesPage() {
           <SelectContent>
             <SelectItem value="todas">Todos</SelectItem>
             <SelectItem value="conectado">Conectados</SelectItem>
+            <SelectItem value="demo">Conectados (demo)</SelectItem>
             <SelectItem value="falhou">Com falha</SelectItem>
             <SelectItem value="incompletos">Incompletos</SelectItem>
           </SelectContent>
@@ -155,7 +160,7 @@ export default function AplicacoesPage() {
                     <td className="hidden p-4 md:table-cell"><Badge variant="outline">{MODO_LABEL[app.modo_acesso] ?? "—"}</Badge></td>
                     <td className="hidden p-4 text-muted-foreground md:table-cell">{nome(app.owner_colaborador_id) ?? app.owner ?? <span className="text-warning">Sem dono</span>}</td>
                     <td className="hidden p-4 text-muted-foreground lg:table-cell">{nome(app.revisor_colaborador_id) ?? <span className="text-warning">Sem revisor</span>}</td>
-                    <td className="p-4"><Badge variant="outline" className={s.cls} title={app.teste_detalhe ?? undefined}>{s.label}</Badge></td>
+                    <td className="p-4"><Badge variant="outline" className={s.cls} title={situacaoSistema(app) === "demo" ? "Apresentação visual; conector e provisionamento IAM não homologados." : app.teste_detalhe ?? undefined}>{s.label}</Badge></td>
                     {canEdit && <td className="p-4"><div className="flex gap-1">
                       <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Editar ficha" onClick={(e) => { e.stopPropagation(); navigate(`/aplicacoes/${app.id}/conectar`); }}><Pencil className="h-3 w-3" /></Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" aria-label="Excluir" onClick={(e) => { e.stopPropagation(); setDeleteId(app.id); }}><Trash2 className="h-3 w-3" /></Button>

@@ -35,7 +35,8 @@ export function fichaPendencias(a: {
 }
 
 /** Situação do sistema na lista de Aplicações. */
-export function situacaoSistema(a: { teste_status?: string | null; integracao_ativa?: boolean | null }): "conectado" | "falhou" | "aguardando" | "rascunho" {
+export function situacaoSistema(a: { teste_status?: string | null; integracao_ativa?: boolean | null; demo_conectado?: boolean | null }): "conectado" | "demo" | "falhou" | "aguardando" | "rascunho" {
+  if (a.demo_conectado && !(a.integracao_ativa && a.teste_status === "ok")) return "demo";
   if (a.teste_status === "erro") return "falhou";
   if (a.teste_status === "ok") return "conectado";
   if (a.teste_status === "pendente") return "aguardando";
