@@ -32,7 +32,6 @@ import { useActivityFeed, acaoIcon } from "@/components/ActivityFeed";
 import { activitySentence, isActivityNoise } from "@/lib/activityLabels";
 import { tempoRelativo } from "@/lib/alertLabels";
 import { useAuth } from "@/contexts/AuthContext";
-import { useAvatarUrl } from "@/lib/avatarUrl";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 function useDashboardKpis(days: number) {
@@ -230,6 +229,8 @@ function CardTitleRow({ icon: Icon, title, action }: { icon: typeof Users; title
 
 /* ── main ── */
 export default function Dashboard() {
+  const { profile } = useAuth();
+  const primeiroNome = (profile?.nome ?? "").trim().split(/\s+/)[0] ?? "";
   const [period, setPeriod] = useState<Period>(30);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const { data: m, isLoading, error: metricsError, refetch: retryMetrics } = useDashboardMetrics();
@@ -282,11 +283,10 @@ export default function Dashboard() {
     <div className="flex min-h-[calc(100vh-3.5rem-4rem)] flex-col gap-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-[28px] font-semibold tracking-tight">Governança de Identidades</h1>
-          <p className="text-base text-muted-foreground">Visibilidade. Controle. Conformidade.</p>
+          <h1 className="text-[28px] font-semibold tracking-tight">{primeiroNome ? `Olá, ${primeiroNome}` : "Olá"}</h1>
+          <p className="text-base text-muted-foreground">Governança de Identidades</p>
           <div className="flex flex-wrap items-center gap-x-3 pt-1 text-xs text-muted-foreground"><SystemStrip m={m} loading={isLoading} /><AutoUpdatedHint tasks={["sync-entra-licencas", "sync-entra-groups"]} /></div>
         </div>
-        <UserChip />
       </div>
 
       <QueryState loading={isLoading} error={metricsError || (!isLoading && !m ? new Error("Métricas indisponíveis") : null)} retry={retryMetrics}>
@@ -363,19 +363,6 @@ export default function Dashboard() {
         <GovernanceList m={m} loading={isLoading || !!metricsError} />
         <RecentCard />
       </div>
-    </div>
-  );
-}
-
-const ROLE_NAME: Record<string, string> = { platform_admin: "Super Admin", admin: "Super Admin", operador: "Suporte", viewer: "Leitor" };
-function UserChip() {
-  const { profile, role } = useAuth();
-  const avatar = useAvatarUrl(profile?.avatar_url);
-  const initials = profile?.nome ? profile.nome.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase() : "??";
-  return (
-    <div className="flex items-center gap-3">
-      <span className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-muted text-base font-semibold">{avatar ? <img src={avatar} alt="" className="h-full w-full object-cover" /> : initials}</span>
-      <div className="leading-tight"><p className="text-sm font-medium">{profile?.nome || "Usuário"}</p><p className="text-xs text-muted-foreground">{ROLE_NAME[role ?? ""] ?? "—"}</p></div>
     </div>
   );
 }
