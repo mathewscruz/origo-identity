@@ -79,6 +79,7 @@ export default function TerceirosPage() {
     { key: "reval", label: "Revalidação", index: 6 },
   ]);
   const [busca, setBusca] = useState("");
+  const [statusFilter, setStatusFilter] = useState(searchParams.get("status") || "ativo");
   const buscaDeferida = useDeferredValue(busca);
   const revalCiclo = parseInt(useParametro("terceiro_revalidacao_dias", "45"), 10) || 45;
   const [page, setPage] = useState(1);
