@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/root/origo_work/origo-identity-sharepoint-ownership-live
-ExecStart=/usr/bin/python3 -m agent.sync_sharepoint_ownership
+ExecStart=/root/.hermes/installs/76f6e7e5145b5f39/environments/bca4a09e93284c8fb14e911af5e66a09/venv/bin/python -m agent.sync_sharepoint_ownership
 TimeoutStartSec=1800
 UMask=0077
 NoNewPrivileges=true
