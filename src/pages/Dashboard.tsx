@@ -26,7 +26,14 @@ import { useQuery } from "@tanstack/react-query";
 import { usePeopleSeries } from "@/hooks/usePeopleSeries";
 import { splitPeriods } from "@/lib/peopleActivity";
 import { supabase } from "@/integrations/supabase/client";
-import { TrendingDown, TrendingUp, Play, Clock, AlertCircle } from "lucide-react";
+import { Play, Clock, AlertCircle, Shield, ChevronRight, ChevronDown, Box, Activity, Minus } from "lucide-react";
+import ProductLogo from "@/components/ProductLogo";
+import { useActivityFeed, acaoIcon } from "@/components/ActivityFeed";
+import { activitySentence, isActivityNoise } from "@/lib/activityLabels";
+import { tempoRelativo } from "@/lib/alertLabels";
+import { useAuth } from "@/contexts/AuthContext";
+import { useAvatarUrl } from "@/lib/avatarUrl";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 function useDashboardKpis(days: number) {
   return useQuery({
@@ -79,17 +86,20 @@ function KpiCard({ label, value, prev, spark, color, to, hint, invert }: { label
 /* ── uso de licenças ── */
 function LicensesPanel({ rows }: { rows: { nome: string; total: number; em_uso: number }[] }) {
   return (
-    <Card className="h-full">
-      <CardHeader className="pb-2"><div className="flex items-center justify-between"><CardTitle className="text-base">Licenças em uso</CardTitle><Link to="/licencas" className="text-xs text-primary hover:underline">Ver todas</Link></div></CardHeader>
-      <CardContent className="space-y-3">
+    <Card className="flex h-full flex-col rounded-xl">
+      <CardTitleRow icon={Box} title="Licenças em uso" action={<Link to="/licencas" className="text-xs text-primary hover:underline">Ver todas</Link>} />
+      <CardContent className="flex flex-1 flex-col justify-between gap-4 px-5 pb-5 pt-0">
         {rows.length === 0 ? <EmptyState message="Sem licenças sincronizadas." /> : rows.map((r) => {
           const pct = r.total > 0 ? Math.round((r.em_uso / r.total) * 100) : 0;
-          const tone = pct >= 90 ? "bg-destructive" : pct >= 75 ? "bg-warning" : "bg-primary";
           return (
-            <div key={r.nome} className="space-y-1">
-              <div className="flex items-center justify-between gap-3 text-sm"><span className="truncate" title={r.nome}>{r.nome}</span><span className="shrink-0 text-xs text-muted-foreground"><span className="font-semibold text-foreground tabular-nums">{r.em_uso}</span>/{r.total} · {pct}%</span></div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-muted"><div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.min(100, pct)}%` }} /></div>
-            </div>
+            <Link key={r.nome} to="/licencas" className="flex items-center gap-4 hover:opacity-90" title={`${r.em_uso} de ${r.total}`}>
+              <ProductLogo nome={r.nome} />
+              <div className="min-w-0 flex-1 space-y-2">
+                <span className="block truncate text-sm" title={r.nome}>{r.nome}</span>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, pct)}%` }} /></div>
+              </div>
+              <span className="w-11 text-right text-sm font-medium tabular-nums text-primary">{pct}%</span>
+            </Link>
           );
         })}
       </CardContent>
@@ -174,32 +184,26 @@ function SystemStrip({ m, loading }: { m: Row; loading: boolean }) {
 }
 
 /* ── barras horizontais clicáveis ── */
-function BarsPanel({ title, rows, unit, footer }: { title: string; rows: { label: string; value: number; color: string; to?: string; includeInTotal?: boolean }[]; unit?: string; footer?: React.ReactNode }) {
-  const total = rows.reduce((s, r) => s + (r.includeInTotal === false ? 0 : r.value), 0);
-  const max = Math.max(1, ...rows.map((r) => r.value));
+function BarsPanel({ title, rows }: { title: string; rows: { label: string; value: number; to?: string }[]; unit?: string }) {
+  const total = rows.reduce((s, r) => s + r.value, 0);
   return (
-    <Card className="h-full">
-      <CardHeader className="pb-2"><CardTitle className="text-base">{title}</CardTitle></CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-baseline justify-between border-b pb-2">
-          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Total</span>
-          <span aria-label={`${title}: total`} className="text-xl font-semibold tabular-nums">{total}</span>
-        </div>
+    <Card className="flex h-full flex-col rounded-xl">
+      <CardTitleRow icon={Users} title={title} action={<span aria-label={`${title}: total`} className="text-sm tabular-nums text-muted-foreground">{total.toLocaleString("pt-BR")}</span>} />
+      <CardContent className="flex flex-1 flex-col justify-between gap-4 px-5 pb-5 pt-0">
         {rows.map((r) => {
           const pct = total > 0 ? Math.round((r.value / total) * 100) : 0;
-          const width = r.value > 0 ? Math.max(3, Math.round((r.value / max) * 100)) : 0;
           const inner = (
-            <div className="space-y-1">
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="flex min-w-0 items-center gap-2"><span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: r.color }} /><span className="truncate" title={r.label}>{r.label}</span></span>
-                <span className="shrink-0 text-xs text-muted-foreground"><span className="font-semibold text-foreground tabular-nums">{r.value}</span>{unit ? ` ${unit}` : ""} · {pct}%</span>
+            <div className="flex items-center gap-4">
+              <div className="min-w-0 flex-1 space-y-2">
+                <span className="block truncate text-sm" title={r.label}>{r.label}</span>
+                <div className="h-3.5 w-full overflow-hidden rounded-md bg-muted"><div className="h-full rounded-md bg-primary transition-all duration-500" style={{ width: `${r.value > 0 ? Math.max(4, pct) : 0}%` }} /></div>
               </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full transition-all duration-500" style={{ width: `${width}%`, backgroundColor: r.color }} /></div>
+              <span className="w-14 text-right text-sm font-semibold tabular-nums">{r.value.toLocaleString("pt-BR")}</span>
+              <span className="w-10 text-right text-sm tabular-nums text-muted-foreground">{pct}%</span>
             </div>
           );
-          return r.to ? <Link key={r.label} to={r.to} className="block rounded-md p-1 -m-1 hover:bg-muted/50">{inner}</Link> : <div key={r.label}>{inner}</div>;
+          return r.to ? <Link key={r.label} to={r.to} className="block rounded-md hover:opacity-90">{inner}</Link> : <div key={r.label}>{inner}</div>;
         })}
-        {footer}
       </CardContent>
     </Card>
   );
@@ -225,26 +229,21 @@ function GovernanceList({ m, loading }: { m: Row; loading: boolean }) {
   ];
   const open = items.filter((i) => i.value > 0);
   return (
-    <Card className="h-full">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base">Pendências de governança</CardTitle>
-          <Badge variant="outline" className="text-xs">{open.length} tema(s)</Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="p-0">
+    <Card className="flex h-full flex-col rounded-xl">
+      <CardTitleRow icon={Shield} title="Pendências de governança" />
+      <CardContent className="flex-1 overflow-auto px-5 pb-4 pt-0">
         {loading ? (
-          <div className="space-y-2 p-4">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
+          <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-9 w-full" />)}</div>
         ) : open.length === 0 ? (
           <div className="py-10"><EmptyState message="Nenhuma pendência — tudo em dia." /></div>
         ) : (
-          <ul className="divide-y">
+          <ul className="divide-y divide-border/60">
             {open.map((i) => (
               <li key={i.label}>
-                <Link to={i.to} className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-muted/50">
-                  <i.icon className={`h-4 w-4 shrink-0 ${i.tone === "destructive" ? "text-destructive" : i.tone === "warning" ? "text-warning" : i.tone === "info" ? "text-info" : "text-muted-foreground"}`} />
+                <Link to={i.to} className="group flex items-center gap-3 py-3 text-sm text-foreground/85 transition-colors hover:text-foreground">
                   <span className="flex-1 truncate" title={i.label}>{i.label}</span>
-                  <Badge variant="outline" className={`tabular-nums ${i.tone === "destructive" ? "border-destructive/30 bg-destructive/10 text-destructive" : i.tone === "warning" ? "border-warning/30 bg-warning/10 text-warning" : ""}`}>{i.value}</Badge>
+                  <span className="flex h-7 min-w-7 items-center justify-center rounded-md border border-warning/70 bg-warning/15 px-1.5 text-xs font-semibold tabular-nums text-warning">{i.value}</span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
                 </Link>
               </li>
             ))}
@@ -252,6 +251,15 @@ function GovernanceList({ m, loading }: { m: Row; loading: boolean }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function CardTitleRow({ icon: Icon, title, action }: { icon: typeof Users; title: string; action?: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-2 px-5 pb-4 pt-5">
+      <h3 className="flex items-center gap-2.5 text-lg font-medium"><Icon className="h-5 w-5 text-primary" />{title}</h3>
+      {action}
+    </div>
   );
 }
 
