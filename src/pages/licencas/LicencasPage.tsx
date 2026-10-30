@@ -25,6 +25,7 @@ import EmptyState from "@/components/EmptyState";
 import { authedFetch } from "@/lib/authedFetch";
 import PageHeader from "@/components/PageHeader";
 import { humanize } from "@/lib/labels";
+import { licencaCritica } from "@/lib/dashboardFilters";
 
 type UnifiedLicense = {
   id: string;
@@ -251,6 +252,7 @@ export default function LicencasPage() {
           </TabsList>
         </Tabs>
         <div className="flex items-center gap-3 w-full sm:w-auto">
+          {soCriticas && <Button variant="outline" size="sm" onClick={() => { setSoCriticas(false); setPage(1); }}>Filtro: críticas ×</Button>}
           <label className="flex items-center gap-2 text-xs text-muted-foreground whitespace-nowrap">
             <Switch checked={hideTrials} onCheckedChange={(v) => { setHideTrials(v); setPage(1); }} />
             Ocultar trials/free

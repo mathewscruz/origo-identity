@@ -14,6 +14,7 @@ import TablePagination, { usePagination } from "@/components/TablePagination";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { invokeFunction } from "@/lib/invokeFunction";
+import { excecaoVencendo } from "@/lib/dashboardFilters";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -267,6 +268,7 @@ export default function ExcecoesPage() {
           <TabsTrigger value="expiradas">Expiradas ({counts.expiradas})</TabsTrigger>
           <TabsTrigger value="todas">Todas ({counts.total})</TabsTrigger>
         </TabsList>
+        {soVencendo && <Button variant="outline" size="sm" className="ml-2" onClick={() => { setSoVencendo(false); setPage(1); }}>Filtro: vencendo em 15 dias ×</Button>}
         {(["pendentes", "aprovadas", "rejeitadas", "expiradas", "todas"] as TabKey[]).map((t) => (
           <TabsContent key={t} value={t} className="mt-4">
             <Card><CardContent className="p-0">
