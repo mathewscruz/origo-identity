@@ -158,6 +158,10 @@ export function mapStatus(s: string): string {
   ) return "afastado";
   return "ativo";
 }
+export function shouldReconcileStatus(fingerprintEqual: boolean, currentStatus: string, rhStatus: string): boolean {
+  // O fingerprint pode estar atualizado enquanto o status no IAM foi alterado fora da importação.
+  return !fingerprintEqual || currentStatus !== mapStatus(rhStatus);
+}
 function isActiveStatus(s: string): boolean { return ["ativo", "ferias", "afastado"].includes(mapStatus(s)); }
 function normalizeCpf(v: string): string { return (v || "").replace(/\D/g, "").trim(); }
 function normalizeMail(v: string): string { return (v || "").toLowerCase().trim(); }
@@ -501,7 +505,13 @@ export async function processCsvColab(sb: Sb, csvText: string, opts: SyncOptions
       const existing = existingByMat.get(mat);
       if (existing) {
         claimedIds.add(existing.id);
-        if (existing.fingerprint === fp) { unchangedIds.push(existing.id); continue; }
+        const currentCpf = normalizeCpf(existing.cpf || "");
+        const sourceCpf = normalizeCpf(row.Cadastro_Pessoa_Fisica);
+        if (currentCpf && sourceCpf && currentCpf !== sourceCpf) {
+          quarantine.push({ matricula: mat, nome: row.displayName, email: row.mail, motivo: "matricula_identidade_divergente", detalhe: "CPF da matrícula difere do cadastro; status e acessos preservados.", dados: row, colaborador_id: existing.id });
+          continue;
+        }
+        if (!shouldReconcileStatus(existing.fingerprint === fp, existing.status, row.status)) { unchangedIds.push(existing.id); continue; }
         toUpdate.push({ existing, data: buildColabData(row, existing), kind: "update" });
         continue;
       }
@@ -566,15 +576,15 @@ export async function processCsvColab(sb: Sb, csvText: string, opts: SyncOptions
     let updated = 0, rehired = 0, linkedManual = 0;
     for (const u of toUpdate) {
       const { status: newStatus, cargo_id: newCargo, ...rest } = u.data;
-      // desligado manualmente na ferramenta: CSV ainda "ativo" não reativa (até o RH convergir)
       let statusToApply: string | null = newStatus;
-      if (u.existing.desligado_manual) {
-        if (newStatus === "ativo") {
-          statusToApply = null;
-          await sb.from("alertas").insert({ titulo: "CSV divergente — desligamento manual", mensagem: `${u.data.nome}: CSV ainda traz como ativo, mas foi desligado manualmente na ferramenta. Reativação bloqueada.`, severidade: "aviso", tipo: "csv_divergencia_desligamento", ref_url: `/colaboradores/${u.existing.id}` });
-        } else if (newStatus === "desligado" || newStatus === "inativo") {
-          await sb.from("colaboradores").update({ desligado_manual: false, desligado_manual_em: null, desligado_manual_por: null }).eq("id", u.existing.id);
-        }
+      // Desligamento formal manual/GLPI prevalece sobre qualquer estado ativo do RH.
+      if (overrideIds.has(u.existing.id)) {
+        // Exceção manual aprovada prevalece sobre o status do CSV enquanto vigente.
+        statusToApply = null;
+      }
+      if (u.existing.desligado_manual && ["ativo", "ferias", "afastado"].includes(newStatus)) {
+        statusToApply = null;
+        // Não limpar desligamento formal por convergência do RH.
       }
       const { error } = await sb.from("colaboradores").update({ ...rest, cargo_id: newCargo }).eq("id", u.existing.id);
       if (error) { quarantine.push({ matricula: u.data.matricula, nome: u.data.nome, email: u.data.email, motivo: "erro_atualizacao", detalhe: error.message, dados: u.data, colaborador_id: u.existing.id }); continue; }
