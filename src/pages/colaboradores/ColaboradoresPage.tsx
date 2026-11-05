@@ -36,6 +36,7 @@ import EmptyState from "@/components/EmptyState";
 import SortableHeader, { SortDirection, useSortableData } from "@/components/SortableHeader";
 import { formatAreaName } from "@/lib/formatters";
 import { humanize } from "@/lib/labels";
+import { initialColaboradorStatusFilter, matchesColaboradorStatus } from "@/lib/colaboradoresListaStatus";
 
 const statusConfig = Object.fromEntries(Object.entries(COLAB_STATUS_META).map(([k, v]) => [k, { label: v.label, class: v.className }]));
 
@@ -72,7 +73,7 @@ export default function ColaboradoresPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [busca, setBusca] = useState(searchParams.get("q") || "");
-  const [statusFilter, setStatusFilter] = useState(searchParams.get("status") || "ativo");
+  const [statusFilter, setStatusFilter] = useState(initialColaboradorStatusFilter(searchParams.get("status")));
   const [cargoFilter, setCargoFilter] = useState("todos");
   const [areaFilter, setAreaFilter] = useState("todos");
   const [page, setPage] = useState(1);
@@ -190,7 +191,7 @@ export default function ColaboradoresPage() {
     const pf = searchParams.get("pendencia") as keyof typeof colabFiltros | null;
     if (pf && colabFiltros[pf] && !colabFiltros[pf](c)) return false;
     if (buscaDeferida && !c.nome.toLowerCase().includes(buscaDeferida.toLowerCase()) && !c.email.toLowerCase().includes(buscaDeferida.toLowerCase())) return false;
-    if (statusFilter !== "todos" && c.status !== statusFilter) return false;
+    if (!matchesColaboradorStatus(c.status, statusFilter)) return false;
     if (areaFilter !== "todos" && c.area !== areaFilter) return false;
     if (cargoFilter !== "todos" && c.cargo !== cargoFilter) return false;
     return true;
@@ -335,7 +336,7 @@ export default function ColaboradoresPage() {
 
       {(() => {
         const ativos = mapped.filter((c) => c.status === "ativo");
-        const setPend = (k: string | null, st = "todos") => { const n = new URLSearchParams(searchParams); n.delete("pendencia"); if (k) n.set("pendencia", k); n.set("status", st); setStatusFilter(st); setSearchParams(n, { replace: true }); setPage(1); };
+        const setPend = (k: string | null, st = "nao_desligados") => { const n = new URLSearchParams(searchParams); n.delete("pendencia"); if (k) n.set("pendencia", k); n.set("status", st); setStatusFilter(st); setSearchParams(n, { replace: true }); setPage(1); };
         const pend = searchParams.get("pendencia");
         return <MetricStrip loading={isLoading} items={[
           { label: "Ativos", value: ativos.length, tone: "primary", active: statusFilter === "ativo" && !pend, onClick: () => setPend(null, "ativo") },
@@ -356,7 +357,7 @@ export default function ColaboradoresPage() {
         <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); const n = new URLSearchParams(searchParams); n.set("status", v); setSearchParams(n, { replace: true }); }}>
           <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="todos">Todos status</SelectItem>
+            <SelectItem value="nao_desligados">Não desligados</SelectItem>
             {statusOptions.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
           </SelectContent>
         </Select>
