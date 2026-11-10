@@ -45,7 +45,11 @@ async function resolveEntraUser(token: string, email: string | null, sam: string
 }
 
 interface EntraGroup { id: string; displayName: string; onPremisesSyncEnabled: boolean; groupTypes?: string[]; membershipRule?: string | null; isAssignableToRole?: boolean | null; }
-interface EntraLicense { skuId: string; }
+interface EntraLicense {
+  skuId: string;
+  assignmentSource: "direct" | "group" | "unknown";
+  assignedByGroups: string[];
+}
 interface EntraAppRole { assignmentId: string; resourceId: string; resourceDisplayName: string; appRoleId: string; principalId: string; }
 
 async function fetchUserGroups(token: string, userId: string): Promise<EntraGroup[]> {
@@ -85,10 +89,20 @@ async function fetchUserGroups(token: string, userId: string): Promise<EntraGrou
 
 async function fetchUserLicenses(token: string, userId: string): Promise<EntraLicense[]> {
   const headers = { Authorization: `Bearer ${token}` };
-  const res = await fetch(`https://graph.microsoft.com/v1.0/users/${userId}/licenseDetails?$select=skuId`, { headers });
+  const res = await fetch(`https://graph.microsoft.com/v1.0/users/${userId}?$select=assignedLicenses,licenseAssignmentStates`, { headers });
   if (!res.ok) return [];
   const data = await res.json();
-  return (data.value || []).map((l: any) => ({ skuId: l.skuId }));
+  const states = data.licenseAssignmentStates || [];
+  return (data.assignedLicenses || []).map((l: any) => {
+    const skuStates = states.filter((s: any) => String(s.skuId).toLowerCase() === String(l.skuId).toLowerCase());
+    const assignedByGroups = [...new Set(skuStates.map((s: any) => s.assignedByGroup).filter(Boolean))] as string[];
+    const hasDirect = skuStates.some((s: any) => !s.assignedByGroup);
+    return {
+      skuId: l.skuId,
+      assignmentSource: hasDirect ? "direct" : assignedByGroups.length > 0 ? "group" : "unknown",
+      assignedByGroups,
+    };
+  });
 }
 
 async function fetchUserAppRoles(token: string, userId: string): Promise<EntraAppRole[]> {
@@ -291,11 +305,14 @@ Deno.serve(async (req) => {
       const skuIds = userLicenses.map(l => l.skuId);
       const { data: localLicenses } = await sb.from("entra_licencas").select("id, sku_id, nome").in("sku_id", skuIds);
       for (const ll of (localLicenses || [])) {
+        const source = userLicenses.find(l => String(l.skuId).toLowerCase() === String(ll.sku_id).toLowerCase());
         const payload = {
           displayName: colab.nome,
           mail: colab.email || "",
           skuId: ll.sku_id,
           licenseName: ll.nome,
+          assignmentSource: source?.assignmentSource || "unknown",
+          assignedByGroups: source?.assignedByGroups || [],
         };
         const key = queueKey("assign_license", payload);
         currentKeys.add(key);

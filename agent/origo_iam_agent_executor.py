@@ -610,10 +610,27 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
             return {"status": "success", "result_message": "Conta desabilitada no Entra ID" + extra + "."}
 
         if action == "enable_entra":
+            current = requests.get(
+                f"{graph}/users/{user_id}?$select=id,accountEnabled",
+                headers=headers,
+                timeout=30,
+            )
+            current.raise_for_status()
+            if current.json().get("accountEnabled") is True:
+                return {"status": "success", "result_message": "Conta Entra ID já estava habilitada; estado validado sem escrita redundante."}
             r = requests.patch(f"{graph}/users/{user_id}", headers=headers,
                                json={"accountEnabled": True}, timeout=30)
             r.raise_for_status()
-            return {"status": "success", "result_message": "Conta reabilitada no Entra ID."}
+            check = requests.get(
+                f"{graph}/users/{user_id}?$select=id,accountEnabled",
+                headers=headers,
+                timeout=30,
+            )
+            check.raise_for_status()
+            if check.json().get("accountEnabled") is not True:
+                return {"status": "failed", "error_code": "entra_enable_postcheck_failed",
+                        "result_message": "Pós-checagem Entra ID: conta continua desabilitada."}
+            return {"status": "success", "result_message": "Conta reabilitada e validada no Entra ID."}
 
         if action == "update_entra":
             body = {k: payload[k] for k in ("department", "jobTitle", "companyName", "displayName")
@@ -628,11 +645,42 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
             sku = payload.get("skuId")
             if not sku:
                 return {"status": "failed", "error_code": "invalid_payload", "result_message": "skuId ausente"}
+            state_r = requests.get(
+                f"{graph}/users/{user_id}?$select=id,licenseAssignmentStates",
+                headers=headers,
+                timeout=30,
+            )
+            state_r.raise_for_status()
+            sku_states = [
+                s for s in (state_r.json().get("licenseAssignmentStates") or [])
+                if str(s.get("skuId", "")).lower() == str(sku).lower()
+            ]
+            if any(not s.get("assignedByGroup") for s in sku_states):
+                return {"status": "success", "result_message": f"Licença {payload.get('licenseName') or sku} já estava atribuída diretamente; estado validado."}
+            inherited_groups = sorted({str(s.get("assignedByGroup")) for s in sku_states if s.get("assignedByGroup")})
+            if inherited_groups:
+                return {"status": "success", "result_message": (
+                    f"Licença {payload.get('licenseName') or sku} já é herdada por grupo; "
+                    "atribuição direta não foi duplicada."
+                )}
             r = requests.post(f"{graph}/users/{user_id}/assignLicense", headers=headers,
                               json={"addLicenses": [{"skuId": sku, "disabledPlans": []}],
                                     "removeLicenses": []}, timeout=30)
             if r.ok:
-                return {"status": "success", "result_message": f"Licença {payload.get('licenseName') or sku} atribuída."}
+                verify_r = requests.get(
+                    f"{graph}/users/{user_id}?$select=id,licenseAssignmentStates",
+                    headers=headers,
+                    timeout=30,
+                )
+                verify_r.raise_for_status()
+                verified = any(
+                    str(s.get("skuId", "")).lower() == str(sku).lower() and not s.get("assignedByGroup")
+                    for s in (verify_r.json().get("licenseAssignmentStates") or [])
+                )
+                if not verified:
+                    return {"status": "failed", "error_code": "license_assign_postcheck_failed",
+                            "result_message": "Pós-checagem: licença direta não apareceu no Entra ID."}
+                return {"status": "success", "result_message": f"Licença {payload.get('licenseName') or sku} atribuída diretamente e validada."}
             if r.status_code == 400 and "mutually exclusive" in r.text.lower():
                 return {
                     "status": "cancelled",
@@ -698,10 +746,29 @@ def execute_item(graph_token: str, item: Dict[str, Any], execute: bool) -> Dict[
             gid = payload.get("groupId")
             if not gid:
                 return {"status": "failed", "error_code": "invalid_payload", "result_message": "groupId ausente"}
+            pre = requests.post(
+                f"{graph}/users/{user_id}/checkMemberGroups",
+                headers=headers,
+                json={"groupIds": [gid]},
+                timeout=30,
+            )
+            pre.raise_for_status()
+            if gid in (pre.json().get("value") or []):
+                return {"status": "success", "result_message": f"Já era membro do grupo {payload.get('groupName') or gid}; estado validado."}
             r = requests.post(f"{graph}/groups/{gid}/members/$ref", headers=headers,
                               json={"@odata.id": f"{graph}/directoryObjects/{user_id}"}, timeout=30)
             if r.status_code in (200, 204):
-                return {"status": "success", "result_message": f"Adicionado ao grupo {payload.get('groupName') or gid}."}
+                post = requests.post(
+                    f"{graph}/users/{user_id}/checkMemberGroups",
+                    headers=headers,
+                    json={"groupIds": [gid]},
+                    timeout=30,
+                )
+                post.raise_for_status()
+                if gid not in (post.json().get("value") or []):
+                    return {"status": "failed", "error_code": "group_assign_postcheck_failed",
+                            "result_message": "Pós-checagem: associação ao grupo não foi confirmada no Entra ID."}
+                return {"status": "success", "result_message": f"Adicionado ao grupo {payload.get('groupName') or gid} e validado."}
             if r.status_code == 400 and "already exist" in r.text:
                 return {"status": "success", "result_message": "Já era membro do grupo."}
             r.raise_for_status()
