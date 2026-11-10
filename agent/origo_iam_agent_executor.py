@@ -320,8 +320,10 @@ def _ad_ldap_connect():
         raise RuntimeError("ORIGO_AD_LDAP_PASSWORD/AD_LDAP_PASSWORD ausente")
     host = os.environ.get("AD_LDAP_HOST", "127.0.0.1")
     port = int(os.environ.get("AD_LDAP_PORT", "10389"))
+    use_ssl_env = os.environ.get("AD_LDAP_USE_SSL", "").strip().lower()
+    use_ssl = use_ssl_env in {"1", "true", "yes"} or port == 636
     base_dn = os.environ.get("AD_BASE_DN") or os.environ.get("ORIGO_AD_LDAP_BASE_DN") or "DC=ebessolar,DC=local"
-    server = Server(host, port=port, connect_timeout=10)
+    server = Server(host, port=port, use_ssl=use_ssl, connect_timeout=10)
     conn = Connection(server, user=user, password=password, authentication=NTLM, auto_bind=True)
     return conn, base_dn
 
