@@ -1279,6 +1279,75 @@ export type Database = {
           },
         ]
       }
+      iam_access_evidence: {
+        Row: {
+          action_type: string
+          actor_attribution: string
+          approved_at: string | null
+          approved_by: string | null
+          authenticated_actor_id: string | null
+          colaborador_id: string | null
+          correlation_id: string | null
+          event_at: string
+          id: string
+          operation: string
+          outcome_scope: string
+          processed_at: string | null
+          processed_by: string | null
+          queue_created_at: string
+          queue_id: string
+          requested_by: string | null
+          resource_key: string | null
+          source_kind: string
+          status: string
+          terceiro_id: string | null
+        }
+        Insert: {
+          action_type: string
+          actor_attribution: string
+          approved_at?: string | null
+          approved_by?: string | null
+          authenticated_actor_id?: string | null
+          colaborador_id?: string | null
+          correlation_id?: string | null
+          event_at?: string
+          id?: string
+          operation: string
+          outcome_scope: string
+          processed_at?: string | null
+          processed_by?: string | null
+          queue_created_at: string
+          queue_id: string
+          requested_by?: string | null
+          resource_key?: string | null
+          source_kind: string
+          status: string
+          terceiro_id?: string | null
+        }
+        Update: {
+          action_type?: string
+          actor_attribution?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          authenticated_actor_id?: string | null
+          colaborador_id?: string | null
+          correlation_id?: string | null
+          event_at?: string
+          id?: string
+          operation?: string
+          outcome_scope?: string
+          processed_at?: string | null
+          processed_by?: string | null
+          queue_created_at?: string
+          queue_id?: string
+          requested_by?: string | null
+          resource_key?: string | null
+          source_kind?: string
+          status?: string
+          terceiro_id?: string | null
+        }
+        Relationships: []
+      }
       iam_agent_status: {
         Row: {
           details: Json
