@@ -120,6 +120,13 @@
       "when": 1794317687075,
       "tag": "0016_allow_queue_self_approval",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794317777799,
+      "tag": "0017_scope_catalog_select_to_panel_roles",
+      "breakpoints": true
     }
   ]
 }
