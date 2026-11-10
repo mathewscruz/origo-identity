@@ -33,4 +33,4 @@ BEGIN
 END;
 $function$;
 REVOKE ALL ON FUNCTION public.claim_iam_queue_items(text,integer,integer,text[]) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.claim_iam_queue_items(text,integer,integer,text[]) TO service_role;
+GRANT EXECUTE ON FUNCTION public.claim_iam_queue_items(text,integer,integer,text[]) TO service_role, authenticated;
