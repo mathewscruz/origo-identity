@@ -1429,6 +1429,300 @@ export type Database = {
         }
         Relationships: []
       }
+      iam_incident_backup_20261110_eventos: {
+        Row: {
+          backup_created_at: string | null
+          colaborador_id: string | null
+          colaborador_nome: string | null
+          created_at: string | null
+          dados_antes: Json | null
+          dados_depois: Json | null
+          erro_mensagem: string | null
+          id: string | null
+          max_tentativas: number | null
+          origem: string | null
+          status: Database["public"]["Enums"]["status_evento_jml"] | null
+          tentativas: number | null
+          terceiro_id: string | null
+          tipo: Database["public"]["Enums"]["tipo_evento_jml"] | null
+          updated_at: string | null
+        }
+        Insert: {
+          backup_created_at?: string | null
+          colaborador_id?: string | null
+          colaborador_nome?: string | null
+          created_at?: string | null
+          dados_antes?: Json | null
+          dados_depois?: Json | null
+          erro_mensagem?: string | null
+          id?: string | null
+          max_tentativas?: number | null
+          origem?: string | null
+          status?: Database["public"]["Enums"]["status_evento_jml"] | null
+          tentativas?: number | null
+          terceiro_id?: string | null
+          tipo?: Database["public"]["Enums"]["tipo_evento_jml"] | null
+          updated_at?: string | null
+        }
+        Update: {
+          backup_created_at?: string | null
+          colaborador_id?: string | null
+          colaborador_nome?: string | null
+          created_at?: string | null
+          dados_antes?: Json | null
+          dados_depois?: Json | null
+          erro_mensagem?: string | null
+          id?: string | null
+          max_tentativas?: number | null
+          origem?: string | null
+          status?: Database["public"]["Enums"]["status_evento_jml"] | null
+          tentativas?: number | null
+          terceiro_id?: string | null
+          tipo?: Database["public"]["Enums"]["tipo_evento_jml"] | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      iam_incident_backup_20261110_eventos_preexec: {
+        Row: {
+          backup_created_at: string | null
+          colaborador_id: string | null
+          colaborador_nome: string | null
+          created_at: string | null
+          dados_antes: Json | null
+          dados_depois: Json | null
+          erro_mensagem: string | null
+          id: string | null
+          max_tentativas: number | null
+          origem: string | null
+          status: Database["public"]["Enums"]["status_evento_jml"] | null
+          tentativas: number | null
+          terceiro_id: string | null
+          tipo: Database["public"]["Enums"]["tipo_evento_jml"] | null
+          updated_at: string | null
+        }
+        Insert: {
+          backup_created_at?: string | null
+          colaborador_id?: string | null
+          colaborador_nome?: string | null
+          created_at?: string | null
+          dados_antes?: Json | null
+          dados_depois?: Json | null
+          erro_mensagem?: string | null
+          id?: string | null
+          max_tentativas?: number | null
+          origem?: string | null
+          status?: Database["public"]["Enums"]["status_evento_jml"] | null
+          tentativas?: number | null
+          terceiro_id?: string | null
+          tipo?: Database["public"]["Enums"]["tipo_evento_jml"] | null
+          updated_at?: string | null
+        }
+        Update: {
+          backup_created_at?: string | null
+          colaborador_id?: string | null
+          colaborador_nome?: string | null
+          created_at?: string | null
+          dados_antes?: Json | null
+          dados_depois?: Json | null
+          erro_mensagem?: string | null
+          id?: string | null
+          max_tentativas?: number | null
+          origem?: string | null
+          status?: Database["public"]["Enums"]["status_evento_jml"] | null
+          tentativas?: number | null
+          terceiro_id?: string | null
+          tipo?: Database["public"]["Enums"]["tipo_evento_jml"] | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      iam_incident_backup_20261110_queue: {
+        Row: {
+          action_type: string | null
+          approved_at: string | null
+          approved_by: string | null
+          backup_created_at: string | null
+          claim_attempts: number | null
+          claim_owner: string | null
+          claim_token: string | null
+          claimed_at: string | null
+          colaborador_id: string | null
+          correlation_id: string | null
+          created_at: string | null
+          error_code: string | null
+          id: string | null
+          lease_expires_at: string | null
+          max_retries: number | null
+          next_retry_at: string | null
+          payload_json: Json | null
+          processed_at: string | null
+          processed_by: string | null
+          rejection_reason: string | null
+          requested_by: string | null
+          resource_key: string | null
+          result_message: string | null
+          retry_count: number | null
+          status: string | null
+          target_identity: string | null
+          terceiro_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          action_type?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          backup_created_at?: string | null
+          claim_attempts?: number | null
+          claim_owner?: string | null
+          claim_token?: string | null
+          claimed_at?: string | null
+          colaborador_id?: string | null
+          correlation_id?: string | null
+          created_at?: string | null
+          error_code?: string | null
+          id?: string | null
+          lease_expires_at?: string | null
+          max_retries?: number | null
+          next_retry_at?: string | null
+          payload_json?: Json | null
+          processed_at?: string | null
+          processed_by?: string | null
+          rejection_reason?: string | null
+          requested_by?: string | null
+          resource_key?: string | null
+          result_message?: string | null
+          retry_count?: number | null
+          status?: string | null
+          target_identity?: string | null
+          terceiro_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          action_type?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          backup_created_at?: string | null
+          claim_attempts?: number | null
+          claim_owner?: string | null
+          claim_token?: string | null
+          claimed_at?: string | null
+          colaborador_id?: string | null
+          correlation_id?: string | null
+          created_at?: string | null
+          error_code?: string | null
+          id?: string | null
+          lease_expires_at?: string | null
+          max_retries?: number | null
+          next_retry_at?: string | null
+          payload_json?: Json | null
+          processed_at?: string | null
+          processed_by?: string | null
+          rejection_reason?: string | null
+          requested_by?: string | null
+          resource_key?: string | null
+          result_message?: string | null
+          retry_count?: number | null
+          status?: string | null
+          target_identity?: string | null
+          terceiro_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      iam_incident_backup_20261110_queue_preexec: {
+        Row: {
+          action_type: string | null
+          approved_at: string | null
+          approved_by: string | null
+          backup_created_at: string | null
+          claim_attempts: number | null
+          claim_owner: string | null
+          claim_token: string | null
+          claimed_at: string | null
+          colaborador_id: string | null
+          correlation_id: string | null
+          created_at: string | null
+          error_code: string | null
+          id: string | null
+          lease_expires_at: string | null
+          max_retries: number | null
+          next_retry_at: string | null
+          payload_json: Json | null
+          processed_at: string | null
+          processed_by: string | null
+          rejection_reason: string | null
+          requested_by: string | null
+          resource_key: string | null
+          result_message: string | null
+          retry_count: number | null
+          status: string | null
+          target_identity: string | null
+          terceiro_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          action_type?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          backup_created_at?: string | null
+          claim_attempts?: number | null
+          claim_owner?: string | null
+          claim_token?: string | null
+          claimed_at?: string | null
+          colaborador_id?: string | null
+          correlation_id?: string | null
+          created_at?: string | null
+          error_code?: string | null
+          id?: string | null
+          lease_expires_at?: string | null
+          max_retries?: number | null
+          next_retry_at?: string | null
+          payload_json?: Json | null
+          processed_at?: string | null
+          processed_by?: string | null
+          rejection_reason?: string | null
+          requested_by?: string | null
+          resource_key?: string | null
+          result_message?: string | null
+          retry_count?: number | null
+          status?: string | null
+          target_identity?: string | null
+          terceiro_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          action_type?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          backup_created_at?: string | null
+          claim_attempts?: number | null
+          claim_owner?: string | null
+          claim_token?: string | null
+          claimed_at?: string | null
+          colaborador_id?: string | null
+          correlation_id?: string | null
+          created_at?: string | null
+          error_code?: string | null
+          id?: string | null
+          lease_expires_at?: string | null
+          max_retries?: number | null
+          next_retry_at?: string | null
+          payload_json?: Json | null
+          processed_at?: string | null
+          processed_by?: string | null
+          rejection_reason?: string | null
+          requested_by?: string | null
+          resource_key?: string | null
+          result_message?: string | null
+          retry_count?: number | null
+          status?: string | null
+          target_identity?: string | null
+          terceiro_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       iam_queue: {
         Row: {
           action_type: string
@@ -1533,6 +1827,99 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      iam_recovery_backup_20261110: {
+        Row: {
+          action_type: string | null
+          approved_at: string | null
+          approved_by: string | null
+          backup_created_at: string | null
+          claim_attempts: number | null
+          claim_owner: string | null
+          claim_token: string | null
+          claimed_at: string | null
+          colaborador_id: string | null
+          correlation_id: string | null
+          created_at: string | null
+          error_code: string | null
+          id: string | null
+          lease_expires_at: string | null
+          max_retries: number | null
+          next_retry_at: string | null
+          payload_json: Json | null
+          processed_at: string | null
+          processed_by: string | null
+          rejection_reason: string | null
+          requested_by: string | null
+          resource_key: string | null
+          result_message: string | null
+          retry_count: number | null
+          status: string | null
+          target_identity: string | null
+          terceiro_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          action_type?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          backup_created_at?: string | null
+          claim_attempts?: number | null
+          claim_owner?: string | null
+          claim_token?: string | null
+          claimed_at?: string | null
+          colaborador_id?: string | null
+          correlation_id?: string | null
+          created_at?: string | null
+          error_code?: string | null
+          id?: string | null
+          lease_expires_at?: string | null
+          max_retries?: number | null
+          next_retry_at?: string | null
+          payload_json?: Json | null
+          processed_at?: string | null
+          processed_by?: string | null
+          rejection_reason?: string | null
+          requested_by?: string | null
+          resource_key?: string | null
+          result_message?: string | null
+          retry_count?: number | null
+          status?: string | null
+          target_identity?: string | null
+          terceiro_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          action_type?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          backup_created_at?: string | null
+          claim_attempts?: number | null
+          claim_owner?: string | null
+          claim_token?: string | null
+          claimed_at?: string | null
+          colaborador_id?: string | null
+          correlation_id?: string | null
+          created_at?: string | null
+          error_code?: string | null
+          id?: string | null
+          lease_expires_at?: string | null
+          max_retries?: number | null
+          next_retry_at?: string | null
+          payload_json?: Json | null
+          processed_at?: string | null
+          processed_by?: string | null
+          rejection_reason?: string | null
+          requested_by?: string | null
+          resource_key?: string | null
+          result_message?: string | null
+          retry_count?: number | null
+          status?: string | null
+          target_identity?: string | null
+          terceiro_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
       }
       licencas: {
         Row: {
@@ -3222,6 +3609,7 @@ export type Database = {
         }
         Returns: string
       }
+      iam_queue_pre_claim_guards: { Args: never; Returns: undefined }
       iam_queue_reprocessar: { Args: { p_ids: string[] }; Returns: number }
       iam_queue_reprocessar_falhas: {
         Args: { p_action_types?: string[] }

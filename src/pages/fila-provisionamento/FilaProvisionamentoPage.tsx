@@ -329,6 +329,9 @@ export default function FilaProvisionamentoPage() {
                   </div>
                   {resource && <p className="truncate text-xs text-muted-foreground">{resource}</p>}
                   <p className="text-[11px] text-muted-foreground">{new Date(item.created_at).toLocaleString("pt-BR")} · {item.requested_by || "—"}{item.retry_count ? ` · ${item.retry_count} tentativa(s)` : ""}</p>
+                  {item.status === "processing" && item.claimed_at && (
+                    <p className={`text-[11px] ${(item.claim_attempts ?? 0) >= 2 ? "text-warning" : "text-muted-foreground"}`}>Tentativa {item.claim_attempts ?? 1} · Hermes trabalhando há {Math.max(0, Math.round((Date.now() - new Date(item.claimed_at).getTime()) / 60000))} min</p>
+                  )}
                   {(item.error_code || (item.status === "failed" && item.result_message)) && (
                     <p className="mt-1 rounded-md bg-destructive/10 px-2 py-1 text-xs text-destructive">{item.error_code ? queueErrorLabel(item.error_code) : ""}{item.error_code && item.result_message ? " · " : ""}{item.result_message}</p>
                   )}
