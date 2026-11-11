@@ -1749,6 +1749,7 @@ export type Database = {
           result_message: string | null
           retry_count: number
           status: string
+          step_order: number | null
           target_identity: string | null
           terceiro_id: string | null
           updated_at: string | null
@@ -1778,6 +1779,7 @@ export type Database = {
           result_message?: string | null
           retry_count?: number
           status?: string
+          step_order?: number | null
           target_identity?: string | null
           terceiro_id?: string | null
           updated_at?: string | null
@@ -1807,6 +1809,7 @@ export type Database = {
           result_message?: string | null
           retry_count?: number
           status?: string
+          step_order?: number | null
           target_identity?: string | null
           terceiro_id?: string | null
           updated_at?: string | null
@@ -3367,6 +3370,7 @@ export type Database = {
           result_message: string | null
           retry_count: number
           status: string
+          step_order: number | null
           target_identity: string | null
           terceiro_id: string | null
           updated_at: string | null
@@ -3416,6 +3420,7 @@ export type Database = {
           result_message: string | null
           retry_count: number
           status: string
+          step_order: number | null
           target_identity: string | null
           terceiro_id: string | null
           updated_at: string | null
@@ -3646,6 +3651,7 @@ export type Database = {
         }
         Returns: Json
       }
+      iam_step_order: { Args: { p_action: string }; Returns: number }
       is_platform_admin: { Args: { _user_id: string }; Returns: boolean }
       jml_alterar_cargo: {
         Args: {

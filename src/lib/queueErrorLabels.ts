@@ -12,6 +12,8 @@ export const QUEUE_ERROR_LABELS: Record<string, string> = {
   historical_converged_license_absent: "Licença já não existia",
   historical_superseded: "Substituído por um pedido mais recente",
   dry_run: "Simulação (nada foi alterado)",
+  group_not_removable: "Grupo não removível — ignorado",
+  not_applicable: "Não se aplica",
   agent_no_response: "Hermes sem resposta",
   reconcile_ghost: "Usuário inexistente nos diretórios",
 };

@@ -31,6 +31,10 @@ export const QUEUE_ACTION_LABELS: Record<string, string> = {
   disable_user_app: "Desabilitar em app externo",
   delete_user_app: "Excluir em app externo",
   review_orphan_entra: "Revisar conta órfã (Entra)",
+  replicate_entra: "Replicar no Entra ID",
+  enable_litigation_hold: "Ativar Litigation Hold",
+  send_password_teams: "Enviar senha pelo Teams",
+  reply_ticket: "Responder chamado",
   manual_access_task: "Dar acesso manual",
   manual_revoke_task: "Retirar acesso manual",
 };
