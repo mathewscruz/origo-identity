@@ -1,3 +1,4 @@
+import { stepOrder, JOINER_STEPS, LEAVER_STEPS } from "@/lib/iamSequence";
 import { queueErrorLabel } from "@/lib/queueErrorLabels";
 import { completedQueueLink, queueStatuses } from "@/lib/dashboardFilters";
 import QueryState from "@/components/QueryState";
@@ -45,16 +46,15 @@ const STATUS_FILTERS: { value: string; label: string; statuses: string[] }[] = [
 ];
 
 type StepState = "success" | "failed" | "processing" | "pending" | "cancelled" | "none";
-const STEP_NAMES = ["Criar conta", "Grupos", "Licenças", "Apps"] as const;
 const STEP_DOT: Record<string, string> = { success: "bg-success", failed: "bg-destructive", processing: "bg-info", pending: "bg-warning", waiting_approval: "bg-info", cancelled: "bg-muted-foreground", rejected: "bg-muted-foreground" };
 const RANK: Record<string, number> = { failed: 5, processing: 4, waiting_approval: 3, pending: 3, success: 1, cancelled: 0, rejected: 0 };
 
-function stepOf(action: string): number {
-  const a = action.toLowerCase();
-  if (a.includes("group") || a.includes("grupo") || a.includes("sharepoint")) return 1;
-  if (a.includes("licen")) return 2;
-  if (a.endsWith("_user_app") || a.includes("app")) return 3;
-  return 0;
+/** posição do item na sequência fixa (criação 1–7, desativação 8–13); -1 = avulso */
+function stepOf(action: string, leaver: boolean): number {
+  const n = stepOrder(action);
+  if (n == null) return -1;
+  if (leaver) return n >= 8 ? n - 8 : -1;
+  return n <= 7 ? n - 1 : -1;
 }
 function worst(statuses: string[]): string {
   return statuses.reduce((w, s) => ((RANK[s] ?? 2) > (RANK[w] ?? 2) ? s : w), statuses[0] ?? "pending");
@@ -73,8 +73,10 @@ function groupByPerson(rows: Row[]) {
   }
   return [...map.entries()].map(([key, items]) => {
     const f = items[0];
-    const per: string[][] = [[], [], [], []];
-    for (const i of items) per[stepOf(i.action_type)].push(i.status);
+    const leaver = items.some((i) => (stepOrder(i.action_type) ?? 0) >= 8);
+    const names = leaver ? LEAVER_STEPS : JOINER_STEPS;
+    const per: string[][] = names.map(() => []);
+    for (const i of items) { const k = stepOf(i.action_type, leaver); if (k >= 0) per[k].push(i.status); }
     const created = items.reduce((m, i) => (i.created_at < m ? i.created_at : m), f.created_at);
     return {
       key, items,
@@ -82,15 +84,16 @@ function groupByPerson(rows: Row[]) {
       email: f.payload_json?.userPrincipalName || f.payload_json?.mail || (f.target_identity && f.target_identity !== f.payload_json?.displayName ? f.target_identity : ""),
       status: worst(items.map((i) => i.status)),
       steps: per.map((st) => toStep(st.length ? worst(st) : undefined)),
+      stepNames: names as readonly string[],
       created,
       personLink: f.colaborador_id ? `/colaboradores/${f.colaborador_id}` : f.terceiro_id ? `/terceiros/${f.terceiro_id}` : null,
     };
   });
 }
 
-function Steps({ steps }: { steps: StepState[] }) {
+function Steps({ steps, names }: { steps: StepState[]; names: readonly string[] }) {
   return (
-    <div className="flex min-w-[300px] items-start">
+    <div className="flex min-w-[420px] items-start">
       {steps.map((st, i) => (
         <div key={i} className="relative flex flex-1 flex-col items-center">
           {i > 0 && <span className={`absolute right-1/2 top-3 h-0.5 w-full -translate-y-1/2 ${st === "success" || st === "failed" || st === "processing" ? "bg-primary" : "bg-border"}`} />}
@@ -104,7 +107,7 @@ function Steps({ steps }: { steps: StepState[] }) {
             {st === "failed" && <X className="h-3.5 w-3.5" />}
             {st === "processing" && <Loader2 className="h-3 w-3 animate-spin" />}
           </span>
-          <span className={`mt-1 text-xs ${st === "none" ? "text-muted-foreground/50" : "text-muted-foreground"}`}>{STEP_NAMES[i]}</span>
+          <span className={`mt-1 text-xs ${st === "none" ? "text-muted-foreground/50" : "text-muted-foreground"}`}>{names[i]}</span>
         </div>
       ))}
     </div>
