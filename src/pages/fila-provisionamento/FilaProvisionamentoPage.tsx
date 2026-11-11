@@ -301,7 +301,7 @@ export default function FilaProvisionamentoPage() {
                           <div className="min-w-0"><p className="truncate font-semibold">{g.who}</p><p className="truncate text-xs text-muted-foreground">{g.email}</p></div>
                         </div>
                       </td>
-                      <td className="p-4"><Steps steps={g.steps} /></td>
+                      <td className="p-4"><Steps steps={g.steps} names={g.stepNames} /></td>
                       <td className="hidden p-4 md:table-cell"><Badge variant="outline" className={st?.className}>{g.status === "processing" && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}{statusLabel(g.status)}</Badge></td>
                       <td className="hidden p-4 text-muted-foreground lg:table-cell">{new Date(g.created).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
                     </tr>
@@ -317,7 +317,7 @@ export default function FilaProvisionamentoPage() {
         <DetailPanel onClose={() => setSelectedKey(null)}>
           <p className="pr-8 text-lg font-semibold">{selected.who}</p>
           <p className="text-sm text-muted-foreground">{selected.email}</p>
-          <div className="mt-4"><Steps steps={selected.steps} /></div>
+          <div className="mt-4"><Steps steps={selected.steps} names={selected.stepNames} /></div>
           <p className="mb-3 mt-6 text-sm font-semibold">Ações ({selected.items.length})</p>
           <ol className="relative space-y-4 border-l pl-5">
             {selected.items.map((item: Row) => {
@@ -328,7 +328,7 @@ export default function FilaProvisionamentoPage() {
                   <span className={`absolute -left-[27px] top-1 h-3 w-3 rounded-full border-2 border-card ${STEP_DOT[item.status] ?? "bg-muted-foreground"}`} />
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="font-medium">{actionLabel(item.action_type)}</span>
-                    <Badge variant="outline" className={`text-[10px] ${st?.className}`}>{statusLabel(item.status)}</Badge>
+                    <Badge variant="outline" className={`text-[10px] ${st?.className}`}>{item.error_code === "group_not_removable" ? "Ignorado" : statusLabel(item.status)}</Badge>
                   </div>
                   {resource && <p className="truncate text-xs text-muted-foreground">{resource}</p>}
                   <p className="text-[11px] text-muted-foreground">{new Date(item.created_at).toLocaleString("pt-BR")} · {item.requested_by || "—"}{item.retry_count ? ` · ${item.retry_count} tentativa(s)` : ""}</p>
