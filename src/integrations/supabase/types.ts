@@ -3609,6 +3609,7 @@ export type Database = {
         }
         Returns: string
       }
+      iam_queue_pre_claim_guards: { Args: never; Returns: undefined }
       iam_queue_reprocessar: { Args: { p_ids: string[] }; Returns: number }
       iam_queue_reprocessar_falhas: {
         Args: { p_action_types?: string[] }
