@@ -47,6 +47,7 @@ export const AGENT_ACTION_TYPES = [
   "assign_sharepoint", "remove_sharepoint",
   "disable_entra", "enable_entra", "update_entra",
   "create_user_app", "update_user_app", "disable_user_app", "delete_user_app",
+  "enable_litigation_hold", "send_password_teams", "reply_ticket",
 ];
 
 const DEFAULT_LEASE_SECONDS = 300;
