@@ -1,4 +1,4 @@
-import { stepOrder, JOINER_STEPS, LEAVER_STEPS } from "@/lib/iamSequence";
+import { completeImplicitPriorSteps, stepOrder, JOINER_STEPS, LEAVER_STEPS } from "@/lib/iamSequence";
 import { queueErrorLabel } from "@/lib/queueErrorLabels";
 import { completedQueueLink, queueStatuses } from "@/lib/dashboardFilters";
 import QueryState from "@/components/QueryState";
@@ -78,12 +78,13 @@ function groupByPerson(rows: Row[]) {
     const per: string[][] = names.map(() => []);
     for (const i of items) { const k = stepOf(i.action_type, leaver); if (k >= 0) per[k].push(i.status); }
     const created = items.reduce((m, i) => (i.created_at < m ? i.created_at : m), f.created_at);
+    const steps = completeImplicitPriorSteps(per.map((st) => toStep(st.length ? worst(st) : undefined)));
     return {
       key, items,
       who: f.payload_json?.displayName || f.target_identity || "—",
       email: f.payload_json?.userPrincipalName || f.payload_json?.mail || (f.target_identity && f.target_identity !== f.payload_json?.displayName ? f.target_identity : ""),
       status: worst(items.map((i) => i.status)),
-      steps: per.map((st) => toStep(st.length ? worst(st) : undefined)),
+      steps,
       stepNames: names as readonly string[],
       created,
       personLink: f.colaborador_id ? `/colaboradores/${f.colaborador_id}` : f.terceiro_id ? `/terceiros/${f.terceiro_id}` : null,

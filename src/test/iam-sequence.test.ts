@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isBlocked, isGroupNotRemovable, passwordRecipient, stepOrder } from "@/lib/iamSequence";
+import { completeImplicitPriorSteps, isBlocked, isGroupNotRemovable, passwordRecipient, stepOrder } from "@/lib/iamSequence";
 
 describe("ordem fixa de criação e desativação", () => {
   it("segue a ordem 1–13 pedida", () => {
@@ -40,5 +40,19 @@ describe("destino da senha", () => {
   });
   it("sem chamado, vai para o gestor", () => {
     expect(passwordRecipient("sistema", "gestor@origoenergia.com.br")).toBe("gestor@origoenergia.com.br");
+  });
+});
+
+describe("progresso visual da sequência", () => {
+  const beforeTeams = ["success", "none", "success", "success", "none", "success", "none"] as const;
+
+  it("completa Entra e Apps implícitos quando etapa posterior terminou", () => {
+    expect(completeImplicitPriorSteps([...beforeTeams])).toEqual([
+      "success", "success", "success", "success", "success", "success", "none",
+    ]);
+  });
+
+  it("não completa senha antes do recibo do Teams", () => {
+    expect(completeImplicitPriorSteps([...beforeTeams])[6]).toBe("none");
   });
 });

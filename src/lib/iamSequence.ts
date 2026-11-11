@@ -25,6 +25,19 @@ export function stepOrder(action: string): number | null {
   return IAM_STEP_ORDER[action] ?? null;
 }
 
+export type SequenceStepState = "success" | "failed" | "processing" | "pending" | "cancelled" | "none";
+
+/** Preenche vazios anteriores quando etapa posterior já terminou. */
+export function completeImplicitPriorSteps(steps: SequenceStepState[]): SequenceStepState[] {
+  const highestCompleted = steps.reduce(
+    (last, state, index) => state === "success" ? index : last,
+    -1,
+  );
+  return steps.map((state, index) =>
+    state === "none" && index < highestCompleted ? "success" : state,
+  );
+}
+
 const OPEN = new Set(["pending", "processing", "waiting_approval", "failed"]);
 
 /** Um passo só pode rodar quando nenhum passo anterior do mesmo fluxo está em aberto ou falhou. */
