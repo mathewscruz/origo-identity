@@ -141,6 +141,13 @@
       "when": 1794409762037,
       "tag": "0019_queue_claim_guards_audit_fix",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794409788185,
+      "tag": "0020_queue_claim_guards_colab_only",
+      "breakpoints": true
     }
   ]
 }
